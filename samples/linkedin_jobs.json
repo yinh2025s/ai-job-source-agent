@@ -1,0 +1,12 @@
+[
+  {
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/aurora-data-ai-engineer",
+    "company_name": "Aurora Data",
+    "company_website_url": "https://aurora-data.example"
+  },
+  {
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/nimbus-robotics-ml-intern",
+    "company_name": "Nimbus Robotics",
+    "company_website_url": "https://nimbus-robotics.example"
+  }
+]

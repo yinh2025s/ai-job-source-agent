@@ -1,0 +1,9 @@
+[project]
+name = "ai-job-source-agent"
+version = "0.1.0"
+description = "Take-home demo for discovering company career pages and one open role from job-source inputs."
+requires-python = ">=3.10"
+dependencies = []
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
