@@ -38,16 +38,28 @@ class JobSourceAgent:
         result = DiscoveryResult(
             company_name=company.company_name,
             company_website_url=normalize_url(company.company_website_url),
-            trace={"linkedin_job_url": company.linkedin_job_url, "steps": []},
+            linkedin_job_url=company.linkedin_job_url,
+            linkedin_company_url=company.linkedin_company_url,
+            linkedin_job_title=company.job_title,
+            linkedin_job_location=company.job_location,
+            trace={
+                "source": company.source,
+                "linkedin_job_url": company.linkedin_job_url,
+                "linkedin_company_url": company.linkedin_company_url,
+                "linkedin_job_title": company.job_title,
+                "source_trace": company.source_trace,
+                "steps": [],
+            },
         )
         try:
             career_url, career_trace = self.find_career_page(result.company_website_url)
             result.career_page_url = career_url
             result.trace["steps"].append({"name": "find_career_page", **career_trace})
-            opening_url, opening_trace = self.find_open_position(career_url)
+            opening_url, job_list_url, opening_trace = self.find_open_position(career_url)
             result.open_position_url = opening_url
+            result.job_list_page_url = job_list_url
             result.trace["steps"].append({"name": "find_open_position", **opening_trace})
-            result.status = "success"
+            result.status = "success" if job_list_url else "partial"
         except FetchError as exc:
             result.error = "fetch_failed"
             result.trace["failure_detail"] = str(exc)
@@ -59,9 +71,15 @@ class JobSourceAgent:
         return result
 
     def find_career_page(self, company_website_url: str) -> tuple[str, dict]:
-        homepage = self.fetcher.fetch(company_website_url)
-        homepage_url = homepage.final_url or homepage.url
-        raw_candidates = extract_links(homepage)
+        homepage_url = normalize_url(company_website_url)
+        raw_candidates: list[RawLink] = []
+        trace = {"homepage_url": homepage_url, "homepage_fetch_error": None, "candidates": []}
+        try:
+            homepage = self.fetcher.fetch(company_website_url)
+            homepage_url = homepage.final_url or homepage.url
+            raw_candidates = extract_links(homepage)
+        except FetchError as exc:
+            trace["homepage_fetch_error"] = str(exc)
         raw_candidates.extend(self._common_path_candidates(homepage_url))
 
         scored = sorted(
@@ -70,7 +88,8 @@ class JobSourceAgent:
             reverse=True,
         )
         deduped = self._dedupe_candidates(scored)
-        trace = {"homepage_url": homepage_url, "candidates": dataclass_to_dict(deduped[:10])}
+        trace["homepage_url"] = homepage_url
+        trace["candidates"] = dataclass_to_dict(deduped[:10])
 
         for candidate in deduped[: self.max_candidates]:
             if candidate.score < 50:
@@ -91,17 +110,23 @@ class JobSourceAgent:
             trace=trace,
         )
 
-    def find_open_position(self, career_page_url: str) -> tuple[str, dict]:
+    def find_open_position(self, career_page_url: str) -> tuple[str | None, str | None, dict]:
         if self._looks_like_job_detail_url(career_page_url):
-            return career_page_url, {
+            return career_page_url, career_page_url, {
                 "career_page_url": career_page_url,
+                "job_list_page_url": career_page_url,
                 "selected": {
                     "url": career_page_url,
                     "reason": "career page is already a job-detail URL",
                 },
             }
 
-        trace = {"career_page_url": career_page_url, "pages_visited": [], "candidates": []}
+        trace = {
+            "career_page_url": career_page_url,
+            "job_list_page_url": career_page_url,
+            "pages_visited": [],
+            "candidates": [],
+        }
         queue = [career_page_url]
         visited: set[str] = set()
         pages_checked = 0
@@ -122,6 +147,8 @@ class JobSourceAgent:
                 reverse=True,
             )
             deduped = self._dedupe_candidates(scored)
+            if actual_page_url != career_page_url and deduped:
+                trace["job_list_page_url"] = actual_page_url
             trace["pages_visited"].append(
                 {
                     "url": actual_page_url,
@@ -141,12 +168,16 @@ class JobSourceAgent:
                 except FetchError:
                     continue
                 trace["selected"] = dataclass_to_dict(candidate)
+                trace["job_list_page_url"] = actual_page_url
                 trace["selected_page_source"] = opened.source
-                return opened.final_url or opened.url, trace
+                return opened.final_url or opened.url, actual_page_url, trace
 
             for candidate in deduped[: self.max_candidates]:
                 if is_likely_job_listing_page(candidate) and candidate.url.rstrip("/") not in visited:
                     queue.append(candidate.url)
+
+        trace["opening_error"] = "open_position_not_found"
+        return None, trace["job_list_page_url"], trace
 
         raise DiscoveryError(
             "open_position_not_found",

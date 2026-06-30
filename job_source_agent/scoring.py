@@ -77,7 +77,10 @@ NEGATIVE_KEYWORDS = {
 }
 
 NON_JOB_PATH_PARTS = {
+    "api",
     "benefits",
+    "embed",
+    "images",
     "privacy",
     "terms",
     "culture",
@@ -85,6 +88,34 @@ NON_JOB_PATH_PARTS = {
     "departments",
     "people",
 }
+
+RESOURCE_EXTENSIONS = (
+    ".apng",
+    ".avif",
+    ".css",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".js",
+    ".json",
+    ".mjs",
+    ".pdf",
+    ".png",
+    ".svg",
+    ".webp",
+    ".woff",
+    ".woff2",
+)
+
+NON_OFFICIAL_JOB_DOMAINS = (
+    "linkedin.com",
+    "facebook.com",
+    "instagram.com",
+    "x.com",
+    "twitter.com",
+    "youtube.com",
+)
 
 GENERIC_JOB_LISTING_PARTS = {
     "jobs",
@@ -135,6 +166,11 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     score = 0
     reasons: list[str] = []
 
+    if is_resource_url(link.url):
+        return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"])
+    if is_non_official_job_domain(link.url):
+        return LinkCandidate(link.url, link.text, link.source_url, -500, ["non-official job/social domain"])
+
     if normalize_for_compare(link.url) == normalize_for_compare(career_page_url):
         score -= 200
         reasons.append("same as career page")
@@ -174,6 +210,10 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
 
 
 def is_likely_job_detail(candidate: LinkCandidate) -> bool:
+    if is_resource_url(candidate.url):
+        return False
+    if is_non_official_job_domain(candidate.url):
+        return False
     if normalize_for_compare(candidate.url) == normalize_for_compare(candidate.source_url):
         return False
     path_parts = [part.lower() for part in urlparse(candidate.url).path.split("/") if part]
@@ -190,6 +230,10 @@ def is_likely_job_detail(candidate: LinkCandidate) -> bool:
 
 
 def is_likely_job_listing_page(candidate: LinkCandidate) -> bool:
+    if is_resource_url(candidate.url):
+        return False
+    if is_non_official_job_domain(candidate.url):
+        return False
     if is_likely_job_detail(candidate):
         return False
     reason_text = " ".join(candidate.reasons)
@@ -219,6 +263,8 @@ def _looks_like_ats_job_detail(url: str) -> bool:
     parts = [part for part in parsed.path.split("/") if part]
     if any(part in NON_JOB_PATH_PARTS for part in parts):
         return False
+    if is_resource_url(url):
+        return False
     if host == "jobs.lever.co":
         return len(parts) >= 2
     if host in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
@@ -228,3 +274,13 @@ def _looks_like_ats_job_detail(url: str) -> bool:
     if "ashbyhq.com" in host:
         return len(parts) >= 2 and parts[-1] != "jobs"
     return len(parts) >= 2
+
+
+def is_resource_url(url: str) -> bool:
+    path = urlparse(url).path.lower()
+    return path.endswith(RESOURCE_EXTENSIONS)
+
+
+def is_non_official_job_domain(url: str) -> bool:
+    host = urlparse(url).netloc.lower()
+    return any(host == domain or host.endswith("." + domain) for domain in NON_OFFICIAL_JOB_DOMAINS)

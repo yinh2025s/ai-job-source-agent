@@ -5,29 +5,36 @@ import json
 from pathlib import Path
 
 from .linkedin import load_company_inputs
+from .linkedin_discovery import LinkedInJobsDiscoverer, linkedin_postings_to_company_inputs
 from .models import dataclass_to_dict
 from .pipeline import JobSourceAgent
 from .web import Fetcher
+from .website_resolver import CompanyWebsiteResolver
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Discover career pages and one open role per company.")
-    parser.add_argument("--input", required=True, help="JSON records from the LinkedIn extractor adapter.")
+    parser.add_argument("--input", help="JSON records from the LinkedIn extractor adapter.")
+    parser.add_argument("--linkedin-keywords", help="Search public LinkedIn jobs for hiring companies.")
+    parser.add_argument("--linkedin-location", default="United States", help="LinkedIn job-search location.")
+    parser.add_argument("--linkedin-pages", type=int, default=2, help="LinkedIn result pages to scan.")
+    parser.add_argument("--website-overrides", help="Optional JSON map of company name to official website.")
     parser.add_argument("--output", default="results.json", help="Path for concise result JSON.")
     parser.add_argument("--trace-output", default="trace.json", help="Path for detailed trace JSON.")
     parser.add_argument("--fixtures-dir", help="Optional offline fixture directory for deterministic demos.")
     parser.add_argument("--offline", action="store_true", help="Fail instead of using the live network.")
+    parser.add_argument("--fetch-timeout", type=float, default=8, help="Per-page fetch timeout in seconds.")
     parser.add_argument("--limit", type=int, help="Optional limit for quick demo runs.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    companies = load_company_inputs(args.input)
+    fetcher = Fetcher(fixtures_dir=args.fixtures_dir, offline=args.offline, timeout=args.fetch_timeout)
+    companies = _load_companies(args, fetcher)
     if args.limit:
         companies = companies[: args.limit]
 
-    fetcher = Fetcher(fixtures_dir=args.fixtures_dir, offline=args.offline)
     agent = JobSourceAgent(fetcher)
     results = [agent.discover(company) for company in companies]
 
@@ -43,7 +50,35 @@ def main(argv: list[str] | None = None) -> None:
     for result in results:
         status_icon = "OK" if result.status == "success" else "FAIL"
         print(f"{status_icon} {result.company_name}")
+        if result.linkedin_job_title:
+            print(f"  linkedin job: {result.linkedin_job_title}")
+        print(f"  website: {result.company_website_url}")
         print(f"  career: {result.career_page_url}")
+        print(f"  job list: {result.job_list_page_url}")
         print(f"  opening: {result.open_position_url}")
         if result.error:
             print(f"  error: {result.error}")
+
+
+def _load_companies(args: argparse.Namespace, fetcher: Fetcher):
+    if args.linkedin_keywords:
+        discoverer = LinkedInJobsDiscoverer(fetcher)
+        postings = discoverer.search(
+            keywords=args.linkedin_keywords,
+            location=args.linkedin_location,
+            limit=args.limit or 10,
+            pages=args.linkedin_pages,
+        )
+        companies = linkedin_postings_to_company_inputs(postings)
+        resolver = CompanyWebsiteResolver(fetcher, overrides_path=args.website_overrides)
+        for company in companies:
+            website_url, trace = resolver.resolve(company.company_name, company.linkedin_company_url)
+            company.company_website_url = website_url or ""
+            company.source = "linkedin_public_jobs"
+            company.source_trace["website_resolution"] = trace
+        return [company for company in companies if company.company_website_url]
+
+    if args.input:
+        return load_company_inputs(args.input)
+
+    raise SystemExit("Provide either --input or --linkedin-keywords.")

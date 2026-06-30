@@ -4,3 +4,7 @@ __pycache__/
 .venv/
 results.json
 trace.json
+live-results.json
+live-trace.json
+linkedin-results.json
+linkedin-trace.json

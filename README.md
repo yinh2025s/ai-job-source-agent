@@ -1,10 +1,13 @@
 # AI Job Source Agent
 
-Take-home implementation for Part 2: starting from LinkedIn job-source records, discover the company career page and one open position URL.
+Take-home implementation for Part 2: discover companies hiring on LinkedIn, resolve their official websites, and navigate to their official career/job-list pages.
 
 The implementation is intentionally agentic but controlled: deterministic link extraction and scoring do the first pass, then the agent follows promising career/job-listing pages for a few hops. The pipeline keeps trace data for every navigation decision.
 
-LinkedIn extraction is isolated behind an adapter-shaped input because direct LinkedIn scraping is brittle and commonly blocked. In real usage, the adapter can be fed by a third-party LinkedIn crawler API, a saved LinkedIn HTML page, or a manually verified company URL.
+The project supports two flows:
+
+- `--linkedin-keywords`: search public LinkedIn job results, extract hiring companies, resolve official websites from LinkedIn company pages/search/domain hints, and find official job-list pages.
+- `--input`: run the downstream website-to-careers pipeline from pre-extracted company records.
 
 ## What It Returns
 
@@ -14,7 +17,9 @@ For each input record:
 {
   "company_name": "Aurora Data",
   "company_website_url": "https://aurora-data.example",
+  "linkedin_job_url": "https://www.linkedin.com/jobs/view/aurora-data-ai-engineer",
   "career_page_url": "https://jobs.lever.co/aurora-data",
+  "job_list_page_url": "https://jobs.lever.co/aurora-data",
   "open_position_url": "https://jobs.lever.co/aurora-data/d9d64766-3d42-4ba9-94d4-f74cdaf20065",
   "status": "success",
   "error": null
@@ -40,12 +45,56 @@ Expected output:
 
 ```text
 OK Aurora Data
+  website: https://aurora-data.example
   career: https://jobs.lever.co/aurora-data
+  job list: https://jobs.lever.co/aurora-data
   opening: https://jobs.lever.co/aurora-data/d9d64766-3d42-4ba9-94d4-f74cdaf20065
 OK Nimbus Robotics
+  website: https://nimbus-robotics.example
   career: https://nimbus-robotics.example/careers
+  job list: https://nimbus-robotics.example/careers
   opening: https://boards.greenhouse.io/nimbusrobotics/jobs/5012345001
 ```
+
+## Discover From LinkedIn Jobs
+
+This mode starts from public LinkedIn job search results:
+
+```bash
+python3 -m job_source_agent \
+  --linkedin-keywords "AI Engineer" \
+  --linkedin-location "United States" \
+  --limit 3 \
+  --linkedin-pages 1 \
+  --fetch-timeout 5 \
+  --output linkedin-results.json \
+  --trace-output linkedin-trace.json
+```
+
+Example live output from June 30, 2026:
+
+```text
+OK Rolls-Royce
+  linkedin job: Junior Machine Learning Engineer
+  website: https://www.rolls-royce.com/
+  career: https://www.rolls-royce.com/products-and-services/defence/submarines/careers-and-skills-in-rr-submarines.aspx
+  job list: https://www.rolls-royce.com/products-and-services/defence/submarines/careers-and-skills-in-rr-submarines.aspx
+  opening: None
+OK Google
+  linkedin job: Software Engineer, AI/ML, Google Research
+  website: https://www.google.com/
+  career: https://www.google.com/about/careers/applications/
+  job list: https://www.google.com/about/careers/applications/
+  opening: None
+OK Nuro
+  linkedin job: Software Engineer, AI Platform - New Grad
+  website: https://www.nuro.ai
+  career: https://www.nuro.ai/careers
+  job list: https://www.nuro.ai/careers
+  opening: None
+```
+
+Many modern career pages render the concrete job cards with JavaScript, so `open_position_url` may be `null` while `job_list_page_url` is still successful. The trace file records whether the agent reached an ATS page, a native careers page, or only the best official careers page.
 
 ## Run Against Live Websites
 
@@ -76,7 +125,7 @@ python3 -m job_source_agent \
   --trace-output live-trace.json
 ```
 
-On June 22, 2026, this successfully found openings for Ekimetrics, PostHog, and Anthropic.
+On June 30, 2026, this successfully found live job-list/opening pages for Ekimetrics, PostHog, and Anthropic.
 
 ## Optional Saved LinkedIn HTML Input
 
@@ -99,6 +148,17 @@ If LinkedIn does not expose the company website in the saved HTML, provide `comp
 LinkedIn extractor adapter
         |
         v
+Hiring company discovery
+  - public LinkedIn jobs search
+  - company name, job URL, LinkedIn company URL
+        |
+        v
+Official website resolver
+  - LinkedIn company page website signals
+  - optional overrides
+  - search/domain fallback
+        |
+        v
 Company website fetcher
         |
         v
@@ -109,7 +169,7 @@ Career page finder
   - scored candidates with reasons
         |
         v
-Open position finder
+Job-list/opening finder
   - job-detail path scoring
   - multi-hop traversal from career page to ATS/listing page to job detail
   - Lever/Greenhouse/Ashby-style ATS patterns
@@ -122,9 +182,12 @@ results.json + trace.json
 ## Design Choices
 
 - LinkedIn extraction is adapter-based because production LinkedIn crawling typically needs login/session handling or a third-party crawler API.
+- The LinkedIn public jobs mode discovers hiring companies directly from LinkedIn guest job-search cards.
+- Official website resolution prefers the LinkedIn company page's website signal before search/domain guessing.
 - Career-page discovery uses deterministic scoring before any expensive browser/LLM-style behavior.
 - Common ATS providers such as Lever and Greenhouse are recognized explicitly.
 - The agent distinguishes listing pages, such as `/careers/jobs`, from concrete job-detail URLs.
+- Social/job aggregator links, static assets, and ATS embeds are filtered out as false positives.
 - Every decision is traceable through scored candidates and reasons.
 - Failures are structured, for example `career_page_not_found`, `open_position_not_found`, or `fetch_failed`.
 
@@ -136,7 +199,7 @@ python3 -m unittest discover -s tests
 
 ## Next Production Steps
 
-- Add a third-party LinkedIn crawler adapter that emits the current JSON schema.
 - Add Playwright rendering for heavily JavaScript-driven websites.
+- Parallelize website resolution and career probing for larger LinkedIn searches.
 - Add an LLM reranker only for ambiguous candidate sets.
 - Store screenshots and final HTML snapshots for auditability.
