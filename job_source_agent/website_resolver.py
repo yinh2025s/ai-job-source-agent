@@ -64,6 +64,7 @@ class CompanyWebsiteResolver:
             return url, trace
 
         linkedin_candidates = self._linkedin_company_candidates(linkedin_company_url)
+        linkedin_candidate_domains = {domain_of(url) for url in linkedin_candidates}
         if linkedin_candidates:
             linkedin_scored = sorted(
                 [self._score_candidate(candidate, company_name) for candidate in linkedin_candidates[:5]],
@@ -98,6 +99,8 @@ class CompanyWebsiteResolver:
 
         for candidate in scored:
             if candidate.score < 25:
+                continue
+            if "homepage fetch failed" in candidate.reasons and domain_of(candidate.url) not in linkedin_candidate_domains:
                 continue
             trace["selected"] = {
                 "url": candidate.url,

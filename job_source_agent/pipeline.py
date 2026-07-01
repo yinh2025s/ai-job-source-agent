@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from urllib.parse import urlparse
+from xml.etree import ElementTree as ET
 
 from .models import CompanyInput, DiscoveryResult, LinkCandidate, dataclass_to_dict
 from .scoring import (
@@ -17,12 +18,21 @@ COMMON_CAREER_PATHS = (
     "/careers",
     "/career",
     "/jobs",
+    "/jobs/search",
+    "/jobs/search-results",
     "/join-us",
+    "/join-our-team",
     "/work-with-us",
     "/open-positions",
     "/job-openings",
+    "/current-openings",
+    "/opportunities",
     "/company/careers",
     "/about/careers",
+    "/about-us/careers",
+    "/careers/jobs",
+    "/careers/listings",
+    "/careers/search",
     "/en/careers",
     "/en/jobs",
 )
@@ -81,6 +91,9 @@ class JobSourceAgent:
         except FetchError as exc:
             trace["homepage_fetch_error"] = str(exc)
         raw_candidates.extend(self._common_path_candidates(homepage_url))
+        sitemap_candidates, sitemap_trace = self._sitemap_candidates(homepage_url)
+        raw_candidates.extend(sitemap_candidates)
+        trace["sitemap_discovery"] = sitemap_trace
 
         scored = sorted(
             [score_career_link(link) for link in raw_candidates],
@@ -179,13 +192,6 @@ class JobSourceAgent:
         trace["opening_error"] = "open_position_not_found"
         return None, trace["job_list_page_url"], trace
 
-        raise DiscoveryError(
-            "open_position_not_found",
-            "No reliable open position URL found.",
-            step_name="find_open_position",
-            trace=trace,
-        )
-
     def _common_path_candidates(self, homepage_url: str) -> list[RawLink]:
         parsed = urlparse(homepage_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
@@ -193,6 +199,58 @@ class JobSourceAgent:
             RawLink(url=normalize_url(path, base), text=path.strip("/").replace("-", " "), source_url=homepage_url)
             for path in COMMON_CAREER_PATHS
         ]
+
+    def _sitemap_candidates(self, homepage_url: str) -> tuple[list[RawLink], dict]:
+        parsed = urlparse(homepage_url)
+        base = f"{parsed.scheme}://{parsed.netloc}"
+        sitemap_urls = [normalize_url("/sitemap.xml", base), normalize_url("/sitemap_index.xml", base)]
+        trace = {"sitemaps_checked": [], "candidate_count": 0}
+
+        try:
+            robots = self.fetcher.fetch(normalize_url("/robots.txt", base))
+            for line in robots.html.splitlines():
+                if line.lower().startswith("sitemap:"):
+                    sitemap_urls.append(normalize_url(line.split(":", 1)[1].strip()))
+        except FetchError:
+            pass
+
+        links: list[RawLink] = []
+        seen_sitemaps: set[str] = set()
+        pending_sitemaps = list(sitemap_urls)
+        while pending_sitemaps:
+            sitemap_url = pending_sitemaps.pop(0)
+            if sitemap_url in seen_sitemaps:
+                continue
+            seen_sitemaps.add(sitemap_url)
+            try:
+                page = self.fetcher.fetch(sitemap_url)
+            except FetchError as exc:
+                trace["sitemaps_checked"].append({"url": sitemap_url, "error": str(exc)})
+                continue
+
+            urls = self._extract_sitemap_locs(page.html)
+            trace["sitemaps_checked"].append({"url": sitemap_url, "url_count": len(urls)})
+            for url in urls:
+                lower_url = url.lower()
+                if lower_url.endswith(".xml") and len(seen_sitemaps) < 10:
+                    pending_sitemaps.append(normalize_url(url))
+                    continue
+                if any(token in lower_url for token in ("career", "careers", "jobs", "join-us", "join-our-team", "openings")):
+                    links.append(RawLink(url=normalize_url(url), text=urlparse(url).path, source_url=sitemap_url))
+
+        trace["candidate_count"] = len(links)
+        return links, trace
+
+    def _extract_sitemap_locs(self, xml_text: str) -> list[str]:
+        try:
+            root = ET.fromstring(xml_text)
+        except ET.ParseError:
+            return []
+        urls: list[str] = []
+        for element in root.iter():
+            if element.tag.endswith("loc") and element.text:
+                urls.append(element.text.strip())
+        return urls
 
     def _dedupe_candidates(self, candidates: list[LinkCandidate]) -> list[LinkCandidate]:
         seen: set[str] = set()

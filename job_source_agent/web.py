@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from html import unescape
 from pathlib import Path
 import gzip
 import re
@@ -41,7 +42,7 @@ class FetchError(RuntimeError):
 
 
 def normalize_url(url: str, base_url: str | None = None) -> str:
-    url = url.strip()
+    url = unescape(url.strip())
     if base_url:
         url = urljoin(base_url, url)
     parsed = urlparse(url)

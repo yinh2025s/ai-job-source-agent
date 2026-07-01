@@ -96,6 +96,25 @@ OK Nuro
 
 Many modern career pages render the concrete job cards with JavaScript, so `open_position_url` may be `null` while `job_list_page_url` is still successful. The trace file records whether the agent reached an ATS page, a native careers page, or only the best official careers page.
 
+For JavaScript-heavy or bot-protected pages, install the optional browser module:
+
+```bash
+pip install -e ".[browser]"
+playwright install chromium
+```
+
+Then run with browser rendering:
+
+```bash
+python3 -m job_source_agent \
+  --linkedin-keywords "AI Engineer" \
+  --linkedin-location "United States" \
+  --limit 3 \
+  --render-js \
+  --output linkedin-results.json \
+  --trace-output linkedin-trace.json
+```
+
 ## Run Against Live Websites
 
 Create an input file with records like:
@@ -199,7 +218,7 @@ python3 -m unittest discover -s tests
 
 ## Next Production Steps
 
-- Add Playwright rendering for heavily JavaScript-driven websites.
+- Use `--render-js` for heavily JavaScript-driven websites or bot-protected pages.
 - Parallelize website resolution and career probing for larger LinkedIn searches.
 - Add an LLM reranker only for ambiguous candidate sets.
 - Store screenshots and final HTML snapshots for auditability.

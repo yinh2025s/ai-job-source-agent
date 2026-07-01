@@ -5,5 +5,8 @@ description = "Take-home demo for discovering company career pages and one open 
 requires-python = ">=3.10"
 dependencies = []
 
+[project.optional-dependencies]
+browser = ["playwright>=1.45"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
