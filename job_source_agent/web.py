@@ -55,6 +55,17 @@ def normalize_url(url: str, base_url: str | None = None) -> str:
     return urlunparse(normalized)
 
 
+def safe_normalize_url(url: str, base_url: str | None = None) -> str | None:
+    try:
+        normalized = normalize_url(url, base_url)
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            return None
+        return normalized
+    except (TypeError, ValueError):
+        return None
+
+
 def domain_of(url: str) -> str:
     return urlparse(url).netloc.lower().removeprefix("www.")
 
@@ -76,7 +87,9 @@ class _LinkParser(HTMLParser):
         tag_name = tag.lower()
         attrs_dict = {key.lower(): value for key, value in attrs}
         if tag_name == "base" and attrs_dict.get("href"):
-            self.base_url = normalize_url(attrs_dict["href"] or "", self.source_url)
+            normalized_base = safe_normalize_url(attrs_dict["href"] or "", self.source_url)
+            if normalized_base:
+                self.base_url = normalized_base
             return
         if tag_name != "a":
             return
@@ -93,13 +106,15 @@ class _LinkParser(HTMLParser):
         if tag.lower() != "a" or self._active_href is None:
             return
         text = " ".join("".join(self._active_text).split())
-        self.links.append(
-            RawLink(
-                url=normalize_url(self._active_href, self.base_url),
-                text=text,
-                source_url=self.source_url,
+        normalized_href = safe_normalize_url(self._active_href, self.base_url)
+        if normalized_href:
+            self.links.append(
+                RawLink(
+                    url=normalized_href,
+                    text=text,
+                    source_url=self.source_url,
+                )
             )
-        )
         self._active_href = None
         self._active_text = []
 
@@ -111,9 +126,12 @@ def extract_links(page: Page) -> list[RawLink]:
     # Some modern sites store navigation targets in data attributes or escaped
     # JSON blobs. This conservative pass catches obvious absolute URLs.
     for url in re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", page.html):
-        if any(existing.url == url for existing in links):
+        normalized_url = safe_normalize_url(url)
+        if not normalized_url:
             continue
-        links.append(RawLink(url=normalize_url(url), text="", source_url=page.final_url or page.url))
+        if any(existing.url == normalized_url for existing in links):
+            continue
+        links.append(RawLink(url=normalized_url, text="", source_url=page.final_url or page.url))
     return links
 
 
