@@ -110,13 +110,16 @@ RESOURCE_EXTENSIONS = (
     ".jpg",
     ".js",
     ".json",
+    ".map",
     ".mjs",
     ".pdf",
     ".png",
     ".svg",
+    ".txt",
     ".webp",
     ".woff",
     ".woff2",
+    ".xml",
 )
 
 NON_OFFICIAL_JOB_DOMAINS = (

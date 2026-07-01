@@ -55,6 +55,19 @@ class ScoringTests(unittest.TestCase):
 
         self.assertLess(candidate.score, 50)
 
+    def test_static_text_file_is_not_job_detail(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://apply.workable.com/example/llms.txt",
+                text="",
+                source_url="https://apply.workable.com/example",
+            ),
+            career_page_url="https://apply.workable.com/example",
+        )
+
+        self.assertFalse(is_likely_job_detail(candidate))
+        self.assertLess(candidate.score, 0)
+
 
 if __name__ == "__main__":
     unittest.main()
