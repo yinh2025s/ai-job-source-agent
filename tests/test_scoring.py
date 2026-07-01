@@ -44,6 +44,17 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(is_likely_job_detail(candidate))
         self.assertTrue(is_likely_job_listing_page(candidate))
 
+    def test_article_about_jobs_is_not_career_link(self):
+        candidate = score_career_link(
+            RawLink(
+                url="https://example.com/how-is-ai-going-to-affect-jobs-across-various-industries",
+                text="How is AI going to affect jobs across various industries?",
+                source_url="https://example.com",
+            )
+        )
+
+        self.assertLess(candidate.score, 50)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -209,8 +209,20 @@ class JobSourceAgent:
         if is_ats_url(candidate.url):
             return True
         text = html[:20000].lower()
-        career_signals = ("open roles", "open positions", "jobs", "careers", "join our team")
-        return candidate.score >= 80 or any(signal in text for signal in career_signals)
+        career_signals = (
+            "open roles",
+            "open positions",
+            "current openings",
+            "job openings",
+            "view open jobs",
+            "apply now",
+            "join our team",
+            "join us",
+            "life at",
+            "careers",
+        )
+        generic_job_only = candidate.score < 120 and "career keyword 'jobs'" in " ".join(candidate.reasons)
+        return not generic_job_only and any(signal in text for signal in career_signals)
 
     def _looks_like_job_detail_url(self, url: str) -> bool:
         if not is_ats_url(url):

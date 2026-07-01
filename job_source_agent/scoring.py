@@ -74,6 +74,17 @@ NEGATIVE_KEYWORDS = {
     "department": -55,
     "all jobs": -35,
     "all roles": -35,
+    "article": -80,
+    "blog": -80,
+    "insight": -80,
+    "insights": -80,
+    "resource": -55,
+    "resources": -55,
+    "how-": -100,
+    "why-": -100,
+    "what-": -100,
+    "guide": -55,
+    "whitepaper": -80,
 }
 
 NON_JOB_PATH_PARTS = {
