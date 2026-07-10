@@ -63,7 +63,7 @@ class OfflinePipelineTests(unittest.TestCase):
 
         self.assertIsNone(opening_url)
         self.assertEqual(job_list_url, "https://jobs.lever.co/titlefilter")
-        self.assertEqual(trace["opening_error"], "open_position_not_found")
+        self.assertEqual(trace["opening_error"], "specific_opening_not_found")
 
     def test_career_page_can_be_discovered_from_search_fallback(self):
         agent = JobSourceAgent(
@@ -79,6 +79,18 @@ class OfflinePipelineTests(unittest.TestCase):
 
         self.assertEqual(career_url, "https://searchfallback.example/real-careers")
         self.assertEqual(trace["selected_from"], "search_discovery")
+
+    def test_error_page_is_not_treated_as_career_page(self):
+        agent = JobSourceAgent(
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
+        )
+
+        self.assertTrue(
+            agent._looks_like_error_page(
+                "https://example.com/errors/404/",
+                "<html><title>Careers</title><body>Page not found</body></html>",
+            )
+        )
 
 
 if __name__ == "__main__":

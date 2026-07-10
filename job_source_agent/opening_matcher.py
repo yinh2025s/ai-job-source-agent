@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import quote_plus, urlparse
+from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
 from .scoring import is_likely_job_detail, score_job_link
 from .web import FetchError, Fetcher, RawLink, domain_of, extract_links
@@ -128,10 +128,14 @@ def detect_provider(url: str) -> str:
         return "ashby"
     if "workable.com" in host:
         return "workable"
+    if "smartrecruiters.com" in host:
+        return "smartrecruiters"
     if "icims.com" in host:
         return "icims"
     if "workdayjobs.com" in host or "myworkdayjobs.com" in host:
         return "workday"
+    if "successfactors.com" in host or "sapsf.com" in host:
+        return "successfactors"
     return "generic"
 
 
@@ -150,8 +154,25 @@ def build_provider_search_urls(job_list_url: str, target_title: str) -> list[str
             f"https://www.metacareers.com/jobs/?q={query}",
             job_list_url,
         ]
-    if provider in {"greenhouse", "lever", "ashby", "workable", "icims", "workday"}:
-        return [job_list_url]
+    if provider in {"greenhouse", "lever", "ashby"}:
+        return [job_list_url, add_query_params(job_list_url, {"q": target_title})]
+    if provider == "workable":
+        return [job_list_url, add_query_params(job_list_url, {"query": target_title})]
+    if provider == "smartrecruiters":
+        return [job_list_url, add_query_params(job_list_url, {"search": target_title})]
+    if provider == "icims":
+        return [
+            job_list_url,
+            add_query_params(job_list_url, {"ss": "1", "searchKeyword": target_title}),
+        ]
+    if provider == "workday":
+        return [job_list_url, add_query_params(job_list_url, {"q": target_title})]
+    if provider == "successfactors":
+        return [
+            job_list_url,
+            add_query_params(job_list_url, {"q": target_title}),
+            add_query_params(job_list_url, {"keyword": target_title}),
+        ]
     return [job_list_url, f"{base}?q={query}", f"{base}?search={query}"]
 
 
@@ -162,7 +183,23 @@ def build_search_result_url(job_list_url: str, target_title: str) -> str | None:
         return f"https://www.google.com/about/careers/applications/jobs/results/?q={query}"
     if provider == "meta_careers":
         return f"https://www.metacareers.com/jobs/?q={query}"
+    if provider in {
+        "lever",
+        "greenhouse",
+        "ashby",
+    }:
+        return job_list_url
+    if provider in {"workable", "smartrecruiters", "icims", "workday", "successfactors"}:
+        return build_provider_search_urls(job_list_url, target_title)[-1]
     return None
+
+
+def add_query_params(url: str, params: dict[str, str]) -> str:
+    parsed = urlparse(url)
+    query = parse_qs(parsed.query)
+    for key, value in params.items():
+        query[key] = [value]
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
 
 
 def score_title_match(candidate_title: str, target_title: str) -> tuple[int, list[str]]:

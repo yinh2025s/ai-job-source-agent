@@ -15,11 +15,14 @@ ATS_DOMAINS = (
     "workable.com",
     "apply.workable.com",
     "smartrecruiters.com",
+    "jobs.smartrecruiters.com",
     "recruitee.com",
     "bamboohr.com",
     "jobvite.com",
     "icims.com",
+    "careers.icims.com",
     "successfactors.com",
+    "sapsf.com",
     "myworkdayjobs.com",
 )
 
@@ -287,6 +290,17 @@ def _looks_like_ats_job_detail(url: str) -> bool:
         return "jobs" in parts and len(parts) >= 2
     if "ashbyhq.com" in host:
         return len(parts) >= 2 and parts[-1] != "jobs"
+    if "smartrecruiters.com" in host:
+        return len(parts) >= 2 and parts[0].lower() not in {"companies", "company"}
+    if "workable.com" in host:
+        return "j" in [part.lower() for part in parts] or len(parts) >= 3
+    if "icims.com" in host:
+        return "jobs" in [part.lower() for part in parts] and any(part.isdigit() for part in parts)
+    if "workdayjobs.com" in host or "myworkdayjobs.com" in host:
+        return "job" in [part.lower() for part in parts] and len(parts) >= 3
+    if "successfactors.com" in host or "sapsf.com" in host:
+        query = urlparse(url).query.lower()
+        return "career_job_req_id" in query or "jobreqid" in query or any(part.lower() == "job" for part in parts)
     return len(parts) >= 2
 
 

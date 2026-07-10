@@ -185,7 +185,19 @@ class JobSourceAgent:
         }
 
         provider = detect_provider(career_page_url)
-        if target_title and provider in {"google_careers", "meta_careers"}:
+        provider_first_matchers = {
+            "google_careers",
+            "meta_careers",
+            "greenhouse",
+            "lever",
+            "ashby",
+            "workable",
+            "smartrecruiters",
+            "icims",
+            "workday",
+            "successfactors",
+        }
+        if target_title and provider in provider_first_matchers:
             match, match_trace = JobOpeningMatcher(self.fetcher).match(
                 career_page_url,
                 target_title,
@@ -333,10 +345,14 @@ class JobSourceAgent:
             except FetchError as exc:
                 trace["candidate_fetch_errors"].append({"url": candidate.url, "error": str(exc)})
                 continue
+            actual_url = page.final_url or page.url
+            if self._looks_like_error_page(actual_url, page.html):
+                trace["candidate_fetch_errors"].append({"url": candidate.url, "error": f"error page: {actual_url}"})
+                continue
             if self._looks_like_career_page(candidate, page.html):
                 trace["selected"] = dataclass_to_dict(candidate)
                 trace["selected_page_source"] = page.source
-                return page.final_url or page.url
+                return actual_url
         return None
 
     def _sitemap_candidates(self, homepage_url: str) -> tuple[list[RawLink], dict]:
@@ -425,6 +441,21 @@ class JobSourceAgent:
         )
         generic_job_only = candidate.score < 120 and "career keyword 'jobs'" in " ".join(candidate.reasons)
         return not generic_job_only and any(signal in text for signal in career_signals)
+
+    def _looks_like_error_page(self, url: str, html: str) -> bool:
+        path = urlparse(url).path.lower()
+        if any(marker in path for marker in ("/404", "404/", "/error", "/errors", "/not-found")):
+            return True
+        text = html[:5000].lower()
+        return any(
+            marker in text
+            for marker in (
+                "404 not found",
+                "page not found",
+                "we can't find the page",
+                "the page you are looking for could not be found",
+            )
+        )
 
     def _brand_label_from_host(self, host: str) -> str | None:
         label = host.lower().split(":")[0].removeprefix("www.").split(".")[0]

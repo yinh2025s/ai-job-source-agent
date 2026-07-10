@@ -232,10 +232,11 @@ Career page finder
         v
 Job-list/opening finder
   - provider-aware search URLs for Google Careers and Meta Careers
+  - provider adapters for Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, and SuccessFactors-style systems
   - target-title matching from LinkedIn job cards
   - job-detail path scoring
   - multi-hop traversal from career page to ATS/listing page to job detail
-  - Lever/Greenhouse/Ashby-style ATS patterns
+  - provider-specific job-detail patterns
   - negative filters for privacy/blog/benefits pages
         |
         v
@@ -252,8 +253,10 @@ results.json + trace.json
 - Career-page discovery uses deterministic scoring before any expensive browser/LLM-style behavior.
 - Career-page discovery combines homepage links, common path probes, brand-specific join paths, and sitemap URLs.
 - When direct navigation fails, career-page discovery can fall back to search results while preserving full career/job paths.
-- Common ATS providers such as Lever and Greenhouse are recognized explicitly.
+- Common ATS providers such as Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, and SuccessFactors are recognized explicitly.
+- Provider-specific matchers build provider-appropriate search URLs and preserve stable job-board fallbacks when a concrete title match is not available.
 - Concrete opening selection is gated by the LinkedIn target title to avoid false-positive job URLs.
+- Error and 404 pages are rejected even if their URL or HTML contains career-like keywords.
 - The agent distinguishes listing pages, such as `/careers/jobs`, from concrete job-detail URLs.
 - Social/job aggregator links, static assets, and ATS embeds are filtered out as false positives.
 - Every decision is traceable through scored candidates and reasons.

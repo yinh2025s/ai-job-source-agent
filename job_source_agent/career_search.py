@@ -132,6 +132,8 @@ def _search_bonus(url: str, official_domain: str) -> int:
         score += 80
     if is_ats_url(url):
         score += 80
+    if any(marker in domain for marker in ("successfactors", "smartrecruiters", "icims", "workdayjobs")):
+        score += 60
     if domain.startswith(("careers.", "jobs.")):
         score += 55
     if any(part in path for part in ("/careers", "/career", "/jobs", "/join", "/openings")):
