@@ -1,0 +1,189 @@
+from __future__ import annotations
+
+from dataclasses import dataclass
+from urllib.parse import quote_plus, urlparse
+
+from .scoring import is_likely_job_detail, score_job_link
+from .web import FetchError, Fetcher, RawLink, domain_of, extract_links
+
+
+STOPWORDS = {
+    "a",
+    "an",
+    "and",
+    "at",
+    "for",
+    "i",
+    "ii",
+    "iii",
+    "in",
+    "of",
+    "the",
+    "to",
+}
+
+
+@dataclass
+class OpeningMatch:
+    url: str
+    title: str
+    score: int
+    provider: str
+    reasons: list[str]
+    job_list_page_url: str | None = None
+
+
+class JobOpeningMatcher:
+    def __init__(self, fetcher: Fetcher) -> None:
+        self.fetcher = fetcher
+
+    def match(
+        self,
+        job_list_url: str,
+        target_title: str | None,
+        target_location: str | None = None,
+    ) -> tuple[OpeningMatch | None, dict]:
+        trace = {
+            "job_list_url": job_list_url,
+            "target_title": target_title,
+            "target_location": target_location,
+            "provider": detect_provider(job_list_url),
+            "searched_urls": [],
+            "candidates": [],
+        }
+        if not target_title:
+            return None, trace
+
+        search_urls = build_provider_search_urls(job_list_url, target_title)
+        for search_url in search_urls:
+            trace["searched_urls"].append(search_url)
+            try:
+                page = self.fetcher.fetch(search_url)
+            except FetchError as exc:
+                trace.setdefault("errors", []).append({"url": search_url, "error": str(exc)})
+                continue
+
+            page_url = page.final_url or page.url
+            candidates = []
+            for link in extract_links(page):
+                scored = score_job_link(link, page_url)
+                title_score, title_reasons = score_title_match(link.text, target_title)
+                if title_score < 45:
+                    continue
+                total_score = scored.score + title_score
+                reasons = scored.reasons + title_reasons
+                if not is_likely_job_detail(scored) and title_score < 60:
+                    continue
+                if total_score < 70:
+                    continue
+                candidates.append(
+                    OpeningMatch(
+                        url=link.url,
+                        title=link.text,
+                        score=total_score,
+                        provider=trace["provider"],
+                        reasons=reasons,
+                        job_list_page_url=page_url,
+                    )
+                )
+
+            candidates.sort(key=lambda candidate: candidate.score, reverse=True)
+            trace["candidates"].extend(
+                [
+                    {
+                        "url": candidate.url,
+                        "title": candidate.title,
+                        "score": candidate.score,
+                        "reasons": candidate.reasons,
+                    }
+                    for candidate in candidates[:8]
+                ]
+            )
+            if candidates:
+                trace["selected"] = {
+                    "url": candidates[0].url,
+                    "title": candidates[0].title,
+                    "score": candidates[0].score,
+                    "reasons": candidates[0].reasons,
+                }
+                return candidates[0], trace
+
+        fallback_url = build_search_result_url(job_list_url, target_title)
+        if fallback_url:
+            trace["fallback_search_url"] = fallback_url
+        return None, trace
+
+
+def detect_provider(url: str) -> str:
+    host = domain_of(url)
+    if "google.com" in host:
+        return "google_careers"
+    if "metacareers.com" in host:
+        return "meta_careers"
+    if "greenhouse.io" in host:
+        return "greenhouse"
+    if "lever.co" in host:
+        return "lever"
+    if "ashbyhq.com" in host:
+        return "ashby"
+    if "workable.com" in host:
+        return "workable"
+    if "icims.com" in host:
+        return "icims"
+    if "workdayjobs.com" in host or "myworkdayjobs.com" in host:
+        return "workday"
+    return "generic"
+
+
+def build_provider_search_urls(job_list_url: str, target_title: str) -> list[str]:
+    query = quote_plus(target_title)
+    provider = detect_provider(job_list_url)
+    parsed = urlparse(job_list_url)
+    base = f"{parsed.scheme}://{parsed.netloc}{parsed.path.rstrip('/')}"
+    if provider == "google_careers":
+        return [
+            f"https://www.google.com/about/careers/applications/jobs/results/?q={query}",
+            job_list_url,
+        ]
+    if provider == "meta_careers":
+        return [
+            f"https://www.metacareers.com/jobs/?q={query}",
+            job_list_url,
+        ]
+    if provider in {"greenhouse", "lever", "ashby", "workable", "icims", "workday"}:
+        return [job_list_url]
+    return [job_list_url, f"{base}?q={query}", f"{base}?search={query}"]
+
+
+def build_search_result_url(job_list_url: str, target_title: str) -> str | None:
+    query = quote_plus(target_title)
+    provider = detect_provider(job_list_url)
+    if provider == "google_careers":
+        return f"https://www.google.com/about/careers/applications/jobs/results/?q={query}"
+    if provider == "meta_careers":
+        return f"https://www.metacareers.com/jobs/?q={query}"
+    return None
+
+
+def score_title_match(candidate_title: str, target_title: str) -> tuple[int, list[str]]:
+    candidate_tokens = _tokens(candidate_title)
+    target_tokens = _tokens(target_title)
+    if not candidate_tokens or not target_tokens:
+        return 0, []
+
+    overlap = candidate_tokens & target_tokens
+    recall = len(overlap) / len(target_tokens)
+    precision = len(overlap) / len(candidate_tokens)
+    score = int((recall * 70) + (precision * 30))
+    reasons = []
+    if overlap:
+        reasons.append(f"title token overlap: {', '.join(sorted(overlap))}")
+    if candidate_title.strip().lower() == target_title.strip().lower():
+        score += 50
+        reasons.append("exact title match")
+    return score, reasons
+
+
+def _tokens(text: str) -> set[str]:
+    normalized = "".join(char.lower() if char.isalnum() else " " for char in text)
+    return {token for token in normalized.split() if len(token) >= 2 and token not in STOPWORDS}

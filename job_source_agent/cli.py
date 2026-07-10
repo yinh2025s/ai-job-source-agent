@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .company_identity import CompanyIdentityResolver
 from .linkedin import load_company_inputs
 from .linkedin_discovery import LinkedInJobsDiscoverer, linkedin_postings_to_company_inputs
 from .models import dataclass_to_dict
@@ -73,8 +74,29 @@ def _load_companies(args: argparse.Namespace, fetcher: Fetcher):
             pages=args.linkedin_pages,
         )
         companies = linkedin_postings_to_company_inputs(postings)
-        resolver = CompanyWebsiteResolver(fetcher, overrides_path=args.website_overrides)
+        resolver = CompanyWebsiteResolver(fetcher, overrides_path=args.website_overrides, verify_limit=2)
+        identity_resolver = CompanyIdentityResolver()
         for company in companies:
+            identity, identity_trace = identity_resolver.resolve(
+                company.company_name,
+                company.company_website_url or None,
+                company.linkedin_company_url,
+            )
+            company.source_trace["identity_resolution"] = identity_trace
+            if identity:
+                company.hiring_entity_name = identity.hiring_entity_name
+                company.career_root_url = identity.career_root_url
+                if identity.official_website_url:
+                    company.company_website_url = identity.official_website_url
+                company.source = "linkedin_public_jobs"
+                company.source_trace["website_resolution"] = {
+                    "selected": {
+                        "url": company.company_website_url,
+                        "reason": "provided by company identity resolver",
+                    }
+                }
+                continue
+
             website_url, trace = resolver.resolve(company.company_name, company.linkedin_company_url)
             company.company_website_url = website_url or ""
             company.source = "linkedin_public_jobs"

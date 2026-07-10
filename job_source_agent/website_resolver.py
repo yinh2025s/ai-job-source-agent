@@ -14,6 +14,7 @@ SEARCH_ENDPOINT = "https://www.bing.com/search"
 
 BLOCKED_DOMAINS = {
     "linkedin.com",
+    "licdn.com",
     "facebook.com",
     "instagram.com",
     "x.com",
@@ -30,6 +31,9 @@ BLOCKED_DOMAINS = {
     "github.com",
     "bing.com",
     "microsoft.com",
+    "static.licdn.com",
+    "media.licdn.com",
+    "dms.licdn.com",
 }
 
 BLOCKED_DOMAIN_PARTS = (
@@ -50,9 +54,15 @@ class WebsiteCandidate:
 
 
 class CompanyWebsiteResolver:
-    def __init__(self, fetcher: Fetcher, overrides_path: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        fetcher: Fetcher,
+        overrides_path: str | Path | None = None,
+        verify_limit: int = 3,
+    ) -> None:
         self.fetcher = fetcher
         self.overrides = self._load_overrides(overrides_path)
+        self.verify_limit = verify_limit
 
     def resolve(self, company_name: str, linkedin_company_url: str | None = None) -> tuple[str | None, dict]:
         normalized_name = normalize_company_key(company_name)
@@ -67,7 +77,15 @@ class CompanyWebsiteResolver:
         linkedin_candidate_domains = {domain_of(url) for url in linkedin_candidates}
         if linkedin_candidates:
             linkedin_scored = sorted(
-                [self._score_candidate(candidate, company_name) for candidate in linkedin_candidates[:5]],
+                [
+                    self._score_candidate(
+                        candidate,
+                        company_name,
+                        linkedin_company_url=linkedin_company_url,
+                        verify=index < self.verify_limit,
+                    )
+                    for index, candidate in enumerate(linkedin_candidates[:5])
+                ],
                 key=lambda candidate: candidate.score,
                 reverse=True,
             )
@@ -75,7 +93,7 @@ class CompanyWebsiteResolver:
                 {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
                 for candidate in linkedin_scored[:5]
             ]
-            if linkedin_scored and linkedin_scored[0].score >= 10:
+            if linkedin_scored and linkedin_scored[0].score >= 25:
                 selected = linkedin_scored[0]
                 trace["selected"] = {
                     "url": selected.url,
@@ -86,9 +104,17 @@ class CompanyWebsiteResolver:
 
         search_candidates = self._search_candidates(company_name)
         guessed_candidates = self._guess_domain_candidates(company_name)
-        all_candidates = dedupe_urls(linkedin_candidates + search_candidates + guessed_candidates)
+        all_candidates = dedupe_urls(linkedin_candidates[:5] + search_candidates[:5] + guessed_candidates[:6])
         scored = sorted(
-            [self._score_candidate(candidate, company_name) for candidate in all_candidates],
+            [
+                self._score_candidate(
+                    candidate,
+                    company_name,
+                    linkedin_company_url=linkedin_company_url,
+                    verify=index < self.verify_limit,
+                )
+                for index, candidate in enumerate(all_candidates)
+            ],
             key=lambda candidate: candidate.score,
             reverse=True,
         )
@@ -167,7 +193,13 @@ class CompanyWebsiteResolver:
                 urls.append(f"https://{prefix}{base}.com")
         return urls
 
-    def _score_candidate(self, url: str, company_name: str) -> WebsiteCandidate:
+    def _score_candidate(
+        self,
+        url: str,
+        company_name: str,
+        linkedin_company_url: str | None = None,
+        verify: bool = True,
+    ) -> WebsiteCandidate:
         score = 0
         reasons: list[str] = []
         domain = domain_of(url)
@@ -181,6 +213,15 @@ class CompanyWebsiteResolver:
         if domain.endswith((".com", ".ai", ".io", ".co", ".org")):
             score += 10
             reasons.append("credible company TLD")
+
+        slug_tld_score = self._score_linkedin_slug_tld_hint(domain, company_tokens, linkedin_company_url)
+        if slug_tld_score:
+            score += slug_tld_score
+            reasons.append("LinkedIn company slug matches domain TLD")
+
+        if not verify:
+            reasons.append("domain-only score")
+            return WebsiteCandidate(url, score, reasons)
 
         try:
             page = self.fetcher.fetch(url)
@@ -204,6 +245,27 @@ class CompanyWebsiteResolver:
             reasons.append("company token missing from homepage")
 
         return WebsiteCandidate(page.final_url or page.url, score, reasons)
+
+    def _score_linkedin_slug_tld_hint(
+        self,
+        domain: str,
+        company_tokens: list[str],
+        linkedin_company_url: str | None,
+    ) -> int:
+        if not linkedin_company_url or not company_tokens:
+            return 0
+        path_parts = [part for part in urlparse(linkedin_company_url).path.split("/") if part]
+        if len(path_parts) < 2 or path_parts[0] != "company":
+            return 0
+        slug = re.sub(r"[^a-z0-9]", "", path_parts[1].lower())
+        compact_name = "".join(company_tokens)
+        domain_parts = domain.split(".")
+        if len(domain_parts) < 2:
+            return 0
+        domain_label, tld = domain_parts[-2], domain_parts[-1]
+        if domain_label == compact_name and slug == f"{compact_name}{tld}":
+            return 18
+        return 0
 
     def _load_overrides(self, path: str | Path | None) -> dict[str, str]:
         if not path:

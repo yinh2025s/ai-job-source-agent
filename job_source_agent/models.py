@@ -9,6 +9,8 @@ class CompanyInput:
     linkedin_job_url: str = ""
     company_name: str = ""
     company_website_url: str = ""
+    hiring_entity_name: str | None = None
+    career_root_url: str | None = None
     linkedin_html_path: str | None = None
     linkedin_company_url: str | None = None
     job_title: str | None = None
@@ -30,6 +32,8 @@ class LinkCandidate:
 class DiscoveryResult:
     company_name: str
     company_website_url: str
+    hiring_entity_name: str | None = None
+    career_root_url: str | None = None
     linkedin_job_url: str = ""
     linkedin_company_url: str | None = None
     linkedin_job_title: str | None = None
@@ -45,6 +49,8 @@ class DiscoveryResult:
         return {
             "company_name": self.company_name,
             "company_website_url": self.company_website_url,
+            "hiring_entity_name": self.hiring_entity_name,
+            "career_root_url": self.career_root_url,
             "linkedin_job_url": self.linkedin_job_url,
             "linkedin_company_url": self.linkedin_company_url,
             "linkedin_job_title": self.linkedin_job_title,

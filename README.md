@@ -1,12 +1,12 @@
 # AI Job Source Agent
 
-Take-home implementation for Part 2: discover companies hiring on LinkedIn, resolve their official websites, and navigate to their official career/job-list pages.
+Take-home implementation for Part 2: discover companies hiring on LinkedIn, resolve their official websites or hiring entities, and navigate to official career/job-list pages.
 
 The implementation is intentionally agentic but controlled: deterministic link extraction and scoring do the first pass, then the agent follows promising career/job-listing pages for a few hops. The pipeline keeps trace data for every navigation decision.
 
 The project supports two flows:
 
-- `--linkedin-keywords`: search public LinkedIn job results, extract hiring companies, resolve official websites from LinkedIn company pages/search/domain hints, and find official job-list pages.
+- `--linkedin-keywords`: search public LinkedIn job results, extract hiring companies, resolve official websites from LinkedIn company pages/search/domain hints, map brands to parent hiring systems when needed, and find official job-list pages.
 - `--input`: run the downstream website-to-careers pipeline from pre-extracted company records.
 
 ## What It Returns
@@ -18,6 +18,8 @@ For each input record:
   "company_name": "Aurora Data",
   "company_website_url": "https://aurora-data.example",
   "linkedin_job_url": "https://www.linkedin.com/jobs/view/aurora-data-ai-engineer",
+  "hiring_entity_name": null,
+  "career_root_url": null,
   "career_page_url": "https://jobs.lever.co/aurora-data",
   "job_list_page_url": "https://jobs.lever.co/aurora-data",
   "open_position_url": "https://jobs.lever.co/aurora-data/d9d64766-3d42-4ba9-94d4-f74cdaf20065",
@@ -71,30 +73,25 @@ python3 -m job_source_agent \
   --trace-output linkedin-trace.json
 ```
 
-Example live output from June 30, 2026:
+Example live output from July 10, 2026:
 
 ```text
-OK Rolls-Royce
-  linkedin job: Junior Machine Learning Engineer
-  website: https://www.rolls-royce.com/
-  career: https://www.rolls-royce.com/products-and-services/defence/submarines/careers-and-skills-in-rr-submarines.aspx
-  job list: https://www.rolls-royce.com/products-and-services/defence/submarines/careers-and-skills-in-rr-submarines.aspx
+OK Instagram
+  linkedin job: Product Manager
+  website: https://www.instagram.com/
+  career: https://www.metacareers.com/jobs/
+  job list: https://www.metacareers.com/jobs/?q=Product+Manager
   opening: None
-OK Google
-  linkedin job: Software Engineer, AI/ML, Google Research
-  website: https://www.google.com/
-  career: https://www.google.com/about/careers/applications/
-  job list: https://www.google.com/about/careers/applications/
+FAIL Tessera Labs
+  linkedin job: Product Manager, Intern
+  website: https://tesseralabs.ai
+  career: None
+  job list: None
   opening: None
-OK Nuro
-  linkedin job: Software Engineer, AI Platform - New Grad
-  website: https://www.nuro.ai
-  career: https://www.nuro.ai/careers
-  job list: https://www.nuro.ai/careers
-  opening: None
+  error: career_page_not_found
 ```
 
-Many modern career pages render the concrete job cards with JavaScript, so `open_position_url` may be `null` while `job_list_page_url` is still successful. The trace file records whether the agent reached an ATS page, a native careers page, or only the best official careers page.
+Many modern career pages render concrete job cards with JavaScript or do not expose a public official career page at all. In those cases, `open_position_url` may be `null` while `job_list_page_url` is still useful. If no official career page can be verified, the agent returns a structured failure instead of inventing a job URL.
 
 For JavaScript-heavy or bot-protected pages, install the optional browser module:
 
@@ -144,7 +141,19 @@ python3 -m job_source_agent \
   --trace-output live-trace.json
 ```
 
-On June 30, 2026, this successfully found live job-list/opening pages for Ekimetrics, PostHog, and Anthropic.
+On July 10, 2026, this successfully found live job-list/opening pages for Ekimetrics, PostHog, and Anthropic:
+
+```text
+OK Ekimetrics
+  career: https://www.ekimetrics.com/join-ekimetrics
+  job list: https://jobs.lever.co/ekimetrics
+OK PostHog
+  career: https://posthog.com/careers/jobs
+  opening: https://posthog.com/careers/ai-research-engineer
+OK Anthropic
+  career: https://www.anthropic.com/careers/jobs
+  opening: https://job-boards.greenhouse.io/anthropic/jobs/5271428008
+```
 
 ## Optional Saved LinkedIn HTML Input
 
@@ -174,8 +183,15 @@ Hiring company discovery
         v
 Official website resolver
   - LinkedIn company page website signals
+  - LinkedIn company slug TLD hints
   - optional overrides
   - search/domain fallback
+        |
+        v
+Company identity resolver
+  - brand-to-hiring-entity mapping
+  - Instagram/WhatsApp/Threads -> Meta Careers
+  - YouTube/Google -> Google Careers
         |
         v
 Company website fetcher
@@ -184,11 +200,15 @@ Company website fetcher
 Career page finder
   - homepage link extraction
   - common path probing
+  - brand-style join path probing, for example /join-{brand}
+  - sitemap and robots sitemap discovery
   - ATS domain detection
   - scored candidates with reasons
         |
         v
 Job-list/opening finder
+  - provider-aware search URLs for Google Careers and Meta Careers
+  - target-title matching from LinkedIn job cards
   - job-detail path scoring
   - multi-hop traversal from career page to ATS/listing page to job detail
   - Lever/Greenhouse/Ashby-style ATS patterns
@@ -202,9 +222,13 @@ results.json + trace.json
 
 - LinkedIn extraction is adapter-based because production LinkedIn crawling typically needs login/session handling or a third-party crawler API.
 - The LinkedIn public jobs mode discovers hiring companies directly from LinkedIn guest job-search cards.
+- Brand identity is resolved before website crawling so product brands can route to parent hiring systems.
 - Official website resolution prefers the LinkedIn company page's website signal before search/domain guessing.
+- LinkedIn company slugs can break domain ties, for example `tesseralabsai` favoring `tesseralabs.ai` over `tesseralabs.com`.
 - Career-page discovery uses deterministic scoring before any expensive browser/LLM-style behavior.
+- Career-page discovery combines homepage links, common path probes, brand-specific join paths, and sitemap URLs.
 - Common ATS providers such as Lever and Greenhouse are recognized explicitly.
+- Concrete opening selection is gated by the LinkedIn target title to avoid false-positive job URLs.
 - The agent distinguishes listing pages, such as `/careers/jobs`, from concrete job-detail URLs.
 - Social/job aggregator links, static assets, and ATS embeds are filtered out as false positives.
 - Every decision is traceable through scored candidates and reasons.

@@ -4,6 +4,7 @@ from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from .models import CompanyInput, DiscoveryResult, LinkCandidate, dataclass_to_dict
+from .opening_matcher import JobOpeningMatcher, detect_provider, score_title_match
 from .scoring import (
     is_ats_url,
     is_likely_job_detail,
@@ -48,6 +49,8 @@ class JobSourceAgent:
         result = DiscoveryResult(
             company_name=company.company_name,
             company_website_url=normalize_url(company.company_website_url),
+            hiring_entity_name=company.hiring_entity_name,
+            career_root_url=company.career_root_url,
             linkedin_job_url=company.linkedin_job_url,
             linkedin_company_url=company.linkedin_company_url,
             linkedin_job_title=company.job_title,
@@ -62,10 +65,24 @@ class JobSourceAgent:
             },
         )
         try:
-            career_url, career_trace = self.find_career_page(result.company_website_url)
+            if company.career_root_url:
+                career_url = normalize_url(company.career_root_url)
+                career_trace = {
+                    "homepage_url": result.company_website_url,
+                    "selected": {
+                        "url": career_url,
+                        "reason": "career root provided by company identity resolver",
+                    },
+                }
+            else:
+                career_url, career_trace = self.find_career_page(result.company_website_url)
             result.career_page_url = career_url
             result.trace["steps"].append({"name": "find_career_page", **career_trace})
-            opening_url, job_list_url, opening_trace = self.find_open_position(career_url)
+            opening_url, job_list_url, opening_trace = self.find_open_position(
+                career_url,
+                target_title=company.job_title,
+                target_location=company.job_location,
+            )
             result.open_position_url = opening_url
             result.job_list_page_url = job_list_url
             result.trace["steps"].append({"name": "find_open_position", **opening_trace})
@@ -123,7 +140,12 @@ class JobSourceAgent:
             trace=trace,
         )
 
-    def find_open_position(self, career_page_url: str) -> tuple[str | None, str | None, dict]:
+    def find_open_position(
+        self,
+        career_page_url: str,
+        target_title: str | None = None,
+        target_location: str | None = None,
+    ) -> tuple[str | None, str | None, dict]:
         if self._looks_like_job_detail_url(career_page_url):
             return career_page_url, career_page_url, {
                 "career_page_url": career_page_url,
@@ -139,7 +161,31 @@ class JobSourceAgent:
             "job_list_page_url": career_page_url,
             "pages_visited": [],
             "candidates": [],
+            "fetch_errors": [],
         }
+
+        provider = detect_provider(career_page_url)
+        if target_title and provider in {"google_careers", "meta_careers"}:
+            match, match_trace = JobOpeningMatcher(self.fetcher).match(
+                career_page_url,
+                target_title,
+                target_location,
+            )
+            trace["opening_matcher"] = match_trace
+            if match:
+                trace["selected"] = {
+                    "url": match.url,
+                    "title": match.title,
+                    "score": match.score,
+                    "provider": match.provider,
+                    "reasons": match.reasons,
+                }
+                return match.url, match.job_list_page_url or career_page_url, trace
+            if match_trace.get("fallback_search_url"):
+                trace["job_list_page_url"] = match_trace["fallback_search_url"]
+                trace["opening_error"] = "specific_opening_not_found"
+                return None, trace["job_list_page_url"], trace
+
         queue = [career_page_url]
         visited: set[str] = set()
         pages_checked = 0
@@ -152,7 +198,11 @@ class JobSourceAgent:
             visited.add(normalized_page_url)
             pages_checked += 1
 
-            page = self.fetcher.fetch(page_url)
+            try:
+                page = self.fetcher.fetch(page_url)
+            except FetchError as exc:
+                trace["fetch_errors"].append({"url": page_url, "error": str(exc)})
+                continue
             actual_page_url = page.final_url or page.url
             scored = sorted(
                 [score_job_link(link, actual_page_url) for link in extract_links(page)],
@@ -176,11 +226,19 @@ class JobSourceAgent:
                     continue
                 if not is_likely_job_detail(candidate):
                     continue
+                title_match = None
+                if target_title:
+                    title_score, title_reasons = score_title_match(candidate.text, target_title)
+                    title_match = {"score": title_score, "reasons": title_reasons}
+                    if title_score < 45:
+                        continue
                 try:
                     opened = self.fetcher.fetch(candidate.url)
                 except FetchError:
                     continue
                 trace["selected"] = dataclass_to_dict(candidate)
+                if title_match:
+                    trace["selected_title_match"] = title_match
                 trace["job_list_page_url"] = actual_page_url
                 trace["selected_page_source"] = opened.source
                 return opened.final_url or opened.url, actual_page_url, trace
@@ -189,16 +247,43 @@ class JobSourceAgent:
                 if is_likely_job_listing_page(candidate) and candidate.url.rstrip("/") not in visited:
                     queue.append(candidate.url)
 
+        match, match_trace = JobOpeningMatcher(self.fetcher).match(
+            trace["job_list_page_url"],
+            target_title,
+            target_location,
+        )
+        trace["opening_matcher"] = match_trace
+        if match:
+            trace["selected"] = {
+                "url": match.url,
+                "title": match.title,
+                "score": match.score,
+                "provider": match.provider,
+                "reasons": match.reasons,
+            }
+            return match.url, match.job_list_page_url or trace["job_list_page_url"], trace
+
         trace["opening_error"] = "open_position_not_found"
         return None, trace["job_list_page_url"], trace
 
     def _common_path_candidates(self, homepage_url: str) -> list[RawLink]:
         parsed = urlparse(homepage_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
-        return [
+        candidates = [
             RawLink(url=normalize_url(path, base), text=path.strip("/").replace("-", " "), source_url=homepage_url)
             for path in COMMON_CAREER_PATHS
         ]
+        brand_label = self._brand_label_from_host(parsed.netloc)
+        if brand_label:
+            for path in (f"/join-{brand_label}", f"/en/join-{brand_label}"):
+                candidates.append(
+                    RawLink(
+                        url=normalize_url(path, base),
+                        text=f"careers join us {brand_label.replace('-', ' ')}",
+                        source_url=homepage_url,
+                    )
+                )
+        return candidates
 
     def _sitemap_candidates(self, homepage_url: str) -> tuple[list[RawLink], dict]:
         parsed = urlparse(homepage_url)
@@ -235,7 +320,10 @@ class JobSourceAgent:
                 if lower_url.endswith(".xml") and len(seen_sitemaps) < 10:
                     pending_sitemaps.append(normalize_url(url))
                     continue
-                if any(token in lower_url for token in ("career", "careers", "jobs", "join-us", "join-our-team", "openings")):
+                if any(
+                    token in lower_url
+                    for token in ("career", "careers", "jobs", "join-us", "join-our-team", "join-", "openings")
+                ):
                     links.append(RawLink(url=normalize_url(url), text=urlparse(url).path, source_url=sitemap_url))
 
         trace["candidate_count"] = len(links)
@@ -266,7 +354,9 @@ class JobSourceAgent:
     def _looks_like_career_page(self, candidate: LinkCandidate, html: str) -> bool:
         if is_ats_url(candidate.url):
             return True
-        text = html[:20000].lower()
+        text = html[:200000].lower()
+        if self._has_ats_link(text):
+            return True
         career_signals = (
             "open roles",
             "open positions",
@@ -281,6 +371,24 @@ class JobSourceAgent:
         )
         generic_job_only = candidate.score < 120 and "career keyword 'jobs'" in " ".join(candidate.reasons)
         return not generic_job_only and any(signal in text for signal in career_signals)
+
+    def _brand_label_from_host(self, host: str) -> str | None:
+        label = host.lower().split(":")[0].removeprefix("www.").split(".")[0]
+        label = "".join(char if char.isalnum() else "-" for char in label).strip("-")
+        return label or None
+
+    def _has_ats_link(self, text: str) -> bool:
+        ats_markers = (
+            "jobs.lever.co",
+            "boards.greenhouse.io",
+            "job-boards.greenhouse.io",
+            "ashbyhq.com",
+            "apply.workable.com",
+            "smartrecruiters.com",
+            "myworkdayjobs.com",
+            "icims.com",
+        )
+        return any(marker in text for marker in ats_markers)
 
     def _looks_like_job_detail_url(self, url: str) -> bool:
         if not is_ats_url(url):

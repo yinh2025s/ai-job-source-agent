@@ -6,6 +6,9 @@ from html import unescape
 from pathlib import Path
 import gzip
 import re
+import signal
+import socket
+from contextlib import contextmanager
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
@@ -39,6 +42,24 @@ class Page:
 
 class FetchError(RuntimeError):
     pass
+
+
+@contextmanager
+def hard_timeout(seconds: float):
+    if not hasattr(signal, "SIGALRM"):
+        yield
+        return
+
+    def _handle_timeout(_signum, _frame):
+        raise TimeoutError(f"operation timed out after {seconds} seconds")
+
+    old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
+    signal.setitimer(signal.ITIMER_REAL, seconds)
+    try:
+        yield
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, old_handler)
 
 
 def normalize_url(url: str, base_url: str | None = None) -> str:
@@ -162,6 +183,7 @@ class Fetcher:
         return self._fetch_live(normalized)
 
     def _fetch_live(self, url: str) -> Page:
+        socket.setdefaulttimeout(self.timeout)
         request = Request(
             url,
             headers={
@@ -176,14 +198,15 @@ class Fetcher:
             },
         )
         try:
-            with urlopen(request, timeout=self.timeout) as response:
-                charset = response.headers.get_content_charset() or "utf-8"
-                raw = response.read()
-                if response.headers.get("Content-Encoding") == "gzip":
-                    raw = gzip.decompress(raw)
-                html = raw.decode(charset, errors="replace")
-                final_url = response.geturl()
-        except (HTTPError, URLError, TimeoutError) as exc:
+            with hard_timeout(self.timeout + 1):
+                with urlopen(request, timeout=self.timeout) as response:
+                    charset = response.headers.get_content_charset() or "utf-8"
+                    raw = response.read()
+                    if response.headers.get("Content-Encoding") == "gzip":
+                        raw = gzip.decompress(raw)
+                    html = raw.decode(charset, errors="replace")
+                    final_url = response.geturl()
+        except (HTTPError, URLError, TimeoutError, socket.timeout, OSError) as exc:
             raise FetchError(str(exc)) from exc
         return Page(url=url, html=html, final_url=final_url, source="live")
 
