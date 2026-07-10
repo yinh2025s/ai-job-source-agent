@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
+from html import unescape
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
 from .scoring import is_likely_job_detail, score_job_link
-from .web import FetchError, Fetcher, RawLink, domain_of, extract_links
+from .web import FetchError, Fetcher, RawLink, domain_of, extract_links, safe_normalize_url
 
 
 STOPWORDS = {
@@ -84,7 +86,8 @@ class JobOpeningMatcher:
 
             page_url = page.final_url or page.url
             candidates = []
-            for link in extract_links(page):
+            links = extract_links(page) + structured_job_links(page.html, page_url)
+            for link in dedupe_raw_links(links):
                 scored = score_job_link(link, page_url)
                 title_score, title_reasons = score_title_match(link.text, target_title)
                 if title_score < 45:
@@ -254,6 +257,10 @@ def build_provider_api_requests(job_list_url: str, target_title: str | None = No
     if provider == "smartrecruiters" and parts:
         company = parts[0]
         return [ProviderApiRequest(f"https://api.smartrecruiters.com/v1/companies/{company}/postings?limit=100")]
+    if provider == "ashby":
+        board = _ashby_board_name(job_list_url)
+        if board:
+            return [ProviderApiRequest(f"https://api.ashbyhq.com/posting-api/job-board/{board}")]
     if provider == "workday":
         workday_api_url = build_workday_api_url(job_list_url)
         if workday_api_url:
@@ -300,7 +307,193 @@ def provider_api_candidates(provider: str, body: str, job_list_url: str) -> list
             if title and url:
                 candidates.append((title, url))
         return candidates
+    if provider == "ashby":
+        candidates = []
+        for job in data.get("jobs", []):
+            title = str(job.get("title") or "")
+            url = _ashby_job_url(job, job_list_url)
+            if title and url:
+                candidates.append((title, url))
+        return candidates
     return []
+
+
+def structured_job_links(html: str, source_url: str) -> list[RawLink]:
+    links: list[RawLink] = []
+    for script_attrs, script_body in _script_blocks(html):
+        if "application/ld+json" not in script_attrs.lower():
+            continue
+        try:
+            data = json.loads(unescape(script_body.strip()))
+        except json.JSONDecodeError:
+            continue
+        for job in _walk_json_ld_jobs(data):
+            title = str(job.get("title") or job.get("name") or "").strip()
+            url = _json_ld_url(job)
+            normalized = safe_normalize_url(url, source_url) if url else None
+            if title and normalized:
+                links.append(RawLink(url=normalized, text=title, source_url=source_url))
+    for script_attrs, script_body in _script_blocks(html):
+        if not _looks_like_json_script(script_attrs, script_body):
+            continue
+        data = _parse_script_json(script_body)
+        if data is None:
+            continue
+        for title, url in _walk_structured_job_records(data, source_url):
+            links.append(RawLink(url=url, text=title, source_url=source_url))
+    return dedupe_raw_links(links)
+
+
+def _script_blocks(html: str) -> list[tuple[str, str]]:
+    return [
+        (attrs, unescape(body.strip()))
+        for attrs, body in re.findall(r"<script\b([^>]*)>(.*?)</script>", html, flags=re.I | re.S)
+        if body.strip()
+    ]
+
+
+def _looks_like_json_script(attrs: str, body: str) -> bool:
+    attrs_lower = attrs.lower()
+    body_stripped = body.strip()
+    return (
+        "application/json" in attrs_lower
+        or "application/ld+json" in attrs_lower
+        or body_stripped.startswith("{")
+        or body_stripped.startswith("[")
+    )
+
+
+def _parse_script_json(body: str):
+    text = body.strip()
+    if text.startswith("<![CDATA["):
+        text = text.removeprefix("<![CDATA[").removesuffix("]]>").strip()
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        return None
+
+
+def _walk_json_ld_jobs(value):
+    if isinstance(value, dict):
+        item_type = value.get("@type")
+        types = item_type if isinstance(item_type, list) else [item_type]
+        if any(str(kind).lower() == "jobposting" for kind in types):
+            yield value
+        for child in value.values():
+            yield from _walk_json_ld_jobs(child)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_json_ld_jobs(item)
+
+
+def _json_ld_url(job: dict) -> str:
+    raw_url = job.get("url") or job.get("sameAs")
+    if isinstance(raw_url, list):
+        raw_url = raw_url[0] if raw_url else ""
+    if isinstance(raw_url, dict):
+        raw_url = raw_url.get("@id") or raw_url.get("url") or ""
+    return str(raw_url or "")
+
+
+STRUCTURED_TITLE_FIELDS = ("title", "name", "jobTitle", "job_title", "text")
+STRUCTURED_URL_FIELDS = (
+    "url",
+    "absolute_url",
+    "absoluteUrl",
+    "hostedUrl",
+    "applyUrl",
+    "jobUrl",
+    "job_url",
+    "externalPath",
+    "detailUrl",
+    "link",
+)
+
+
+def _walk_structured_job_records(value, source_url: str):
+    if isinstance(value, dict):
+        title = _first_text_field(value, STRUCTURED_TITLE_FIELDS)
+        url = _structured_record_url(value, source_url, title)
+        if title and url and _looks_like_structured_job_record(value, url, source_url):
+            yield title, url
+        for child in value.values():
+            yield from _walk_structured_job_records(child, source_url)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_structured_job_records(item, source_url)
+
+
+def _first_text_field(record: dict, fields: tuple[str, ...]) -> str:
+    for field in fields:
+        value = record.get(field)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, int):
+            return str(value)
+    return ""
+
+
+def _structured_record_url(record: dict, source_url: str, title: str) -> str | None:
+    raw_url = _first_text_field(record, STRUCTURED_URL_FIELDS)
+    provider = detect_provider(source_url)
+    if raw_url:
+        normalized = safe_normalize_url(raw_url, source_url)
+        if normalized:
+            return normalized
+
+    if provider == "successfactors":
+        job_req_id = _first_text_field(record, ("career_job_req_id", "jobReqId", "job_req_id", "id"))
+        if job_req_id:
+            return add_query_params(source_url, {"career_ns": "job_listing", "career_job_req_id": job_req_id})
+
+    if provider == "icims":
+        job_id = _first_text_field(record, ("id", "jobId", "job_id", "jobNumber"))
+        if job_id and title:
+            return safe_normalize_url(f"/jobs/{job_id}/{_slugify_title(title)}/job", source_url)
+
+    if provider == "ashby":
+        job_id = _first_text_field(record, ("id", "jobId", "job_id"))
+        board = _ashby_board_name(source_url)
+        if job_id and board:
+            return f"https://jobs.ashbyhq.com/{board}/{job_id}"
+
+    if provider == "workable":
+        short_code = _first_text_field(record, ("shortcode", "shortCode", "code", "id"))
+        account = _workable_account_name(source_url)
+        if short_code and account:
+            return f"https://apply.workable.com/{account}/j/{short_code}/"
+
+    return None
+
+
+def _looks_like_structured_job_record(record: dict, url: str, source_url: str) -> bool:
+    keys = " ".join(str(key).lower() for key in record)
+    query = urlparse(url).query.lower()
+    candidate = score_job_link(RawLink(url=url, text="", source_url=source_url), source_url)
+    reason_text = " ".join(candidate.reasons)
+    return (
+        is_likely_job_detail(candidate)
+        or "ATS job detail pattern" in reason_text
+        or "career_job_req_id" in query
+        or "jobreqid" in query
+        or ("job" in keys and detect_provider(url) != "generic" and candidate.score >= 90)
+    )
+
+
+def _slugify_title(title: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
+
+
+def dedupe_raw_links(links: list[RawLink]) -> list[RawLink]:
+    seen: set[tuple[str, str]] = set()
+    deduped: list[RawLink] = []
+    for link in links:
+        key = (link.url.rstrip("/"), link.text.strip().lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(link)
+    return deduped
 
 
 def _smartrecruiters_job_url(job: dict, job_list_url: str) -> str:
@@ -318,6 +511,38 @@ def _smartrecruiters_job_url(job: dict, job_list_url: str) -> str:
     if not parts:
         return ""
     return f"https://jobs.smartrecruiters.com/{parts[0]}/{job_id}"
+
+
+def _ashby_board_name(job_list_url: str) -> str:
+    parsed = urlparse(job_list_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    host = parsed.netloc.lower()
+    if host == "jobs.ashbyhq.com" and parts:
+        return parts[0]
+    if host.endswith(".ashbyhq.com") and host not in {"api.ashbyhq.com", "jobs.ashbyhq.com"}:
+        return host.split(".", 1)[0]
+    return ""
+
+
+def _ashby_job_url(job: dict, job_list_url: str) -> str:
+    raw_url = str(job.get("jobUrl") or job.get("hostedUrl") or job.get("url") or "")
+    if raw_url:
+        normalized = safe_normalize_url(raw_url, job_list_url)
+        if normalized:
+            return normalized
+    job_id = str(job.get("id") or "")
+    board = _ashby_board_name(job_list_url)
+    if job_id and board:
+        return f"https://jobs.ashbyhq.com/{board}/{job_id}"
+    return ""
+
+
+def _workable_account_name(job_list_url: str) -> str:
+    parsed = urlparse(job_list_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    if parsed.netloc.lower() == "apply.workable.com" and parts:
+        return parts[0]
+    return ""
 
 
 def build_workday_api_url(job_list_url: str) -> str | None:

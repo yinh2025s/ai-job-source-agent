@@ -7,6 +7,7 @@ from job_source_agent.opening_matcher import (
     build_provider_search_urls,
     detect_provider,
     score_title_match,
+    structured_job_links,
 )
 from job_source_agent.web import Fetcher
 
@@ -87,6 +88,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://jobs.lever.co/apiacme": "https://jobs.lever.co/apiacme/abc123",
             "https://jobs.smartrecruiters.com/AcmeApi": "https://jobs.smartrecruiters.com/AcmeApi/743999111111111-data-analyst",
             "https://company.wd5.myworkdayjobs.com/en-US/acme": "https://company.wd5.myworkdayjobs.com/en-US/acme/job/New-York-NY/Data-Analyst_R123",
+            "https://jobs.ashbyhq.com/acme": "https://jobs.ashbyhq.com/acme/ashby-data-analyst",
         }
 
         for url, expected in cases.items():
@@ -102,11 +104,69 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://jobs.lever.co/apiacme": "https://api.lever.co/v0/postings/apiacme?mode=json",
             "https://jobs.smartrecruiters.com/AcmeApi": "https://api.smartrecruiters.com/v1/companies/AcmeApi/postings?limit=100",
             "https://company.wd5.myworkdayjobs.com/en-US/acme": "https://company.wd5.myworkdayjobs.com/wday/cxs/company/acme/jobs",
+            "https://jobs.ashbyhq.com/acme": "https://api.ashbyhq.com/posting-api/job-board/acme",
         }
 
         for url, expected in cases.items():
             with self.subTest(url=url):
                 self.assertIn(expected, build_provider_api_urls(url))
+
+    def test_structured_json_ld_job_links_are_extracted(self):
+        html = """
+        <script type="application/ld+json">
+          {"@type":"JobPosting","title":"Data Analyst","url":"/jobs/2345/data-analyst/job"}
+        </script>
+        """
+
+        links = structured_job_links(html, "https://careers-acme.icims.com/jobs/search")
+
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0].text, "Data Analyst")
+        self.assertEqual(links[0].url, "https://careers-acme.icims.com/jobs/2345/data-analyst/job")
+
+    def test_icims_json_ld_page_can_match_opening(self):
+        matcher = JobOpeningMatcher(
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
+        )
+
+        match, trace = matcher.match(
+            "https://careers-acme.icims.com/jobs/search-jsonld",
+            "Data Analyst",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertIn("/jobs/2345/data-analyst/job", match.url)
+        self.assertEqual(trace["provider"], "icims")
+
+    def test_embedded_json_job_links_are_extracted(self):
+        html = """
+        <script type="application/json">
+          {"jobs":[{"title":"Data Analyst","shortcode":"ABC123","location":"New York"}]}
+        </script>
+        """
+
+        links = structured_job_links(html, "https://apply.workable.com/acme")
+
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0].text, "Data Analyst")
+        self.assertEqual(links[0].url, "https://apply.workable.com/acme/j/ABC123/")
+
+    def test_embedded_json_pages_can_match_provider_openings(self):
+        matcher = JobOpeningMatcher(
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
+        )
+        cases = {
+            "https://apply.workable.com/acme": "https://apply.workable.com/acme/j/ABC123/",
+            "https://acme.successfactors.com/career-json": "career_job_req_id=987",
+            "https://careers-acme.icims.com/jobs/search-embedded": "/jobs/3456/data-analyst/job",
+        }
+
+        for url, expected_url_part in cases.items():
+            with self.subTest(url=url):
+                match, trace = matcher.match(url, "Data Analyst")
+                self.assertIsNotNone(match)
+                self.assertIn(expected_url_part, match.url)
+                self.assertEqual(trace["provider"], detect_provider(url))
 
 
 if __name__ == "__main__":

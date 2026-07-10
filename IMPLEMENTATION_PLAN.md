@@ -131,21 +131,25 @@
 | Lever | Structured API adapter | 使用 `api.lever.co/v0/postings/{company}` |
 | Greenhouse | Structured API adapter | 使用 `boards-api.greenhouse.io/v1/boards/{board}/jobs` |
 | SmartRecruiters | Structured API adapter | 使用 `api.smartrecruiters.com/v1/companies/{company}/postings` |
-| Ashby | URL/provider recognition | 目前主要依赖 HTML link extraction 和 title matching |
-| Workable | URL/provider recognition | 已有 query URL pattern，未做结构化 API |
-| iCIMS | URL/provider recognition | 已有 search query URL 和 job detail pattern，未做 API/JS extraction |
+| Ashby | Structured posting API adapter | 使用 `api.ashbyhq.com/posting-api/job-board/{board}` |
+| Workable | Structured page extraction | 支持 embedded JSON job records，并可还原 `apply.workable.com/{company}/j/{shortcode}/` |
+| iCIMS | Structured page extraction | 支持 JSON-LD / embedded JSON job records，并可还原 `/jobs/{id}/{slug}/job` |
 | Workday | Structured CXS API adapter | 已支持从 Workday board URL 构造 `/wday/cxs/{tenant}/{site}/jobs` 并用 title payload 搜索 |
-| SuccessFactors | URL/provider recognition | 已有 query URL 和 job detail pattern，未做完整 search/list API |
+| SuccessFactors | Structured page extraction | 支持 embedded JSON job records 和 `jobReqId` -> detail URL 还原 |
 
 已验证的离线 fixtures：
 
 - Workday CXS API response and job detail
 - iCIMS job detail
+- iCIMS JSON-LD and embedded JSON job records
 - SmartRecruiters job detail
 - SuccessFactors job detail
+- SuccessFactors embedded JSON job records
 - Greenhouse structured API
 - Lever structured API
 - SmartRecruiters structured API
+- Ashby structured API
+- Workable embedded JSON job records
 
 ### 7. Batch Evaluation
 
@@ -188,20 +192,20 @@
 
 当前测试数量：
 
-- 29 unit tests passing
+- 33 unit tests passing
 
 ## 当前主要短板
 
 ### 1. Provider Adapter Still Incomplete
 
-虽然已经开始做 provider-specific adapters，但只有 Greenhouse、Lever、SmartRecruiters 进入结构化 API 阶段。
+虽然已经开始做 provider-specific adapters，但仍有一部分 ATS 只是结构化页面抽取，还没有完成稳定 live search/list API。
 
 仍需系统补齐：
 
 - SuccessFactors search/list extraction
-- iCIMS hosted search extraction
-- Workable API / embedded JSON extraction
-- Ashby posting API / embedded JSON extraction
+- iCIMS hosted search API / pagination extraction
+- Workable public API research / hardening
+- Ashby embedded JSON fallback
 
 ### 2. Browser Rendering Not Integrated Into Batch Flow
 
@@ -286,25 +290,40 @@
 
 #### 1.2 iCIMS Adapter
 
+当前状态：
+
+- 已支持 `careers-*.icims.com/jobs/search`
+- 已支持 `searchKeyword`
+- 已支持 JSON-LD `JobPosting`
+- 已支持 embedded JSON job record
+- 可从 `id + title` 保守还原 `/jobs/{id}/{slug}/job`
+- 已识别 `/jobs/{id}/{slug}/job` 详情页
+
 目标：
 
-- 支持 `careers-*.icims.com/jobs/search`
-- 支持 `searchKeyword`
-- 解析 job card / detail URL
-- 识别 `/jobs/{id}/{slug}/job` 详情页
+- 增强 hosted search pagination
+- 覆盖更多 iCIMS script payload 变体
+- 做 live smoke，验证真实站点返回稳定 job list
 
 验收标准：
 
-- 离线 fixture 覆盖 search page + detail page
+- 离线 fixture 覆盖 search page + detail page + JSON-LD + embedded JSON
 - live smoke 能返回 iCIMS job list
 
 #### 1.3 SuccessFactors Adapter
 
+当前状态：
+
+- 已支持 keyword query URL
+- 已识别 `career_job_req_id` / `jobReqId`
+- 已支持 embedded JSON job record
+- 可从 `jobReqId` 保守还原 detail URL
+
 目标：
 
 - 支持 `successfactors.com`, `sapsf.com`
-- 识别 `career_job_req_id` / `jobReqId`
-- 支持 keyword query URL
+- 增强 list/search API 或 AJAX payload extraction
+- 覆盖更多 SuccessFactors URL 变体
 - 解析 list/detail page
 
 验收标准：
@@ -314,9 +333,15 @@
 
 #### 1.4 Ashby Adapter
 
+当前状态：
+
+- 已支持从 Ashby board URL 构造 `api.ashbyhq.com/posting-api/job-board/{board}`
+- 已解析 `jobs.title` 和 `jobs.jobUrl`
+- 已用离线 fixture 验证 API result -> concrete job URL
+
 目标：
 
-- 支持 Ashby board API 或 embedded JSON
+- 补 Ashby embedded JSON fallback
 - 从 board page 抽取 title / department / location / URL
 - title match 后返回具体 opening
 
@@ -327,10 +352,17 @@
 
 #### 1.5 Workable Adapter
 
+当前状态：
+
+- 已支持 Workable query URL pattern
+- 已支持 embedded JSON job record
+- 可从 `shortcode` 保守还原 `apply.workable.com/{company}/j/{shortcode}/`
+
 目标：
 
 - 支持 `apply.workable.com/{company}`
-- 支持 query URL / embedded posting JSON
+- 增强 query URL / embedded posting JSON
+- 研究并接入稳定 public API，如可用
 - 识别 detail URL
 
 验收标准：
@@ -422,8 +454,8 @@
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
 - provider-specific ATS adapter 层已经建立
-- Greenhouse、Lever、SmartRecruiters 已接 structured API
-- Workday、iCIMS、SuccessFactors 等 enterprise ATS 已有识别和初步匹配，但还需要补完整 adapter
+- Greenhouse、Lever、SmartRecruiters、Workday、Ashby 已接 structured API
+- iCIMS、SuccessFactors、Workable 已加入 structured page / embedded JSON extraction，但还需要更多真实站点 live hardening
 - batch evaluator 和 traceability 已经有雏形
 
 最诚实的当前状态：
