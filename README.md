@@ -102,7 +102,7 @@ pip install -e ".[browser]"
 playwright install chromium
 ```
 
-Then run with browser rendering:
+Then run with smart browser fallback. Static HTML is tried first; Playwright is used only when the page looks like a JavaScript shell or the static request fails:
 
 ```bash
 python3 -m job_source_agent \
@@ -110,9 +110,12 @@ python3 -m job_source_agent \
   --linkedin-location "United States" \
   --limit 3 \
   --render-js \
+  --render-budget 3 \
   --output linkedin-results.json \
   --trace-output linkedin-trace.json
 ```
+
+For debugging, `--render-js-always` forces every live HTML page through Playwright.
 
 ## Run Against Live Websites
 
@@ -159,6 +162,25 @@ OK Anthropic
 
 ## Batch Live Evaluation
 
+Before running noisy live tests, run the fixed offline benchmark. It verifies the provider adapter set against deterministic fixtures and writes a funnel summary:
+
+```bash
+python3 scripts/benchmark_eval.py \
+  --output /tmp/benchmark-results.json \
+  --trace-output /tmp/benchmark-trace.json \
+  --summary-output /tmp/benchmark-summary.json
+```
+
+Expected summary:
+
+```text
+benchmark summary:
+  total: 10
+  success: 10
+  with_job_list: 10
+  with_opening: 10
+```
+
 For larger live checks, use the checkpointing evaluator instead of one long CLI run. It writes results after every company, so a slow or blocked website does not erase earlier progress:
 
 ```bash
@@ -172,10 +194,15 @@ python3 scripts/live_batch_eval.py \
   --verify-limit 0 \
   --max-career-candidates 5 \
   --max-job-pages 2 \
+  --render-js \
+  --render-budget 2 \
   --skip-sitemap \
   --output /tmp/product10-fast-results.json \
-  --trace-output /tmp/product10-fast-trace.json
+  --trace-output /tmp/product10-fast-trace.json \
+  --summary-output /tmp/product10-fast-summary.json
 ```
+
+If the optional browser dependency is not installed, omit `--render-js` and `--render-budget`.
 
 On July 10, 2026, a mixed fast batch across Product Manager, AI Engineer, and Data Analyst returned 8 official job-list successes out of 27 unique companies. Successes included Instagram, ParetoHealth, Snap, Notion, Netflix, Lemonade, and Stripe. The remaining failures were structured as `career_page_not_found`, with the weakest coverage on random small-company AI Engineer results.
 

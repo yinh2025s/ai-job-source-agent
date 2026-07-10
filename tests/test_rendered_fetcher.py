@@ -1,0 +1,80 @@
+import unittest
+
+from job_source_agent.rendered_fetcher import SmartRenderedFetcher
+from job_source_agent.web import FetchError, Page
+
+
+class FakeSmartRenderedFetcher(SmartRenderedFetcher):
+    def __init__(self, static_page=None, rendered_page=None, static_error=None, **kwargs):
+        super().__init__(**kwargs)
+        self.static_page = static_page
+        self.rendered_page = rendered_page or Page(
+            url="https://example.com",
+            html="<html><body><a href='/careers'>Careers</a></body></html>",
+            final_url="https://example.com",
+            source="browser",
+        )
+        self.static_error = static_error
+
+    def _static_live(self, url, data=None, headers=None):
+        if self.static_error:
+            raise self.static_error
+        return self.static_page
+
+    def _render_live(self, url):
+        self.render_attempts += 1
+        return self.rendered_page
+
+
+class SmartRenderedFetcherTests(unittest.TestCase):
+    def test_static_html_is_used_when_page_has_content(self):
+        static_page = Page(
+            url="https://example.com",
+            html="<html><body><p>We are hiring for open roles across engineering and product.</p></body></html>",
+            final_url="https://example.com",
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(static_page=static_page, render_budget=1)
+
+        page = fetcher._fetch_live("https://example.com")
+
+        self.assertEqual(page.source, "live")
+        self.assertEqual(fetcher.render_attempts, 0)
+
+    def test_js_shell_uses_browser_budget(self):
+        static_page = Page(
+            url="https://example.com",
+            html='<html><body><div id="root"></div><script src="/app.js"></script></body></html>',
+            final_url="https://example.com",
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(static_page=static_page, render_budget=1)
+
+        page = fetcher._fetch_live("https://example.com")
+
+        self.assertEqual(page.source, "browser_after_static_shell")
+        self.assertEqual(fetcher.render_attempts, 1)
+
+    def test_static_error_can_fall_back_to_browser(self):
+        fetcher = FakeSmartRenderedFetcher(
+            static_error=FetchError("timeout"),
+            render_budget=1,
+        )
+
+        page = fetcher._fetch_live("https://example.com")
+
+        self.assertTrue(page.source.startswith("browser_after_static_error"))
+        self.assertEqual(fetcher.render_attempts, 1)
+
+    def test_render_budget_is_respected(self):
+        fetcher = FakeSmartRenderedFetcher(
+            static_error=FetchError("timeout"),
+            render_budget=0,
+        )
+
+        with self.assertRaises(FetchError):
+            fetcher._fetch_live("https://example.com")
+
+
+if __name__ == "__main__":
+    unittest.main()

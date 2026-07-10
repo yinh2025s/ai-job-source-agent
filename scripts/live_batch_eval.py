@@ -5,18 +5,19 @@ import json
 import sys
 import time
 import traceback
-from collections import Counter
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.company_identity import CompanyIdentityResolver
+from job_source_agent.evaluation import summarize_results
 from job_source_agent.linkedin_discovery import (
     LinkedInJobsDiscoverer,
     linkedin_postings_to_company_inputs,
 )
 from job_source_agent.models import CompanyInput, DiscoveryResult, dataclass_to_dict
 from job_source_agent.pipeline import JobSourceAgent
+from job_source_agent.rendered_fetcher import SmartRenderedFetcher
 from job_source_agent.web import Fetcher
 from job_source_agent.website_resolver import CompanyWebsiteResolver
 
@@ -33,8 +34,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-career-candidates", type=int, default=6)
     parser.add_argument("--max-job-pages", type=int, default=3)
     parser.add_argument("--skip-sitemap", action="store_true")
+    parser.add_argument("--render-js", action="store_true", help="Use smart browser fallback for company pages.")
+    parser.add_argument("--render-budget", type=int, default=2, help="Browser-rendered pages allowed per company.")
     parser.add_argument("--output", default="/tmp/live-batch-results.json")
     parser.add_argument("--trace-output", default="/tmp/live-batch-trace.json")
+    parser.add_argument("--summary-output", default="/tmp/live-batch-summary.json")
     return parser
 
 
@@ -51,6 +55,7 @@ def main() -> None:
 
     output_path = Path(args.output)
     trace_path = Path(args.trace_output)
+    summary_path = Path(args.summary_output)
     results = []
     traces = []
     started = time.time()
@@ -71,6 +76,10 @@ def main() -> None:
         traces.append(dataclass_to_dict(result.trace_record()))
         output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
         trace_path.write_text(json.dumps(traces, indent=2), encoding="utf-8")
+        summary_path.write_text(
+            json.dumps(summarize_results(results, elapsed_sec=round(time.time() - started, 1)), indent=2),
+            encoding="utf-8",
+        )
 
         print(
             f"[{index:02d}/{len(companies):02d}] "
@@ -83,13 +92,16 @@ def main() -> None:
             flush=True,
         )
 
-    print_summary(results, round(time.time() - started, 1))
+    summary = summarize_results(results, elapsed_sec=round(time.time() - started, 1))
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print_summary(summary)
     print(f"results: {output_path}", flush=True)
     print(f"trace: {trace_path}", flush=True)
+    print(f"summary: {summary_path}", flush=True)
 
 
 def run_company(company: CompanyInput, args: argparse.Namespace):
-    fetcher = Fetcher(timeout=args.fetch_timeout)
+    fetcher = build_company_fetcher(args)
     identity_resolver = CompanyIdentityResolver()
     website_resolver = CompanyWebsiteResolver(fetcher, verify_limit=args.verify_limit)
 
@@ -150,6 +162,12 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
     ).discover(company)
 
 
+def build_company_fetcher(args: argparse.Namespace):
+    if args.render_js:
+        return SmartRenderedFetcher(timeout=args.fetch_timeout, render_budget=args.render_budget)
+    return Fetcher(timeout=args.fetch_timeout)
+
+
 def failure_result(company: CompanyInput, error: str, detail: str | None = None) -> DiscoveryResult:
     return DiscoveryResult(
         company_name=company.company_name,
@@ -169,19 +187,16 @@ def failure_result(company: CompanyInput, error: str, detail: str | None = None)
     )
 
 
-def print_summary(results: list[dict], elapsed: float) -> None:
-    total = len(results)
-    success = sum(1 for result in results if result.get("status") == "success")
-    with_job_list = sum(1 for result in results if result.get("job_list_page_url"))
-    with_opening = sum(1 for result in results if result.get("open_position_url"))
-    errors = Counter(result.get("error") or "none" for result in results)
+def print_summary(summary: dict) -> None:
     print("summary:", flush=True)
-    print(f"  total: {total}", flush=True)
-    print(f"  success: {success}", flush=True)
-    print(f"  with_job_list: {with_job_list}", flush=True)
-    print(f"  with_opening: {with_opening}", flush=True)
-    print(f"  elapsed_sec: {elapsed}", flush=True)
-    print(f"  errors: {dict(errors)}", flush=True)
+    print(f"  total: {summary['total']}", flush=True)
+    print(f"  success: {summary['success']}", flush=True)
+    print(f"  with_job_list: {summary['with_job_list']}", flush=True)
+    print(f"  with_opening: {summary['with_opening']}", flush=True)
+    print(f"  elapsed_sec: {summary.get('elapsed_sec')}", flush=True)
+    print(f"  rates: {summary['rates']}", flush=True)
+    print(f"  errors: {summary['error_counts']}", flush=True)
+    print(f"  providers: {summary['provider_counts']}", flush=True)
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from .linkedin import load_company_inputs
 from .linkedin_discovery import LinkedInJobsDiscoverer, linkedin_postings_to_company_inputs
 from .models import dataclass_to_dict
 from .pipeline import JobSourceAgent
-from .rendered_fetcher import RenderedFetcher
+from .rendered_fetcher import RenderedFetcher, SmartRenderedFetcher
 from .web import Fetcher
 from .website_resolver import CompanyWebsiteResolver
 
@@ -25,7 +25,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trace-output", default="trace.json", help="Path for detailed trace JSON.")
     parser.add_argument("--fixtures-dir", help="Optional offline fixture directory for deterministic demos.")
     parser.add_argument("--offline", action="store_true", help="Fail instead of using the live network.")
-    parser.add_argument("--render-js", action="store_true", help="Use optional Playwright browser rendering.")
+    parser.add_argument("--render-js", action="store_true", help="Use optional Playwright browser fallback.")
+    parser.add_argument(
+        "--render-js-always",
+        action="store_true",
+        help="Render every live HTML page through Playwright instead of using smart fallback.",
+    )
+    parser.add_argument("--render-budget", type=int, default=3, help="Maximum browser-rendered pages per run.")
     parser.add_argument("--fetch-timeout", type=float, default=8, help="Per-page fetch timeout in seconds.")
     parser.add_argument("--limit", type=int, help="Optional limit for quick demo runs.")
     return parser
@@ -33,8 +39,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    fetcher_cls = RenderedFetcher if args.render_js else Fetcher
-    fetcher = fetcher_cls(fixtures_dir=args.fixtures_dir, offline=args.offline, timeout=args.fetch_timeout)
+    if args.render_js_always:
+        fetcher = RenderedFetcher(fixtures_dir=args.fixtures_dir, offline=args.offline, timeout=args.fetch_timeout)
+    elif args.render_js:
+        fetcher = SmartRenderedFetcher(
+            fixtures_dir=args.fixtures_dir,
+            offline=args.offline,
+            timeout=args.fetch_timeout,
+            render_budget=args.render_budget,
+        )
+    else:
+        fetcher = Fetcher(fixtures_dir=args.fixtures_dir, offline=args.offline, timeout=args.fetch_timeout)
     companies = _load_companies(args, fetcher)
     if args.limit:
         companies = companies[: args.limit]

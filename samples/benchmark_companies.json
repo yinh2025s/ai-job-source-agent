@@ -1,0 +1,62 @@
+[
+  {
+    "company_name": "Acme Greenhouse",
+    "company_website_url": "https://boards.greenhouse.io/acme",
+    "career_root_url": "https://boards.greenhouse.io/acme",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Lever",
+    "company_website_url": "https://jobs.lever.co/apiacme",
+    "career_root_url": "https://jobs.lever.co/apiacme",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme SmartRecruiters",
+    "company_website_url": "https://jobs.smartrecruiters.com/AcmeApi",
+    "career_root_url": "https://jobs.smartrecruiters.com/AcmeApi",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Workday",
+    "company_website_url": "https://company.wd5.myworkdayjobs.com",
+    "career_root_url": "https://company.wd5.myworkdayjobs.com/en-US/acme",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Ashby",
+    "company_website_url": "https://jobs.ashbyhq.com/acme",
+    "career_root_url": "https://jobs.ashbyhq.com/acme",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme iCIMS JSON-LD",
+    "company_website_url": "https://careers-acme.icims.com",
+    "career_root_url": "https://careers-acme.icims.com/jobs/search-jsonld",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme iCIMS Embedded",
+    "company_website_url": "https://careers-acme.icims.com",
+    "career_root_url": "https://careers-acme.icims.com/jobs/search-embedded",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme SuccessFactors",
+    "company_website_url": "https://acme.successfactors.com",
+    "career_root_url": "https://acme.successfactors.com/career-json",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Workable",
+    "company_website_url": "https://apply.workable.com/acme",
+    "career_root_url": "https://apply.workable.com/acme",
+    "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Google",
+    "company_website_url": "https://www.google.com",
+    "career_root_url": "https://www.google.com/about/careers/applications/",
+    "job_title": "Product Manager, Ads"
+  }
+]

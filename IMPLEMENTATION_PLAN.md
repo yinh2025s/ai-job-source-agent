@@ -156,7 +156,10 @@
 已实现：
 
 - `scripts/live_batch_eval.py`
+- `scripts/benchmark_eval.py`
+- 固定离线 benchmark：`samples/benchmark_companies.json`
 - 每家公司处理后 checkpoint 写结果
+- 输出 `summary.json`，包含 funnel rates、provider distribution、failure stages
 - 支持 fast mode：
   - `--skip-sitemap`
   - `--fetch-timeout`
@@ -192,7 +195,7 @@
 
 当前测试数量：
 
-- 33 unit tests passing
+- 39 unit tests passing
 
 ## 当前主要短板
 
@@ -207,14 +210,21 @@
 - Workable public API research / hardening
 - Ashby embedded JSON fallback
 
-### 2. Browser Rendering Not Integrated Into Batch Flow
+### 2. Browser Rendering Needs Live Hardening
 
-已有 `RenderedFetcher`，但还没有作为 smart fallback 自动接入：
+已有 `RenderedFetcher` 和 `SmartRenderedFetcher`，并已接入 CLI / live batch runner：
 
-- 静态 fetch 失败时自动 render
-- 搜索结果中 provider page 为空时 render
-- JS-heavy career page render 后再抽链接
-- render budget / screenshot trace
+- 静态 fetch 优先
+- 静态 fetch 失败时可自动 render
+- 页面明显是 JS shell 时可自动 render
+- 支持 per-run / per-company render budget
+- trace 中可看到 browser source
+
+仍需补：
+
+- 搜索结果中 provider page 为空时更精确地触发 render
+- JS-heavy career page render 后做截图/HTML snapshot trace
+- live batch 中验证 render budget 不会拖垮吞吐
 
 ### 3. Search Fallback Needs Better Sources
 
@@ -372,12 +382,18 @@
 
 ### Phase 2: Browser Fallback
 
+当前状态：
+
+- 已实现 `SmartRenderedFetcher`
+- CLI 支持 `--render-js` smart fallback、`--render-budget`、`--render-js-always`
+- live batch runner 支持 `--render-js` 和 per-company `--render-budget`
+- 单测覆盖静态优先、JS shell fallback、静态失败 fallback、budget guard
+
 目标：
 
-- 将 `RenderedFetcher` 作为 fallback 接入 pipeline
-- 仅在静态 fetch 失败或页面明显 JS-heavy 时启用
-- 为每家公司设置 render budget
+- 继续优化 render 触发条件
 - trace 中记录 `source=browser`
+- 增加 screenshot / HTML snapshot trace
 
 验收标准：
 
@@ -411,6 +427,13 @@
 
 ### Phase 4: Evaluation And Reporting
 
+当前状态：
+
+- 已建立固定离线 benchmark set
+- 覆盖 Greenhouse、Lever、SmartRecruiters、Workday、Ashby、iCIMS、SuccessFactors、Workable、Google Careers
+- `scripts/benchmark_eval.py` 可输出 results / trace / summary
+- `scripts/live_batch_eval.py` 已支持持续写入 summary checkpoint
+
 目标：
 
 - 建立固定 live benchmark set
@@ -443,8 +466,8 @@
 4. Ashby adapter
 5. Workable adapter
 6. Browser fallback
-7. Safe parallel batch runner
-8. Fixed benchmark report
+7. Fixed benchmark report
+8. Safe parallel batch runner
 
 ## 当前可汇报说法
 
@@ -456,8 +479,9 @@
 - provider-specific ATS adapter 层已经建立
 - Greenhouse、Lever、SmartRecruiters、Workday、Ashby 已接 structured API
 - iCIMS、SuccessFactors、Workable 已加入 structured page / embedded JSON extraction，但还需要更多真实站点 live hardening
-- batch evaluator 和 traceability 已经有雏形
+- browser fallback 已经从全量渲染升级为 smart fallback + render budget
+- batch evaluator 已经能输出 results / trace / summary，固定离线 benchmark 可作为回归测试
 
 最诚实的当前状态：
 
-> 架构方向正确，关键模块已经搭起来，部分 ATS 已进入结构化 API 阶段；但距离稳定产品还需要继续补齐 enterprise ATS adapters、browser rendering fallback 和可靠 batch evaluation。
+> 架构方向正确，关键模块已经搭起来，多个 ATS 已进入结构化 API/structured extraction 阶段；现在重点从“能跑”转向“稳定产品化”：继续做真实站点 live hardening、browser fallback trace、以及可靠 batch evaluation。
