@@ -48,12 +48,14 @@ class JobSourceAgent:
         max_job_pages: int = 8,
         enable_sitemap_discovery: bool = True,
         enable_career_search: bool = True,
+        career_search_timeout: float | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.max_candidates = max_candidates
         self.max_job_pages = max_job_pages
         self.enable_sitemap_discovery = enable_sitemap_discovery
         self.enable_career_search = enable_career_search
+        self.career_search_timeout = career_search_timeout
 
     def discover(self, company: CompanyInput) -> DiscoveryResult:
         result = DiscoveryResult(
@@ -142,7 +144,7 @@ class JobSourceAgent:
             return selected_url, trace
 
         if self.enable_career_search and company_name:
-            search_result = CareerSearchResolver(self.fetcher).search(company_name, homepage_url)
+            search_result = self._search_career_candidates(company_name, homepage_url)
             trace["search_discovery"] = search_result.trace
             selected_url = self._select_verified_career_candidate(search_result.candidates, trace)
             if selected_url:
@@ -311,6 +313,16 @@ class JobSourceAgent:
                 )
             )
         return candidates
+
+    def _search_career_candidates(self, company_name: str, homepage_url: str):
+        original_timeout = getattr(self.fetcher, "timeout", None)
+        if self.career_search_timeout and original_timeout and self.career_search_timeout > original_timeout:
+            self.fetcher.timeout = self.career_search_timeout
+        try:
+            return CareerSearchResolver(self.fetcher).search(company_name, homepage_url)
+        finally:
+            if original_timeout is not None:
+                self.fetcher.timeout = original_timeout
 
     def _select_verified_career_candidate(self, candidates: list[LinkCandidate], trace: dict) -> str | None:
         for candidate in candidates[: self.max_candidates]:

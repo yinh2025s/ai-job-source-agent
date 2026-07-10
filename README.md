@@ -166,6 +166,7 @@ python3 scripts/live_batch_eval.py \
   --limit 10 \
   --linkedin-pages 1 \
   --fetch-timeout 2 \
+  --career-search-timeout 7 \
   --verify-limit 0 \
   --max-career-candidates 5 \
   --max-job-pages 2 \
@@ -174,7 +175,7 @@ python3 scripts/live_batch_eval.py \
   --trace-output /tmp/product10-fast-trace.json
 ```
 
-On July 10, 2026, a fast Product Manager batch returned 4 successes out of 8 unique companies. Instagram, Snap, Notion, and Netflix reached official job-list pages; Notion also resolved a concrete Ashby opening. The remaining failures were structured as `career_page_not_found`.
+On July 10, 2026, a mixed fast batch across Product Manager, AI Engineer, and Data Analyst returned 8 official job-list successes out of 27 unique companies. Successes included Instagram, ParetoHealth, Snap, Notion, Netflix, Lemonade, and Stripe. The remaining failures were structured as `career_page_not_found`, with the weakest coverage on random small-company AI Engineer results.
 
 ## Optional Saved LinkedIn HTML Input
 

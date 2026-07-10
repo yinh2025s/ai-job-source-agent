@@ -28,6 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--linkedin-pages", type=int, default=3)
     parser.add_argument("--fetch-timeout", type=float, default=3)
+    parser.add_argument("--career-search-timeout", type=float, default=6)
     parser.add_argument("--verify-limit", type=int, default=0)
     parser.add_argument("--max-career-candidates", type=int, default=6)
     parser.add_argument("--max-job-pages", type=int, default=3)
@@ -123,6 +124,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             max_candidates=args.max_career_candidates,
             max_job_pages=args.max_job_pages,
             enable_sitemap_discovery=not args.skip_sitemap,
+            career_search_timeout=args.career_search_timeout,
         ).discover(
             CompanyInput(
                 company_name=company.company_name,
@@ -144,6 +146,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         max_candidates=args.max_career_candidates,
         max_job_pages=args.max_job_pages,
         enable_sitemap_discovery=not args.skip_sitemap,
+        career_search_timeout=args.career_search_timeout,
     ).discover(company)
 
 
