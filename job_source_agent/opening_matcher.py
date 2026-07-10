@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
@@ -53,6 +54,17 @@ class JobOpeningMatcher:
         }
         if not target_title:
             return None, trace
+
+        api_match, api_trace = self._match_provider_api(job_list_url, target_title)
+        trace["provider_api"] = api_trace
+        if api_match:
+            trace["selected"] = {
+                "url": api_match.url,
+                "title": api_match.title,
+                "score": api_match.score,
+                "reasons": api_match.reasons,
+            }
+            return api_match, trace
 
         search_urls = build_provider_search_urls(job_list_url, target_title)
         for search_url in search_urls:
@@ -111,6 +123,48 @@ class JobOpeningMatcher:
         fallback_url = build_search_result_url(job_list_url, target_title)
         if fallback_url:
             trace["fallback_search_url"] = fallback_url
+        return None, trace
+
+    def _match_provider_api(self, job_list_url: str, target_title: str) -> tuple[OpeningMatch | None, dict]:
+        provider = detect_provider(job_list_url)
+        api_urls = build_provider_api_urls(job_list_url)
+        trace = {"provider": provider, "api_urls": api_urls, "candidates": []}
+        for api_url in api_urls:
+            try:
+                page = self.fetcher.fetch(api_url)
+            except FetchError as exc:
+                trace.setdefault("errors", []).append({"url": api_url, "error": str(exc)})
+                continue
+            candidates = provider_api_candidates(provider, page.html, job_list_url)
+            scored = []
+            for title, url in candidates:
+                title_score, title_reasons = score_title_match(title, target_title)
+                if title_score < 45:
+                    continue
+                scored.append(
+                    OpeningMatch(
+                        url=url,
+                        title=title,
+                        score=title_score + 100,
+                        provider=provider,
+                        reasons=["provider API result"] + title_reasons,
+                        job_list_page_url=job_list_url,
+                    )
+                )
+            scored.sort(key=lambda candidate: candidate.score, reverse=True)
+            trace["candidates"].extend(
+                [
+                    {
+                        "url": candidate.url,
+                        "title": candidate.title,
+                        "score": candidate.score,
+                        "reasons": candidate.reasons,
+                    }
+                    for candidate in scored[:8]
+                ]
+            )
+            if scored:
+                return scored[0], trace
         return None, trace
 
 
@@ -174,6 +228,67 @@ def build_provider_search_urls(job_list_url: str, target_title: str) -> list[str
             add_query_params(job_list_url, {"keyword": target_title}),
         ]
     return [job_list_url, f"{base}?q={query}", f"{base}?search={query}"]
+
+
+def build_provider_api_urls(job_list_url: str) -> list[str]:
+    provider = detect_provider(job_list_url)
+    parsed = urlparse(job_list_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    if provider == "greenhouse" and parts:
+        board = parts[0]
+        return [f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true"]
+    if provider == "lever" and parts:
+        company = parts[0]
+        return [f"https://api.lever.co/v0/postings/{company}?mode=json"]
+    if provider == "smartrecruiters" and parts:
+        company = parts[0]
+        return [f"https://api.smartrecruiters.com/v1/companies/{company}/postings?limit=100"]
+    return []
+
+
+def provider_api_candidates(provider: str, body: str, job_list_url: str) -> list[tuple[str, str]]:
+    try:
+        data = json.loads(body)
+    except json.JSONDecodeError:
+        return []
+    if provider == "greenhouse":
+        return [
+            (str(job.get("title") or ""), str(job.get("absolute_url") or ""))
+            for job in data.get("jobs", [])
+            if job.get("title") and job.get("absolute_url")
+        ]
+    if provider == "lever" and isinstance(data, list):
+        return [
+            (str(job.get("text") or ""), str(job.get("hostedUrl") or job.get("applyUrl") or ""))
+            for job in data
+            if job.get("text") and (job.get("hostedUrl") or job.get("applyUrl"))
+        ]
+    if provider == "smartrecruiters":
+        candidates = []
+        for job in data.get("content", []):
+            title = str(job.get("name") or "")
+            url = _smartrecruiters_job_url(job, job_list_url)
+            if title and url:
+                candidates.append((title, url))
+        return candidates
+    return []
+
+
+def _smartrecruiters_job_url(job: dict, job_list_url: str) -> str:
+    actions = job.get("actions") or {}
+    if actions.get("details"):
+        return str(actions["details"])
+    ref = job.get("ref")
+    if ref:
+        return str(ref)
+    job_id = job.get("id")
+    if not job_id:
+        return ""
+    parsed = urlparse(job_list_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    if not parts:
+        return ""
+    return f"https://jobs.smartrecruiters.com/{parts[0]}/{job_id}"
 
 
 def build_search_result_url(job_list_url: str, target_title: str) -> str | None:

@@ -231,6 +231,7 @@ Career page finder
         |
         v
 Job-list/opening finder
+  - structured API adapters for Greenhouse, Lever, and SmartRecruiters
   - provider-aware search URLs for Google Careers and Meta Careers
   - provider adapters for Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, and SuccessFactors-style systems
   - target-title matching from LinkedIn job cards
@@ -254,6 +255,7 @@ results.json + trace.json
 - Career-page discovery combines homepage links, common path probes, brand-specific join paths, and sitemap URLs.
 - When direct navigation fails, career-page discovery can fall back to search results while preserving full career/job paths.
 - Common ATS providers such as Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, and SuccessFactors are recognized explicitly.
+- Greenhouse, Lever, and SmartRecruiters use structured API adapters before falling back to HTML link extraction.
 - Provider-specific matchers build provider-appropriate search URLs and preserve stable job-board fallbacks when a concrete title match is not available.
 - Concrete opening selection is gated by the LinkedIn target title to avoid false-positive job URLs.
 - Error and 404 pages are rejected even if their URL or HTML contains career-like keywords.

@@ -3,6 +3,7 @@ from pathlib import Path
 
 from job_source_agent.opening_matcher import (
     JobOpeningMatcher,
+    build_provider_api_urls,
     build_provider_search_urls,
     detect_provider,
     score_title_match,
@@ -76,6 +77,34 @@ class OpeningMatcherTests(unittest.TestCase):
             with self.subTest(url=url):
                 urls = build_provider_search_urls(url, "Data Analyst")
                 self.assertTrue(any(expected_query in search_url for search_url in urls))
+
+    def test_structured_provider_apis_are_used_before_html(self):
+        matcher = JobOpeningMatcher(
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
+        )
+        cases = {
+            "https://boards.greenhouse.io/acme": "https://boards.greenhouse.io/acme/jobs/12345",
+            "https://jobs.lever.co/apiacme": "https://jobs.lever.co/apiacme/abc123",
+            "https://jobs.smartrecruiters.com/AcmeApi": "https://jobs.smartrecruiters.com/AcmeApi/743999111111111-data-analyst",
+        }
+
+        for url, expected in cases.items():
+            with self.subTest(url=url):
+                match, trace = matcher.match(url, "Data Analyst")
+                self.assertIsNotNone(match)
+                self.assertEqual(match.url, expected)
+                self.assertTrue(trace["provider_api"]["candidates"])
+
+    def test_provider_api_urls_are_built_from_job_board_urls(self):
+        cases = {
+            "https://boards.greenhouse.io/acme": "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true",
+            "https://jobs.lever.co/apiacme": "https://api.lever.co/v0/postings/apiacme?mode=json",
+            "https://jobs.smartrecruiters.com/AcmeApi": "https://api.smartrecruiters.com/v1/companies/AcmeApi/postings?limit=100",
+        }
+
+        for url, expected in cases.items():
+            with self.subTest(url=url):
+                self.assertIn(expected, build_provider_api_urls(url))
 
 
 if __name__ == "__main__":
