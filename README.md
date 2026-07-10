@@ -4,6 +4,8 @@ Take-home implementation for Part 2: discover companies hiring on LinkedIn, reso
 
 The implementation is intentionally agentic but controlled: deterministic link extraction and scoring do the first pass, then the agent follows promising career/job-listing pages for a few hops. The pipeline keeps trace data for every navigation decision.
 
+For a detailed progress summary and roadmap, see [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+
 The project supports two flows:
 
 - `--linkedin-keywords`: search public LinkedIn job results, extract hiring companies, resolve official websites from LinkedIn company pages/search/domain hints, map brands to parent hiring systems when needed, and find official job-list pages.
