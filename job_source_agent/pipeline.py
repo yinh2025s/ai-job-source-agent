@@ -3,6 +3,7 @@ from __future__ import annotations
 from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
+from .career_search import CareerSearchResolver
 from .models import CompanyInput, DiscoveryResult, LinkCandidate, dataclass_to_dict
 from .opening_matcher import JobOpeningMatcher, detect_provider, score_title_match
 from .scoring import (
@@ -46,11 +47,13 @@ class JobSourceAgent:
         max_candidates: int = 12,
         max_job_pages: int = 8,
         enable_sitemap_discovery: bool = True,
+        enable_career_search: bool = True,
     ) -> None:
         self.fetcher = fetcher
         self.max_candidates = max_candidates
         self.max_job_pages = max_job_pages
         self.enable_sitemap_discovery = enable_sitemap_discovery
+        self.enable_career_search = enable_career_search
 
     def discover(self, company: CompanyInput) -> DiscoveryResult:
         result = DiscoveryResult(
@@ -82,7 +85,10 @@ class JobSourceAgent:
                     },
                 }
             else:
-                career_url, career_trace = self.find_career_page(result.company_website_url)
+                career_url, career_trace = self.find_career_page(
+                    result.company_website_url,
+                    company_name=company.company_name,
+                )
             result.career_page_url = career_url
             result.trace["steps"].append({"name": "find_career_page", **career_trace})
             opening_url, job_list_url, opening_trace = self.find_open_position(
@@ -104,7 +110,7 @@ class JobSourceAgent:
                 result.trace["steps"].append({"name": exc.step_name, **exc.trace})
         return result
 
-    def find_career_page(self, company_website_url: str) -> tuple[str, dict]:
+    def find_career_page(self, company_website_url: str, company_name: str | None = None) -> tuple[str, dict]:
         homepage_url = normalize_url(company_website_url)
         raw_candidates: list[RawLink] = []
         trace = {"homepage_url": homepage_url, "homepage_fetch_error": None, "candidates": [], "candidate_fetch_errors": []}
@@ -131,18 +137,19 @@ class JobSourceAgent:
         trace["homepage_url"] = homepage_url
         trace["candidates"] = dataclass_to_dict(deduped[:10])
 
-        for candidate in deduped[: self.max_candidates]:
-            if candidate.score < 50:
-                continue
-            try:
-                page = self.fetcher.fetch(candidate.url)
-            except FetchError as exc:
-                trace["candidate_fetch_errors"].append({"url": candidate.url, "error": str(exc)})
-                continue
-            if self._looks_like_career_page(candidate, page.html):
-                trace["selected"] = dataclass_to_dict(candidate)
-                trace["selected_page_source"] = page.source
-                return page.final_url or page.url, trace
+        selected_url = self._select_verified_career_candidate(deduped, trace)
+        if selected_url:
+            return selected_url, trace
+
+        if self.enable_career_search and company_name:
+            search_result = CareerSearchResolver(self.fetcher).search(company_name, homepage_url)
+            trace["search_discovery"] = search_result.trace
+            selected_url = self._select_verified_career_candidate(search_result.candidates, trace)
+            if selected_url:
+                trace["selected_from"] = "search_discovery"
+                return selected_url, trace
+        else:
+            trace["search_discovery"] = {"skipped": True}
 
         raise DiscoveryError(
             "career_page_not_found",
@@ -304,6 +311,21 @@ class JobSourceAgent:
                 )
             )
         return candidates
+
+    def _select_verified_career_candidate(self, candidates: list[LinkCandidate], trace: dict) -> str | None:
+        for candidate in candidates[: self.max_candidates]:
+            if candidate.score < 50:
+                continue
+            try:
+                page = self.fetcher.fetch(candidate.url)
+            except FetchError as exc:
+                trace["candidate_fetch_errors"].append({"url": candidate.url, "error": str(exc)})
+                continue
+            if self._looks_like_career_page(candidate, page.html):
+                trace["selected"] = dataclass_to_dict(candidate)
+                trace["selected_page_source"] = page.source
+                return page.final_url or page.url
+        return None
 
     def _sitemap_candidates(self, homepage_url: str) -> tuple[list[RawLink], dict]:
         parsed = urlparse(homepage_url)

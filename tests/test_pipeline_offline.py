@@ -65,6 +65,21 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(job_list_url, "https://jobs.lever.co/titlefilter")
         self.assertEqual(trace["opening_error"], "open_position_not_found")
 
+    def test_career_page_can_be_discovered_from_search_fallback(self):
+        agent = JobSourceAgent(
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True),
+            max_candidates=4,
+            enable_sitemap_discovery=False,
+        )
+
+        career_url, trace = agent.find_career_page(
+            "https://searchfallback.example",
+            company_name="Search Fallback",
+        )
+
+        self.assertEqual(career_url, "https://searchfallback.example/real-careers")
+        self.assertEqual(trace["selected_from"], "search_discovery")
+
 
 if __name__ == "__main__":
     unittest.main()

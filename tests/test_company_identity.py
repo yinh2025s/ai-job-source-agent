@@ -25,6 +25,12 @@ class CompanyIdentityTests(unittest.TestCase):
             "Meta": "https://www.metacareers.com/jobs/",
             "Roku": "https://www.weareroku.com/",
             "The Home Depot": "https://careers.homedepot.com/",
+            "Stripe": "https://stripe.com/jobs",
+            "Nuro": "https://www.nuro.ai/careers",
+            "Morgan Stanley": "https://www.morganstanley.com/careers",
+            "Lemonade": "https://www.lemonade.com/careers",
+            "Podium": "https://www.podium.com/careers",
+            "ParetoHealth": "https://www.paretohealth.com/careers",
         }
 
         for company_name, career_root in cases.items():

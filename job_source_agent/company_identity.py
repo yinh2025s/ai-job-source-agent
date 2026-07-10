@@ -99,6 +99,48 @@ BRAND_HIRING_RULES = {
         official_website_url="https://www.homedepot.com/",
         reasons=["The Home Depot uses careers.homedepot.com for hiring"],
     ),
+    "stripe": CompanyIdentity(
+        brand_name="Stripe",
+        hiring_entity_name="Stripe",
+        career_root_url="https://stripe.com/jobs",
+        official_website_url="https://stripe.com/",
+        reasons=["Stripe publishes roles on stripe.com/jobs"],
+    ),
+    "nuro": CompanyIdentity(
+        brand_name="Nuro",
+        hiring_entity_name="Nuro",
+        career_root_url="https://www.nuro.ai/careers",
+        official_website_url="https://www.nuro.ai/",
+        reasons=["Nuro careers are served from nuro.ai/careers"],
+    ),
+    "morgan stanley": CompanyIdentity(
+        brand_name="Morgan Stanley",
+        hiring_entity_name="Morgan Stanley",
+        career_root_url="https://www.morganstanley.com/careers",
+        official_website_url="https://www.morganstanley.com/",
+        reasons=["Morgan Stanley uses morganstanley.com/careers for hiring"],
+    ),
+    "lemonade": CompanyIdentity(
+        brand_name="Lemonade",
+        hiring_entity_name="Lemonade",
+        career_root_url="https://www.lemonade.com/careers",
+        official_website_url="https://www.lemonade.com/",
+        reasons=["Lemonade publishes roles from lemonade.com/careers"],
+    ),
+    "podium": CompanyIdentity(
+        brand_name="Podium",
+        hiring_entity_name="Podium",
+        career_root_url="https://www.podium.com/careers",
+        official_website_url="https://www.podium.com/",
+        reasons=["Podium publishes roles from podium.com/careers"],
+    ),
+    "paretohealth": CompanyIdentity(
+        brand_name="ParetoHealth",
+        hiring_entity_name="ParetoHealth",
+        career_root_url="https://www.paretohealth.com/careers",
+        official_website_url="https://www.paretohealth.com/",
+        reasons=["ParetoHealth publishes roles from paretohealth.com/careers"],
+    ),
 }
 
 

@@ -223,6 +223,7 @@ Career page finder
   - homepage link extraction
   - common path probing
   - brand-style join path probing, for example /join-{brand}
+  - search fallback for "{company} careers jobs" when common paths fail
   - sitemap and robots sitemap discovery
   - ATS domain detection
   - scored candidates with reasons
@@ -249,6 +250,7 @@ results.json + trace.json
 - LinkedIn company slugs can break domain ties, for example `tesseralabsai` favoring `tesseralabs.ai` over `tesseralabs.com`.
 - Career-page discovery uses deterministic scoring before any expensive browser/LLM-style behavior.
 - Career-page discovery combines homepage links, common path probes, brand-specific join paths, and sitemap URLs.
+- When direct navigation fails, career-page discovery can fall back to search results while preserving full career/job paths.
 - Common ATS providers such as Lever and Greenhouse are recognized explicitly.
 - Concrete opening selection is gated by the LinkedIn target title to avoid false-positive job URLs.
 - The agent distinguishes listing pages, such as `/careers/jobs`, from concrete job-detail URLs.
