@@ -120,13 +120,7 @@ class CompanyIdentityResolver:
         }
 
         for rule_key, identity in BRAND_HIRING_RULES.items():
-            if (
-                rule_key == key
-                or (" " in rule_key and rule_key in key)
-                or rule_key in key.split()
-                or rule_key in website_domain
-                or rule_key in linkedin_key
-            ):
+            if self._matches_rule(rule_key, key, website_domain, linkedin_key):
                 trace["matched_rule"] = rule_key
                 trace["selected"] = {
                     "brand_name": identity.brand_name,
@@ -138,6 +132,25 @@ class CompanyIdentityResolver:
                 return identity, trace
 
         return None, trace
+
+    def _matches_rule(self, rule_key: str, company_key: str, website_domain: str, linkedin_key: str) -> bool:
+        if rule_key == company_key or rule_key in company_key.split():
+            return True
+        if " " in rule_key and rule_key in company_key:
+            return True
+
+        domain_labels = [label for label in website_domain.replace("-", ".").split(".") if label]
+        if " " not in rule_key and rule_key in domain_labels:
+            return True
+
+        linkedin_tokens = [
+            token
+            for token in linkedin_key.replace("-", " ").replace("/", " ").replace("?", " ").replace("&", " ").split()
+            if token
+        ]
+        if " " not in rule_key and rule_key in linkedin_tokens:
+            return True
+        return False
 
 
 def _normalize_company_key(company_name: str) -> str:

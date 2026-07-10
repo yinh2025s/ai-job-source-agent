@@ -34,7 +34,11 @@ class CompanyIdentityTests(unittest.TestCase):
                 self.assertEqual(identity.career_root_url, career_root)
 
     def test_meta_rule_does_not_match_metals(self):
-        identity, _trace = CompanyIdentityResolver().resolve("NOX METALS")
+        identity, _trace = CompanyIdentityResolver().resolve(
+            "NOX METALS",
+            "https://noxmetals.com",
+            "https://www.linkedin.com/company/nox-metals",
+        )
 
         self.assertIsNone(identity)
 
