@@ -86,6 +86,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://boards.greenhouse.io/acme": "https://boards.greenhouse.io/acme/jobs/12345",
             "https://jobs.lever.co/apiacme": "https://jobs.lever.co/apiacme/abc123",
             "https://jobs.smartrecruiters.com/AcmeApi": "https://jobs.smartrecruiters.com/AcmeApi/743999111111111-data-analyst",
+            "https://company.wd5.myworkdayjobs.com/en-US/acme": "https://company.wd5.myworkdayjobs.com/en-US/acme/job/New-York-NY/Data-Analyst_R123",
         }
 
         for url, expected in cases.items():
@@ -100,6 +101,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://boards.greenhouse.io/acme": "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true",
             "https://jobs.lever.co/apiacme": "https://api.lever.co/v0/postings/apiacme?mode=json",
             "https://jobs.smartrecruiters.com/AcmeApi": "https://api.smartrecruiters.com/v1/companies/AcmeApi/postings?limit=100",
+            "https://company.wd5.myworkdayjobs.com/en-US/acme": "https://company.wd5.myworkdayjobs.com/wday/cxs/company/acme/jobs",
         }
 
         for url, expected in cases.items():

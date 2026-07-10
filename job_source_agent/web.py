@@ -168,7 +168,7 @@ class Fetcher:
         self.offline = offline
         self.timeout = timeout
 
-    def fetch(self, url: str) -> Page:
+    def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
         normalized = normalize_url(url)
         fixture_path = self._fixture_path_for(normalized)
         if fixture_path and fixture_path.exists():
@@ -180,22 +180,29 @@ class Fetcher:
             )
         if self.offline:
             raise FetchError(f"No fixture found for {normalized}")
-        return self._fetch_live(normalized)
+        return self._fetch_live(normalized, data=data, headers=headers)
 
-    def _fetch_live(self, url: str) -> Page:
+    def _fetch_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
         socket.setdefaulttimeout(self.timeout)
+        request_headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) "
+                "Chrome/125.0 Safari/537.36"
+            ),
+            "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            "Accept-Encoding": "gzip",
+            "Accept-Language": "en-US,en;q=0.9",
+        }
+        if data is not None:
+            request_headers["Content-Type"] = "application/json"
+            request_headers["Accept"] = "application/json,text/plain,*/*"
+        if headers:
+            request_headers.update(headers)
         request = Request(
             url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) "
-                    "Chrome/125.0 Safari/537.36"
-                ),
-                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-                "Accept-Encoding": "gzip",
-                "Accept-Language": "en-US,en;q=0.9",
-            },
+            data=data,
+            headers=request_headers,
         )
         try:
             with hard_timeout(self.timeout + 1):

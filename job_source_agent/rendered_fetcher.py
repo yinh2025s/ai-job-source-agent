@@ -11,7 +11,10 @@ class RenderedFetcher(Fetcher):
     chromium` before using `--render-js`.
     """
 
-    def _fetch_live(self, url: str) -> Page:
+    def _fetch_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
+        if data is not None:
+            return super()._fetch_live(url, data=data, headers=headers)
+
         normalized = normalize_url(url)
         try:
             from playwright.sync_api import Error as PlaywrightError

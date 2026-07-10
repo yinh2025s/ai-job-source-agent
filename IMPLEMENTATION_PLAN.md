@@ -134,12 +134,12 @@
 | Ashby | URL/provider recognition | 目前主要依赖 HTML link extraction 和 title matching |
 | Workable | URL/provider recognition | 已有 query URL pattern，未做结构化 API |
 | iCIMS | URL/provider recognition | 已有 search query URL 和 job detail pattern，未做 API/JS extraction |
-| Workday | URL/provider recognition | 已有 query URL 和 job detail pattern，未做 tenant API/embedded JSON extraction |
+| Workday | Structured CXS API adapter | 已支持从 Workday board URL 构造 `/wday/cxs/{tenant}/{site}/jobs` 并用 title payload 搜索 |
 | SuccessFactors | URL/provider recognition | 已有 query URL 和 job detail pattern，未做完整 search/list API |
 
 已验证的离线 fixtures：
 
-- Workday job detail
+- Workday CXS API response and job detail
 - iCIMS job detail
 - SmartRecruiters job detail
 - SuccessFactors job detail
@@ -198,7 +198,6 @@
 
 仍需系统补齐：
 
-- Workday tenant/job search extraction
 - SuccessFactors search/list extraction
 - iCIMS hosted search extraction
 - Workable API / embedded JSON extraction
@@ -265,17 +264,23 @@
 
 #### 1.1 Workday Adapter
 
+当前状态：
+
+- 已实现 Workday CXS API URL 构造
+- 已实现 POST JSON payload，使用 LinkedIn title 作为 `searchText`
+- 已解析 `jobPostings.title` 和 `jobPostings.externalPath`
+- 已用离线 fixture 验证 API result -> concrete job URL
+
 目标：
 
-- 从 `*.myworkdayjobs.com` / `*.workdayjobs.com` URL 中解析 tenant / board path
-- 支持 Workday search URL / query params
+- 增强更多 Workday tenant/path 变体
 - 尝试解析页面 embedded JSON
-- 识别 job detail URL
+- 继续增强 job detail URL 识别
 - 如果具体 opening 找不到，稳定返回 Workday job board
 
 验收标准：
 
-- 离线 fixture 覆盖 Workday job list + detail
+- 离线 fixture 覆盖 Workday CXS response + detail
 - live smoke 至少能稳定返回 Workday board URL
 - title mismatch 不产生假阳性 opening
 

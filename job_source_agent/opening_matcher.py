@@ -34,6 +34,13 @@ class OpeningMatch:
     job_list_page_url: str | None = None
 
 
+@dataclass
+class ProviderApiRequest:
+    url: str
+    data: bytes | None = None
+    headers: dict[str, str] | None = None
+
+
 class JobOpeningMatcher:
     def __init__(self, fetcher: Fetcher) -> None:
         self.fetcher = fetcher
@@ -127,13 +134,13 @@ class JobOpeningMatcher:
 
     def _match_provider_api(self, job_list_url: str, target_title: str) -> tuple[OpeningMatch | None, dict]:
         provider = detect_provider(job_list_url)
-        api_urls = build_provider_api_urls(job_list_url)
-        trace = {"provider": provider, "api_urls": api_urls, "candidates": []}
-        for api_url in api_urls:
+        api_requests = build_provider_api_requests(job_list_url, target_title)
+        trace = {"provider": provider, "api_urls": [request.url for request in api_requests], "candidates": []}
+        for api_request in api_requests:
             try:
-                page = self.fetcher.fetch(api_url)
+                page = self.fetcher.fetch(api_request.url, data=api_request.data, headers=api_request.headers)
             except FetchError as exc:
-                trace.setdefault("errors", []).append({"url": api_url, "error": str(exc)})
+                trace.setdefault("errors", []).append({"url": api_request.url, "error": str(exc)})
                 continue
             candidates = provider_api_candidates(provider, page.html, job_list_url)
             scored = []
@@ -231,18 +238,32 @@ def build_provider_search_urls(job_list_url: str, target_title: str) -> list[str
 
 
 def build_provider_api_urls(job_list_url: str) -> list[str]:
+    return [request.url for request in build_provider_api_requests(job_list_url)]
+
+
+def build_provider_api_requests(job_list_url: str, target_title: str | None = None) -> list[ProviderApiRequest]:
     provider = detect_provider(job_list_url)
     parsed = urlparse(job_list_url)
     parts = [part for part in parsed.path.split("/") if part]
     if provider == "greenhouse" and parts:
         board = parts[0]
-        return [f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true"]
+        return [ProviderApiRequest(f"https://boards-api.greenhouse.io/v1/boards/{board}/jobs?content=true")]
     if provider == "lever" and parts:
         company = parts[0]
-        return [f"https://api.lever.co/v0/postings/{company}?mode=json"]
+        return [ProviderApiRequest(f"https://api.lever.co/v0/postings/{company}?mode=json")]
     if provider == "smartrecruiters" and parts:
         company = parts[0]
-        return [f"https://api.smartrecruiters.com/v1/companies/{company}/postings?limit=100"]
+        return [ProviderApiRequest(f"https://api.smartrecruiters.com/v1/companies/{company}/postings?limit=100")]
+    if provider == "workday":
+        workday_api_url = build_workday_api_url(job_list_url)
+        if workday_api_url:
+            payload = {
+                "appliedFacets": {},
+                "limit": 50,
+                "offset": 0,
+                "searchText": target_title or "",
+            }
+            return [ProviderApiRequest(workday_api_url, data=json.dumps(payload).encode("utf-8"))]
     return []
 
 
@@ -271,6 +292,14 @@ def provider_api_candidates(provider: str, body: str, job_list_url: str) -> list
             if title and url:
                 candidates.append((title, url))
         return candidates
+    if provider == "workday":
+        candidates = []
+        for job in data.get("jobPostings", []):
+            title = str(job.get("title") or "")
+            url = _workday_job_url(job, job_list_url)
+            if title and url:
+                candidates.append((title, url))
+        return candidates
     return []
 
 
@@ -289,6 +318,31 @@ def _smartrecruiters_job_url(job: dict, job_list_url: str) -> str:
     if not parts:
         return ""
     return f"https://jobs.smartrecruiters.com/{parts[0]}/{job_id}"
+
+
+def build_workday_api_url(job_list_url: str) -> str | None:
+    parsed = urlparse(job_list_url)
+    parts = [part for part in parsed.path.split("/") if part]
+    if not parts:
+        return None
+    site = parts[-1]
+    tenant = parsed.netloc.split(".", 1)[0]
+    if not tenant or not site:
+        return None
+    return f"{parsed.scheme}://{parsed.netloc}/wday/cxs/{tenant}/{site}/jobs"
+
+
+def _workday_job_url(job: dict, job_list_url: str) -> str:
+    external_path = str(job.get("externalPath") or "")
+    if not external_path:
+        return ""
+    if external_path.startswith("http"):
+        return external_path
+    parsed = urlparse(job_list_url)
+    board_path = parsed.path.rstrip("/")
+    if not external_path.startswith("/"):
+        external_path = "/" + external_path
+    return f"{parsed.scheme}://{parsed.netloc}{board_path}{external_path}"
 
 
 def build_search_result_url(job_list_url: str, target_title: str) -> str | None:
