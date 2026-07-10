@@ -155,6 +155,27 @@ OK Anthropic
   opening: https://job-boards.greenhouse.io/anthropic/jobs/5271428008
 ```
 
+## Batch Live Evaluation
+
+For larger live checks, use the checkpointing evaluator instead of one long CLI run. It writes results after every company, so a slow or blocked website does not erase earlier progress:
+
+```bash
+python3 scripts/live_batch_eval.py \
+  --linkedin-keywords "Product Manager" \
+  --linkedin-location "United States" \
+  --limit 10 \
+  --linkedin-pages 1 \
+  --fetch-timeout 2 \
+  --verify-limit 0 \
+  --max-career-candidates 5 \
+  --max-job-pages 2 \
+  --skip-sitemap \
+  --output /tmp/product10-fast-results.json \
+  --trace-output /tmp/product10-fast-trace.json
+```
+
+On July 10, 2026, a fast Product Manager batch returned 4 successes out of 8 unique companies. Instagram, Snap, Notion, and Netflix reached official job-list pages; Notion also resolved a concrete Ashby opening. The remaining failures were structured as `career_page_not_found`.
+
 ## Optional Saved LinkedIn HTML Input
 
 If you save a LinkedIn job page HTML locally, a record may provide `linkedin_html_path`. The parser will try to infer the company name and external website from the saved HTML:
@@ -192,6 +213,7 @@ Company identity resolver
   - brand-to-hiring-entity mapping
   - Instagram/WhatsApp/Threads -> Meta Careers
   - YouTube/Google -> Google Careers
+  - selected high-signal career roots such as Notion, Netflix, Hudl, Snap, Roku, and Home Depot
         |
         v
 Company website fetcher

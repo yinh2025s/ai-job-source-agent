@@ -36,6 +36,13 @@ BRAND_HIRING_RULES = {
         official_website_url="https://www.threads.net/",
         reasons=["Threads hiring is handled through Meta Careers"],
     ),
+    "meta": CompanyIdentity(
+        brand_name="Meta",
+        hiring_entity_name="Meta",
+        career_root_url="https://www.metacareers.com/jobs/",
+        official_website_url="https://www.meta.com/",
+        reasons=["Meta hiring is handled through Meta Careers"],
+    ),
     "youtube": CompanyIdentity(
         brand_name="YouTube",
         hiring_entity_name="Google",
@@ -49,6 +56,48 @@ BRAND_HIRING_RULES = {
         career_root_url="https://www.google.com/about/careers/applications/",
         official_website_url="https://www.google.com/",
         reasons=["Google has a dedicated careers search system"],
+    ),
+    "notion": CompanyIdentity(
+        brand_name="Notion",
+        hiring_entity_name="Notion",
+        career_root_url="https://www.notion.com/careers",
+        official_website_url="https://www.notion.com/",
+        reasons=["Notion careers are served from the www.notion.com careers path"],
+    ),
+    "netflix": CompanyIdentity(
+        brand_name="Netflix",
+        hiring_entity_name="Netflix",
+        career_root_url="https://jobs.netflix.com",
+        official_website_url="https://www.netflix.com/",
+        reasons=["Netflix uses a dedicated jobs.netflix.com careers system"],
+    ),
+    "hudl": CompanyIdentity(
+        brand_name="Hudl",
+        hiring_entity_name="Hudl",
+        career_root_url="https://www.hudl.com/jobs#jobs",
+        official_website_url="https://www.hudl.com/",
+        reasons=["Hudl routes careers traffic to its jobs page"],
+    ),
+    "snap": CompanyIdentity(
+        brand_name="Snap",
+        hiring_entity_name="Snap Inc.",
+        career_root_url="https://careers.snap.com/",
+        official_website_url="https://www.snap.com/",
+        reasons=["Snap has a dedicated careers.snap.com jobs system"],
+    ),
+    "roku": CompanyIdentity(
+        brand_name="Roku",
+        hiring_entity_name="Roku",
+        career_root_url="https://www.weareroku.com/",
+        official_website_url="https://www.roku.com/",
+        reasons=["Roku careers are served from weareroku.com"],
+    ),
+    "home depot": CompanyIdentity(
+        brand_name="The Home Depot",
+        hiring_entity_name="The Home Depot",
+        career_root_url="https://careers.homedepot.com/",
+        official_website_url="https://www.homedepot.com/",
+        reasons=["The Home Depot uses careers.homedepot.com for hiring"],
     ),
 }
 
@@ -73,6 +122,7 @@ class CompanyIdentityResolver:
         for rule_key, identity in BRAND_HIRING_RULES.items():
             if (
                 rule_key == key
+                or (" " in rule_key and rule_key in key)
                 or rule_key in key.split()
                 or rule_key in website_domain
                 or rule_key in linkedin_key

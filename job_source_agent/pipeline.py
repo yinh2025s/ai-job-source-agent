@@ -40,10 +40,17 @@ COMMON_CAREER_PATHS = (
 
 
 class JobSourceAgent:
-    def __init__(self, fetcher: Fetcher, max_candidates: int = 12, max_job_pages: int = 8) -> None:
+    def __init__(
+        self,
+        fetcher: Fetcher,
+        max_candidates: int = 12,
+        max_job_pages: int = 8,
+        enable_sitemap_discovery: bool = True,
+    ) -> None:
         self.fetcher = fetcher
         self.max_candidates = max_candidates
         self.max_job_pages = max_job_pages
+        self.enable_sitemap_discovery = enable_sitemap_discovery
 
     def discover(self, company: CompanyInput) -> DiscoveryResult:
         result = DiscoveryResult(
@@ -100,7 +107,7 @@ class JobSourceAgent:
     def find_career_page(self, company_website_url: str) -> tuple[str, dict]:
         homepage_url = normalize_url(company_website_url)
         raw_candidates: list[RawLink] = []
-        trace = {"homepage_url": homepage_url, "homepage_fetch_error": None, "candidates": []}
+        trace = {"homepage_url": homepage_url, "homepage_fetch_error": None, "candidates": [], "candidate_fetch_errors": []}
         try:
             homepage = self.fetcher.fetch(company_website_url)
             homepage_url = homepage.final_url or homepage.url
@@ -108,9 +115,12 @@ class JobSourceAgent:
         except FetchError as exc:
             trace["homepage_fetch_error"] = str(exc)
         raw_candidates.extend(self._common_path_candidates(homepage_url))
-        sitemap_candidates, sitemap_trace = self._sitemap_candidates(homepage_url)
-        raw_candidates.extend(sitemap_candidates)
-        trace["sitemap_discovery"] = sitemap_trace
+        if self.enable_sitemap_discovery:
+            sitemap_candidates, sitemap_trace = self._sitemap_candidates(homepage_url)
+            raw_candidates.extend(sitemap_candidates)
+            trace["sitemap_discovery"] = sitemap_trace
+        else:
+            trace["sitemap_discovery"] = {"skipped": True}
 
         scored = sorted(
             [score_career_link(link) for link in raw_candidates],
@@ -126,7 +136,8 @@ class JobSourceAgent:
                 continue
             try:
                 page = self.fetcher.fetch(candidate.url)
-            except FetchError:
+            except FetchError as exc:
+                trace["candidate_fetch_errors"].append({"url": candidate.url, "error": str(exc)})
                 continue
             if self._looks_like_career_page(candidate, page.html):
                 trace["selected"] = dataclass_to_dict(candidate)
@@ -283,6 +294,15 @@ class JobSourceAgent:
                         source_url=homepage_url,
                     )
                 )
+        root_domain = parsed.netloc.lower().removeprefix("www.")
+        for subdomain in ("careers", "jobs"):
+            candidates.append(
+                RawLink(
+                    url=normalize_url(f"https://{subdomain}.{root_domain}"),
+                    text="careers jobs",
+                    source_url=homepage_url,
+                )
+            )
         return candidates
 
     def _sitemap_candidates(self, homepage_url: str) -> tuple[list[RawLink], dict]:
