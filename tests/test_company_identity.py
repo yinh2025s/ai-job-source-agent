@@ -31,6 +31,8 @@ class CompanyIdentityTests(unittest.TestCase):
             "Lemonade": "https://www.lemonade.com/careers",
             "Podium": "https://www.podium.com/careers",
             "ParetoHealth": "https://www.paretohealth.com/careers",
+            "Brex": "https://www.brex.com/careers",
+            "Lyft": "https://job-boards.greenhouse.io/lyft",
         }
 
         for company_name, career_root in cases.items():

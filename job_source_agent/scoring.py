@@ -93,10 +93,14 @@ NEGATIVE_KEYWORDS = {
 
 NON_JOB_PATH_PARTS = {
     "api",
+    "assets",
     "benefits",
     "embed",
     "images",
+    "logo",
     "privacy",
+    "share_image",
+    "static",
     "terms",
     "culture",
     "locations",
@@ -304,12 +308,17 @@ def _looks_like_ats_job_detail(url: str) -> bool:
         return "career_job_req_id" in query or "jobreqid" in query or any(part.lower() == "job" for part in parts)
     if "rippling.com" in host:
         return "jobs" in [part.lower() for part in parts] and len(parts) >= 4 and parts[0].lower() != "embed"
+    if "bamboohr.com" in host:
+        return len(parts) >= 2 and parts[0].lower() == "careers" and parts[1].isdigit()
     return len(parts) >= 2
 
 
 def is_resource_url(url: str) -> bool:
     path = urlparse(url).path.lower()
-    return path.endswith(RESOURCE_EXTENSIONS)
+    return path.endswith(RESOURCE_EXTENSIONS) or any(
+        marker in path
+        for marker in ("/assets/", "/static/", "/images/", "/share_image/")
+    )
 
 
 def is_non_official_job_domain(url: str) -> bool:

@@ -54,6 +54,12 @@
     "job_title": "Data Analyst"
   },
   {
+    "company_name": "Acme BambooHR",
+    "company_website_url": "https://acme.bamboohr.com",
+    "career_root_url": "https://acme.bamboohr.com/careers",
+    "job_title": "Data Analyst"
+  },
+  {
     "company_name": "Google",
     "company_website_url": "https://www.google.com",
     "career_root_url": "https://www.google.com/about/careers/applications/",

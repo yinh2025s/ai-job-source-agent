@@ -26,11 +26,17 @@ For each input record:
   "job_list_page_url": "https://jobs.lever.co/aurora-data",
   "open_position_url": "https://jobs.lever.co/aurora-data/d9d64766-3d42-4ba9-94d4-f74cdaf20065",
   "status": "success",
-  "error": null
+  "error": null,
+  "error_code": null,
+  "pipeline_status": "success",
+  "career_page_status": "success",
+  "job_board_status": "success",
+  "opening_match_status": "success",
+  "stages": ["... seven structured stage results ..."]
 }
 ```
 
-The CLI also writes `trace.json`, which includes candidate links, scores, reasons, and the selected page source.
+`status` and `error` remain for compatibility with the original demo. New consumers should use `pipeline_status`, `error_code`, and `stages`: every stage records its status, reason code, retryability, owner, provider, duration, counts, and evidence. The CLI also writes `trace.json`, which includes candidate links, scores, reasons, and the selected page source.
 
 ## Run the Deterministic Demo
 
@@ -175,11 +181,16 @@ Expected summary:
 
 ```text
 benchmark summary:
-  total: 10
-  success: 10
-  with_job_list: 10
-  with_opening: 10
+  total: 11
+  success: 11
+  with_job_list: 11
+  with_opening: 11
+  expectations: 11/11 passed
 ```
+
+The companion [benchmark expectations](samples/benchmark_expectations.json) declares the provider, minimum successful stage, and whether an exact opening is required for each fixture. The evaluator exits nonzero if a declared expectation regresses.
+
+Pass `--baseline-summary previous-summary.json` to either evaluator to add rate, pipeline-status, and per-stage success deltas to its summary. Each stage also reports duration count, P50, and P95 in milliseconds.
 
 For larger live checks, use the checkpointing evaluator instead of one long CLI run. It writes results after every company, so a slow or blocked website does not erase earlier progress:
 
@@ -192,11 +203,13 @@ python3 scripts/live_batch_eval.py \
   --fetch-timeout 2 \
   --career-search-timeout 7 \
   --max-career-search-queries 5 \
-  --verify-limit 0 \
+  --verify-limit 3 \
   --max-career-candidates 5 \
   --max-career-fetches 5 \
+  --max-ats-board-fetches 5 \
   --max-job-pages 2 \
   --company-time-budget 45 \
+  --website-time-budget 20 \
   --render-js \
   --render-budget 2 \
   --skip-sitemap \
@@ -207,7 +220,12 @@ python3 scripts/live_batch_eval.py \
 
 If the optional browser dependency is not installed, omit `--render-js` and `--render-budget`.
 
-On July 10, 2026, a mixed fast batch across Product Manager, AI Engineer, and Data Analyst returned 8 official job-list successes out of 27 unique companies. Successes included Instagram, ParetoHealth, Snap, Notion, Netflix, Lemonade, and Stripe. The remaining failures were structured as `career_page_not_found`, with the weakest coverage on random small-company AI Engineer results.
+Latest live checks on July 11, 2026:
+
+- `Product Manager`, first LinkedIn page: 8 unique companies, 8/8 official websites, 6/8 official job-list pages, 1/8 exact opening.
+- `Data Analyst`, first LinkedIn page after fast-domain and ATS-root routing improvements: 9 unique companies, 9/9 official websites, 8/9 official job-list pages, 1/9 exact opening. The remaining failure was a consulting/intermediary posting that exhausted the company budget after website resolution.
+
+The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
 
 ## Optional Saved LinkedIn HTML Input
 
@@ -236,17 +254,19 @@ Hiring company discovery
         |
         v
 Official website resolver
+  - fast verified domain candidates from company name and LinkedIn slug
   - LinkedIn company page website signals
   - LinkedIn company slug TLD hints
+  - Bing RSS / HTML and DuckDuckGo fallback search
   - optional overrides
-  - search/domain fallback
+  - canonical homepage verification and false-positive rejection
         |
         v
 Company identity resolver
   - brand-to-hiring-entity mapping
   - Instagram/WhatsApp/Threads -> Meta Careers
   - YouTube/Google -> Google Careers
-  - selected high-signal career roots such as Notion, Netflix, Hudl, Snap, Roku, and Home Depot
+  - selected high-signal career roots such as Notion, Netflix, Hudl, Snap, Roku, Home Depot, Brex, and Lyft
         |
         v
 Company website fetcher
@@ -256,7 +276,8 @@ Career page finder
   - homepage link extraction
   - common path probing
   - brand-style join path probing, for example /join-{brand}
-  - search fallback for "{company} careers jobs" when common paths fail
+- search fallback for "{company} careers jobs" when common paths fail
+- bounded ATS board probes for common providers when website discovery fails
 - sitemap and robots sitemap discovery
 - ATS domain detection
 - Rippling public job-board detection and title matching
@@ -264,7 +285,7 @@ Career page finder
         |
         v
 Job-list/opening finder
-  - structured API adapters for Greenhouse, Lever, SmartRecruiters, Workday, and Ashby
+  - structured API adapters for Greenhouse, Lever, SmartRecruiters, Workday, Ashby, BambooHR, and Rippling
   - Workday CXS jobs API adapter with title search payloads
   - structured JSON-LD / embedded JSON extraction for iCIMS, SuccessFactors, and Workable-style pages
   - provider-aware search URLs for Google Careers and Meta Careers
@@ -284,8 +305,9 @@ results.json + trace.json
 - LinkedIn extraction is adapter-based because production LinkedIn crawling typically needs login/session handling or a third-party crawler API.
 - The LinkedIn public jobs mode discovers hiring companies directly from LinkedIn guest job-search cards.
 - Brand identity is resolved before website crawling so product brands can route to parent hiring systems.
-- Official website resolution prefers the LinkedIn company page's website signal before search/domain guessing.
+- Official website resolution first verifies high-confidence domain candidates, then falls back to LinkedIn page signals and search. This keeps obvious domains such as `lyft.com` and `brex.com` fast while still rejecting unverified guesses.
 - LinkedIn company slugs can break domain ties, for example `tesseralabsai` favoring `tesseralabs.ai` over `tesseralabs.com`.
+- Derived ATS boards must be verified by a provider API response or concrete job-detail evidence before they can count as successful.
 - Career-page discovery uses deterministic scoring before any expensive browser/LLM-style behavior.
 - Career-page discovery combines homepage links, common path probes, brand-specific join paths, and sitemap URLs.
 - When direct navigation fails, career-page discovery can fall back to search results while preserving full career/job paths.
@@ -298,7 +320,8 @@ results.json + trace.json
 - The agent distinguishes listing pages, such as `/careers/jobs`, from concrete job-detail URLs.
 - Social/job aggregator links, static assets, and ATS embeds are filtered out as false positives.
 - Every decision is traceable through scored candidates and reasons.
-- Failures are structured, for example `career_page_not_found`, `open_position_not_found`, or `fetch_failed`.
+- Failures are structured with standard reason codes, for example `CAREER_PAGE_NOT_FOUND`, `OPENING_NOT_FOUND`, `HTTP_FORBIDDEN`, or `COMPANY_TIME_BUDGET_EXHAUSTED`.
+- The live batch runner uses per-company checkpoints and process-level deadlines so one blocked website does not lose previous results.
 
 ## Tests
 
@@ -309,6 +332,6 @@ python3 -m unittest discover -s tests
 ## Next Production Steps
 
 - Use `--render-js` for heavily JavaScript-driven websites or bot-protected pages.
-- Parallelize website resolution and career probing for larger LinkedIn searches.
+- Build a fixed live benchmark set by provider and company type instead of relying only on LinkedIn's current random search results.
 - Add an LLM reranker only for ambiguous candidate sets.
 - Store screenshots and final HTML snapshots for auditability.

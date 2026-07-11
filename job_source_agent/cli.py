@@ -89,7 +89,7 @@ def _load_companies(args: argparse.Namespace, fetcher: Fetcher):
             pages=args.linkedin_pages,
         )
         companies = linkedin_postings_to_company_inputs(postings)
-        resolver = CompanyWebsiteResolver(fetcher, overrides_path=args.website_overrides, verify_limit=2)
+        resolver = CompanyWebsiteResolver(fetcher, overrides_path=args.website_overrides, verify_limit=3)
         identity_resolver = CompanyIdentityResolver()
         for company in companies:
             identity, identity_trace = identity_resolver.resolve(

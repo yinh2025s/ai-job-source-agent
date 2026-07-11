@@ -200,6 +200,8 @@ def detect_provider(url: str) -> str:
         return "workday"
     if "successfactors.com" in host or "sapsf.com" in host:
         return "successfactors"
+    if "bamboohr.com" in host:
+        return "bamboohr"
     if "rippling.com" in host:
         return "rippling"
     return "generic"
@@ -241,6 +243,8 @@ def build_provider_search_urls(job_list_url: str, target_title: str) -> list[str
         ]
     if provider == "rippling":
         return [job_list_url]
+    if provider == "bamboohr":
+        return [job_list_url]
     return [job_list_url, f"{base}?q={query}", f"{base}?search={query}"]
 
 
@@ -275,6 +279,8 @@ def build_provider_api_requests(job_list_url: str, target_title: str | None = No
                 "searchText": target_title or "",
             }
             return [ProviderApiRequest(workday_api_url, data=json.dumps(payload).encode("utf-8"))]
+    if provider == "bamboohr":
+        return [ProviderApiRequest(_bamboohr_jobs_api_url(job_list_url))]
     return []
 
 
@@ -316,6 +322,14 @@ def provider_api_candidates(provider: str, body: str, job_list_url: str) -> list
         for job in data.get("jobs", []):
             title = str(job.get("title") or "")
             url = _ashby_job_url(job, job_list_url)
+            if title and url:
+                candidates.append((title, url))
+        return candidates
+    if provider == "bamboohr":
+        candidates = []
+        for job in data.get("result", []):
+            title = str(job.get("jobOpeningName") or "")
+            url = _bamboohr_job_url(job, job_list_url)
             if title and url:
                 candidates.append((title, url))
         return candidates
@@ -574,6 +588,19 @@ def _workday_job_url(job: dict, job_list_url: str) -> str:
     return f"{parsed.scheme}://{parsed.netloc}{board_path}{external_path}"
 
 
+def _bamboohr_jobs_api_url(job_list_url: str) -> str:
+    parsed = urlparse(job_list_url)
+    return f"{parsed.scheme}://{parsed.netloc}/careers/list"
+
+
+def _bamboohr_job_url(job: dict, job_list_url: str) -> str:
+    job_id = str(job.get("id") or "")
+    if not job_id:
+        return ""
+    parsed = urlparse(job_list_url)
+    return f"{parsed.scheme}://{parsed.netloc}/careers/{job_id}"
+
+
 def build_search_result_url(job_list_url: str, target_title: str) -> str | None:
     query = quote_plus(target_title)
     provider = detect_provider(job_list_url)
@@ -587,7 +614,7 @@ def build_search_result_url(job_list_url: str, target_title: str) -> str | None:
         "ashby",
     }:
         return job_list_url
-    if provider in {"workable", "smartrecruiters", "icims", "workday", "successfactors", "rippling"}:
+    if provider in {"workable", "smartrecruiters", "icims", "workday", "successfactors", "rippling", "bamboohr"}:
         return build_provider_search_urls(job_list_url, target_title)[-1]
     return None
 

@@ -79,6 +79,35 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(job_list_url, "https://ats.rippling.com/embed/acme-rippling/jobs")
         self.assertEqual(trace["selected"]["provider"], "rippling")
 
+    def test_provider_board_is_kept_when_its_page_contains_only_assets(self):
+        class WorkdayAssetFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == "https://example.com/careers":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html='<a href="https://tenant.wd1.myworkdayjobs.com/acme">Search jobs</a>',
+                    )
+                if url == "https://tenant.wd1.myworkdayjobs.com/acme":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html='<img src="https://tenant.wd1.myworkdayjobs.com/acme/assets/logo">',
+                    )
+                if "/wday/cxs/" in url:
+                    raise FetchError("no matching job")
+                raise FetchError(f"unexpected URL: {url}")
+
+        agent = JobSourceAgent(WorkdayAssetFetcher(offline=True), max_job_pages=3)
+
+        opening_url, job_list_url, _trace = agent.find_open_position(
+            "https://example.com/careers",
+            target_title="Data Analyst",
+        )
+
+        self.assertIsNone(opening_url)
+        self.assertEqual(job_list_url, "https://tenant.wd1.myworkdayjobs.com/acme")
+
     def test_career_page_can_be_discovered_from_search_fallback(self):
         agent = JobSourceAgent(
             Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True),
@@ -93,6 +122,53 @@ class OfflinePipelineTests(unittest.TestCase):
 
         self.assertEqual(career_url, "https://searchfallback.example/real-careers")
         self.assertEqual(trace["selected_from"], "search_discovery")
+
+    def test_career_page_can_be_discovered_from_derived_ats_board(self):
+        agent = JobSourceAgent(
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True),
+            max_candidates=4,
+            max_career_candidate_fetches=2,
+            max_ats_board_fetches=3,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        career_url, trace = agent.find_career_page(
+            "https://atsprobe.example",
+            company_name="ATS Probe",
+        )
+
+        self.assertEqual(career_url, "https://jobs.lever.co/atsprobe")
+        self.assertEqual(trace["selected_from"], "ats_board_discovery")
+        self.assertIn("derived Lever board candidate", trace["selected"]["reasons"])
+        self.assertEqual(trace["ats_board_discovery"]["provider_board_verification"][0]["method"], "page_job_links")
+
+    def test_unverified_derived_ats_board_is_rejected(self):
+        class EmptyAshbyFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "api.ashbyhq.com" in url:
+                    raise FetchError("HTTP Error 404: Not Found")
+                return Page(url=url, final_url=url, html="<html><body>Ashby</body></html>")
+
+        agent = JobSourceAgent(EmptyAshbyFetcher(offline=True), max_ats_board_fetches=1)
+        trace = {"candidate_fetch_errors": []}
+
+        selected = agent._select_verified_career_candidate(
+            [
+                LinkCandidate(
+                    "https://jobs.ashbyhq.com/missing",
+                    "",
+                    "https://missing.example",
+                    180,
+                    ["derived Ashby board candidate"],
+                )
+            ],
+            trace,
+            max_fetches=1,
+        )
+
+        self.assertIsNone(selected)
+        self.assertEqual(trace["provider_board_verification"][0]["method"], "unverified")
 
     def test_common_path_candidates_include_www_variant(self):
         agent = JobSourceAgent(
@@ -119,6 +195,28 @@ class OfflinePipelineTests(unittest.TestCase):
 
         self.assertEqual(career_url, "https://localized.example/en-us/careers")
         self.assertEqual(trace["selected"]["url"], "https://localized.example/en-us/careers")
+
+    def test_localized_paths_include_nested_company_careers_route(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        paths = agent._locale_career_paths("/en/company/overview")
+
+        self.assertIn("/en/company/careers", paths)
+
+    def test_localized_company_careers_path_is_prioritized(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        candidate = agent._score_career_candidate(
+            RawLink(
+                "https://example.com/en/company/careers",
+                "",
+                "https://example.com/en",
+                "path_probe",
+            )
+        )
+
+        self.assertIn("localized career section", candidate.reasons)
+        self.assertGreater(candidate.score, 240)
 
     def test_short_career_probe_ranks_above_deep_career_jobs_probe(self):
         agent = JobSourceAgent(Fetcher(offline=True), enable_career_search=False)

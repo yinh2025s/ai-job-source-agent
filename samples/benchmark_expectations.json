@@ -1,0 +1,68 @@
+{
+  "Acme Greenhouse": {
+    "expected_provider": "greenhouse",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme Lever": {
+    "expected_provider": "lever",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme SmartRecruiters": {
+    "expected_provider": "smartrecruiters",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme Workday": {
+    "expected_provider": "workday",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme Ashby": {
+    "expected_provider": "ashby",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme iCIMS JSON-LD": {
+    "expected_provider": "icims",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme iCIMS Embedded": {
+    "expected_provider": "icims",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme SuccessFactors": {
+    "expected_provider": "successfactors",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme Workable": {
+    "expected_provider": "workable",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Acme BambooHR": {
+    "expected_provider": "bamboohr",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Google": {
+    "expected_provider": "google_careers",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  }
+}

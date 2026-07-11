@@ -8,6 +8,7 @@ import gzip
 import re
 import signal
 import socket
+import threading
 import time
 from contextlib import contextmanager
 from urllib.error import HTTPError, URLError
@@ -52,7 +53,7 @@ class TimeBudgetExceeded(RuntimeError):
 
 @contextmanager
 def hard_timeout(seconds: float, timeout_exception: type[Exception] = TimeoutError):
-    if not hasattr(signal, "SIGALRM"):
+    if not hasattr(signal, "SIGALRM") or threading.current_thread() is not threading.main_thread():
         yield
         return
 

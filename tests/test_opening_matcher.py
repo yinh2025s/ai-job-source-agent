@@ -42,6 +42,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://careers-acme.icims.com/jobs/search": "icims",
             "https://jobs.smartrecruiters.com/AcmeCorp": "smartrecruiters",
             "https://acme.successfactors.com/career": "successfactors",
+            "https://acme.bamboohr.com/careers": "bamboohr",
             "https://ats.rippling.com/embed/acme/jobs": "rippling",
         }
 
@@ -58,6 +59,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://careers-acme.icims.com/jobs/search": "/jobs/1234/data-analyst/job",
             "https://jobs.smartrecruiters.com/AcmeCorp": "743999999999999-data-analyst",
             "https://acme.successfactors.com/career": "career_job_req_id=987",
+            "https://acme.bamboohr.com/careers": "/careers/270",
             "https://ats.rippling.com/embed/acme-rippling/jobs": "b4f5c9d3",
         }
 
@@ -121,6 +123,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://jobs.smartrecruiters.com/AcmeApi": "https://api.smartrecruiters.com/v1/companies/AcmeApi/postings?limit=100",
             "https://company.wd5.myworkdayjobs.com/en-US/acme": "https://company.wd5.myworkdayjobs.com/wday/cxs/company/acme/jobs",
             "https://jobs.ashbyhq.com/acme": "https://api.ashbyhq.com/posting-api/job-board/acme",
+            "https://acme.bamboohr.com/careers": "https://acme.bamboohr.com/careers/list",
         }
 
         for url, expected in cases.items():

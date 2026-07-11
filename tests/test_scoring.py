@@ -68,6 +68,20 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(is_likely_job_detail(candidate))
         self.assertLess(candidate.score, 0)
 
+    def test_ats_asset_path_is_not_a_job_listing(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://oneok.wd1.myworkdayjobs.com/ONEOK/assets/logo",
+                text="",
+                source_url="https://oneok.wd1.myworkdayjobs.com/ONEOK",
+            ),
+            career_page_url="https://oneok.wd1.myworkdayjobs.com/ONEOK",
+        )
+
+        self.assertFalse(is_likely_job_detail(candidate))
+        self.assertFalse(is_likely_job_listing_page(candidate))
+        self.assertLess(candidate.score, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

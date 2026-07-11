@@ -141,6 +141,20 @@ BRAND_HIRING_RULES = {
         official_website_url="https://www.paretohealth.com/",
         reasons=["ParetoHealth publishes roles from paretohealth.com/careers"],
     ),
+    "brex": CompanyIdentity(
+        brand_name="Brex",
+        hiring_entity_name="Brex",
+        career_root_url="https://www.brex.com/careers",
+        official_website_url="https://www.brex.com/",
+        reasons=["Brex publishes roles from brex.com/careers"],
+    ),
+    "lyft": CompanyIdentity(
+        brand_name="Lyft",
+        hiring_entity_name="Lyft",
+        career_root_url="https://job-boards.greenhouse.io/lyft",
+        official_website_url="https://www.lyft.com/",
+        reasons=["Lyft routes careers traffic to a Greenhouse job board"],
+    ),
 }
 
 

@@ -4,6 +4,44 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
+RESULT_SCHEMA_VERSION = "2.0"
+
+STAGE_LINKEDIN_DISCOVERY = "linkedin_discovery"
+STAGE_WEBSITE_RESOLUTION = "website_resolution"
+STAGE_HIRING_IDENTITY_RESOLUTION = "hiring_identity_resolution"
+STAGE_CAREER_DISCOVERY = "career_discovery"
+STAGE_JOB_BOARD_DISCOVERY = "job_board_discovery"
+STAGE_OPENING_MATCH = "opening_match"
+STAGE_RESULT_VALIDATION = "result_validation"
+
+PIPELINE_STAGES = (
+    STAGE_LINKEDIN_DISCOVERY,
+    STAGE_WEBSITE_RESOLUTION,
+    STAGE_HIRING_IDENTITY_RESOLUTION,
+    STAGE_CAREER_DISCOVERY,
+    STAGE_JOB_BOARD_DISCOVERY,
+    STAGE_OPENING_MATCH,
+    STAGE_RESULT_VALIDATION,
+)
+
+
+@dataclass
+class StageResult:
+    """A machine-readable outcome for one fixed pipeline stage."""
+
+    stage: str
+    status: str
+    reason_code: str | None = None
+    retryable: bool = False
+    owner: str | None = None
+    provider: str | None = None
+    duration_ms: int = 0
+    input_count: int = 0
+    output_count: int = 0
+    evidence: list[dict[str, Any]] = field(default_factory=list)
+    detail: str | None = None
+
+
 @dataclass
 class CompanyInput:
     linkedin_job_url: str = ""
@@ -41,12 +79,25 @@ class DiscoveryResult:
     career_page_url: str | None = None
     job_list_page_url: str | None = None
     open_position_url: str | None = None
+    # `status` and `error` remain for existing demo consumers. New callers
+    # should use `pipeline_status`, `error_code`, and `stage_results`.
     status: str = "failed"
     error: str | None = None
+    error_code: str | None = None
+    pipeline_status: str = "failed"
+    stage_results: list[StageResult] = field(default_factory=list)
+    result_schema_version: str = RESULT_SCHEMA_VERSION
     trace: dict[str, Any] = field(default_factory=dict)
+
+    def stage_status(self, stage: str) -> str:
+        for result in self.stage_results:
+            if result.stage == stage:
+                return result.status
+        return "not_run"
 
     def result_record(self) -> dict[str, Any]:
         return {
+            "result_schema_version": self.result_schema_version,
             "company_name": self.company_name,
             "company_website_url": self.company_website_url,
             "hiring_entity_name": self.hiring_entity_name,
@@ -60,6 +111,13 @@ class DiscoveryResult:
             "open_position_url": self.open_position_url,
             "status": self.status,
             "error": self.error,
+            "error_code": self.error_code,
+            "pipeline_status": self.pipeline_status,
+            "career_page_status": self.stage_status(STAGE_CAREER_DISCOVERY),
+            "job_board_status": self.stage_status(STAGE_JOB_BOARD_DISCOVERY),
+            "opening_match_status": self.stage_status(STAGE_OPENING_MATCH),
+            "output_validation_status": self.stage_status(STAGE_RESULT_VALIDATION),
+            "stages": dataclass_to_dict(self.stage_results),
         }
 
     def trace_record(self) -> dict[str, Any]:
