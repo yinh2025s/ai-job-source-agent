@@ -24,6 +24,7 @@ ATS_DOMAINS = (
     "successfactors.com",
     "sapsf.com",
     "myworkdayjobs.com",
+    "ats.rippling.com",
 )
 
 CAREER_KEYWORDS = {
@@ -301,6 +302,8 @@ def _looks_like_ats_job_detail(url: str) -> bool:
     if "successfactors.com" in host or "sapsf.com" in host:
         query = urlparse(url).query.lower()
         return "career_job_req_id" in query or "jobreqid" in query or any(part.lower() == "job" for part in parts)
+    if "rippling.com" in host:
+        return "jobs" in [part.lower() for part in parts] and len(parts) >= 4 and parts[0].lower() != "embed"
     return len(parts) >= 2
 
 

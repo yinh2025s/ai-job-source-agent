@@ -13,7 +13,7 @@ from .scoring import (
     score_career_link,
     score_job_link,
 )
-from .web import FetchError, Fetcher, RawLink, domain_of, extract_links, normalize_url
+from .web import FetchError, Fetcher, RawLink, extract_links, normalize_url
 
 
 COMMON_CAREER_PATHS = (
@@ -32,11 +32,18 @@ COMMON_CAREER_PATHS = (
     "/company/careers",
     "/about/careers",
     "/about-us/careers",
+    "/about-us/jobs",
     "/careers/jobs",
     "/careers/listings",
     "/careers/search",
     "/en/careers",
     "/en/jobs",
+    "/en-us/careers",
+    "/en-us/career",
+    "/en-us/jobs",
+    "/en-us/careers/jobs",
+    "/us/en/careers",
+    "/us/en/jobs",
 )
 
 
@@ -46,6 +53,8 @@ class JobSourceAgent:
         fetcher: Fetcher,
         max_candidates: int = 12,
         max_job_pages: int = 8,
+        max_career_candidate_fetches: int | None = None,
+        max_career_search_queries: int = 5,
         enable_sitemap_discovery: bool = True,
         enable_career_search: bool = True,
         career_search_timeout: float | None = None,
@@ -53,6 +62,10 @@ class JobSourceAgent:
         self.fetcher = fetcher
         self.max_candidates = max_candidates
         self.max_job_pages = max_job_pages
+        self.max_career_candidate_fetches = (
+            max_candidates if max_career_candidate_fetches is None else max(0, max_career_candidate_fetches)
+        )
+        self.max_career_search_queries = max(0, max_career_search_queries)
         self.enable_sitemap_discovery = enable_sitemap_discovery
         self.enable_career_search = enable_career_search
         self.career_search_timeout = career_search_timeout
@@ -131,7 +144,7 @@ class JobSourceAgent:
             trace["sitemap_discovery"] = {"skipped": True}
 
         scored = sorted(
-            [score_career_link(link) for link in raw_candidates],
+            [self._score_career_candidate(link) for link in raw_candidates],
             key=lambda candidate: candidate.score,
             reverse=True,
         )
@@ -196,6 +209,7 @@ class JobSourceAgent:
             "icims",
             "workday",
             "successfactors",
+            "rippling",
         }
         if target_title and provider in provider_first_matchers:
             match, match_trace = JobOpeningMatcher(self.fetcher).match(
@@ -300,46 +314,123 @@ class JobSourceAgent:
 
     def _common_path_candidates(self, homepage_url: str) -> list[RawLink]:
         parsed = urlparse(homepage_url)
-        base = f"{parsed.scheme}://{parsed.netloc}"
-        candidates = [
-            RawLink(url=normalize_url(path, base), text=path.strip("/").replace("-", " "), source_url=homepage_url)
-            for path in COMMON_CAREER_PATHS
-        ]
+        candidates = []
+        base_urls = self._base_url_variants(parsed.scheme, parsed.netloc)
+        locale_paths = self._locale_career_paths(parsed.path)
+        for base in base_urls:
+            candidates.extend(
+                RawLink(
+                    url=normalize_url(path, base),
+                    text="",
+                    source_url=homepage_url,
+                    origin="path_probe",
+                )
+                for path in COMMON_CAREER_PATHS + tuple(locale_paths)
+            )
         brand_label = self._brand_label_from_host(parsed.netloc)
         if brand_label:
-            for path in (f"/join-{brand_label}", f"/en/join-{brand_label}"):
-                candidates.append(
-                    RawLink(
-                        url=normalize_url(path, base),
-                        text=f"careers join us {brand_label.replace('-', ' ')}",
-                        source_url=homepage_url,
+            for base in base_urls:
+                for path in (f"/join-{brand_label}", f"/en/join-{brand_label}", f"/en-us/join-{brand_label}"):
+                    candidates.append(
+                        RawLink(
+                            url=normalize_url(path, base),
+                            text="",
+                            source_url=homepage_url,
+                            origin="path_probe",
+                        )
                     )
-                )
         root_domain = parsed.netloc.lower().removeprefix("www.")
         for subdomain in ("careers", "jobs"):
             candidates.append(
                 RawLink(
                     url=normalize_url(f"https://{subdomain}.{root_domain}"),
-                    text="careers jobs",
+                    text="",
                     source_url=homepage_url,
+                    origin="subdomain_probe",
                 )
             )
         return candidates
+
+    def _base_url_variants(self, scheme: str, netloc: str) -> list[str]:
+        host = netloc.lower()
+        hosts = [host]
+        if host and not host.startswith("www."):
+            hosts.append(f"www.{host}")
+        return [f"{scheme}://{candidate}" for candidate in hosts if candidate]
+
+    def _locale_career_paths(self, path: str) -> list[str]:
+        first_part = next((part for part in path.split("/") if part), "")
+        if not first_part or not self._looks_like_locale_path(first_part):
+            return []
+        return [
+            f"/{first_part}/careers",
+            f"/{first_part}/career",
+            f"/{first_part}/jobs",
+            f"/{first_part}/careers/jobs",
+        ]
+
+    def _looks_like_locale_path(self, value: str) -> bool:
+        parts = value.lower().split("-")
+        return len(parts) in {1, 2} and all(len(part) == 2 and part.isalpha() for part in parts)
 
     def _search_career_candidates(self, company_name: str, homepage_url: str):
         original_timeout = getattr(self.fetcher, "timeout", None)
         if self.career_search_timeout and original_timeout and self.career_search_timeout > original_timeout:
             self.fetcher.timeout = self.career_search_timeout
         try:
-            return CareerSearchResolver(self.fetcher).search(company_name, homepage_url)
+            return CareerSearchResolver(
+                self.fetcher,
+                max_queries=self.max_career_search_queries,
+            ).search(company_name, homepage_url)
         finally:
             if original_timeout is not None:
                 self.fetcher.timeout = original_timeout
 
+    def _score_career_candidate(self, link: RawLink) -> LinkCandidate:
+        candidate = score_career_link(link)
+        path_parts = [part.lower() for part in urlparse(link.url).path.split("/") if part]
+        if self._is_concise_career_path(path_parts):
+            candidate.score += 120
+            candidate.reasons.append("concise career root path")
+        if link.origin == "page_link":
+            candidate.score += 110
+            candidate.reasons.append("homepage navigation link")
+        elif link.origin == "path_probe":
+            join_path = path_parts[-1] if path_parts else ""
+            is_brand_join_path = join_path.startswith("join-")
+            candidate.score -= 40 if is_brand_join_path else 75
+            candidate.reasons.append("generated path probe")
+            if is_brand_join_path and join_path not in {"join-us", "join-our-team"}:
+                candidate.score += 100
+                candidate.reasons.append("brand-specific join path")
+        source_path = urlparse(link.source_url).path.lower()
+        if "sitemap" in source_path or source_path.endswith(".xml"):
+            candidate.score += 150
+            candidate.reasons.append("sitemap source")
+        return candidate
+
+    def _is_concise_career_path(self, path_parts: list[str]) -> bool:
+        if len(path_parts) == 1:
+            return path_parts[0] in {"career", "careers", "jobs", "job-openings", "open-positions"} or path_parts[0].startswith("join-")
+        if len(path_parts) == 2:
+            return (
+                self._looks_like_locale_path(path_parts[0])
+                and path_parts[1] in {"career", "careers", "jobs"}
+            ) or path_parts[1].startswith("join-")
+        return False
+
     def _select_verified_career_candidate(self, candidates: list[LinkCandidate], trace: dict) -> str | None:
+        fetch_attempts = 0
         for candidate in candidates[: self.max_candidates]:
             if candidate.score < 50:
                 continue
+            if fetch_attempts >= self.max_career_candidate_fetches:
+                trace["candidate_fetch_budget_exhausted"] = {
+                    "limit": self.max_career_candidate_fetches,
+                    "remaining_candidates": len(candidates) - fetch_attempts,
+                }
+                return None
+            fetch_attempts += 1
             try:
                 page = self.fetcher.fetch(candidate.url)
             except FetchError as exc:
@@ -394,7 +485,14 @@ class JobSourceAgent:
                     token in lower_url
                     for token in ("career", "careers", "jobs", "join-us", "join-our-team", "join-", "openings")
                 ):
-                    links.append(RawLink(url=normalize_url(url), text=urlparse(url).path, source_url=sitemap_url))
+                    links.append(
+                        RawLink(
+                            url=normalize_url(url),
+                            text=urlparse(url).path,
+                            source_url=sitemap_url,
+                            origin="sitemap",
+                        )
+                    )
 
         trace["candidate_count"] = len(links)
         return links, trace
@@ -476,15 +574,11 @@ class JobSourceAgent:
         return any(marker in text for marker in ats_markers)
 
     def _looks_like_job_detail_url(self, url: str) -> bool:
-        if not is_ats_url(url):
-            return False
-        host = domain_of(url)
-        parts = [part for part in urlparse(url).path.split("/") if part]
-        if host == "jobs.lever.co":
-            return len(parts) >= 2
-        if "greenhouse.io" in host:
-            return "jobs" in parts and len(parts) >= 3
-        return len(parts) >= 2
+        candidate = score_job_link(
+            RawLink(url=url, text="", source_url=url, origin="job_detail_check"),
+            url,
+        )
+        return is_likely_job_detail(candidate)
 
 
 class DiscoveryError(RuntimeError):

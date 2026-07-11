@@ -38,39 +38,57 @@ class CareerSearchResult:
 
 
 class CareerSearchResolver:
-    def __init__(self, fetcher: Fetcher, max_results: int = 8) -> None:
+    def __init__(self, fetcher: Fetcher, max_results: int = 8, max_queries: int = 5) -> None:
         self.fetcher = fetcher
         self.max_results = max_results
+        self.max_queries = max_queries
 
     def search(self, company_name: str, company_website_url: str) -> CareerSearchResult:
-        query = urlencode({"q": f"{company_name} careers jobs"})
-        search_url = f"{SEARCH_ENDPOINT}?{query}"
-        trace = {"query_url": search_url, "candidates": [], "error": None}
-        try:
-            page = self.fetcher.fetch(search_url)
-        except FetchError as exc:
-            trace["error"] = str(exc)
-            return CareerSearchResult([], trace)
-
-        parser = _SearchResultParser()
-        parser.feed(page.html)
-        raw_urls = parser.urls + re.findall(r"https?://[^\"'<>\s)]+", page.html)
         official_domain = domain_of(company_website_url)
         candidates: list[LinkCandidate] = []
         seen: set[str] = set()
-        for raw_url in raw_urls:
-            cleaned = clean_search_result_url(raw_url)
-            if not cleaned or cleaned.rstrip("/") in seen:
-                continue
-            seen.add(cleaned.rstrip("/"))
-            if _is_blocked(cleaned) or is_resource_url(cleaned):
-                continue
-            link = RawLink(url=cleaned, text=cleaned, source_url=search_url)
-            candidate = score_career_link(link)
-            candidate.score += _search_bonus(cleaned, official_domain)
-            if candidate.score < 60:
-                continue
-            candidates.append(candidate)
+        trace = {"queries": [], "query_url": None, "candidates": [], "error": None, "stopped_reason": None}
+
+        for query_text in build_search_queries(company_name, official_domain)[: self.max_queries]:
+            query = urlencode({"q": query_text})
+            search_url = f"{SEARCH_ENDPOINT}?{query}"
+            query_trace = {"query_url": search_url, "query": query_text, "candidates": [], "error": None}
+            trace["queries"].append(query_trace)
+            if trace["query_url"] is None:
+                trace["query_url"] = search_url
+            try:
+                page = self.fetcher.fetch(search_url)
+            except FetchError as exc:
+                query_trace["error"] = str(exc)
+                trace["error"] = trace["error"] or str(exc)
+                trace["stopped_reason"] = "search_endpoint_fetch_failed"
+                break
+
+            parser = _SearchResultParser()
+            parser.feed(page.html)
+            raw_urls = parser.urls + re.findall(r"https?://[^\"'<>\s)]+", page.html)
+            for raw_url in raw_urls:
+                cleaned = clean_search_result_url(raw_url)
+                if not cleaned or cleaned.rstrip("/") in seen:
+                    continue
+                seen.add(cleaned.rstrip("/"))
+                if _is_blocked(cleaned) or is_resource_url(cleaned):
+                    continue
+                link = RawLink(url=cleaned, text=cleaned, source_url=search_url, origin="search_result")
+                candidate = score_career_link(link)
+                candidate.score += _search_bonus(cleaned, official_domain, query_text)
+                if candidate.score < 60:
+                    continue
+                candidates.append(candidate)
+                query_trace["candidates"].append(
+                    {
+                        "url": candidate.url,
+                        "score": candidate.score,
+                        "reasons": candidate.reasons,
+                    }
+                )
+            if candidates:
+                break
 
         candidates.sort(key=lambda candidate: candidate.score, reverse=True)
         trace["candidates"] = [
@@ -89,6 +107,8 @@ class _SearchResultParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.urls: list[str] = []
         self._in_h2 = False
+        self._active_href = ""
+        self._active_text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {key.lower(): value or "" for key, value in attrs}
@@ -96,10 +116,24 @@ class _SearchResultParser(HTMLParser):
             self._in_h2 = True
         elif tag == "a" and self._in_h2 and attrs_dict.get("href"):
             self.urls.append(attrs_dict["href"])
+        elif tag == "a" and attrs_dict.get("href"):
+            self._active_href = attrs_dict["href"]
+            self._active_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._active_href:
+            self._active_text.append(data)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "h2":
             self._in_h2 = False
+        if tag == "a" and self._active_href:
+            text = " ".join("".join(self._active_text).split()).lower()
+            href = self._active_href.lower()
+            if any(marker in f"{text} {href}" for marker in ("career", "careers", "jobs", "job-openings")):
+                self.urls.append(self._active_href)
+            self._active_href = ""
+            self._active_text = []
 
 
 def clean_search_result_url(url: str) -> str:
@@ -124,10 +158,45 @@ def _is_blocked(url: str) -> bool:
     return any(domain == blocked or domain.endswith("." + blocked) for blocked in BLOCKED_SEARCH_DOMAINS)
 
 
-def _search_bonus(url: str, official_domain: str) -> int:
+def build_search_queries(company_name: str, official_domain: str) -> list[str]:
+    queries = [
+        f"{company_name} careers jobs",
+    ]
+    if official_domain:
+        queries.extend(
+            [
+                f"site:{official_domain} careers",
+                f"site:{official_domain} jobs",
+            ]
+        )
+    queries.extend(
+        [
+            f"{company_name} careers",
+            f"{company_name} jobs",
+        ]
+    )
+    for provider in ("greenhouse", "lever", "workday", "ashby", "smartrecruiters", "icims", "workable"):
+        queries.append(f"{company_name} {provider} jobs")
+    return dedupe_preserving_order(queries)
+
+
+def dedupe_preserving_order(items: list[str]) -> list[str]:
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in items:
+        key = item.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(item)
+    return deduped
+
+
+def _search_bonus(url: str, official_domain: str, query_text: str = "") -> int:
     score = 0
     domain = domain_of(url)
     path = urlparse(url).path.lower()
+    query_lower = query_text.lower()
     if official_domain and (domain == official_domain or domain.endswith("." + official_domain)):
         score += 80
     if is_ats_url(url):
@@ -138,4 +207,6 @@ def _search_bonus(url: str, official_domain: str) -> int:
         score += 55
     if any(part in path for part in ("/careers", "/career", "/jobs", "/join", "/openings")):
         score += 45
+    if "site:" in query_lower and official_domain and domain.endswith(official_domain):
+        score += 25
     return score

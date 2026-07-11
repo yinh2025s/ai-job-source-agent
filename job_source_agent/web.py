@@ -8,6 +8,7 @@ import gzip
 import re
 import signal
 import socket
+import time
 from contextlib import contextmanager
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
@@ -30,6 +31,7 @@ class RawLink:
     url: str
     text: str
     source_url: str
+    origin: str = "page_link"
 
 
 @dataclass
@@ -44,21 +46,36 @@ class FetchError(RuntimeError):
     pass
 
 
+class TimeBudgetExceeded(RuntimeError):
+    """Raised when a caller-level deadline expires."""
+
+
 @contextmanager
-def hard_timeout(seconds: float):
+def hard_timeout(seconds: float, timeout_exception: type[Exception] = TimeoutError):
     if not hasattr(signal, "SIGALRM"):
         yield
         return
 
+    if seconds <= 0:
+        raise timeout_exception(f"operation timed out after {seconds} seconds")
+
     def _handle_timeout(_signum, _frame):
-        raise TimeoutError(f"operation timed out after {seconds} seconds")
+        if outer_timer_wins and callable(old_handler):
+            old_handler(_signum, _frame)
+        raise timeout_exception(f"operation timed out after {seconds} seconds")
 
     old_handler = signal.signal(signal.SIGALRM, _handle_timeout)
-    signal.setitimer(signal.ITIMER_REAL, seconds)
+    old_delay, old_interval = signal.getitimer(signal.ITIMER_REAL)
+    outer_timer_wins = old_delay > 0 and old_delay <= seconds
+    effective_seconds = min(seconds, old_delay) if old_delay > 0 else seconds
+    started = time.monotonic()
+    signal.setitimer(signal.ITIMER_REAL, effective_seconds)
     try:
         yield
     finally:
-        signal.setitimer(signal.ITIMER_REAL, 0)
+        elapsed = time.monotonic() - started
+        remaining_delay = max(0.0, old_delay - elapsed) if old_delay > 0 else 0.0
+        signal.setitimer(signal.ITIMER_REAL, remaining_delay, old_interval)
         signal.signal(signal.SIGALRM, old_handler)
 
 
@@ -135,6 +152,7 @@ class _LinkParser(HTMLParser):
                     url=normalized_href,
                     text=text,
                     source_url=self.source_url,
+                    origin="page_link",
                 )
             )
         self._active_href = None
@@ -153,7 +171,14 @@ def extract_links(page: Page) -> list[RawLink]:
             continue
         if any(existing.url == normalized_url for existing in links):
             continue
-        links.append(RawLink(url=normalized_url, text="", source_url=page.final_url or page.url))
+        links.append(
+            RawLink(
+                url=normalized_url,
+                text="",
+                source_url=page.final_url or page.url,
+                origin="embedded_url",
+            )
+        )
     return links
 
 

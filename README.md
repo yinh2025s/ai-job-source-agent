@@ -191,9 +191,12 @@ python3 scripts/live_batch_eval.py \
   --linkedin-pages 1 \
   --fetch-timeout 2 \
   --career-search-timeout 7 \
+  --max-career-search-queries 5 \
   --verify-limit 0 \
   --max-career-candidates 5 \
+  --max-career-fetches 5 \
   --max-job-pages 2 \
+  --company-time-budget 45 \
   --render-js \
   --render-budget 2 \
   --skip-sitemap \
@@ -254,8 +257,9 @@ Career page finder
   - common path probing
   - brand-style join path probing, for example /join-{brand}
   - search fallback for "{company} careers jobs" when common paths fail
-  - sitemap and robots sitemap discovery
-  - ATS domain detection
+- sitemap and robots sitemap discovery
+- ATS domain detection
+- Rippling public job-board detection and title matching
   - scored candidates with reasons
         |
         v

@@ -18,7 +18,7 @@ from job_source_agent.linkedin_discovery import (
 from job_source_agent.models import CompanyInput, DiscoveryResult, dataclass_to_dict
 from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
-from job_source_agent.web import Fetcher
+from job_source_agent.web import Fetcher, TimeBudgetExceeded, hard_timeout
 from job_source_agent.website_resolver import CompanyWebsiteResolver
 
 
@@ -30,9 +30,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--linkedin-pages", type=int, default=3)
     parser.add_argument("--fetch-timeout", type=float, default=3)
     parser.add_argument("--career-search-timeout", type=float, default=6)
+    parser.add_argument("--max-career-search-queries", type=int, default=5)
     parser.add_argument("--verify-limit", type=int, default=0)
     parser.add_argument("--max-career-candidates", type=int, default=6)
+    parser.add_argument("--max-career-fetches", type=int, default=5)
     parser.add_argument("--max-job-pages", type=int, default=3)
+    parser.add_argument(
+        "--company-time-budget",
+        type=float,
+        default=45,
+        help="Maximum wall-clock seconds spent on each company before checkpointing a structured timeout.",
+    )
     parser.add_argument("--skip-sitemap", action="store_true")
     parser.add_argument("--render-js", action="store_true", help="Use smart browser fallback for company pages.")
     parser.add_argument("--render-budget", type=int, default=2, help="Browser-rendered pages allowed per company.")
@@ -64,7 +72,14 @@ def main() -> None:
     for index, company in enumerate(companies, start=1):
         item_started = time.time()
         try:
-            result = run_company(company, args)
+            with hard_timeout(args.company_time_budget, TimeBudgetExceeded):
+                result = run_company(company, args)
+        except TimeBudgetExceeded:
+            result = failure_result(
+                company,
+                error="company_time_budget_exhausted",
+                detail=f"Exceeded the {args.company_time_budget:g}-second per-company budget.",
+            )
         except Exception as exc:
             result = failure_result(
                 company,
@@ -135,6 +150,8 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             fetcher,
             max_candidates=args.max_career_candidates,
             max_job_pages=args.max_job_pages,
+            max_career_candidate_fetches=args.max_career_fetches,
+            max_career_search_queries=args.max_career_search_queries,
             enable_sitemap_discovery=not args.skip_sitemap,
             career_search_timeout=args.career_search_timeout,
         ).discover(
@@ -157,6 +174,8 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         fetcher,
         max_candidates=args.max_career_candidates,
         max_job_pages=args.max_job_pages,
+        max_career_candidate_fetches=args.max_career_fetches,
+        max_career_search_queries=args.max_career_search_queries,
         enable_sitemap_discovery=not args.skip_sitemap,
         career_search_timeout=args.career_search_timeout,
     ).discover(company)

@@ -200,6 +200,8 @@ def detect_provider(url: str) -> str:
         return "workday"
     if "successfactors.com" in host or "sapsf.com" in host:
         return "successfactors"
+    if "rippling.com" in host:
+        return "rippling"
     return "generic"
 
 
@@ -237,6 +239,8 @@ def build_provider_search_urls(job_list_url: str, target_title: str) -> list[str
             add_query_params(job_list_url, {"q": target_title}),
             add_query_params(job_list_url, {"keyword": target_title}),
         ]
+    if provider == "rippling":
+        return [job_list_url]
     return [job_list_url, f"{base}?q={query}", f"{base}?search={query}"]
 
 
@@ -583,7 +587,7 @@ def build_search_result_url(job_list_url: str, target_title: str) -> str | None:
         "ashby",
     }:
         return job_list_url
-    if provider in {"workable", "smartrecruiters", "icims", "workday", "successfactors"}:
+    if provider in {"workable", "smartrecruiters", "icims", "workday", "successfactors", "rippling"}:
         return build_provider_search_urls(job_list_url, target_title)[-1]
     return None
 

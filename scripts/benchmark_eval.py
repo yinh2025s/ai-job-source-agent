@@ -21,11 +21,14 @@ ROOT = Path(__file__).resolve().parents[1]
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a fixed benchmark set against the job-source pipeline.")
     parser.add_argument("--input", default=str(ROOT / "samples" / "benchmark_companies.json"))
-    parser.add_argument("--fixtures-dir", default=str(ROOT / "samples" / "sites"))
+    parser.add_argument("--fixtures-dir")
     parser.add_argument("--live", action="store_true", help="Use live network instead of requiring fixtures.")
     parser.add_argument("--fetch-timeout", type=float, default=4)
     parser.add_argument("--max-career-candidates", type=int, default=8)
+    parser.add_argument("--max-career-fetches", type=int, default=6)
+    parser.add_argument("--max-career-search-queries", type=int, default=5)
     parser.add_argument("--max-job-pages", type=int, default=4)
+    parser.add_argument("--skip-sitemap", action="store_true")
     parser.add_argument("--output", default="/tmp/benchmark-results.json")
     parser.add_argument("--trace-output", default="/tmp/benchmark-trace.json")
     parser.add_argument("--summary-output", default="/tmp/benchmark-summary.json")
@@ -36,8 +39,9 @@ def main() -> None:
     args = build_parser().parse_args()
     started = time.time()
     companies = load_company_inputs(args.input)
+    fixtures_dir = args.fixtures_dir or (str(ROOT / "samples" / "sites") if not args.live else None)
     fetcher = Fetcher(
-        fixtures_dir=args.fixtures_dir,
+        fixtures_dir=fixtures_dir,
         offline=not args.live,
         timeout=args.fetch_timeout,
     )
@@ -45,15 +49,42 @@ def main() -> None:
         fetcher,
         max_candidates=args.max_career_candidates,
         max_job_pages=args.max_job_pages,
+        max_career_candidate_fetches=args.max_career_fetches,
+        max_career_search_queries=args.max_career_search_queries,
+        enable_sitemap_discovery=not args.skip_sitemap,
     )
-    results = [agent.discover(company) for company in companies]
-    result_records = [result.result_record() for result in results]
-    trace_records = [dataclass_to_dict(result.trace_record()) for result in results]
+    output_path = Path(args.output)
+    trace_path = Path(args.trace_output)
+    summary_path = Path(args.summary_output)
+    result_records = []
+    trace_records = []
+
+    for index, company in enumerate(companies, start=1):
+        item_started = time.time()
+        result = agent.discover(company)
+        result_records.append(result.result_record())
+        trace_records.append(dataclass_to_dict(result.trace_record()))
+        summary = summarize_results(result_records, elapsed_sec=round(time.time() - started, 3))
+
+        output_path.write_text(json.dumps(result_records, indent=2), encoding="utf-8")
+        trace_path.write_text(json.dumps(trace_records, indent=2), encoding="utf-8")
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+        print(
+            f"[{index:02d}/{len(companies):02d}] "
+            f"{result.status.upper()} {result.company_name} "
+            f"career={bool(result.career_page_url)} "
+            f"job_list={bool(result.job_list_page_url)} "
+            f"opening={bool(result.open_position_url)} "
+            f"error={result.error} "
+            f"elapsed={round(time.time() - item_started, 1)}s",
+            flush=True,
+        )
+
     summary = summarize_results(result_records, elapsed_sec=round(time.time() - started, 3))
 
-    Path(args.output).write_text(json.dumps(result_records, indent=2), encoding="utf-8")
-    Path(args.trace_output).write_text(json.dumps(trace_records, indent=2), encoding="utf-8")
-    Path(args.summary_output).write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    output_path.write_text(json.dumps(result_records, indent=2), encoding="utf-8")
+    trace_path.write_text(json.dumps(trace_records, indent=2), encoding="utf-8")
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print_summary(summary)
     print(f"results: {args.output}", flush=True)

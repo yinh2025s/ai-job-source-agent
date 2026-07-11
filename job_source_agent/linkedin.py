@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import fields
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import urlparse
@@ -20,7 +21,7 @@ def load_company_inputs(path: str | Path) -> list[CompanyInput]:
     records = json.loads(Path(path).read_text(encoding="utf-8"))
     inputs: list[CompanyInput] = []
     for record in records:
-        company = CompanyInput(**record)
+        company = CompanyInput(**_normalize_input_record(record))
         if company.linkedin_html_path:
             html_data = parse_linkedin_html(Path(company.linkedin_html_path))
             company.company_name = company.company_name or html_data.get("company_name", "")
@@ -33,6 +34,22 @@ def load_company_inputs(path: str | Path) -> list[CompanyInput]:
             )
         inputs.append(company)
     return inputs
+
+
+def _normalize_input_record(record: dict) -> dict:
+    """Accept either source records or a prior results/trace output for reruns."""
+    normalized = dict(record)
+    normalized.setdefault("job_title", normalized.get("linkedin_job_title"))
+    normalized.setdefault("job_location", normalized.get("linkedin_job_location"))
+    if not normalized.get("career_root_url") and normalized.get("career_page_url"):
+        normalized["career_root_url"] = normalized["career_page_url"]
+    if "trace" in normalized and not normalized.get("source_trace"):
+        trace = normalized["trace"]
+        if isinstance(trace, dict):
+            normalized["source_trace"] = trace.get("source_trace", {})
+
+    allowed_fields = {field.name for field in fields(CompanyInput)}
+    return {key: value for key, value in normalized.items() if key in allowed_fields}
 
 
 def infer_company_name_from_url(url: str) -> str:

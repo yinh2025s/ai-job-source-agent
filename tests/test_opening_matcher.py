@@ -42,6 +42,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://careers-acme.icims.com/jobs/search": "icims",
             "https://jobs.smartrecruiters.com/AcmeCorp": "smartrecruiters",
             "https://acme.successfactors.com/career": "successfactors",
+            "https://ats.rippling.com/embed/acme/jobs": "rippling",
         }
 
         for url, provider in cases.items():
@@ -57,6 +58,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "https://careers-acme.icims.com/jobs/search": "/jobs/1234/data-analyst/job",
             "https://jobs.smartrecruiters.com/AcmeCorp": "743999999999999-data-analyst",
             "https://acme.successfactors.com/career": "career_job_req_id=987",
+            "https://ats.rippling.com/embed/acme-rippling/jobs": "b4f5c9d3",
         }
 
         for url, expected_url_part in cases.items():
@@ -78,6 +80,20 @@ class OpeningMatcherTests(unittest.TestCase):
             with self.subTest(url=url):
                 urls = build_provider_search_urls(url, "Data Analyst")
                 self.assertTrue(any(expected_query in search_url for search_url in urls))
+
+    def test_rippling_board_matches_static_job_link(self):
+        matcher = JobOpeningMatcher(
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
+        )
+
+        match, trace = matcher.match(
+            "https://ats.rippling.com/embed/acme-rippling/jobs",
+            "Data Analyst",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertIn("b4f5c9d3", match.url)
+        self.assertEqual(trace["provider"], "rippling")
 
     def test_structured_provider_apis_are_used_before_html(self):
         matcher = JobOpeningMatcher(

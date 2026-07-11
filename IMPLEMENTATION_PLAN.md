@@ -136,6 +136,7 @@
 | iCIMS | Structured page extraction | 支持 JSON-LD / embedded JSON job records，并可还原 `/jobs/{id}/{slug}/job` |
 | Workday | Structured CXS API adapter | 已支持从 Workday board URL 构造 `/wday/cxs/{tenant}/{site}/jobs` 并用 title payload 搜索 |
 | SuccessFactors | Structured page extraction | 支持 embedded JSON job records 和 `jobReqId` -> detail URL 还原 |
+| Rippling | Structured HTML adapter | 支持公开 board 中的静态职位链接和 title matching |
 
 已验证的离线 fixtures：
 
@@ -165,17 +166,21 @@
   - `--fetch-timeout`
   - `--career-search-timeout`
   - `--max-career-candidates`
+  - `--max-career-fetches`
+  - `--max-career-search-queries`
   - `--max-job-pages`
+  - `--company-time-budget` (live batch; each company has a wall-clock deadline)
 
 已知结果：
 
 - mixed fast batch 曾达到 8/27 official job-list successes
 - Product Manager 类大厂/品牌样本比随机小公司更容易成功
 - random small-company AI Engineer 样本最弱
+- 2026-07-11 focused live checks: Cricut reached `https://cricut.com/careers`; Carv's public Rippling board matched `Growth Product Manager` to its exact job-detail URL. The full Carv homepage-to-board run remains sensitive to transient website timeouts.
 
 当前限制：
 
-- 单进程批量跑仍然慢
+- 单进程批量跑仍然慢；已加入 per-company deadline，避免单个慢站点阻塞整个批次
 - 并发 subprocess 方案曾触发本机 Python crash reporter，已停止使用
 - 后续需要安全的 asyncio/thread worker + per-company budget
 
@@ -195,7 +200,7 @@
 
 当前测试数量：
 
-- 39 unit tests passing
+- 51 unit tests passing
 
 ## 当前主要短板
 
