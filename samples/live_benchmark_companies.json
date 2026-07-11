@@ -1,0 +1,41 @@
+[
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Anthropic",
+    "company_website_url": "https://www.anthropic.com",
+    "job_title": "AI Research Engineer"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "PostHog",
+    "company_website_url": "https://posthog.com",
+    "job_title": "AI Research Engineer"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Ekimetrics",
+    "company_website_url": "https://www.ekimetrics.com",
+    "job_title": "Data Scientist"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Lyft",
+    "company_website_url": "https://www.lyft.com",
+    "linkedin_company_url": "https://www.linkedin.com/company/lyft",
+    "job_title": "Data Analyst, Operations Planning"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Brex",
+    "company_website_url": "https://www.brex.com",
+    "linkedin_company_url": "https://www.linkedin.com/company/brexhq",
+    "job_title": "Data Analyst II"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Notion",
+    "company_website_url": "https://www.notion.com",
+    "linkedin_company_url": "https://www.linkedin.com/company/notionhq",
+    "job_title": "Product Manager"
+  }
+]

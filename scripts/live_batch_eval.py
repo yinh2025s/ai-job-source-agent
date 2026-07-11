@@ -9,7 +9,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.company_identity import CompanyIdentityResolver
-from job_source_agent.evaluation import compare_summaries, summarize_results
+from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
+from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.linkedin_discovery import (
     LinkedInJobsDiscoverer,
     linkedin_postings_to_company_inputs,
@@ -30,13 +31,15 @@ from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.process_budget import ProcessBudgetExceeded, RemoteProcessError, run_with_process_budget
 from job_source_agent.reasons import canonical_reason_code, make_stage_result
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
-from job_source_agent.web import Fetcher
+from job_source_agent.web import Fetcher, normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Run a checkpointed live batch evaluation.")
-    parser.add_argument("--linkedin-keywords", required=True)
+    parser.add_argument("--input", help="Optional fixed company input JSON. If omitted, LinkedIn search is used.")
+    parser.add_argument("--expectations", help="Optional expectations JSON keyed by company name.")
+    parser.add_argument("--linkedin-keywords")
     parser.add_argument("--linkedin-location", default="United States")
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--linkedin-pages", type=int, default=3)
@@ -73,13 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> None:
     args = build_parser().parse_args()
     linkedin_fetcher = Fetcher(timeout=max(args.fetch_timeout, 6))
-    postings = LinkedInJobsDiscoverer(linkedin_fetcher).search(
-        keywords=args.linkedin_keywords,
-        location=args.linkedin_location,
-        limit=args.limit,
-        pages=args.linkedin_pages,
-    )
-    companies = linkedin_postings_to_company_inputs(postings)[: args.limit]
+    companies = load_batch_companies(args, linkedin_fetcher)
 
     output_path = Path(args.output)
     trace_path = Path(args.trace_output)
@@ -97,10 +94,8 @@ def main() -> None:
         traces.append(dataclass_to_dict(result.trace_record()))
         output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
         trace_path.write_text(json.dumps(traces, indent=2), encoding="utf-8")
-        summary_path.write_text(
-            json.dumps(summarize_results(results, elapsed_sec=round(time.time() - started, 1)), indent=2),
-            encoding="utf-8",
-        )
+        summary = build_summary(results, args, elapsed_sec=round(time.time() - started, 1))
+        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
         print(
             f"[{index:02d}/{len(companies):02d}] "
@@ -113,7 +108,7 @@ def main() -> None:
             flush=True,
         )
 
-    summary = summarize_results(results, elapsed_sec=round(time.time() - started, 1))
+    summary = build_summary(results, args, elapsed_sec=round(time.time() - started, 1))
     if args.baseline_summary:
         baseline_summary = json.loads(Path(args.baseline_summary).read_text(encoding="utf-8"))
         summary["regression"] = compare_summaries(summary, baseline_summary)
@@ -122,6 +117,31 @@ def main() -> None:
     print(f"results: {output_path}", flush=True)
     print(f"trace: {trace_path}", flush=True)
     print(f"summary: {summary_path}", flush=True)
+    expectation_checks = summary.get("expectation_checks", {})
+    if expectation_checks.get("failed"):
+        raise SystemExit("Live expectations failed; see the summary JSON for details.")
+
+
+def load_batch_companies(args: argparse.Namespace, linkedin_fetcher: Fetcher) -> list[CompanyInput]:
+    if args.input:
+        return load_company_inputs(args.input)[: args.limit]
+    if not args.linkedin_keywords:
+        raise SystemExit("Provide either --input or --linkedin-keywords.")
+    postings = LinkedInJobsDiscoverer(linkedin_fetcher).search(
+        keywords=args.linkedin_keywords,
+        location=args.linkedin_location,
+        limit=args.limit,
+        pages=args.linkedin_pages,
+    )
+    return linkedin_postings_to_company_inputs(postings)[: args.limit]
+
+
+def build_summary(results: list[dict], args: argparse.Namespace, elapsed_sec: float) -> dict:
+    summary = summarize_results(results, elapsed_sec=elapsed_sec)
+    if args.expectations:
+        expectations = json.loads(Path(args.expectations).read_text(encoding="utf-8"))
+        summary["expectation_checks"] = evaluate_expectations(results, expectations)
+    return summary
 
 
 def run_company(company: CompanyInput, args: argparse.Namespace):
@@ -196,6 +216,14 @@ def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyI
             "selected": {
                 "url": company.company_website_url,
                 "reason": "provided by company identity resolver",
+            }
+        }
+    elif company.company_website_url:
+        company.company_website_url = normalize_url(company.company_website_url)
+        company.source_trace["website_resolution"] = {
+            "selected": {
+                "url": company.company_website_url,
+                "reason": "provided by input record",
             }
         }
     else:
@@ -326,6 +354,12 @@ def print_summary(summary: dict) -> None:
     print(f"  providers: {summary['provider_counts']}", flush=True)
     if summary.get("regression"):
         print(f"  rate_delta: {summary['regression']['rates_delta']}", flush=True)
+    expectation_checks = summary.get("expectation_checks")
+    if expectation_checks:
+        print(
+            f"  expectations: {expectation_checks['passed']}/{expectation_checks['total']} passed",
+            flush=True,
+        )
 
 
 if __name__ == "__main__":

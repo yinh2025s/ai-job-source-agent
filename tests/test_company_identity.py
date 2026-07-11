@@ -31,6 +31,9 @@ class CompanyIdentityTests(unittest.TestCase):
             "Lemonade": "https://www.lemonade.com/careers",
             "Podium": "https://www.podium.com/careers",
             "ParetoHealth": "https://www.paretohealth.com/careers",
+            "Anthropic": "https://job-boards.greenhouse.io/anthropic",
+            "PostHog": "https://posthog.com/careers/jobs",
+            "Ekimetrics": "https://jobs.lever.co/ekimetrics",
             "Brex": "https://www.brex.com/careers",
             "Lyft": "https://job-boards.greenhouse.io/lyft",
         }

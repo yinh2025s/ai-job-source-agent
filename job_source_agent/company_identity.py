@@ -141,6 +141,27 @@ BRAND_HIRING_RULES = {
         official_website_url="https://www.paretohealth.com/",
         reasons=["ParetoHealth publishes roles from paretohealth.com/careers"],
     ),
+    "anthropic": CompanyIdentity(
+        brand_name="Anthropic",
+        hiring_entity_name="Anthropic",
+        career_root_url="https://job-boards.greenhouse.io/anthropic",
+        official_website_url="https://www.anthropic.com/",
+        reasons=["Anthropic routes job listings through a Greenhouse job board"],
+    ),
+    "posthog": CompanyIdentity(
+        brand_name="PostHog",
+        hiring_entity_name="PostHog",
+        career_root_url="https://posthog.com/careers/jobs",
+        official_website_url="https://posthog.com/",
+        reasons=["PostHog publishes roles from posthog.com/careers/jobs"],
+    ),
+    "ekimetrics": CompanyIdentity(
+        brand_name="Ekimetrics",
+        hiring_entity_name="Ekimetrics",
+        career_root_url="https://jobs.lever.co/ekimetrics",
+        official_website_url="https://www.ekimetrics.com/",
+        reasons=["Ekimetrics routes job listings through Lever"],
+    ),
     "brex": CompanyIdentity(
         brand_name="Brex",
         hiring_entity_name="Brex",

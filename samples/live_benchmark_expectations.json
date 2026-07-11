@@ -1,0 +1,38 @@
+{
+  "Anthropic": {
+    "expected_provider": "greenhouse",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  },
+  "PostHog": {
+    "expected_provider": "posthog.com",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  },
+  "Ekimetrics": {
+    "expected_provider": "lever",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  },
+  "Lyft": {
+    "expected_provider": "greenhouse",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  },
+  "Brex": {
+    "expected_provider": "brex.com",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  },
+  "Notion": {
+    "expected_provider": "ashby",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  }
+}

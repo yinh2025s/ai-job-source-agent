@@ -224,8 +224,25 @@ Latest live checks on July 11, 2026:
 
 - `Product Manager`, first LinkedIn page: 8 unique companies, 8/8 official websites, 6/8 official job-list pages, 1/8 exact opening.
 - `Data Analyst`, first LinkedIn page after fast-domain and ATS-root routing improvements: 9 unique companies, 9/9 official websites, 8/9 official job-list pages, 1/9 exact opening. The remaining failure was a consulting/intermediary posting that exhausted the company budget after website resolution.
+- Fixed live benchmark: 6 named companies, 6/6 official websites, 6/6 official job-list pages, 1/6 exact opening, and 6/6 expectation checks passed. Providers covered in that small set are Greenhouse, Lever, Ashby, PostHog's first-party careers page, and Brex's first-party careers page.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
+
+To avoid relying only on LinkedIn's current random search results, run the fixed live benchmark set:
+
+```bash
+python3 scripts/live_batch_eval.py \
+  --input samples/live_benchmark_companies.json \
+  --expectations samples/live_benchmark_expectations.json \
+  --fetch-timeout 5 \
+  --career-search-timeout 7 \
+  --company-time-budget 45 \
+  --website-time-budget 10 \
+  --skip-sitemap \
+  --output /tmp/live-fixed-results.json \
+  --trace-output /tmp/live-fixed-trace.json \
+  --summary-output /tmp/live-fixed-summary.json
+```
 
 ## Optional Saved LinkedIn HTML Input
 
