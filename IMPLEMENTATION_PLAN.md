@@ -220,9 +220,12 @@
 
 - `scripts/live_batch_eval.py`
 - `scripts/benchmark_eval.py`
+- `scripts/export_replay_input.py`
 - 固定离线 benchmark：`samples/benchmark_companies.json`
+- 固定 live benchmark：`samples/live_benchmark_companies.json`
 - 每家公司处理后 checkpoint 写结果
 - 输出 `summary.json`，包含 funnel rates、provider distribution、failure stages
+- 支持从 prior results/trace 导出可复跑 input，并按 stage、stage status、reason code、provider 过滤
 - 支持 fast mode：
   - `--skip-sitemap`
   - `--fetch-timeout`
@@ -399,9 +402,11 @@
 - `owner`：`network / resolver / provider / parser / matcher / external`
 - 简短、可脱敏的 detail
 
-### 8. Checkpoint 已公司级落盘，阶段级复用仍待补
+### 8. Checkpoint 已公司级落盘，Replay Input 已完成第一版
 
-当前 batch checkpoint 能避免整个批次结果丢失；`live_batch_eval.py` 还把 S2/S3 和 S4-S6 分成两个 killable checkpoint，因此官网解析成功后，career discovery timeout 会保留已验证官网和 identity evidence。真正的跨运行阶段级复用仍待补：一家公司在 S5 失败后，下一次通常仍需重新执行 S1-S4。
+当前 batch checkpoint 能避免整个批次结果丢失；`live_batch_eval.py` 还把 S2/S3 和 S4-S6 分成两个 killable checkpoint，因此官网解析成功后，career discovery timeout 会保留已验证官网和 identity evidence。`scripts/export_replay_input.py` 可以把 prior results/trace 按 stage、stage status、reason code、provider 过滤成新的 input，保留 verified website、career root、LinkedIn title 和 replay metadata。
+
+真正的 provider HTML/JSON snapshot replay 仍待补：一家公司在 S5/S6 parser 失败后，下一次通常仍需重新 fetch provider response，而不是直接离线重放保存的响应。
 
 后续需要保存关键中间产物：
 

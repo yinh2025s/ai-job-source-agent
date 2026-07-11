@@ -244,6 +244,19 @@ python3 scripts/live_batch_eval.py \
   --summary-output /tmp/live-fixed-summary.json
 ```
 
+To turn a prior run into a focused replay input, export the subset you want to investigate:
+
+```bash
+python3 scripts/export_replay_input.py \
+  --input /tmp/live-fixed-results.json \
+  --output /tmp/live-fixed-opening-misses.json \
+  --stage opening_match \
+  --stage-status partial \
+  --reason-code OPENING_NOT_FOUND
+```
+
+The exported records preserve the verified website, career root, LinkedIn title, and replay metadata, so the next run can start from known-good upstream evidence instead of rediscovering everything.
+
 ## Optional Saved LinkedIn HTML Input
 
 If you save a LinkedIn job page HTML locally, a record may provide `linkedin_html_path`. The parser will try to infer the company name and external website from the saved HTML:

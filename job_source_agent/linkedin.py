@@ -28,9 +28,9 @@ def load_company_inputs(path: str | Path) -> list[CompanyInput]:
             company.company_website_url = company.company_website_url or html_data.get("company_website_url", "")
         if not company.company_name:
             company.company_name = infer_company_name_from_url(company.company_website_url)
-        if not company.company_website_url:
+        if not company.company_website_url and not company.linkedin_company_url:
             raise ValueError(
-                "company_website_url is required unless linkedin_html_path contains a discoverable website URL"
+                "company_website_url or linkedin_company_url is required unless linkedin_html_path contains a discoverable website URL"
             )
         inputs.append(company)
     return inputs
