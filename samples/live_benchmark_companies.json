@@ -317,5 +317,33 @@
     "company_website_url": "https://www.sai360.com",
     "career_root_url": "https://sai360.bamboohr.com/careers",
     "job_title": "Product Manager"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "W. L. Gore & Associates",
+    "company_website_url": "https://www.gore.com/",
+    "career_root_url": "https://wlgore.jobs.hr.cloud.sap/search/?locale=en_US",
+    "job_title": "Process Engineer"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Colas",
+    "company_website_url": "https://www.colas.com/",
+    "career_root_url": "https://colas.jobs.hr.cloud.sap/search/?locale=en_US",
+    "job_title": "Project Engineer Intern"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Telstra Broadcast Services",
+    "company_website_url": "https://www.telstra.com.au/business-enterprise/industries/telstra-broadcast-services",
+    "career_root_url": "https://tbs.jobs.hr.cloud.sap/search/?locale=en_US",
+    "job_title": "Industry Sales Executive"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Nova",
+    "company_website_url": "https://nova.gr/",
+    "career_root_url": "https://novagr.jobs.hr.cloud.sap/search/?locale=en_US",
+    "job_title": "Presales Engineer (B2B)"
   }
 ]

@@ -14,6 +14,7 @@ FIXTURE = (
     / "successfactors.example"
     / "ajax-theme.html"
 )
+LIVE_CONTRACT_FIXTURES = FIXTURE.parent / "live-contracts"
 
 
 class StubFetcher:
@@ -105,7 +106,7 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
         result = self.adapter.list_jobs(
             fetcher,
             board,
-            JobQuery(title="Process Engineer", location="USA"),
+            JobQuery(title="Engineer", location="USA"),
         )
 
         self.assertEqual(len(result.candidates), 11)
@@ -118,13 +119,100 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["page_count"], 2)
         api_calls = fetcher.calls[1:]
         self.assertEqual([json.loads(call["data"])["pageNumber"] for call in api_calls], [0, 1])
-        self.assertEqual(json.loads(api_calls[0]["data"])["keywords"], "Process Engineer")
+        self.assertEqual(json.loads(api_calls[0]["data"])["keywords"], "Engineer")
         self.assertEqual(json.loads(api_calls[0]["data"])["location"], "USA")
         self.assertEqual(api_calls[0]["headers"]["X-CSRF-Token"], "csrf-123")
         self.assertEqual(
             api_calls[0]["headers"]["Origin"],
             "https://acme-careers.jobs.hr.cloud.sap",
         )
+
+    def test_cloud_sap_live_contracts_build_verified_exact_urls(self):
+        contracts = [
+            (
+                "wlgore",
+                "https://wlgore.jobs.hr.cloud.sap/search/?locale=en_US",
+                "Process Engineer",
+                "https://wlgore.jobs.hr.cloud.sap/job/Process-Engineer/1816-en_US/",
+                "Elkton, MD, USA, 21922-1220",
+            ),
+            (
+                "colas",
+                "https://colas.jobs.hr.cloud.sap/search/?locale=en_US",
+                "Project Engineer Intern",
+                "https://colas.jobs.hr.cloud.sap/job/Project-Engineer-Intern/117408-en_US/",
+                "ANCHORAGE, ALASKA, USA",
+            ),
+            (
+                "tbs",
+                "https://tbs.jobs.hr.cloud.sap/search/?locale=en_US",
+                "Industry Sales Executive",
+                "https://tbs.jobs.hr.cloud.sap/job/Industry-Sales-Executive/760-en_GB/",
+                "Melbourne, Victoria, Australia",
+            ),
+            (
+                "novagr",
+                "https://novagr.jobs.hr.cloud.sap/search/?locale=en_US",
+                "Presales Engineer (B2B)",
+                "https://novagr.jobs.hr.cloud.sap/job/Presales-Engineer-%28B2B%29/781-en_GB/",
+                None,
+            ),
+        ]
+
+        for tenant, board_url, title, exact_url, location in contracts:
+            with self.subTest(tenant=tenant):
+                fixture_dir = LIVE_CONTRACT_FIXTURES / tenant
+
+                class ContractFetcher:
+                    def __init__(self):
+                        self.calls = []
+
+                    def fetch(self, url, data=None, headers=None):
+                        self.calls.append({"url": url, "data": data, "headers": headers})
+                        fixture = "search.html" if data is None else "jobs.json"
+                        return Page(
+                            url=url,
+                            final_url=url,
+                            html=(fixture_dir / fixture).read_text(encoding="utf-8"),
+                            source=f"{tenant}-live-contract",
+                        )
+
+                fetcher = ContractFetcher()
+                board = self.adapter.identify_board(board_url)
+                result = self.adapter.list_jobs(fetcher, board, JobQuery(title=title))
+
+                self.assertEqual(len(result.candidates), 1)
+                self.assertEqual(result.candidates[0].title, title)
+                self.assertEqual(result.candidates[0].url, exact_url)
+                self.assertEqual(result.candidates[0].location, location)
+                self.assertTrue(result.trace["exact_title_found"])
+                self.assertEqual(result.trace["page_count"], 1)
+                self.assertEqual(len(fetcher.calls), 2)
+
+    def test_cloud_sap_page_locale_overrides_stale_query_locale(self):
+        fixture_dir = LIVE_CONTRACT_FIXTURES / "tbs"
+
+        class LocaleFetcher:
+            def fetch(self, url, data=None, headers=None):
+                fixture = "search.html" if data is None else "jobs.json"
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=(fixture_dir / fixture).read_text(encoding="utf-8"),
+                    source="tbs-live-contract",
+                )
+
+        board = self.adapter.identify_board(
+            "https://tbs.jobs.hr.cloud.sap/search/?locale=en_US"
+        )
+        result = self.adapter.list_jobs(
+            LocaleFetcher(),
+            board,
+            JobQuery(title="Industry Sales Executive"),
+        )
+
+        self.assertEqual(result.trace["locale"], "en_GB")
+        self.assertTrue(result.candidates[0].url.endswith("/760-en_GB/"))
 
     def test_cloud_sap_rejects_missing_page_evidence_and_cross_origin_api(self):
         board = self.adapter.identify_board(

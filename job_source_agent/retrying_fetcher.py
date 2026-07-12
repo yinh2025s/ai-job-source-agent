@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import random
 import time
-from dataclasses import dataclass
-from typing import Any
+from dataclasses import asdict, dataclass
+from typing import Any, Callable
 
 from .reasons import classify_fetch_error, reason_spec
 from .web import FetchError, Page
@@ -12,13 +13,15 @@ from .web import FetchError, Page
 class RetryEvent:
     url: str
     attempt: int
-    reason_code: str
+    reason_code: str | None
     retryable: bool
-    error: str
+    error: str | None
+    delay: float
+    outcome: str
 
 
 class RetryingFetcher:
-    """Retry transient fetch failures without retrying parser or matcher errors."""
+    """Retry transient fetch failures within a bounded wall-clock deadline."""
 
     def __init__(
         self,
@@ -26,35 +29,105 @@ class RetryingFetcher:
         max_retries: int = 1,
         base_delay: float = 0.25,
         backoff_factor: float = 2.0,
+        *,
+        max_delay: float = 8.0,
+        jitter_ratio: float = 0.25,
+        rng: Callable[[], float] | None = None,
+        sleeper: Callable[[float], None] = time.sleep,
+        clock: Callable[[], float] = time.monotonic,
+        deadline: float | Callable[[], float | None] | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.max_retries = max(0, max_retries)
         self.base_delay = max(0.0, base_delay)
         self.backoff_factor = max(1.0, backoff_factor)
+        self.max_delay = max(0.0, max_delay)
+        self.jitter_ratio = min(1.0, max(0.0, jitter_ratio))
+        self._rng = rng or random.random
+        self._sleeper = sleeper
+        self._clock = clock
+        self._deadline = deadline
         self.timeout = getattr(fetcher, "timeout", None)
         self.retry_events: list[dict[str, Any]] = []
 
     def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
-        attempt = 0
+        attempt = 1
+        last_error: FetchError | None = None
+        last_event: dict[str, Any] | None = None
         while True:
+            if last_error is not None and self._remaining_time() <= 0:
+                if last_event is not None:
+                    last_event["outcome"] = "deadline_exhausted"
+                raise last_error
             try:
-                return self.fetcher.fetch(url, data=data, headers=headers)
+                page = self.fetcher.fetch(url, data=data, headers=headers)
             except FetchError as exc:
                 reason_code = classify_fetch_error(str(exc))
-                spec = reason_spec(reason_code)
+                retryable = reason_spec(reason_code).retryable
                 event = RetryEvent(
                     url=url,
-                    attempt=attempt + 1,
+                    attempt=attempt,
                     reason_code=reason_code,
-                    retryable=spec.retryable,
+                    retryable=retryable,
                     error=str(exc),
+                    delay=0.0,
+                    outcome="failed",
                 )
-                self.retry_events.append(event.__dict__)
-                if not spec.retryable or attempt >= self.max_retries:
+                self.retry_events.append(asdict(event))
+                event_record = self.retry_events[-1]
+
+                if not retryable:
+                    event_record["outcome"] = "not_retryable"
                     raise
-                if self.base_delay:
-                    time.sleep(self.base_delay * (self.backoff_factor ** attempt))
+                if attempt > self.max_retries:
+                    event_record["outcome"] = "retry_budget_exhausted"
+                    raise
+
+                delay = self._retry_delay(attempt - 1)
+                remaining = self._remaining_time()
+                if remaining <= delay:
+                    event_record["outcome"] = "deadline_exhausted"
+                    raise
+
+                event_record["delay"] = delay
+                event_record["outcome"] = "retry_scheduled"
+                if delay:
+                    self._sleeper(delay)
+                last_error = exc
+                last_event = event_record
                 attempt += 1
+                continue
+
+            if last_error is not None:
+                self.retry_events.append(
+                    asdict(
+                        RetryEvent(
+                            url=url,
+                            attempt=attempt,
+                            reason_code=None,
+                            retryable=False,
+                            error=None,
+                            delay=0.0,
+                            outcome="succeeded",
+                        )
+                    )
+                )
+            return page
+
+    def _retry_delay(self, retry_index: int) -> float:
+        if not self.base_delay or not self.max_delay:
+            return 0.0
+        exponent = min(retry_index, 63)
+        bounded = min(self.max_delay, self.base_delay * (self.backoff_factor**exponent))
+        sample = min(1.0, max(0.0, float(self._rng())))
+        jitter = 1.0 + self.jitter_ratio * ((2.0 * sample) - 1.0)
+        return min(self.max_delay, max(0.0, bounded * jitter))
+
+    def _remaining_time(self) -> float:
+        deadline = self._deadline() if callable(self._deadline) else self._deadline
+        if deadline is None:
+            return float("inf")
+        return deadline - self._clock()
 
     def __getattr__(self, name: str):
         return getattr(self.fetcher, name)

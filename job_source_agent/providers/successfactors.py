@@ -180,6 +180,8 @@ class SuccessFactorsAdapter:
         api_urls: list[str] = []
         total_jobs: int | None = None
         response_source: str | None = None
+        normalized_target = _normalized_title(query.title)
+        exact_title_found = False
         for page_number in range(_CLOUD_MAX_PAGES):
             payload = {
                 "locale": locale,
@@ -246,10 +248,20 @@ class SuccessFactorsAdapter:
                 )
             page_candidates = _cloud_candidates(results, final_url, expected_host, locale)
             candidates.extend(page_candidates)
+            if normalized_target and any(
+                _normalized_title(candidate.title) == normalized_target
+                for candidate in page_candidates
+            ):
+                exact_title_found = True
             parsed_total = _nonnegative_int(payload_data.get("totalJobs"))
             if parsed_total is not None:
                 total_jobs = max(total_jobs or 0, parsed_total)
-            if not results or total_jobs is None or len(candidates) >= total_jobs:
+            if (
+                exact_title_found
+                or not results
+                or total_jobs is None
+                or len(candidates) >= total_jobs
+            ):
                 break
 
         candidates = _dedupe_candidates(candidates)
@@ -268,6 +280,7 @@ class SuccessFactorsAdapter:
                 "page_count": len(api_urls),
                 "total_jobs": total_jobs,
                 "locale": locale,
+                "exact_title_found": exact_title_found,
             },
         )
 
@@ -351,10 +364,8 @@ def _cloud_csrf_token(html: str) -> str:
 
 
 def _cloud_locale(html: str, page_url: str) -> str:
-    locale = _query_value(urlparse(page_url).query, "locale")
-    if not locale:
-        match = re.search(r'\blocale\s*:\s*["\']([a-z]{2}_[A-Z]{2})["\']', html or "")
-        locale = match.group(1) if match else ""
+    match = re.search(r'\blocale\s*:\s*["\']([a-z]{2}_[A-Z]{2})["\']', html or "")
+    locale = match.group(1) if match else _query_value(urlparse(page_url).query, "locale")
     return locale if re.fullmatch(r"[a-z]{2}_[A-Z]{2}", locale) else ""
 
 
@@ -374,8 +385,12 @@ def _cloud_candidates(
         raw_slug = str(record.get("unifiedUrlTitle") or record.get("urlTitle") or "").strip()
         if not title or not job_id.isdigit() or not raw_slug:
             continue
+        detail_locale = _cloud_record_locale(record, locale)
         slug = quote(unescape(raw_slug), safe="-._~%")
-        detail_url = safe_normalize_url(f"/job/{slug}/{job_id}-{locale}/", board_url)
+        detail_url = safe_normalize_url(
+            f"/job/{slug}/{job_id}-{detail_locale}/",
+            board_url,
+        )
         if not detail_url or not _same_safe_host(detail_url, expected_host):
             continue
         candidates.append(
@@ -388,6 +403,15 @@ def _cloud_candidates(
             )
         )
     return candidates
+
+
+def _cloud_record_locale(record: dict, fallback: str) -> str:
+    values = record.get("supportedLocales")
+    if isinstance(values, list):
+        for value in values:
+            if isinstance(value, str) and re.fullmatch(r"[a-z]{2}_[A-Z]{2}", value):
+                return value
+    return fallback
 
 
 def _cloud_location(record: dict) -> str | None:
@@ -444,6 +468,10 @@ def _nonnegative_int(value) -> int | None:
     except (TypeError, ValueError):
         return None
     return result if result >= 0 else None
+
+
+def _normalized_title(value: str | None) -> str:
+    return " ".join(unescape(value or "").casefold().split())
 
 
 def _unsupported_cloud_result(board: JobBoard, error: str) -> AdapterResult:

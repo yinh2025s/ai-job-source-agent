@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Any
 
 from .models import StageResult
@@ -73,7 +74,16 @@ def classify_fetch_error(detail: str) -> str:
     text = detail.lower()
     if any(marker in text for marker in ("timed out", "timeout", "time out")):
         return "NETWORK_TIMEOUT"
-    if any(marker in text for marker in ("name or service not known", "nodename nor servname", "getaddrinfo")):
+    if any(
+        marker in text
+        for marker in (
+            "name or service not known",
+            "nodename nor servname",
+            "getaddrinfo",
+            "temporary failure in name resolution",
+            "no address associated with hostname",
+        )
+    ):
         return "DNS_FAILED"
     if any(marker in text for marker in ("429", "too many requests", "rate limit")):
         return "RATE_LIMITED"
@@ -83,10 +93,22 @@ def classify_fetch_error(detail: str) -> str:
         return "HTTP_FORBIDDEN"
     if any(marker in text for marker in ("captcha", "challenge", "cloudflare")):
         return "BOT_PROTECTION"
-    if any(marker in text for marker in ("500", "502", "503", "504", "server error")):
+    if "server error" in text or re.search(r"(?:http(?: error)?|status(?: code)?)\D*5\d\d\b", text):
         return "SERVER_ERROR"
     if any(marker in text for marker in ("connection refused", "connection reset", "network is unreachable")):
         return "CONNECTION_FAILED"
+    if any(
+        marker in text
+        for marker in (
+            "parser mismatch",
+            "parse error",
+            "parsing failed",
+            "invalid structured data",
+            "invalid json",
+            "json decode",
+        )
+    ):
+        return "PARSING_FAILED"
     return "FETCH_FAILED"
 
 
