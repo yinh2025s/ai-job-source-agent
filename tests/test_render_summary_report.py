@@ -15,6 +15,11 @@ SUMMARY = {
     "with_opening": 1,
     "elapsed_sec": 12.3,
     "rates": {"website": 1.0, "job_list": 1.0, "opening": 0.5},
+    "regression": {
+        "rates_delta": {"opening": 0.25, "job_list": 0.0},
+        "pipeline_status_delta": {"success": 1, "partial": -1},
+        "stage_success_delta": {"opening_match": 1, "job_board_discovery": 0},
+    },
     "stage_funnel": {
         "linkedin_discovery": {"success": 2},
         "website_resolution": {"success": 2},
@@ -73,6 +78,10 @@ class RenderSummaryReportTests(unittest.TestCase):
 
         self.assertIn("# Demo Report", report)
         self.assertIn("## Stage Funnel", report)
+        self.assertIn("## Regression", report)
+        self.assertIn("| opening | +0.25 |", report)
+        self.assertIn("| partial | -1 |", report)
+        self.assertIn("| S6 opening_match | +1 |", report)
         self.assertIn("## Stage Durations", report)
         self.assertIn("| S6 opening_match | 2 | 70 | 80 |", report)
         self.assertIn("| opening | 50.0% |", report)

@@ -52,6 +52,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines = [f"# {title}", ""]
     lines.extend(_overview(summary))
     lines.extend(_rates(summary))
+    lines.extend(_regression(summary))
     lines.extend(_stage_funnel(summary))
     lines.extend(_stage_durations(summary))
     lines.extend(_simple_count_table("Provider Distribution", summary.get("provider_counts", {}), "Provider"))
@@ -83,6 +84,33 @@ def _rates(summary: dict) -> list[str]:
     for key, value in (summary.get("rates") or {}).items():
         lines.append(f"| {key} | {_percent(value)} |")
     lines.append("")
+    return lines
+
+
+def _regression(summary: dict) -> list[str]:
+    regression = summary.get("regression") or {}
+    if not regression:
+        return []
+    lines = ["## Regression", ""]
+    rates_delta = regression.get("rates_delta") or {}
+    if rates_delta:
+        lines.extend(["| Rate | Delta |", "| --- | ---: |"])
+        for key, value in sorted(rates_delta.items()):
+            lines.append(f"| {key} | {_signed_number(value)} |")
+        lines.append("")
+    pipeline_delta = regression.get("pipeline_status_delta") or {}
+    if pipeline_delta:
+        lines.extend(["| Pipeline status | Delta |", "| --- | ---: |"])
+        for key, value in sorted(pipeline_delta.items()):
+            lines.append(f"| {key} | {_signed_number(value)} |")
+        lines.append("")
+    stage_delta = regression.get("stage_success_delta") or {}
+    if stage_delta:
+        lines.extend(["| Stage success | Delta |", "| --- | ---: |"])
+        for stage in PIPELINE_STAGES:
+            if stage in stage_delta:
+                lines.append(f"| {STAGE_LABELS.get(stage, stage)} {stage} | {_signed_number(stage_delta[stage])} |")
+        lines.append("")
     return lines
 
 
@@ -197,6 +225,16 @@ def _escape(value: str) -> str:
 
 def _number_or_dash(value) -> str:
     return "-" if value is None else str(value)
+
+
+def _signed_number(value) -> str:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return "-"
+    if number > 0:
+        return f"+{value}"
+    return str(value)
 
 
 if __name__ == "__main__":
