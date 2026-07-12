@@ -142,5 +142,19 @@
     "company_website_url": "https://www.veeva.com",
     "career_root_url": "https://jobs.lever.co/veeva",
     "job_title": "Account Director"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Datadog",
+    "company_website_url": "https://www.datadoghq.com",
+    "career_root_url": "https://job-boards.greenhouse.io/datadog",
+    "job_title": "AI Research Engineer - Datadog AI Research (DAIR)"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Airbnb",
+    "company_website_url": "https://www.airbnb.com",
+    "career_root_url": "https://job-boards.greenhouse.io/airbnb",
+    "job_title": "AI Engineer, Community Support Engineering"
   }
 ]
