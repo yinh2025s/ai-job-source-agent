@@ -4,13 +4,12 @@ import argparse
 import json
 import sys
 from pathlib import Path
-from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.checkpoint import checkpoint_metadata
+from job_source_agent.evaluation import result_provider
 from job_source_agent.models import PIPELINE_STAGES
-from job_source_agent.opening_matcher import detect_provider
 
 
 REPLAY_FIELDS = (
@@ -163,14 +162,7 @@ def _first_non_success_stage(record: dict) -> dict | None:
 
 
 def _result_provider(record: dict) -> str:
-    for field in ("open_position_url", "job_list_page_url", "career_page_url", "career_root_url"):
-        url = record.get(field)
-        if isinstance(url, str) and url:
-            provider = detect_provider(url)
-            if provider != "generic":
-                return provider
-            return urlparse(url).netloc.lower().removeprefix("www.") or "unknown"
-    return "unknown"
+    return result_provider(record)
 
 
 if __name__ == "__main__":

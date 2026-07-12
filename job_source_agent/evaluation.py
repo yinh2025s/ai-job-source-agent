@@ -91,7 +91,12 @@ def _rates(results: list[dict]) -> dict[str, float]:
     }
 
 
-def _result_provider(result: dict) -> str:
+def result_provider(result: dict) -> str:
+    stage_by_name = _stage_by_name(result)
+    for stage_name in ("opening_match", "job_board_discovery", "career_discovery"):
+        provider = stage_by_name.get(stage_name, {}).get("provider")
+        if isinstance(provider, str) and provider:
+            return provider
     for field in ("open_position_url", "job_list_page_url", "career_page_url", "career_root_url"):
         url = result.get(field)
         if isinstance(url, str) and url:
@@ -101,6 +106,9 @@ def _result_provider(result: dict) -> str:
             host = urlparse(url).netloc.lower().removeprefix("www.")
             return host or "unknown"
     return "unknown"
+
+
+_result_provider = result_provider
 
 
 def _failure_stage(result: dict) -> str:

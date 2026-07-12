@@ -126,6 +126,22 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(summary["checkpoint_action_counts"], {})
         self.assertEqual(summary["checkpoint_stage_counts"], {})
 
+    def test_stage_provider_takes_precedence_over_external_apply_url_host(self):
+        result = {
+            "open_position_url": "https://app.careerpuck.com/job-board/lyft/job/123",
+            "stages": [
+                {
+                    "stage": "opening_match",
+                    "status": "success",
+                    "provider": "greenhouse",
+                }
+            ],
+        }
+
+        summary = summarize_results([result])
+
+        self.assertEqual(summary["provider_counts"], {"greenhouse": 1})
+
 
 if __name__ == "__main__":
     unittest.main()
