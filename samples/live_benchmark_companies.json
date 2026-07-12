@@ -86,5 +86,61 @@
     "company_website_url": "https://www.delaval.com",
     "career_root_url": "https://delaval-careers.jobs.hr.cloud.sap/search/?locale=en_GB",
     "job_title": "Process Engineer"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Linear",
+    "company_website_url": "https://linear.app",
+    "career_root_url": "https://jobs.ashbyhq.com/linear",
+    "job_title": "Product Manager"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Cursor",
+    "company_website_url": "https://cursor.com",
+    "career_root_url": "https://jobs.ashbyhq.com/cursor",
+    "job_title": "Software Engineer, ML Research"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Harvey",
+    "company_website_url": "https://www.harvey.ai",
+    "career_root_url": "https://jobs.ashbyhq.com/harvey",
+    "job_title": "Staff Software Engineer, AI Platform"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Perplexity",
+    "company_website_url": "https://www.perplexity.ai",
+    "career_root_url": "https://jobs.ashbyhq.com/perplexity",
+    "job_title": "Member of Technical Staff (AI Researcher)"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Palantir",
+    "company_website_url": "https://www.palantir.com",
+    "career_root_url": "https://jobs.lever.co/palantir",
+    "job_title": "Application Security Engineer"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Highspot",
+    "company_website_url": "https://www.highspot.com",
+    "career_root_url": "https://jobs.lever.co/highspot",
+    "job_title": "Principal Software Engineer, Applied AI"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Spotify",
+    "company_website_url": "https://www.spotify.com",
+    "career_root_url": "https://jobs.lever.co/spotify",
+    "job_title": "Analytics Engineer II"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Veeva",
+    "company_website_url": "https://www.veeva.com",
+    "career_root_url": "https://jobs.lever.co/veeva",
+    "job_title": "Account Director"
   }
 ]

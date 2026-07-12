@@ -76,5 +76,53 @@
     "expected_minimum_stage": "opening_match",
     "require_exact_opening": true,
     "allow_job_board_fallback": false
+  },
+  "Linear": {
+    "expected_provider": "ashby",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Cursor": {
+    "expected_provider": "ashby",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Harvey": {
+    "expected_provider": "ashby",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Perplexity": {
+    "expected_provider": "ashby",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Palantir": {
+    "expected_provider": "lever",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Highspot": {
+    "expected_provider": "lever",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Spotify": {
+    "expected_provider": "lever",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Veeva": {
+    "expected_provider": "lever",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
   }
 }
