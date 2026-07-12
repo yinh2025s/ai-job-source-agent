@@ -64,7 +64,7 @@
     "company_name": "Plum",
     "company_website_url": "https://withplum.com",
     "career_root_url": "https://apply.workable.com/withplum/",
-    "job_title": "Data Analyst - Operations"
+    "job_title": "Senior Backend Engineer | AI Platform"
   },
   {
     "linkedin_job_url": "fixed-live-benchmark",
@@ -138,10 +138,10 @@
   },
   {
     "linkedin_job_url": "fixed-live-benchmark",
-    "company_name": "Veeva",
-    "company_website_url": "https://www.veeva.com",
-    "career_root_url": "https://jobs.lever.co/veeva",
-    "job_title": "Account Director"
+    "company_name": "Wishpond",
+    "company_website_url": "https://www.wishpond.com",
+    "career_root_url": "https://jobs.lever.co/wishpond",
+    "job_title": "ACCOUNT DIRECTOR (100% Remote outside of Canada)"
   },
   {
     "linkedin_job_url": "fixed-live-benchmark",
@@ -233,5 +233,33 @@
     "company_website_url": "https://www.sgs.com",
     "career_root_url": "https://jobs.smartrecruiters.com/SGS",
     "job_title": "Administrativo/a- Facturación y gestión"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Workable",
+    "company_website_url": "https://www.workable.com",
+    "career_root_url": "https://apply.workable.com/careers/",
+    "job_title": "Implementation Manager"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Town Web",
+    "company_website_url": "https://townweb.com",
+    "career_root_url": "https://apply.workable.com/town-web/",
+    "job_title": "Fractional Head of Growth (SaaS)"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "ClassWallet",
+    "company_website_url": "https://classwallet.com",
+    "career_root_url": "https://apply.workable.com/classwallet/",
+    "job_title": "Senior Full Stack Engineer, Ecommerce"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Huzzle",
+    "company_website_url": "https://www.huzzle.app",
+    "career_root_url": "https://apply.workable.com/huzzle/",
+    "job_title": "Graphic Designer - Remote"
   }
 ]

@@ -5,11 +5,15 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from job_source_agent.models import CompanyInput, DiscoveryResult
+from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.web import Fetcher, Page
 from scripts.live_batch_eval import (
     build_automatic_failure_bundle,
     build_summary,
+    _load_completed_companies,
+    _ordered_records,
+    _record_company_completion,
     load_batch_companies,
     prepare_replay_company_for_resume,
     prepare_company,
@@ -68,7 +72,7 @@ class LiveBatchEvalTests(unittest.TestCase):
             {company["company_name"] for company in companies},
             set(expectations),
         )
-        self.assertEqual(len(companies), 34)
+        self.assertEqual(len(companies), 38)
 
     def test_prepare_company_preserves_provided_website(self):
         company = CompanyInput(
@@ -216,6 +220,94 @@ class LiveBatchEvalTests(unittest.TestCase):
                 summary["checkpoint_stage_counts"],
                 {"website_resolution": 1, "career_discovery": 1},
             )
+
+    def test_company_completion_resume_restores_only_compatible_inputs(self):
+        first = CompanyInput(company_name="A", company_website_url="https://a.example")
+        second = CompanyInput(company_name="B", company_website_url="https://b.example")
+        with tempfile.TemporaryDirectory() as directory:
+            store = FilesystemBatchCompletionStore(Path(directory) / "completed")
+            store.save(
+                {"company_name": "A", "company_website_url": "https://a.example"},
+                {"company_name": "A", "status": "success"},
+                {"company_name": "A", "trace": {}},
+                1.2,
+            )
+
+            restored = _load_completed_companies(
+                [first, second],
+                store,
+                SimpleNamespace(no_resume=False, rerun_stage=None),
+            )
+
+        self.assertEqual(list(restored), [1])
+        self.assertEqual(restored[1][0]["company_name"], "A")
+        self.assertEqual(restored[1][2], 1.2)
+
+    def test_company_completion_resume_is_bypassed_for_no_resume_or_rerun(self):
+        company = CompanyInput(company_name="A", company_website_url="https://a.example")
+        with tempfile.TemporaryDirectory() as directory:
+            store = FilesystemBatchCompletionStore(Path(directory) / "completed")
+            store.save(
+                {"company_name": "A", "company_website_url": "https://a.example"},
+                {"company_name": "A"},
+                {"company_name": "A"},
+                0.1,
+            )
+
+            self.assertEqual(
+                _load_completed_companies(
+                    [company], store, SimpleNamespace(no_resume=True, rerun_stage=None)
+                ),
+                {},
+            )
+            self.assertEqual(
+                _load_completed_companies(
+                    [company], store, SimpleNamespace(no_resume=False, rerun_stage="opening_match")
+                ),
+                {},
+            )
+
+    def test_company_completions_are_persisted_and_rendered_in_input_order(self):
+        companies = {
+            1: CompanyInput(company_name="A", company_website_url="https://a.example"),
+            2: CompanyInput(company_name="B", company_website_url="https://b.example"),
+        }
+        results = {
+            index: DiscoveryResult(
+                company_name=company.company_name,
+                company_website_url=company.company_website_url,
+                status="success",
+                pipeline_status="partial",
+            )
+            for index, company in companies.items()
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = FilesystemBatchCompletionStore(root / "completed")
+            completed = {}
+            args = SimpleNamespace(expectations=None)
+            for index in (2, 1):
+                _record_company_completion(
+                    index,
+                    2,
+                    companies[index],
+                    results[index],
+                    0.1,
+                    completed,
+                    store,
+                    root / "results.json",
+                    root / "trace.json",
+                    root / "summary.json",
+                    args,
+                    0.0,
+                )
+
+            ordered_results, ordered_traces = _ordered_records(completed)
+            disk_results = json.loads((root / "results.json").read_text(encoding="utf-8"))
+
+        self.assertEqual([item["company_name"] for item in ordered_results], ["A", "B"])
+        self.assertEqual([item["company_name"] for item in ordered_traces], ["A", "B"])
+        self.assertEqual([item["company_name"] for item in disk_results], ["A", "B"])
 
     def test_build_summary_uses_trace_records_for_checkpoint_activity(self):
         result = {

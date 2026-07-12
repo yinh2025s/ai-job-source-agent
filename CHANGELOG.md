@@ -70,6 +70,9 @@
 - SmartRecruiters adapter 增加 target-title `q` 查询、有界 offset pagination、exact-title early stop、API/company redirect 隔离和 public detail URL 校验；`ADAPTER_VERSION` 提升到 `2026-07-12.8`。
 - 固定 live benchmark 增加 Bosch、Ubisoft、Delivery Hero 和 SGS，SmartRecruiters 达到 5 家覆盖；基线扩展到 34/34 job list、32/34 exact opening 和 34/34 expectations。
 - Snapshot replay 可恢复进程中断产生的唯一 EOF 截断尾行，并显式报告 skipped/corrupt-tail 统计；中间损坏和完整非法记录仍严格失败。
+- Live batch 增加版本化 company-completion store：每家公司以 input fingerprint、adapter version 和原子 envelope 独立发布；重启默认跳过兼容的已完成公司，`--no-resume` / `--rerun-stage` 可强制重跑，结果按原输入顺序重建。
+- Workable adapter 接入官方 public jobs cursor API，支持 title query、最多 5 页、重复 token 停止、exact-title early stop、同 tenant board/API redirect 校验和旧 HTML fallback；`ADAPTER_VERSION` 提升到 `2026-07-12.9`。
+- 固定 live benchmark 增加 Workable、Town Web、ClassWallet、Huzzle，并将已迁离 Lever 的 Veeva 样本替换为 Wishpond；Workable 达到 5 家 exact-opening 覆盖，集合扩展到 38 家。
 
 ## [0.1.0] - 2026-07-12
 

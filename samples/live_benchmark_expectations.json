@@ -55,9 +55,9 @@
   },
   "Plum": {
     "expected_provider": "workable",
-    "expected_minimum_stage": "job_board_discovery",
-    "require_exact_opening": false,
-    "allow_job_board_fallback": true
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
   },
   "ReachMobi": {
     "expected_provider": "bamboohr",
@@ -119,7 +119,7 @@
     "require_exact_opening": true,
     "allow_job_board_fallback": false
   },
-  "Veeva": {
+  "Wishpond": {
     "expected_provider": "lever",
     "expected_minimum_stage": "opening_match",
     "require_exact_opening": true,
@@ -199,6 +199,30 @@
   },
   "SGS": {
     "expected_provider": "smartrecruiters",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Workable": {
+    "expected_provider": "workable",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Town Web": {
+    "expected_provider": "workable",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "ClassWallet": {
+    "expected_provider": "workable",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Huzzle": {
+    "expected_provider": "workable",
     "expected_minimum_stage": "opening_match",
     "require_exact_opening": true,
     "allow_job_board_fallback": false

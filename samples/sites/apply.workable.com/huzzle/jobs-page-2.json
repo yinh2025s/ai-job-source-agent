@@ -1,0 +1,15 @@
+{
+  "total": 516,
+  "results": [
+    {
+      "id": 1002,
+      "shortcode": "TARGET1002",
+      "title": "Graphic Designer - Remote",
+      "location": {"country": "Spain", "city": "Barcelona"},
+      "locations": [],
+      "state": "published",
+      "workplace": "remote"
+    }
+  ],
+  "nextPage": "opaque-page-token-3"
+}

@@ -281,7 +281,7 @@
 
 当前测试数量：
 
-- 298 unit tests passing
+- 317 unit tests passing
 
 ## 当前主要短板
 
@@ -305,7 +305,7 @@ Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resol
 
 - iCIMS 更多真实 hosted-search theme/API 变体 live hardening
 - SuccessFactors 更多真实 tenant/theme 变体 live hardening
-- Workable 更多真实 public page/payload 变体 live hardening
+- Workable public jobs cursor API 已完成 5 个真实 tenant smoke；后续继续扩展固定 live 样本和未知 payload 变体
 - Ashby embedded fallback 已完成，后续做真实 board live hardening
 - Rippling 更多 public board/live 变体 hardening
 
@@ -569,7 +569,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 1: Baseline, Matrix And Data-Driven Prioritization
 
-当前进度（2026-07-12）：1.1 的固定离线 benchmark 已有 13 个 provider/path fixture，新增 Rippling exact-opening 和 traditional iCIMS hosted HTML 覆盖，并由 `samples/benchmark_expectations.json` 声明 provider、最低成功关卡和 exact-opening 要求；回归不满足预期会以非零退出。固定 live benchmark 已扩展到 34 家。1.2 的 JSON 漏斗、公司七关矩阵、`provider × stage × status`、`provider × reason_code`、阶段耗时 P50/P95、跨运行 regression delta 和 Markdown summary report 已实现。
+当前进度（2026-07-12）：1.1 的固定离线 benchmark 已有 13 个 provider/path fixture，新增 Rippling exact-opening 和 traditional iCIMS hosted HTML 覆盖，并由 `samples/benchmark_expectations.json` 声明 provider、最低成功关卡和 exact-opening 要求；回归不满足预期会以非零退出。固定 live benchmark 已扩展到 38 家。1.2 的 JSON 漏斗、公司七关矩阵、`provider × stage × status`、`provider × reason_code`、阶段耗时 P50/P95、跨运行 regression delta 和 Markdown summary report 已实现。
 
 #### 1.1 固定 benchmark 分层
 
@@ -627,7 +627,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；298 个单元测试、13/13 固定离线 benchmark 和 34-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；317 个单元测试、13/13 固定离线 benchmark 和 38-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -665,7 +665,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 298 个测试和固定 benchmark 结果一致。
+- 重构后 317 个测试和固定 benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
@@ -704,7 +704,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；主线 architecture validator、298 个测试、13/13 offline benchmark 和 34/34 fixed live expectations 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
+当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；本轮又并行交付 Workable API hardening、company completion store 和 snapshot corrupt-tail recovery。主线 architecture validator、317 个测试、13/13 offline benchmark 和 38/38 fixed live expectations 全部通过。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -824,6 +824,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 当前状态：
 
 - 已支持 Workable query URL pattern
+- 已支持官方 `POST /api/v3/accounts/{tenant}/jobs`、opaque cursor 有界分页、title query 和 exact-title early stop
 - 已支持 embedded JSON job record
 - 可从 `shortcode` 保守还原 `apply.workable.com/{company}/j/{shortcode}/`
 
@@ -866,7 +867,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 5.1 阶段级 Checkpoint 和离线重放
 
-当前状态（2026-07-12）：已完成 replay-level metadata、并发安全 filesystem stage checkpoint store、production CLI 和 live batch 接线。Store 对每个 stage 原子保存 `StageExecution`，通过 schema version、adapter version 和 input fingerprint 校验兼容性，使用 fingerprint 级进程锁协调 load/save/invalidate，损坏文件按安全 cache miss 处理。CLI 已暴露 `--checkpoint-dir`、`--resume-from-stage`、`--rerun-stage` 和 `--stop-after-stage`；live batch 以 S1-S3/S4-S7 两段 process budget 运行同一 application service。Snapshot 正文和 artifact 已使用跨进程锁与内容寻址 blob 发布，重复 URL/query/POST 分页不会再使旧 manifest hash 失效；replay 会选择最后一个完整版本并保留 duplicate/superseded 统计。Snapshot index 还能跳过进程中断产生的唯一 EOF 截断尾行并报告 corrupt-tail 统计，但中间损坏或完整非法记录仍严格失败。`scripts/replay_snapshots.py` 可生成安全 fixture tree，`scripts/replay_failure_bundle.py` 可进一步筛选失败样本并离线执行完整 pipeline。Live batch 已通过 `--failure-bundle-dir` / `--failure-bundle-limit` 把 partial/failed/unsupported 样本自动纳入常规 regression artifact；无可重放失败时写 skipped manifest。34-company live snapshot 已成功生成包含 ONEOK/Plum opening miss 的离线 failure bundle。剩余工作是跨进程 stage crash resume 和 batch restart 的端到端验证。
+当前状态（2026-07-12）：已完成 replay-level metadata、并发安全 filesystem stage checkpoint store、production CLI 和 live batch 接线。Store 对每个 stage 原子保存 `StageExecution`，通过 schema version、adapter version 和 input fingerprint 校验兼容性，使用 fingerprint 级进程锁协调 load/save/invalidate，损坏文件按安全 cache miss 处理。CLI 已暴露 `--checkpoint-dir`、`--resume-from-stage`、`--rerun-stage` 和 `--stop-after-stage`；live batch 以 S1-S3/S4-S7 两段 process budget 运行同一 application service。Snapshot 正文和 artifact 已使用跨进程锁与内容寻址 blob 发布，重复 URL/query/POST 分页不会再使旧 manifest hash 失效；replay 会选择最后一个完整版本并保留 duplicate/superseded 统计。Snapshot index 还能跳过进程中断产生的唯一 EOF 截断尾行并报告 corrupt-tail 统计，但中间损坏或完整非法记录仍严格失败。`scripts/replay_snapshots.py` 可生成安全 fixture tree，`scripts/replay_failure_bundle.py` 可进一步筛选失败样本并离线执行完整 pipeline。Live batch 已通过 `--failure-bundle-dir` / `--failure-bundle-limit` 把 partial/failed/unsupported 样本自动纳入常规 regression artifact；无可重放失败时写 skipped manifest。Company completion store 已完成 batch restart 闭环，38-company run 修改一个 input 后成功恢复 37 家并只执行 1 家。剩余工作是更细粒度的跨进程 stage crash injection 与 S5/S6 精确恢复验证。
 
 目标：
 
@@ -901,7 +902,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 5.3 Safer Batch Runner
 
-当前状态（2026-07-12）：已完成第一版 bounded company concurrency。`live_batch_eval.py --workers N` 使用 thread pool 调度公司级任务，每个公司内部仍通过 process-level hard budget 防止 DNS/socket/native code 卡死；主线程按完成顺序写 results / trace / summary checkpoint。2-company/2-worker fixed live smoke 已通过。
+当前状态（2026-07-12）：已完成第一版 bounded company concurrency 和 crash-safe company resume。`live_batch_eval.py --workers N` 使用 thread pool 调度公司级任务，每个公司内部仍通过 process-level hard budget 防止 DNS/socket/native code 卡死；每家公司完成后以版本化 input fingerprint、adapter version、进程锁和 atomic replace 发布独立 envelope。重启默认扫描兼容 envelope，只提交未完成公司，并按原始输入顺序重建 results / trace / summary；`--no-resume` 和任何 `--rerun-stage` 会绕过整公司复用。2-company/2-worker offline restart 已验证第一次执行 2 家、第二次 `restored: 2 pending: 0`。
 
 目标：
 
@@ -913,7 +914,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 建议实现：
 
 - process-level killable worker for operations that may block in DNS/socket/native code
-- future: bounded concurrency on top of the current per-company hard budget
+- future: 真实中断注入和 completed-company restart 的更大规模验证
 - per-company timeout by internal budget checks plus outer process deadline
 - output:
   - `results.json`
@@ -934,7 +935,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 覆盖 Greenhouse、Lever、SmartRecruiters、Workday、Ashby、iCIMS、SuccessFactors、Workable、Google Careers
 - `scripts/benchmark_eval.py` 可输出 results / trace / summary
 - `scripts/live_batch_eval.py` 已支持持续写入 summary checkpoint
-- live summary 显式聚合独立 trace records，在不改变 `results.json` schema 的情况下保留 checkpoint save/restore/miss/invalidate 统计；34-company live trace 和 2-company deterministic batch 已验证
+- live summary 显式聚合独立 trace records，在不改变 `results.json` schema 的情况下保留 checkpoint save/restore/miss/invalidate 统计；38-company live trace、2-company deterministic batch 和 37/38 company restart 已验证
 - Markdown report 已包含 rates、S1-S7 funnel、stage duration、provider/reason 分布、regression 和公司 stage matrix
 - Markdown report 已增加 `provider x stage x status` 和 `provider x reason_code` 交叉表，便于定位 ATS 级可靠性问题
 
@@ -946,12 +947,13 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 建议 benchmark：
 
-- 5 known Lever（已完成：Ekimetrics、Palantir、Highspot、Spotify、Veeva）
+- 5 known Lever（已完成：Ekimetrics、Palantir、Highspot、Spotify、Wishpond；Veeva 迁离 Lever 后已替换）
 - 5 known Greenhouse（已完成：Anthropic、Lyft、Brex、Datadog、Airbnb）
 - 5 known Ashby（已完成：Notion、Linear、Cursor、Harvey、Perplexity）
 - 5 known Workday（已完成：ONEOK、NVIDIA、Adobe、Salesforce、Autodesk）
 - 5 known iCIMS / SuccessFactors（已完成：Ardent Health、Prime Healthcare、Peraton、Chenega、DeLaval）
 - 5 known SmartRecruiters（已完成：SanDisk、Bosch、Ubisoft、Delivery Hero、SGS）
+- 5 known Workable（已完成：Plum、Workable、Town Web、ClassWallet、Huzzle）
 - 5 known JS-heavy company career pages
 
 验收标准：
@@ -1044,4 +1046,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner 和并发安全 filesystem stage store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 298 个测试和 13/13 offline benchmark 验证；最新固定 live benchmark 为 34/34 官网、34/34 job list、32/34 exact opening、34/34 expectation。Greenhouse、Lever、Ashby、Workday 和 SmartRecruiters 各有 5 家固定 live 公司；iCIMS/SuccessFactors 组合也有 5 家，覆盖 Jibe、traditional hosted HTML 和 SAP Career Site。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 317 个测试和 13/13 offline benchmark 验证；最新固定 live benchmark 为 38/38 官网、38/38 job list、37/38 exact opening、38/38 expectation。Greenhouse、Lever、Ashby、Workday、SmartRecruiters 和 Workable 各有 5 家固定 live 公司；iCIMS/SuccessFactors 组合也有 5 家，覆盖 Jibe、traditional hosted HTML 和 SAP Career Site。

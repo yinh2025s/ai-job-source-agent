@@ -11,6 +11,8 @@ from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _HOST = "apply.workable.com"
+_API_PATH_PREFIX = "/api/v3/accounts/"
+_MAX_API_PAGES = 5
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _SHORTCODE_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
 _URL_FIELDS = ("url", "jobUrl", "job_url", "applicationUrl", "application_url", "href")
@@ -79,6 +81,20 @@ class WorkableAdapter:
                 trace={"adapter": self.name, "board_urls": [board_url], "error": str(error)},
             )
 
+        final_board_url = page.final_url or page.url
+        if not _is_account_board_url(final_board_url, board.identifier):
+            return AdapterResult(
+                provider=self.name,
+                board=board,
+                reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                trace={
+                    "adapter": self.name,
+                    "board_urls": [board_url],
+                    "error": "Workable board redirected outside the account",
+                    "rejected_final_url": final_board_url,
+                },
+            )
+
         parser = _WorkableHTMLParser()
         try:
             parser.feed(page.html or "")
@@ -98,8 +114,92 @@ class WorkableAdapter:
             _collect_pagination(payload, pagination)
         candidates = _dedupe_candidates(candidates)
 
+        api_urls: list[str] = []
+        api_errors: list[dict[str, str]] = []
+        api_page_count = 0
+        total_found: int | None = None
+        normalized_target = _normalized_title(query.title)
+        exact_title_found = bool(
+            normalized_target
+            and any(_normalized_title(candidate.title) == normalized_target for candidate in candidates)
+        )
+
+        # Current public Workable boards are client-rendered shells. Their own
+        # frontend reads this public cursor API; retain HTML parsing above for
+        # older/static variants and use the API only when the shell has no jobs.
+        if not candidates and not found_jobs_container:
+            token: str | None = None
+            seen_tokens: set[str] = set()
+            for _ in range(_MAX_API_PAGES):
+                api_url = _api_url(board.identifier)
+                api_urls.append(api_url)
+                request = _api_request(query, token)
+                try:
+                    response = fetcher.fetch(
+                        api_url,
+                        data=json.dumps(request).encode("utf-8"),
+                        headers={
+                            "Accept": "application/json",
+                            "Content-Type": "application/json",
+                            "Referer": board_url,
+                        },
+                    )
+                except (FetchError, OSError, TimeoutError) as error:
+                    api_errors.append({"url": api_url, "error": str(error)})
+                    break
+
+                response_url = response.final_url or response.url
+                if not _is_account_api_url(response_url, board.identifier):
+                    return AdapterResult(
+                        provider=self.name,
+                        board=board,
+                        reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                        trace={
+                            "adapter": self.name,
+                            "board_urls": [board_url],
+                            "api_urls": api_urls,
+                            "error": "Workable API redirected outside the account endpoint",
+                            "rejected_final_url": response_url,
+                        },
+                    )
+
+                try:
+                    payload = json.loads(response.html)
+                except (json.JSONDecodeError, TypeError):
+                    return _invalid_api_response(board, board_url, api_urls)
+                records = payload.get("results") if isinstance(payload, dict) else None
+                if not isinstance(records, list):
+                    return _invalid_api_response(board, board_url, api_urls)
+
+                api_page_count += 1
+                found_jobs_container = True
+                total_found = _nonnegative_int(payload.get("total"))
+                for record in records:
+                    if not isinstance(record, dict):
+                        continue
+                    candidate = _candidate(record, board.identifier)
+                    if candidate is not None:
+                        candidates.append(candidate)
+                        if normalized_target and _normalized_title(candidate.title) == normalized_target:
+                            exact_title_found = True
+                candidates = _dedupe_candidates(candidates)
+
+                next_token = payload.get("nextPage")
+                if (
+                    exact_title_found
+                    or not records
+                    or not isinstance(next_token, str)
+                    or not next_token.strip()
+                    or next_token in seen_tokens
+                ):
+                    break
+                seen_tokens.add(next_token)
+                token = next_token
+
         if candidates:
             reason_code = None
+        elif api_errors:
+            reason_code = "PROVIDER_FETCH_FAILED"
         elif found_jobs_container:
             reason_code = "EMPTY_PROVIDER_RESPONSE"
         else:
@@ -112,12 +212,18 @@ class WorkableAdapter:
             trace={
                 "adapter": self.name,
                 "board_urls": [board_url],
+                "api_urls": api_urls,
                 "response_source": page.source,
                 "payload_count": len(payloads),
                 "public_link_count": len(parser.links),
                 "candidate_count": len(candidates),
                 "pagination": pagination,
+                "api_page_count": api_page_count,
+                "total_found": total_found,
+                "exact_title_found": exact_title_found,
+                "errors": api_errors,
             },
+            retryable=reason_code == "PROVIDER_FETCH_FAILED",
         )
 
 
@@ -140,6 +246,57 @@ def _parsed_workable_url(url: str):
     ):
         return None
     return parsed
+
+
+def _is_account_board_url(url: str, account: str) -> bool:
+    parsed = _parsed_workable_url(url)
+    if parsed is None:
+        return False
+    parts = [unquote(part) for part in parsed.path.split("/") if part]
+    return bool(parts and parts[0].casefold() == account.casefold())
+
+
+def _api_url(account: str) -> str:
+    return f"https://{_HOST}{_API_PATH_PREFIX}{quote(account, safe='-_')}/jobs"
+
+
+def _is_account_api_url(url: str, account: str) -> bool:
+    parsed = _parsed_workable_url(url)
+    if parsed is None or parsed.query or parsed.fragment:
+        return False
+    parts = [unquote(part) for part in parsed.path.split("/") if part]
+    return bool(
+        len(parts) == 5
+        and parts[:3] == ["api", "v3", "accounts"]
+        and parts[3].casefold() == account.casefold()
+        and parts[4] == "jobs"
+    )
+
+
+def _api_request(query: JobQuery, token: str | None) -> dict[str, object]:
+    request: dict[str, object] = {
+        "query": query.title.strip() if query.title else "",
+        "location": [],
+        "department": [],
+        "worktype": [],
+        "remote": [],
+    }
+    if token:
+        request["token"] = token
+    return request
+
+
+def _invalid_api_response(
+    board: JobBoard,
+    board_url: str,
+    api_urls: list[str],
+) -> AdapterResult:
+    return AdapterResult(
+        provider="workable",
+        board=board,
+        reason_code="INVALID_STRUCTURED_DATA",
+        trace={"adapter": "workable", "board_urls": [board_url], "api_urls": api_urls},
+    )
 
 
 class _WorkableHTMLParser(HTMLParser):
@@ -360,6 +517,16 @@ def _dedupe_candidates(candidates: list[JobCandidate]) -> list[JobCandidate]:
         seen.add(candidate.url)
         output.append(candidate)
     return output
+
+
+def _normalized_title(value: str | None) -> str:
+    return " ".join(re.findall(r"[a-z0-9]+", (value or "").casefold()))
+
+
+def _nonnegative_int(value: object) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        return None
+    return value
 
 
 ADAPTER = WorkableAdapter()

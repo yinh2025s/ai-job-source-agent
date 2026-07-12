@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
+import tempfile
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -10,6 +12,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.company_identity import CompanyIdentityResolver
+from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
+from job_source_agent.checkpoint import input_fingerprint
 from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
 from job_source_agent.contracts import FetchClient
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
@@ -110,6 +114,15 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stage checkpoint directory; defaults beside the result output.",
     )
     parser.add_argument(
+        "--batch-checkpoint-dir",
+        help="Atomic company-completion directory; defaults beside the result output.",
+    )
+    parser.add_argument(
+        "--no-resume",
+        action="store_true",
+        help="Ignore compatible company-completion records and run every input again.",
+    )
+    parser.add_argument(
         "--require-all-expectations",
         action="store_true",
         help="Fail expectation checks for companies that are not present in a partial live run.",
@@ -128,21 +141,40 @@ def main() -> None:
     output_path = Path(args.output)
     trace_path = Path(args.trace_output)
     summary_path = Path(args.summary_output)
-    results = []
-    traces = []
+    completion_store = FilesystemBatchCompletionStore(_batch_checkpoint_dir(args))
+    completed = _load_completed_companies(companies, completion_store, args)
     started = time.time()
 
-    print(f"unique companies: {len(companies)}", flush=True)
+    pending = [
+        (index, company)
+        for index, company in enumerate(companies, start=1)
+        if index not in completed
+    ]
+    if completed:
+        _write_completed_artifacts(
+            completed,
+            output_path,
+            trace_path,
+            summary_path,
+            args,
+            started,
+        )
+    print(
+        f"unique companies: {len(companies)} "
+        f"restored: {len(completed)} pending: {len(pending)}",
+        flush=True,
+    )
     if args.workers <= 1:
-        for index, company in enumerate(companies, start=1):
+        for index, company in pending:
             index, result, elapsed = run_company_timed(index, company, args)
-            record_checkpoint(
+            _record_company_completion(
                 index,
                 len(companies),
+                company,
                 result,
                 elapsed,
-                results,
-                traces,
+                completed,
+                completion_store,
                 output_path,
                 trace_path,
                 summary_path,
@@ -151,19 +183,26 @@ def main() -> None:
             )
     else:
         with ThreadPoolExecutor(max_workers=args.workers, thread_name_prefix="live-company") as executor:
-            futures = [
-                executor.submit(run_company_timed, index, company, args)
-                for index, company in enumerate(companies, start=1)
-            ]
+            futures = {
+                executor.submit(run_company_timed, index, company, args): (index, company)
+                for index, company in pending
+            }
             for future in as_completed(futures):
-                index, result, elapsed = future.result()
-                record_checkpoint(
+                expected_index, company = futures[future]
+                try:
+                    index, result, elapsed = future.result()
+                except Exception as error:
+                    index = expected_index
+                    result = failure_result(company, "batch_worker_failed", detail=repr(error))
+                    elapsed = 0.0
+                _record_company_completion(
                     index,
                     len(companies),
+                    company,
                     result,
                     elapsed,
-                    results,
-                    traces,
+                    completed,
+                    completion_store,
                     output_path,
                     trace_path,
                     summary_path,
@@ -171,6 +210,7 @@ def main() -> None:
                     started,
                 )
 
+    results, traces = _ordered_records(completed)
     summary = build_summary(
         results,
         args,
@@ -188,7 +228,7 @@ def main() -> None:
             "selected": int(bundle_manifest.get("summary", {}).get("total", 0)),
             "manifest": str(Path(args.failure_bundle_dir) / "bundle-manifest.json"),
         }
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    _atomic_write_json(summary_path, summary)
     print_summary(summary)
     print(f"results: {output_path}", flush=True)
     print(f"trace: {trace_path}", flush=True)
@@ -266,6 +306,88 @@ def run_company_timed(index: int, company: CompanyInput, args: argparse.Namespac
     return index, result, elapsed
 
 
+def _load_completed_companies(
+    companies: list[CompanyInput],
+    store: FilesystemBatchCompletionStore,
+    args: argparse.Namespace,
+) -> dict[int, tuple[dict, dict, float]]:
+    if getattr(args, "no_resume", False) or getattr(args, "rerun_stage", None):
+        return {}
+    input_records = [dataclass_to_dict(company) for company in companies]
+    saved = store.scan(input_records)
+    completed: dict[int, tuple[dict, dict, float]] = {}
+    for index, input_record in enumerate(input_records, start=1):
+        completion = saved.get(input_fingerprint(input_record))
+        if completion is not None:
+            completed[index] = (completion.result, completion.trace, completion.elapsed)
+    return completed
+
+
+def _record_company_completion(
+    index: int,
+    total: int,
+    company: CompanyInput,
+    result: DiscoveryResult,
+    elapsed: float,
+    completed: dict[int, tuple[dict, dict, float]],
+    store: FilesystemBatchCompletionStore,
+    output_path: Path,
+    trace_path: Path,
+    summary_path: Path,
+    args: argparse.Namespace,
+    started: float,
+) -> None:
+    result_record = result.result_record()
+    trace_record = dataclass_to_dict(result.trace_record())
+    store.save(dataclass_to_dict(company), result_record, trace_record, elapsed)
+    completed[index] = (result_record, trace_record, elapsed)
+    _write_completed_artifacts(
+        completed,
+        output_path,
+        trace_path,
+        summary_path,
+        args,
+        started,
+    )
+    print(
+        f"[{index:02d}/{total:02d}] "
+        f"{result.status.upper()} {result.company_name} "
+        f"career={bool(result.career_page_url)} "
+        f"job_list={bool(result.job_list_page_url)} "
+        f"opening={bool(result.open_position_url)} "
+        f"error={result.error} "
+        f"elapsed={elapsed}s",
+        flush=True,
+    )
+
+
+def _ordered_records(
+    completed: dict[int, tuple[dict, dict, float]],
+) -> tuple[list[dict], list[dict]]:
+    ordered = [completed[index] for index in sorted(completed)]
+    return [item[0] for item in ordered], [item[1] for item in ordered]
+
+
+def _write_completed_artifacts(
+    completed: dict[int, tuple[dict, dict, float]],
+    output_path: Path,
+    trace_path: Path,
+    summary_path: Path,
+    args: argparse.Namespace,
+    started: float,
+) -> None:
+    results, traces = _ordered_records(completed)
+    _atomic_write_json(output_path, results)
+    _atomic_write_json(trace_path, traces)
+    summary = build_summary(
+        results,
+        args,
+        elapsed_sec=round(time.time() - started, 1),
+        traces=traces,
+    )
+    _atomic_write_json(summary_path, summary)
+
+
 def record_checkpoint(
     index: int,
     total: int,
@@ -281,15 +403,15 @@ def record_checkpoint(
 ) -> None:
     results.append(result.result_record())
     traces.append(dataclass_to_dict(result.trace_record()))
-    output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-    trace_path.write_text(json.dumps(traces, indent=2), encoding="utf-8")
+    _atomic_write_json(output_path, results)
+    _atomic_write_json(trace_path, traces)
     summary = build_summary(
         results,
         args,
         elapsed_sec=round(time.time() - started, 1),
         traces=traces,
     )
-    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    _atomic_write_json(summary_path, summary)
     print(
         f"[{index:02d}/{total:02d}] "
         f"{result.status.upper()} {result.company_name} "
@@ -300,6 +422,33 @@ def record_checkpoint(
         f"elapsed={elapsed}s",
         flush=True,
     )
+
+
+def _atomic_write_json(path: Path, payload) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            dir=path.parent,
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = handle.name
+            json.dump(payload, handle, indent=2)
+            handle.write("\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                os.unlink(temporary_path)
+            except FileNotFoundError:
+                pass
 
 
 def run_company(company: CompanyInput, args: argparse.Namespace):
@@ -546,6 +695,14 @@ def _checkpoint_dir(args: argparse.Namespace) -> str:
         return str(configured)
     output = getattr(args, "output", "/tmp/live-batch-results.json")
     return str(Path(output).with_suffix(".checkpoints"))
+
+
+def _batch_checkpoint_dir(args: argparse.Namespace) -> str:
+    configured = getattr(args, "batch_checkpoint_dir", None)
+    if configured:
+        return str(configured)
+    output = getattr(args, "output", "/tmp/live-batch-results.json")
+    return str(Path(output).with_suffix(".batch-completions"))
 
 
 def failure_result(company: CompanyInput, error: str, detail: str | None = None) -> DiscoveryResult:

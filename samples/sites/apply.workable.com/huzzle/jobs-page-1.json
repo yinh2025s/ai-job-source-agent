@@ -1,0 +1,15 @@
+{
+  "total": 516,
+  "results": [
+    {
+      "id": 1001,
+      "shortcode": "FIRST1001",
+      "title": "Operations Associate",
+      "location": {"country": "United Kingdom", "city": "London"},
+      "locations": [],
+      "state": "published",
+      "workplace": "remote"
+    }
+  ],
+  "nextPage": "opaque-page-token-2"
+}

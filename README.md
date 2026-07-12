@@ -254,6 +254,7 @@ python3 scripts/live_batch_eval.py \
   --company-time-budget 45 \
   --website-time-budget 20 \
   --checkpoint-dir /tmp/product10-stage-checkpoints \
+  --batch-checkpoint-dir /tmp/product10-company-completions \
   --render-js \
   --render-budget 2 \
   --skip-sitemap \
@@ -264,6 +265,8 @@ python3 scripts/live_batch_eval.py \
 
 The live runner executes S1-S3 and S4-S7 in separate killable processes while both phases use the same `PipelineApplication` and filesystem stage store. Add `--rerun-stage opening_match` to invalidate and recompute that stage for every company without repeating compatible upstream work. `--fixtures-dir ... --offline` runs the same two-phase path deterministically.
 
+Each completed company is also published as a versioned atomic envelope. Restarting the same command restores compatible envelopes and submits only unfinished companies; final results and traces are rebuilt in original input order. Use `--no-resume` for a clean batch. Any `--rerun-stage` request bypasses company-level completion reuse while retaining stage-level checkpoint semantics.
+
 If the optional browser dependency is not installed, omit `--render-js` and `--render-budget`.
 
 Latest live checks on July 11, 2026:
@@ -273,7 +276,7 @@ Latest live checks on July 11, 2026:
 - Fixed live benchmark: 6 named companies, 6/6 official websites, 6/6 official job-list pages, 1/6 exact opening, and 6/6 expectation checks passed. Providers covered in that small set are Greenhouse, Lever, Ashby, PostHog's first-party careers page, and Brex's first-party careers page.
 - July 12 rerun after the stage-runner migration: 6/6 official websites, 6/6 job-list pages, 5/6 exact openings, and 6/6 expectation checks. Provider attribution now follows stage evidence, so Greenhouse roles with an external CareerPuck apply URL remain classified as Greenhouse.
 - Expanded July 12 fixed live benchmark: 9/9 official websites, 9/9 job-list pages, 7/9 exact openings, and 9/9 expectation checks in 17.6 seconds. The added samples cover SanDisk/SmartRecruiters, ONEOK/Workday, and Carv/Rippling.
-- Follow-up expansion: 34/34 official websites, 34/34 job-list pages, 32/34 exact openings, and 34/34 expectation checks in 48.0 seconds. Greenhouse, Ashby, Lever, Workday, and SmartRecruiters each have five fixed live companies; iCIMS/SuccessFactors also has five combined samples spanning Jibe, traditional hosted HTML, and SAP Career Site v1.
+- Current fixed live benchmark: 38/38 official websites, 38/38 job-list pages, 37/38 exact openings, and 38/38 expectation checks. Greenhouse, Ashby, Lever, Workday, SmartRecruiters, and Workable each have five fixed live companies; iCIMS/SuccessFactors also has five combined samples spanning Jibe, traditional hosted HTML, and SAP Career Site v1. A restart restored 37 compatible company envelopes and ran only the replaced Wishpond input.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
 
