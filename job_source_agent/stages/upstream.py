@@ -5,7 +5,11 @@ from typing import Protocol
 
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
-from ..models import STAGE_HIRING_IDENTITY_RESOLUTION, STAGE_WEBSITE_RESOLUTION
+from ..models import (
+    STAGE_HIRING_IDENTITY_RESOLUTION,
+    STAGE_LINKEDIN_DISCOVERY,
+    STAGE_WEBSITE_RESOLUTION,
+)
 from ..reasons import canonical_reason_code, classify_fetch_error, make_stage_result
 from ..web import FetchError, normalize_url
 
@@ -33,6 +37,36 @@ class HiringIdentityResolutionService(Protocol):
         linkedin_company_url: str | None = None,
     ) -> tuple[HiringIdentity | None, dict]:
         ...
+
+
+class InputDiscoveryStage:
+    """Represent the already-completed input/discovery boundary as S1."""
+
+    name = STAGE_LINKEDIN_DISCOVERY
+
+    def run(self, context: PipelineContext) -> StageExecution:
+        company = context.company
+        has_linkedin_input = bool(company.linkedin_job_url or company.linkedin_company_url)
+        evidence: list[dict] = []
+        if company.linkedin_job_url:
+            evidence.append({"field": "linkedin_job_url", "url": company.linkedin_job_url})
+        if company.linkedin_company_url:
+            evidence.append({"field": "linkedin_company_url", "url": company.linkedin_company_url})
+        return StageExecution(
+            result=make_stage_result(
+                self.name,
+                "success" if has_linkedin_input else "not_applicable",
+                input_count=1 if has_linkedin_input else 0,
+                output_count=1 if has_linkedin_input else 0,
+                evidence=evidence,
+                detail=(
+                    None
+                    if has_linkedin_input
+                    else "Direct company input; LinkedIn discovery was upstream or not required."
+                ),
+            ),
+            trace={"source": company.source, "source_trace": company.source_trace},
+        )
 
 
 class WebsiteResolutionStage:

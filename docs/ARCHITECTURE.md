@@ -128,7 +128,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 - `live_batch_eval.py` 已通过 composition root 构造依赖，但仍同时负责调度、预算、checkpoint 和输出。
 - Fetch wrappers 已满足显式 `FetchClient` protocol 和跨实现 contract suite；browser live variants 仍需持续验证。
 - Filesystem stage checkpoint store 已支持原子保存、兼容性校验、安全 cache miss 和从指定 stage 向下失效。
-- 通用 runner/store 尚未完全接管 production CLI/live batch flow，`--rerun-stage` 接线和跨进程 stage replay 仍待完成。
+- Production CLI 已由 `PipelineApplication` 和通用 runner/store 接管；live batch 仍保留原有分段 process-budget orchestration，跨进程 stage replay 尚待统一。
 
 当前结构已经达到 provider/resolver/fetch/evaluation 并行开发门槛；剩余债务按 ownership workstream 继续收缩。
 

@@ -72,6 +72,29 @@ OK Nimbus Robotics
   opening: https://boards.greenhouse.io/nimbusrobotics/jobs/5012345001
 ```
 
+The standard CLI can persist and reuse compatible per-stage checkpoints:
+
+```bash
+python3 -m job_source_agent \
+  --input samples/linkedin_jobs.json \
+  --fixtures-dir samples/sites \
+  --offline \
+  --checkpoint-dir /tmp/job-source-checkpoints \
+  --output results.json \
+  --trace-output trace.json
+
+python3 -m job_source_agent \
+  --input samples/linkedin_jobs.json \
+  --fixtures-dir samples/sites \
+  --offline \
+  --checkpoint-dir /tmp/job-source-checkpoints \
+  --rerun-stage opening_match \
+  --output rerun-results.json \
+  --trace-output rerun-trace.json
+```
+
+`--resume-from-stage` restores compatible upstream stage updates, while `--rerun-stage` invalidates the selected stage and everything after it. `--stop-after-stage` is useful for inspecting a partial pipeline.
+
 ## Discover From LinkedIn Jobs
 
 This mode starts from public LinkedIn job search results:

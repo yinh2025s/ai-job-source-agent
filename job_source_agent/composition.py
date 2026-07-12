@@ -3,13 +3,27 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from .application_runner import ApplicationRunner
+from .company_identity import CompanyIdentityResolver
 from .contracts import FetchClient
 from .pipeline import JobSourceAgent
+from .pipeline_application import PipelineApplication
 from .providers import ProviderRegistry, build_default_provider_registry
 from .rendered_fetcher import RenderedFetcher, SmartRenderedFetcher
 from .retrying_fetcher import RetryingFetcher
 from .snapshot import SnapshottingFetcher
+from .stage_checkpoint import FilesystemCheckpointStore
+from .stages import (
+    CareerDiscoveryStage,
+    HiringIdentityResolutionStage,
+    InputDiscoveryStage,
+    JobBoardDiscoveryStage,
+    OpeningMatchStage,
+    ResultValidationStage,
+    WebsiteResolutionStage,
+)
 from .web import Fetcher
+from .website_resolver import CompanyWebsiteResolver
 
 
 @dataclass(frozen=True)
@@ -42,6 +56,7 @@ class ApplicationComponents:
     fetcher: FetchClient
     provider_registry: ProviderRegistry
     agent: JobSourceAgent
+    pipeline: PipelineApplication
 
 
 def build_fetcher(config: FetcherConfig) -> FetchClient:
@@ -102,12 +117,31 @@ def build_application(
     fetcher_config: FetcherConfig,
     agent_config: AgentConfig | None = None,
     provider_registry: ProviderRegistry | None = None,
+    checkpoint_dir: str | Path | None = None,
+    website_overrides: str | Path | None = None,
 ) -> ApplicationComponents:
     registry = provider_registry or build_default_provider_registry()
     fetcher = build_fetcher(fetcher_config)
+    agent = build_agent(fetcher, agent_config, registry)
+    runner = ApplicationRunner(
+        (
+            InputDiscoveryStage(),
+            WebsiteResolutionStage(
+                CompanyWebsiteResolver(fetcher, overrides_path=website_overrides)
+            ),
+            HiringIdentityResolutionStage(CompanyIdentityResolver()),
+            CareerDiscoveryStage(agent),
+            JobBoardDiscoveryStage(agent, registry),
+            OpeningMatchStage(agent, registry),
+            ResultValidationStage(),
+        ),
+        checkpoint_store=(
+            FilesystemCheckpointStore(checkpoint_dir) if checkpoint_dir is not None else None
+        ),
+    )
     return ApplicationComponents(
         fetcher=fetcher,
         provider_registry=registry,
-        agent=build_agent(fetcher, agent_config, registry),
+        agent=agent,
+        pipeline=PipelineApplication(runner),
     )
-

@@ -3,6 +3,7 @@ from .runner import PipelineStageRunner
 from .upstream import (
     HiringIdentityResolutionService,
     HiringIdentityResolutionStage,
+    InputDiscoveryStage,
     WebsiteResolutionService,
     WebsiteResolutionStage,
 )
@@ -17,6 +18,7 @@ __all__ = [
     "JobBoardDiscoveryStage",
     "OpeningMatchStage",
     "PipelineStageRunner",
+    "InputDiscoveryStage",
     "WebsiteResolutionService",
     "WebsiteResolutionStage",
     "HiringIdentityResolutionService",

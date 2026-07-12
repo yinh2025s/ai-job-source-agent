@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .contracts import PipelineContext, Stage, StageExecution
+from .contracts import CheckpointStore, PipelineContext, Stage, StageExecution
 from .models import PIPELINE_STAGES, StageResult
 
 
@@ -14,7 +14,11 @@ class ApplicationRunner:
     run produces one result per standard pipeline stage in standard order.
     """
 
-    def __init__(self, stages: Iterable[Stage]) -> None:
+    def __init__(
+        self,
+        stages: Iterable[Stage],
+        checkpoint_store: CheckpointStore | None = None,
+    ) -> None:
         by_name: dict[str, Stage] = {}
         for stage in stages:
             name = getattr(stage, "name", None)
@@ -26,6 +30,13 @@ class ApplicationRunner:
 
         self.stages = tuple(by_name[name] for name in PIPELINE_STAGES if name in by_name)
         self._stages_by_name = by_name
+        self._checkpoint_store = checkpoint_store
+
+    @property
+    def checkpointing_enabled(self) -> bool:
+        """Return whether this runner was configured with checkpoint persistence."""
+
+        return self._checkpoint_store is not None
 
     def run(
         self,
@@ -33,6 +44,8 @@ class ApplicationRunner:
         *,
         start_at: str | None = None,
         stop_after: str | None = None,
+        input_fingerprint: str | None = None,
+        rerun_from: str | None = None,
     ) -> PipelineContext:
         """Execute an inclusive stage range and return the mutated context.
 
@@ -42,6 +55,15 @@ class ApplicationRunner:
         ``not_run`` so stale downstream checkpoint results cannot leak into a run.
         """
 
+        self._validate_checkpoint_configuration(input_fingerprint)
+        if rerun_from is not None:
+            _stage_index(rerun_from, option="rerun_from")
+            if start_at is not None and start_at != rerun_from:
+                raise ValueError(
+                    "start_at and rerun_from must identify the same stage when both are supplied"
+                )
+            start_at = rerun_from
+
         start_at = start_at or PIPELINE_STAGES[0]
         stop_after = stop_after or PIPELINE_STAGES[-1]
         start_index = _stage_index(start_at, option="start_at")
@@ -50,6 +72,10 @@ class ApplicationRunner:
             raise ValueError(
                 f"start_at stage {start_at!r} comes after stop_after stage {stop_after!r}"
             )
+        if rerun_from is not None:
+            assert self._checkpoint_store is not None
+            assert input_fingerprint is not None
+            self._checkpoint_store.invalidate_from(input_fingerprint, rerun_from)
 
         previous_results = _index_existing_results(context)
         previous_traces = dict(context.trace.get("stages", {}))
@@ -58,14 +84,15 @@ class ApplicationRunner:
 
         for index, stage_name in enumerate(PIPELINE_STAGES):
             if index < start_index:
-                previous = previous_results.get(stage_name)
-                if previous is not None:
-                    context.apply(
-                        StageExecution(
-                            result=previous,
-                            trace=previous_traces.get(stage_name, {}),
-                        )
-                    )
+                checkpoint = self._load_checkpoint(input_fingerprint, stage_name)
+                if checkpoint is not None:
+                    _validate_execution(checkpoint, stage_name, source="Checkpoint")
+                    context.apply(checkpoint)
+                elif (previous := previous_results.get(stage_name)) is not None:
+                    context.apply(StageExecution(
+                        result=previous,
+                        trace=previous_traces.get(stage_name, {}),
+                    ))
                 else:
                     context.apply(
                         _not_run(
@@ -98,19 +125,33 @@ class ApplicationRunner:
                 continue
 
             execution = stage.run(context)
-            if not isinstance(execution, StageExecution):
-                raise TypeError(
-                    f"Stage {stage_name!r} returned {type(execution).__name__}, "
-                    "expected StageExecution"
-                )
-            if execution.result.stage != stage_name:
-                raise ValueError(
-                    f"Stage {stage_name!r} returned a result for "
-                    f"{execution.result.stage!r}"
-                )
+            _validate_execution(execution, stage_name, source="Stage")
             context.apply(execution)
+            if self._checkpoint_store is not None:
+                assert input_fingerprint is not None
+                self._checkpoint_store.save(input_fingerprint, execution)
 
         return context
+
+    def _validate_checkpoint_configuration(self, input_fingerprint: str | None) -> None:
+        if self._checkpoint_store is None and input_fingerprint is not None:
+            raise ValueError("input_fingerprint requires a checkpoint_store")
+        if self._checkpoint_store is not None and (
+            not isinstance(input_fingerprint, str) or not input_fingerprint
+        ):
+            raise ValueError(
+                "input_fingerprint must be a non-empty string when checkpoint_store is configured"
+            )
+
+    def _load_checkpoint(
+        self,
+        input_fingerprint: str | None,
+        stage_name: str,
+    ) -> StageExecution | None:
+        if self._checkpoint_store is None:
+            return None
+        assert input_fingerprint is not None
+        return self._checkpoint_store.load(input_fingerprint, stage_name)
 
 
 def _stage_index(stage_name: str, *, option: str) -> int:
@@ -129,6 +170,24 @@ def _index_existing_results(context: PipelineContext) -> dict[str, StageResult]:
             raise ValueError(f"Context contains duplicate pipeline stage results: {result.stage}")
         indexed[result.stage] = result
     return indexed
+
+
+def _validate_execution(
+    execution: StageExecution,
+    stage_name: str,
+    *,
+    source: str,
+) -> None:
+    if not isinstance(execution, StageExecution):
+        raise TypeError(
+            f"{source} for {stage_name!r} returned {type(execution).__name__}, "
+            "expected StageExecution"
+        )
+    if execution.result.stage != stage_name:
+        raise ValueError(
+            f"{source} for {stage_name!r} returned a result for "
+            f"{execution.result.stage!r}"
+        )
 
 
 def _not_run(stage_name: str, detail: str, *, scheduler_reason: str) -> StageExecution:

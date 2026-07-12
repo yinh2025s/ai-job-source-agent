@@ -4,13 +4,11 @@ import argparse
 import json
 from pathlib import Path
 
-from .company_identity import CompanyIdentityResolver
 from .composition import FetcherConfig, build_application
 from .contracts import FetchClient
 from .linkedin import load_company_inputs
 from .linkedin_discovery import LinkedInJobsDiscoverer, linkedin_postings_to_company_inputs
-from .models import dataclass_to_dict
-from .website_resolver import CompanyWebsiteResolver
+from .models import PIPELINE_STAGES, dataclass_to_dict
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -38,11 +36,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--fetch-timeout", type=float, default=8, help="Per-page fetch timeout in seconds.")
     parser.add_argument("--limit", type=int, help="Optional limit for quick demo runs.")
+    parser.add_argument(
+        "--checkpoint-dir",
+        help="Optional directory for compatible per-company, per-stage checkpoints.",
+    )
+    stage_group = parser.add_mutually_exclusive_group()
+    stage_group.add_argument(
+        "--resume-from-stage",
+        choices=PIPELINE_STAGES,
+        help="Reuse compatible upstream checkpoints and continue from this stage.",
+    )
+    stage_group.add_argument(
+        "--rerun-stage",
+        choices=PIPELINE_STAGES,
+        help="Invalidate this stage and downstream checkpoints, then recompute them.",
+    )
+    parser.add_argument(
+        "--stop-after-stage",
+        choices=PIPELINE_STAGES,
+        help="Stop after this stage and mark later stages not run.",
+    )
     return parser
 
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
+    if (args.resume_from_stage or args.rerun_stage) and not args.checkpoint_dir:
+        raise SystemExit("--resume-from-stage and --rerun-stage require --checkpoint-dir.")
     application = build_application(
         FetcherConfig(
             fixtures_dir=args.fixtures_dir,
@@ -51,14 +71,24 @@ def main(argv: list[str] | None = None) -> None:
             render_mode="always" if args.render_js_always else "smart" if args.render_js else "none",
             render_budget=args.render_budget,
             capture_screenshot=args.render_screenshot,
-        )
+        ),
+        checkpoint_dir=args.checkpoint_dir,
+        website_overrides=args.website_overrides,
     )
     fetcher = application.fetcher
     companies = _load_companies(args, fetcher)
     if args.limit:
         companies = companies[: args.limit]
 
-    results = [application.agent.discover(company) for company in companies]
+    results = [
+        application.pipeline.discover(
+            company,
+            start_at=args.resume_from_stage,
+            stop_after=args.stop_after_stage,
+            rerun_from=args.rerun_stage,
+        )
+        for company in companies
+    ]
 
     Path(args.output).write_text(
         json.dumps([result.result_record() for result in results], indent=2),
@@ -92,34 +122,9 @@ def _load_companies(args: argparse.Namespace, fetcher: FetchClient):
             pages=args.linkedin_pages,
         )
         companies = linkedin_postings_to_company_inputs(postings)
-        resolver = CompanyWebsiteResolver(fetcher, overrides_path=args.website_overrides, verify_limit=3)
-        identity_resolver = CompanyIdentityResolver()
         for company in companies:
-            identity, identity_trace = identity_resolver.resolve(
-                company.company_name,
-                company.company_website_url or None,
-                company.linkedin_company_url,
-            )
-            company.source_trace["identity_resolution"] = identity_trace
-            if identity:
-                company.hiring_entity_name = identity.hiring_entity_name
-                company.career_root_url = identity.career_root_url
-                if identity.official_website_url:
-                    company.company_website_url = identity.official_website_url
-                company.source = "linkedin_public_jobs"
-                company.source_trace["website_resolution"] = {
-                    "selected": {
-                        "url": company.company_website_url,
-                        "reason": "provided by company identity resolver",
-                    }
-                }
-                continue
-
-            website_url, trace = resolver.resolve(company.company_name, company.linkedin_company_url)
-            company.company_website_url = website_url or ""
             company.source = "linkedin_public_jobs"
-            company.source_trace["website_resolution"] = trace
-        return [company for company in companies if company.company_website_url]
+        return companies
 
     if args.input:
         return load_company_inputs(args.input)
