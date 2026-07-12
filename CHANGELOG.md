@@ -26,6 +26,7 @@
 - Production CLI 改由 `PipelineApplication` 执行完整 S1-S7，并增加 `--checkpoint-dir`、`--resume-from-stage`、`--rerun-stage` 和 `--stop-after-stage`。
 - Live batch 改为两段 process-budget 包裹同一 `PipelineApplication`：S1-S3 完成后逐 stage 落盘，S4-S7 从 checkpoint 恢复；增加 live `--checkpoint-dir`、`--rerun-stage` 和 deterministic offline batch 参数。
 - 增加安全 snapshot replay CLI，将脱敏 live snapshot 校验并转换成可由 fixture Fetcher 直接消费的离线 replay 目录。
+- 增加 failure replay bundle CLI，一次完成失败结果筛选、snapshot 校验、fixture 生成、离线 S1-S7 执行和 results/trace/summary/manifest 输出。
 - 固定离线 benchmark 增加 Rippling exact-opening 样本，从 11 家扩展到 12 家。
 - Markdown summary report 增加 `provider x stage x status` 和 `provider x reason_code` 可靠性表。
 
@@ -42,6 +43,9 @@
 - iCIMS 原生 adapter 增加最多 5 页 hosted-search pagination、嵌套 payload 和跨页去重，并拒绝跨 tenant redirect。
 - SuccessFactors 原生 adapter 增加 AJAX/theme/嵌套 JSON、分页 metadata 和同 tenant URL 校验。
 - Provider 解析语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.1`，旧 stage checkpoint 会安全失效。
+- Ashby adapter 保持 Posting API 优先，并在 API 失败、空或异常时回退同 board embedded JSON；Workable 增加同 account 公开链接、嵌套 payload 和分页 metadata 支持。
+- Evaluation summary 和 Markdown report 增加 checkpoint action/stage activity 统计。
+- Ashby/Workable 解析语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.2`。
 
 ## [0.1.0] - 2026-07-12
 

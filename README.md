@@ -356,6 +356,20 @@ python3 -m job_source_agent \
 
 Replay conversion verifies metadata, hashes, byte counts, URL sanitization and path containment before copying files. It rejects missing artifacts, symlink/path escapes and conflicting fixture content.
 
+Build and execute a focused offline bundle directly from failed results and their snapshots:
+
+```bash
+python3 scripts/replay_failure_bundle.py \
+  --results /tmp/live-fixed-trace.json \
+  --snapshot-dir /tmp/job-source-snapshots \
+  --output-dir /tmp/opening-failure-bundle \
+  --stage opening_match \
+  --stage-status partial \
+  --reason-code OPENING_NOT_FOUND
+```
+
+The bundle contains filtered replay input, verified fixtures, stage checkpoints, offline results/trace/summary and a relative-path manifest. Summary reports also include checkpoint save/restore/miss/invalidate activity.
+
 Snapshots are written under `/tmp/job-source-snapshots/sites` using the same layout as offline fixtures, plus `/tmp/job-source-snapshots/snapshots.jsonl` metadata. Rendered screenshots are written under `/tmp/job-source-snapshots/artifacts` and referenced from the same metadata file. Sensitive query values and common token-like values are redacted before writing.
 
 `--fetch-retries` retries only retryable fetch failures such as timeouts, DNS failures, rate limits, and server errors. Non-retryable external blockers such as HTTP 403, login walls, bot protection, and parser/title-match failures are not retried.
