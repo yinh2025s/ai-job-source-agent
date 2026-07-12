@@ -12,6 +12,7 @@
 
 - 增加正式的开发治理、架构边界和 ADR 记录机制。
 - 增加版本化 stage context/execution、最小 fetch client、provider adapter 和 checkpoint store contracts。
+- 增加可独立运行的 S4 career、S5 job board、S6 opening stages 和顺序 stage runner。
 
 ### Changed
 
