@@ -1,0 +1,47 @@
+[
+  {
+    "company": "Plum",
+    "url": "https://apply.workable.com/withplum/",
+    "title": "Senior Backend Engineer | AI Platform",
+    "exact_url": "https://apply.workable.com/withplum/j/06C4C5040E/",
+    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
+    "static_fixture": "withplum/static.html",
+    "rendered_fixture": "withplum/rendered.html"
+  },
+  {
+    "company": "Workable",
+    "url": "https://apply.workable.com/careers/",
+    "title": "Implementation Manager",
+    "exact_url": "https://apply.workable.com/careers/j/401786A940/",
+    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
+    "static_fixture": "careers/static.html",
+    "rendered_fixture": "careers/rendered.html"
+  },
+  {
+    "company": "Town Web",
+    "url": "https://apply.workable.com/town-web/",
+    "title": "Fractional Head of Growth (SaaS)",
+    "exact_url": "https://apply.workable.com/town-web/j/92C4876274/",
+    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
+    "static_fixture": "town-web/static.html",
+    "rendered_fixture": "town-web/rendered.html"
+  },
+  {
+    "company": "ClassWallet",
+    "url": "https://apply.workable.com/classwallet/",
+    "title": "Senior Full Stack Engineer, Ecommerce",
+    "exact_url": "https://apply.workable.com/classwallet/j/37072C7B17/",
+    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
+    "static_fixture": "classwallet/static.html",
+    "rendered_fixture": "classwallet/rendered.html"
+  },
+  {
+    "company": "Huzzle",
+    "url": "https://apply.workable.com/huzzle/",
+    "title": "Graphic Designer - Remote",
+    "exact_url": "https://apply.workable.com/huzzle/j/6464A5E44D/",
+    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
+    "static_fixture": "huzzle/static.html",
+    "rendered_fixture": "huzzle/rendered.html"
+  }
+]
