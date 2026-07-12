@@ -88,6 +88,11 @@
 - SuccessFactors Cloud SAP adapter 增加页面 locale 优先、record-level `supportedLocales` 和 exact-title early stop；新增 W. L. Gore、Colas、Telstra Broadcast Services、Nova 四个独立 live tenant。
 - 固定 live benchmark 扩展到 50 家：50/50 官网、career/job list 和 expectations，49/50 exact opening；SuccessFactors 达到 5 家独立 live 覆盖。
 - SuccessFactors/retry/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.12`。
+- iCIMS Jibe canonical URL 增加同 origin、`/jobs/{id}` 和 payload job ID 一致性校验；新增 GovCIO 第五个独立 iCIMS live tenant，并将固定 live benchmark 提升到 51/51 expectations、51/51 job list、50/51 exact opening。
+- 增加固定 5-company JS-heavy Workable cohort evaluator：确定性 contract 验证 static shell render trigger、browser evidence 和共享预算；可选 Playwright live 模式会在 evidence 不足时非零退出。12 秒 live baseline 为 5/5 browser career evidence、4/5 DOM exact links、5/5 不超预算。
+- Live phase 的绝对 deadline 注入 retry wrapper，使退避 sleep 在外层 process hard kill 前主动遵守剩余预算。
+- Atomic live artifact writer 会在重启时清理同一目标的遗留临时文件；32-company `SIGKILL` recovery stress 连续五轮通过。
+- iCIMS/retry budget 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.13`。
 
 ## [0.1.0] - 2026-07-12
 

@@ -295,9 +295,19 @@ Latest live checks on July 12, 2026:
 - Fixed live benchmark: 6 named companies, 6/6 official websites, 6/6 official job-list pages, 1/6 exact opening, and 6/6 expectation checks passed. Providers covered in that small set are Greenhouse, Lever, Ashby, PostHog's first-party careers page, and Brex's first-party careers page.
 - July 12 rerun after the stage-runner migration: 6/6 official websites, 6/6 job-list pages, 5/6 exact openings, and 6/6 expectation checks. Provider attribution now follows stage evidence, so Greenhouse roles with an external CareerPuck apply URL remain classified as Greenhouse.
 - Expanded July 12 fixed live benchmark: 9/9 official websites, 9/9 job-list pages, 7/9 exact openings, and 9/9 expectation checks in 17.6 seconds. The added samples cover SanDisk/SmartRecruiters, ONEOK/Workday, and Carv/Rippling.
-- Current fixed live benchmark: 50/50 official websites, 50/50 career/job-list pages, 49/50 exact openings, and 50/50 expectation checks in 73.9 seconds with four workers. Greenhouse, Ashby, Lever, Workday, SmartRecruiters, Workable, Rippling, BambooHR, and SuccessFactors each have five fixed live companies; iCIMS has four. The SuccessFactors cohort spans five independent Cloud SAP tenants and locales.
+- Current fixed live benchmark: 51/51 official websites, 51/51 career/job-list pages, 50/51 exact openings, and 51/51 expectation checks in 77.7 seconds with four workers. Greenhouse, Ashby, Lever, Workday, SmartRecruiters, Workable, Rippling, BambooHR, iCIMS, and SuccessFactors each have five fixed live companies.
+- Fixed JS-heavy browser cohort: five independent Workable tenants all triggered browser rendering from a static shell and produced career evidence within a shared five-render budget; four rendered DOMs contained the expected exact job link. The saved fixtures are explicitly marked as minimal contracts derived from live static shells and public API evidence, not full browser captures.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
+
+Run the deterministic JS-heavy contract cohort without browser dependencies, or add `--live` after installing the optional Playwright dependency:
+
+```bash
+python3 scripts/js_heavy_cohort_eval.py --output /tmp/js-heavy-contract.json
+python3 scripts/js_heavy_cohort_eval.py --live --timeout 12 --output /tmp/js-heavy-live.json
+```
+
+The live command exits nonzero unless every case triggers browser rendering, returns career evidence, and stays within the shared render budget. Exact-link coverage remains a separate field in the summary.
 
 To avoid relying only on LinkedIn's current random search results, run the fixed live benchmark set:
 
