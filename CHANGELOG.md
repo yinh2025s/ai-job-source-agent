@@ -93,6 +93,8 @@
 - Live phase 的绝对 deadline 注入 retry wrapper，使退避 sleep 在外层 process hard kill 前主动遵守剩余预算。
 - Atomic live artifact writer 会在重启时清理同一目标的遗留临时文件；32-company `SIGKILL` recovery stress 连续五轮通过。
 - iCIMS/retry budget 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.13`。
+- Google Careers 从 detection-only compatibility path 迁移为自动发现的第 11 个原生 adapter：使用公开 SSR title search、提取 canonical detail URL，并拒绝 credentials、非标准端口、跨域 redirect、非 Careers 路径和无数字 job ID 的候选。
+- Google Careers 原生迁移后将 `ADAPTER_VERSION` 提升到 `2026-07-12.14`；13/13 provider benchmark 保持 exact-opening 全绿。
 
 ## [0.1.0] - 2026-07-12
 

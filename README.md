@@ -471,10 +471,10 @@ Career page finder
         |
         v
 Job-list/opening finder
-  - auto-discovered native adapters for Greenhouse, Lever, SmartRecruiters, Workday, Ashby, BambooHR, iCIMS, SuccessFactors, Workable, and Rippling
+  - auto-discovered native adapters for Greenhouse, Lever, SmartRecruiters, Workday, Ashby, BambooHR, iCIMS, SuccessFactors, Workable, Rippling, and Google Careers
   - Workday CXS jobs API adapter with title search payloads
   - structured JSON-LD / embedded JSON extraction for iCIMS, SuccessFactors, and Workable-style pages
-  - provider-aware search URLs for Google Careers and Meta Careers
+  - native server-rendered search for Google Careers and provider-aware compatibility search for Meta Careers
   - provider adapters for Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, and SuccessFactors-style systems
   - target-title matching from LinkedIn job cards
   - job-detail path scoring

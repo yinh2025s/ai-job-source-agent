@@ -126,7 +126,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 ## Current Technical Debt
 
 - S2-S7 均有独立 stage，通用 `ApplicationRunner` 已支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- 10 个主要 provider 已使用原生 adapter，包括 Rippling；Google Careers、Meta Careers 和 generic fallback 仍依赖 compatibility path。
+- 11 个主要 provider 已使用原生 adapter，包括 Rippling 和 Google Careers；Meta Careers 和 generic fallback 仍依赖 compatibility path。
 - `live_batch_eval.py` 只负责公司级并发、两段 process hard budget 和输出；实际 S1-S7 执行委托 `PipelineApplication`，S1-S3 与 S4-S7 通过 filesystem stage checkpoint 衔接。
 - Fetch wrappers 已满足显式 `FetchClient` protocol 和跨实现 contract suite；browser live variants 仍需持续验证。
 - Filesystem stage checkpoint store 已支持原子保存、兼容性校验、安全 cache miss 和从指定 stage 向下失效。

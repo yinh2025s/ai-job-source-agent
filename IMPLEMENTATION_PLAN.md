@@ -192,7 +192,7 @@
 
 | Provider | 当前状态 | 说明 |
 | --- | --- | --- |
-| Google Careers | Partial adapter | 可生成 title query URL |
+| Google Careers | Native SSR adapter | 自动发现；使用公开 title search 页面并验证 canonical detail URL 与数字 job ID |
 | Meta Careers | Partial adapter | 可生成 title query URL |
 | Lever | Native API adapter | 自动发现；使用 `api.lever.co/v0/postings/{company}` |
 | Greenhouse | Native API/page adapter | 自动发现 hosted board；使用 Boards API；first-party frontend 可从 `__NEXT_DATA__` 完整 Greenhouse schema 识别并读取同源岗位 |
@@ -284,7 +284,7 @@
 
 当前测试数量：
 
-- 387 unit tests passing
+- 392 unit tests passing
 
 ## 当前主要短板
 
@@ -293,7 +293,7 @@
 当前已完成第一轮 SOLID 拆分，但仍有兼容层需要逐步迁移：
 
 - S2-S7 已有独立 stage，通用 `ApplicationRunner` 支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- 10 个 provider 已迁移为原生 adapter，包括 Rippling；Google Careers、Meta Careers 和 generic fallback 仍走 compatibility path。
+- 11 个 provider 已迁移为原生 adapter，包括 Rippling 和 Google Careers；Meta Careers 和 generic fallback 仍走 compatibility path。
 - `live_batch_eval.py` 保留公司级并发、process budget 和输出职责，七关业务执行已委托统一 `PipelineApplication`。
 - Fetcher 已有显式 protocol 和跨实现 contract suite；filesystem stage store 已接入 production CLI 和 live batch。
 - 原生 adapter 已支持包内自动发现；新 provider 不再需要修改中央 registry。
@@ -634,7 +634,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；387 个单元测试、13/13 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、11 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；392 个单元测试、13/13 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -672,12 +672,12 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 387 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 结果一致。
+- 重构后 392 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
 
-当前状态：已完成可并行扩展的第一版。Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors、Workable 和 Rippling 已迁移为原生 adapter；provider module 通过导出 `ADAPTER` 自动注册。Google Careers、Meta Careers 和 generic fallback 暂时保留 compatibility path。
+当前状态：已完成可并行扩展的第一版。Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors、Workable、Rippling 和 Google Careers 已迁移为原生 adapter；provider module 通过导出 `ADAPTER` 自动注册。Meta Careers 和 generic fallback 暂时保留 compatibility path。
 
 已完成目标：
 
@@ -711,7 +711,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近七轮并行交付 provider、checkpoint/replay、crash recovery、browser、discovery、evaluation history 和 retry policy。主线 architecture validator、387 个测试、13/13 provider benchmark、6/6 resolver benchmark 和 51/51 fixed live expectations 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
+当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近八轮并行交付 provider、checkpoint/replay、crash recovery、browser、discovery、evaluation history 和 retry policy。主线 architecture validator、392 个测试、13/13 provider benchmark、6/6 resolver benchmark 和 51/51 fixed live expectations 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -867,6 +867,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - Stripe、Microsoft、Uber 等长轮询页面证明 networkidle 不能作为硬成功条件；已改为剩余预算内软等待
 - 固定 5-company Workable browser cohort 已建立；fixture 明确标记为由真实 static shell 和 public API evidence 生成的最小 contract，而非完整 DOM capture
 - 12 秒 Playwright/local Chrome live baseline 为 5/5 触发 browser、5/5 career evidence、4/5 expected exact link、5/5 不超共享 render budget
+- 跨 provider 调查已确认 Apple Jobs、Intuitive Apps 和 BlueFit 可由 static trigger 进入 browser 并获得 career/job evidence；下一轮需保存脱敏真实 capture，与两家 Workable 组成至少 4 类技术栈的固定 cohort，当前尚未写成通过门禁
 
 目标：
 
@@ -1059,7 +1060,7 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - LinkedIn discovery 已经接入
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
-- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 10 个原生 adapter
+- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 11 个原生 adapter
 - Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR 已接 structured API
 - iCIMS、SuccessFactors、Workable、Rippling 已加入原生 structured page / embedded JSON / verified-link extraction，但还需要更多真实站点 live hardening
 - browser fallback 已经从全量渲染升级为 smart fallback + render budget
@@ -1067,4 +1068,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 387 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 验证；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；5-company Workable browser cohort 为 5/5 browser career evidence、4/5 rendered-DOM exact links，跨 provider JS-heavy hardening 仍继续。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，11 个主要 provider（含 Rippling 和 Google Careers）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 392 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 验证；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；5-company Workable browser cohort 为 5/5 browser career evidence、4/5 rendered-DOM exact links，跨 provider JS-heavy hardening 仍继续。
