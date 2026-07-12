@@ -386,7 +386,7 @@ Snapshots are written under `/tmp/job-source-snapshots/sites` using the same lay
 
 ## Optional Saved LinkedIn HTML Input
 
-If you save a LinkedIn job page HTML locally, a record may provide `linkedin_html_path`. The parser will try to infer the company name and external website from the saved HTML:
+If you save a LinkedIn job page HTML locally, a record may provide `linkedin_html_path`. The parser can extract company identity and an explicitly labeled company website from the saved HTML:
 
 ```json
 [
@@ -397,7 +397,7 @@ If you save a LinkedIn job page HTML locally, a record may provide `linkedin_htm
 ]
 ```
 
-If LinkedIn does not expose the company website in the saved HTML, provide `company_website_url` explicitly or use a third-party crawler/API adapter.
+The parser does not treat arbitrary external, apply, tracking, CDN, or ATS links as the company website. If LinkedIn does not expose a labeled website field, provide `company_website_url` explicitly or let the verified resolver use the LinkedIn company URL.
 
 ## Architecture
 

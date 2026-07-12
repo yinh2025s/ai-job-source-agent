@@ -293,6 +293,75 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertIn("homepage canonical confirms company identity", candidate.reasons)
         self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
 
+    def test_single_character_brand_can_use_exact_linkedin_slug_domain(self):
+        class XHomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://x.com/",
+                    html='<html><body><main aria-label="X">X</main></body></html>',
+                )
+
+        resolver = CompanyWebsiteResolver(XHomepageFetcher(offline=True))
+
+        candidates = resolver._linkedin_slug_domain_candidates(
+            "https://www.linkedin.com/company/x-corp"
+        )
+        candidate = resolver._score_candidate(
+            "https://x.com",
+            "X",
+            linkedin_company_url="https://www.linkedin.com/company/x-corp",
+            verify=True,
+        )
+
+        self.assertIn("https://x.com", candidates)
+        self.assertIn("LinkedIn slug confirms domain", candidate.reasons)
+        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
+    def test_parent_domain_does_not_confirm_only_part_of_multiword_brand(self):
+        class GoogleHomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://www.google.com/",
+                    html="<html><head><title>Google</title></head><body>Google</body></html>",
+                )
+
+        resolver = CompanyWebsiteResolver(GoogleHomepageFetcher(offline=True))
+
+        candidate = resolver._score_candidate(
+            "https://google.com",
+            "Google DeepMind",
+            linkedin_company_url="https://www.linkedin.com/company/googledeepmind",
+            verify=True,
+        )
+
+        self.assertIn("incomplete company identity", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_partial_name_canonical_is_not_trusted_for_multiword_brand(self):
+        class ParentCanonicalFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=(
+                        '<html><head><link rel="canonical" href="https://google.com/"></head>'
+                        "<body>Google DeepMind</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ParentCanonicalFetcher(offline=True))
+
+        candidate = resolver._score_candidate(
+            "https://deepmind.google",
+            "Google DeepMind",
+            verify=True,
+        )
+
+        self.assertEqual(candidate.url, "https://deepmind.google")
+        self.assertNotIn("homepage canonical URL", candidate.reasons)
+
 
 if __name__ == "__main__":
     unittest.main()

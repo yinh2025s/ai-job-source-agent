@@ -1,19 +1,25 @@
 from __future__ import annotations
 
+import base64
 import re
 from dataclasses import dataclass
+from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, unquote, urlencode, urlparse, urlunparse
+from xml.etree import ElementTree as ET
 
 from .models import LinkCandidate
 from .scoring import is_ats_url, is_resource_url, score_career_link
-from .web import FetchError, Fetcher, RawLink, domain_of, normalize_url
-from .website_resolver import SEARCH_ENDPOINT
+from .web import FetchError, Fetcher, RawLink, domain_of, safe_normalize_url
 
+
+BING_SEARCH_ENDPOINT = "https://www.bing.com/search"
+DUCKDUCKGO_SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
 
 BLOCKED_SEARCH_DOMAINS = {
     "bing.com",
     "microsoft.com",
+    "duckduckgo.com",
     "linkedin.com",
     "licdn.com",
     "facebook.com",
@@ -30,127 +36,217 @@ BLOCKED_SEARCH_DOMAINS = {
     "monster.com",
 }
 
-
 @dataclass
 class CareerSearchResult:
     candidates: list[LinkCandidate]
     trace: dict
 
 
+@dataclass(frozen=True)
+class _SearchSource:
+    name: str
+    url: str
+
+
 class CareerSearchResolver:
-    def __init__(self, fetcher: Fetcher, max_results: int = 8, max_queries: int = 5) -> None:
+    def __init__(
+        self,
+        fetcher: Fetcher,
+        max_results: int = 8,
+        max_queries: int = 5,
+        max_source_fetches: int = 6,
+    ) -> None:
         self.fetcher = fetcher
-        self.max_results = max_results
-        self.max_queries = max_queries
+        self.max_results = max(0, max_results)
+        self.max_queries = max(0, max_queries)
+        self.max_source_fetches = max(0, max_source_fetches)
 
     def search(self, company_name: str, company_website_url: str) -> CareerSearchResult:
         official_domain = domain_of(company_website_url)
         candidates: list[LinkCandidate] = []
         seen: set[str] = set()
-        trace = {"queries": [], "query_url": None, "candidates": [], "error": None, "stopped_reason": None}
+        trace = {
+            "queries": [],
+            "query_url": None,
+            "candidates": [],
+            "error": None,
+            "source_fetch_budget": self.max_source_fetches,
+            "source_fetch_budget_exhausted": False,
+            "stopped_reason": None,
+        }
 
-        for query_text in build_search_queries(company_name, official_domain)[: self.max_queries]:
-            query = urlencode({"q": query_text})
-            search_url = f"{SEARCH_ENDPOINT}?{query}"
-            query_trace = {"query_url": search_url, "query": query_text, "candidates": [], "error": None}
-            trace["queries"].append(query_trace)
-            if trace["query_url"] is None:
-                trace["query_url"] = search_url
-            try:
-                page = self.fetcher.fetch(search_url)
-            except FetchError as exc:
-                query_trace["error"] = str(exc)
-                trace["error"] = trace["error"] or str(exc)
-                trace["stopped_reason"] = "search_endpoint_fetch_failed"
-                break
+        queries = build_search_queries(company_name, official_domain)[: self.max_queries]
+        source_fetches = 0
+        for query_text in queries:
+            for source in _search_sources(query_text):
+                if source_fetches >= self.max_source_fetches:
+                    trace["source_fetch_budget_exhausted"] = True
+                    break
+                source_fetches += 1
+                query_trace = {
+                    "source": source.name,
+                    "query_url": source.url,
+                    "query": query_text,
+                    "candidates": [],
+                    "error": None,
+                    "result_count": 0,
+                }
+                trace["queries"].append(query_trace)
+                if trace["query_url"] is None:
+                    trace["query_url"] = source.url
+                try:
+                    page = self.fetcher.fetch(source.url)
+                except FetchError as exc:
+                    query_trace["error"] = str(exc)
+                    trace["error"] = trace["error"] or str(exc)
+                    continue
 
-            parser = _SearchResultParser()
-            parser.feed(page.html)
-            raw_urls = parser.urls + re.findall(r"https?://[^\"'<>\s)]+", page.html)
-            for raw_url in raw_urls:
-                cleaned = clean_search_result_url(raw_url)
-                if not cleaned or cleaned.rstrip("/") in seen:
-                    continue
-                seen.add(cleaned.rstrip("/"))
-                if _is_blocked(cleaned) or is_resource_url(cleaned):
-                    continue
-                link = RawLink(url=cleaned, text=cleaned, source_url=search_url, origin="search_result")
-                candidate = score_career_link(link)
-                candidate.score += _search_bonus(cleaned, official_domain, query_text)
-                if candidate.score < 60:
-                    continue
-                candidates.append(candidate)
-                query_trace["candidates"].append(
-                    {
-                        "url": candidate.url,
-                        "score": candidate.score,
-                        "reasons": candidate.reasons,
-                    }
+                raw_urls = _parse_search_results(source.name, page.html)
+                query_trace["result_count"] = len(raw_urls)
+                self._collect_search_candidates(
+                    raw_urls,
+                    source.url,
+                    query_text,
+                    company_name,
+                    official_domain,
+                    candidates,
+                    seen,
+                    query_trace,
                 )
+                if candidates:
+                    trace["stopped_reason"] = "search_candidate_found"
+                    break
             if candidates:
                 break
+            if trace["source_fetch_budget_exhausted"]:
+                break
 
-        candidates.sort(key=lambda candidate: candidate.score, reverse=True)
-        trace["candidates"] = [
-            {
-                "url": candidate.url,
-                "score": candidate.score,
-                "reasons": candidate.reasons,
-            }
-            for candidate in candidates[: self.max_results]
-        ]
-        return CareerSearchResult(candidates[: self.max_results], trace)
+        candidates.sort(key=lambda candidate: (-candidate.score, candidate.url))
+        selected = candidates[: self.max_results]
+        trace["candidates"] = [_candidate_trace(candidate) for candidate in selected]
+        if trace["stopped_reason"] is None:
+            trace["stopped_reason"] = "no_valid_candidates"
+        return CareerSearchResult(selected, trace)
 
+    def _collect_search_candidates(
+        self,
+        raw_urls: list[str],
+        source_url: str,
+        query_text: str,
+        company_name: str,
+        official_domain: str,
+        candidates: list[LinkCandidate],
+        seen: set[str],
+        query_trace: dict,
+    ) -> None:
+        for raw_url in raw_urls:
+            cleaned = clean_search_result_url(raw_url)
+            key = _dedupe_key(cleaned)
+            if not cleaned or key in seen:
+                continue
+            seen.add(key)
+            if not _is_valid_search_result(cleaned, company_name, official_domain):
+                continue
+            link = RawLink(url=cleaned, text=cleaned, source_url=source_url, origin="search_result")
+            candidate = score_career_link(link)
+            candidate.score += _search_bonus(cleaned, official_domain, query_text)
+            if candidate.score < 60:
+                continue
+            candidates.append(candidate)
+            query_trace["candidates"].append(_candidate_trace(candidate))
 
-class _SearchResultParser(HTMLParser):
+class _BingResultParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.urls: list[str] = []
-        self._in_h2 = False
-        self._active_href = ""
-        self._active_text: list[str] = []
+        self._in_result_heading = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {key.lower(): value or "" for key, value in attrs}
-        if tag == "h2":
-            self._in_h2 = True
-        elif tag == "a" and self._in_h2 and attrs_dict.get("href"):
+        classes = set(attrs_dict.get("class", "").split())
+        if tag in {"h2", "h3"}:
+            self._in_result_heading = True
+        if tag == "a" and self._in_result_heading and attrs_dict.get("href"):
             self.urls.append(attrs_dict["href"])
-        elif tag == "a" and attrs_dict.get("href"):
-            self._active_href = attrs_dict["href"]
-            self._active_text = []
-
-    def handle_data(self, data: str) -> None:
-        if self._active_href:
-            self._active_text.append(data)
+        elif tag == "li" and "b_algo" in classes:
+            self._in_result_heading = False
 
     def handle_endtag(self, tag: str) -> None:
-        if tag == "h2":
-            self._in_h2 = False
-        if tag == "a" and self._active_href:
-            text = " ".join("".join(self._active_text).split()).lower()
-            href = self._active_href.lower()
-            if any(marker in f"{text} {href}" for marker in ("career", "careers", "jobs", "job-openings")):
-                self.urls.append(self._active_href)
-            self._active_href = ""
-            self._active_text = []
+        if tag in {"h2", "h3"}:
+            self._in_result_heading = False
+
+
+class _DuckDuckGoResultParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.urls: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_dict = {key.lower(): value or "" for key, value in attrs}
+        if tag == "a" and "result__a" in attrs_dict.get("class", "").split():
+            if attrs_dict.get("href"):
+                self.urls.append(attrs_dict["href"])
+
+
+def _search_sources(query_text: str) -> list[_SearchSource]:
+    query = urlencode({"q": query_text})
+    rss_query = urlencode({"q": query_text, "format": "rss"})
+    return [
+        _SearchSource("bing_rss", f"{BING_SEARCH_ENDPOINT}?{rss_query}"),
+        _SearchSource("bing_html", f"{BING_SEARCH_ENDPOINT}?{query}"),
+        _SearchSource("duckduckgo_html", f"{DUCKDUCKGO_SEARCH_ENDPOINT}?{query}"),
+    ]
+
+
+def _parse_search_results(source: str, body: str) -> list[str]:
+    if source == "bing_rss":
+        try:
+            root = ET.fromstring(body)
+        except ET.ParseError:
+            return []
+        return [(item.findtext("link") or "").strip() for item in root.findall(".//item")]
+    parser = _DuckDuckGoResultParser() if source == "duckduckgo_html" else _BingResultParser()
+    parser.feed(body)
+    return parser.urls
 
 
 def clean_search_result_url(url: str) -> str:
-    if url.startswith("/ck/a"):
+    url = unescape((url or "").strip())
+    try:
         parsed = urlparse(url)
+    except (TypeError, ValueError):
+        return ""
+    if parsed.netloc.lower().removeprefix("www.") in {"bing.com", "microsoft.com"} or url.startswith("/ck/a"):
         values = parse_qs(parsed.query)
-        if values.get("u"):
-            url = values["u"][0]
-            if url.startswith("a1"):
-                url = url[2:]
-            url = unquote(url)
-    if not url.startswith("http"):
+        target = (values.get("u") or [""])[0]
+        if target.startswith("a1"):
+            target = _decode_bing_target(target[2:])
+        url = unquote(target)
+    elif "duckduckgo.com" in parsed.netloc.lower() and parsed.path.startswith("/l/"):
+        url = unquote((parse_qs(parsed.query).get("uddg") or [""])[0])
+    normalized = safe_normalize_url(url)
+    if not normalized:
         return ""
-    parsed = urlparse(url)
-    if parsed.netloc.endswith("bing.com") or parsed.netloc.endswith("microsoft.com"):
+    try:
+        parsed = urlparse(normalized)
+        unsafe_authority = bool(
+            parsed.username or parsed.password or parsed.port not in {None, 80, 443}
+        )
+    except (TypeError, ValueError):
         return ""
-    return normalize_url(urlunparse(parsed._replace(fragment="")))
+    if unsafe_authority:
+        return ""
+    if _is_blocked(normalized):
+        return ""
+    return safe_normalize_url(urlunparse(parsed._replace(fragment=""))) or ""
+
+
+def _decode_bing_target(value: str) -> str:
+    try:
+        padded = value + "=" * (-len(value) % 4)
+        return base64.urlsafe_b64decode(padded).decode("utf-8")
+    except (ValueError, UnicodeDecodeError):
+        return ""
 
 
 def _is_blocked(url: str) -> bool:
@@ -158,26 +254,58 @@ def _is_blocked(url: str) -> bool:
     return any(domain == blocked or domain.endswith("." + blocked) for blocked in BLOCKED_SEARCH_DOMAINS)
 
 
-def build_search_queries(company_name: str, official_domain: str) -> list[str]:
-    queries = [
-        f"{company_name} careers jobs",
-    ]
-    if official_domain:
-        queries.extend(
-            [
-                f"site:{official_domain} careers",
-                f"site:{official_domain} jobs",
-            ]
+def _is_valid_search_result(url: str, company_name: str, official_domain: str) -> bool:
+    if is_resource_url(url) or _is_blocked(url):
+        return False
+    domain = domain_of(url)
+    if official_domain and (domain == official_domain or domain.endswith("." + official_domain)):
+        path = urlparse(url).path.lower()
+        return domain.startswith(("careers.", "jobs.")) or bool(
+            re.search(
+                r"(?:^|[-_/])(careers?|jobs?|join|openings|positions)(?:[-_/]|$)",
+                path,
+            )
         )
-    queries.extend(
-        [
-            f"{company_name} careers",
-            f"{company_name} jobs",
-        ]
+    if not is_ats_url(url):
+        return False
+    haystack = re.sub(r"[^a-z0-9]+", "", f"{domain}{urlparse(url).path}".lower())
+    tokens = _identity_tokens(company_name, official_domain)
+    company_tokens = _identity_tokens(company_name)
+    compact_company = "".join(company_tokens)
+    return bool(tokens) and (
+        (bool(compact_company) and compact_company in haystack)
+        or all(token in haystack for token in company_tokens)
+        or any(token == official_domain.split(".", 1)[0].lower() and token in haystack for token in tokens)
     )
-    for provider in ("greenhouse", "lever", "workday", "ashby", "smartrecruiters", "icims", "workable"):
-        queries.append(f"{company_name} {provider} jobs")
+
+
+def build_search_queries(company_name: str, official_domain: str) -> list[str]:
+    queries = [f"{company_name} careers jobs"]
+    if official_domain:
+        queries.extend([f"site:{official_domain} careers", f"site:{official_domain} jobs"])
+    queries.extend([f"{company_name} careers", f"{company_name} jobs"])
     return dedupe_preserving_order(queries)
+
+
+def _identity_tokens(company_name: str, official_domain: str = "") -> list[str]:
+    stop = {"and", "co", "company", "corp", "corporation", "inc", "llc", "ltd", "the"}
+    tokens = [token for token in re.findall(r"[a-z0-9]+", company_name.lower()) if token not in stop]
+    domain_slug = official_domain.split(".", 1)[0].lower().removeprefix("www.")
+    if domain_slug:
+        tokens.append(domain_slug)
+    return dedupe_preserving_order([token for token in tokens if len(token) >= 3])
+
+
+def _dedupe_key(url: str) -> str:
+    normalized = (url or "").rstrip("/")
+    if is_ats_url(normalized):
+        parsed = urlparse(normalized)
+        normalized = urlunparse(parsed._replace(query="", fragment=""))
+    return normalized.lower()
+
+
+def _candidate_trace(candidate: LinkCandidate) -> dict:
+    return {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
 
 
 def dedupe_preserving_order(items: list[str]) -> list[str]:

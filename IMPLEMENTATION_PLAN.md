@@ -109,6 +109,9 @@
 - 从 LinkedIn company page / search / domain guess 中解析公司官网
 - 支持 LinkedIn company slug TLD hint，例如 `tesseralabsai` 倾向 `tesseralabs.ai`
 - 过滤 LinkedIn 静态资源、社交网站、聚合站和明显非官网域名
+- 保存 HTML/public payload 只采信明确 Website label 或带 company identity context 的官网字段；公开 job/company URL 会规范化 locale host 并移除 tracking query
+- 多词公司 canonical/domain/homepage 必须确认完整 identity，不能凭父品牌中的一个 token 通过
+- 单字符品牌可在精确 LinkedIn slug 和主页证据同时成立时保守确认
 - 允许 future override map
 
 相关模块：
@@ -117,7 +120,7 @@
 
 当前限制：
 
-- 仍然可能选错短品牌名或同名公司官网
+- 同名公司仍需要更多外部组织证据区分
 - 对 bot-protected 官网仍依赖 timeout/fallback
 - 没有用组织数据库或 Clearbit/Crunchbase 类外部信号
 
@@ -281,7 +284,7 @@
 
 当前测试数量：
 
-- 339 unit tests passing
+- 361 unit tests passing
 
 ## 当前主要短板
 
@@ -334,6 +337,8 @@ Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resol
 
 当前 search fallback 使用 Bing RSS、Bing HTML 和 DuckDuckGo HTML。
 
+当前状态（2026-07-12）：三种免费源按 query 逐源 fallback，单个 source 失败不会提前终止；总 source fetch 有硬预算。结果只接受官方域的 career/job path，或包含完整 company identity 的 ATS URL；Bing/DDG redirect、credentials、非法端口、resource URL 和 ATS filter-query duplication 已覆盖。真实 Mistral AI smoke 从 DuckDuckGo 找到 `mistral.ai/careers` 和 `jobs.lever.co/mistral`。
+
 问题：
 
 - 容易 timeout
@@ -355,11 +360,11 @@ Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resol
 
 ### 5. Official Website Resolver Needs Stronger Evidence
 
-当前官网解析对短名称公司仍可能选错。
+当前官网解析已用 15 个真实公司矩阵校准短名称、非 `.com`、redirect、canonical 和母子品牌；缺官网的 Mistral AI 端到端 smoke 自动解析到 `https://mistral.ai/`、官方 careers 和 Lever board。
 
 后续需要：
 
-- LinkedIn company page website field 更强解析
+- LinkedIn company page website field 更强解析（第一版已完成 explicit field/context extraction）
 - search result title/snippet scoring
 - homepage content verification 和 canonical URL 归一
 - company alias / parent-company relationship table
@@ -629,7 +634,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；339 个单元测试、13/13 固定离线 benchmark 和 46-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；361 个单元测试、13/13 固定离线 benchmark 和 46-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -667,7 +672,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 339 个测试和固定 benchmark 结果一致。
+- 重构后 361 个测试和固定 benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
@@ -706,7 +711,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近三轮并行交付 Workable API hardening、company completion store、snapshot corrupt-tail recovery、S5/S6 精确恢复、Rippling structured state、BambooHR multi-tenant contracts、真实信号 crash recovery、process reap 和 JS-heavy trigger hardening。主线 architecture validator、339 个测试、13/13 offline benchmark 和 46/46 fixed live expectations 全部通过。
+当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近四轮并行交付 provider、checkpoint/replay、crash recovery、JS-heavy trigger、LinkedIn evidence、website resolver 和 career search hardening。主线 architecture validator、361 个测试、13/13 offline benchmark 和 46/46 fixed live expectations 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -1052,4 +1057,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 339 个测试和 13/13 offline benchmark 验证；最新固定 live benchmark 为 46/46 官网、46/46 job list、45/46 exact opening、46/46 expectation。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling 和 BambooHR 各有 5 家固定 live 公司；iCIMS/SuccessFactors 组合也有 5 家，覆盖 Jibe、traditional hosted HTML 和 SAP Career Site。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 361 个测试和 13/13 offline benchmark 验证；最新固定 live benchmark 为 46/46 官网、46/46 job list、45/46 exact opening、46/46 expectation。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling 和 BambooHR 各有 5 家固定 live 公司；iCIMS/SuccessFactors 组合也有 5 家，覆盖 Jibe、traditional hosted HTML 和 SAP Career Site。

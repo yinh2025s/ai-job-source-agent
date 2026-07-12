@@ -78,6 +78,9 @@
 - 固定 live benchmark 新增 AllVoices、Terradot、RevOptimal、Spangle AI、Soundstripe、beehiiv、Signal 1 和 SAI360；Rippling、BambooHR 均达到 5 家 exact-opening 覆盖，集合扩展到 46 家。
 - Process budget 在 worker 无结果崩溃、timeout、忽略 `SIGTERM` 和并发运行时统一正常 join 或强制 kill/reap，避免残留子进程；真实 `SIGTERM`/`SIGKILL` 测试已证明 S4/S5 落盘后可从 S5/S6 恢复且 checkpoint 无损坏。
 - Smart browser trigger 增加真实 Workable `#app` shell，过滤 locale/self-link 和静态资源误报；浏览器以 DOMContentLoaded 为硬边界，并仅用剩余预算等待 networkidle，避免长轮询页面丢弃已可用 DOM。
+- LinkedIn saved/public payload parser 只采信明确 Website label 或与 company identity 同对象的官网字段，规范化 locale LinkedIn company/job URL 并删除 tracking query；不再把第一个外部 URL 当官网。
+- Website resolver 支持单字符品牌的精确 LinkedIn slug/domain 证据，并要求多词公司 canonical/主页证据覆盖完整 identity，拒绝 `Google DeepMind → google.com` 一类父域误判。
+- Career search 按 Bing RSS、Bing HTML、DuckDuckGo HTML 逐源 fallback，并使用独立 source-fetch budget；只接受官方 career/job path 或包含完整公司 identity 的 ATS URL，安全解码 redirect、去重 ATS filter query；S2/S4 语义变化将 `ADAPTER_VERSION` 提升到 `2026-07-12.11`。
 
 ## [0.1.0] - 2026-07-12
 

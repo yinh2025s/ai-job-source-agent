@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse, urlunparse
 
 from .models import CompanyInput
 from .web import Fetcher, normalize_url
@@ -116,9 +117,9 @@ class _LinkedInJobsParser(HTMLParser):
 
         self._card_depth += 1
         if tag == "a" and "base-card__full-link" in classes:
-            self._card["linkedin_job_url"] = normalize_url(attrs_dict.get("href", ""))
+            self._card["linkedin_job_url"] = _safe_linkedin_path_url(attrs_dict.get("href", ""), "jobs/view")
         elif tag == "a" and "hidden-nested-link" in classes:
-            self._card["linkedin_company_url"] = normalize_url(attrs_dict.get("href", ""))
+            self._card["linkedin_company_url"] = _safe_linkedin_path_url(attrs_dict.get("href", ""), "company")
             self._start_capture("company_name")
         elif tag == "h3" and "base-search-card__title" in classes:
             self._start_capture("job_title")
@@ -147,3 +148,21 @@ class _LinkedInJobsParser(HTMLParser):
     def _start_capture(self, key: str) -> None:
         self._capture = key
         self._capture_text = []
+
+
+def _safe_linkedin_path_url(url: str, path_kind: str) -> str:
+    try:
+        normalized = normalize_url(url)
+        parsed = urlparse(normalized)
+        _ = parsed.port
+    except (TypeError, ValueError):
+        return ""
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme not in {"http", "https"} or (host != "linkedin.com" and not host.endswith(".linkedin.com")):
+        return ""
+    if parsed.username or parsed.password or parsed.port not in {None, 80, 443}:
+        return ""
+    pattern = r"^/jobs/view/[^/?#]+/?$" if path_kind == "jobs/view" else r"^/company/[^/?#]+/?$"
+    if not re.match(pattern, parsed.path):
+        return ""
+    return urlunparse((parsed.scheme, "www.linkedin.com", parsed.path, "", "", ""))

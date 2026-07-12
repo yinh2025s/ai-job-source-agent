@@ -267,7 +267,7 @@ class CompanyWebsiteResolver:
         return [
             f"https://{candidate}.{tld}"
             for candidate in dict.fromkeys(candidates)
-            if len(candidate) >= 3
+            if candidate
             for tld in ("com", "ai", "io", "co")
         ]
 
@@ -373,14 +373,25 @@ class CompanyWebsiteResolver:
             score += 25
             reasons.append("homepage title confirms company identity")
         token_in_homepage = False
+        evidenced_tokens: set[str] = set()
         for token in company_tokens:
+            if token in domain:
+                evidenced_tokens.add(token)
             if _contains_identity_token(html_head, token):
                 score += 15
                 token_in_homepage = True
+                evidenced_tokens.add(token)
                 reasons.append(f"company token '{token}' in homepage")
         if not token_in_homepage and company_tokens:
             score -= 35
             reasons.append("company token missing from homepage")
+        if (
+            len(company_tokens) > 1
+            and not _domain_confirms_company_identity(domain, company_tokens)
+            and len(evidenced_tokens) < len(company_tokens)
+        ):
+            score -= 45
+            reasons.append("incomplete company identity")
 
         return WebsiteCandidate(resolved_url, score, reasons)
 
@@ -623,6 +634,7 @@ def _linkedin_slug_confirms_domain(
     accepted = {
         compact_name,
         f"{compact_name}{tld}",
+        f"{compact_name}corp",
         f"{compact_name}hq",
         f"get{compact_name}",
         f"join{compact_name}",
@@ -647,7 +659,7 @@ def _canonical_company_url(html: str, base_url: str, company_tokens: list[str]) 
     canonical_domain = domain_of(canonical_url)
     if not canonical_domain or is_blocked_domain(canonical_url):
         return None
-    if company_tokens and not any(token in canonical_domain for token in company_tokens):
+    if company_tokens and not _domain_confirms_company_identity(canonical_domain, company_tokens):
         return None
     return canonical_url
 
@@ -661,7 +673,7 @@ def tokenize_company_name(company_name: str) -> list[str]:
     return [
         token.lower()
         for token in re.findall(r"[A-Za-z0-9]+", cleaned)
-        if len(token) >= 3 or token.isdigit()
+        if token
     ]
 
 
