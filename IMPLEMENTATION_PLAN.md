@@ -221,6 +221,7 @@
 - `scripts/live_batch_eval.py`
 - `scripts/benchmark_eval.py`
 - `scripts/export_replay_input.py`
+- `scripts/validate_replay_input.py`
 - `scripts/render_summary_report.py`
 - 固定离线 benchmark：`samples/benchmark_companies.json`
 - 固定 live benchmark：`samples/live_benchmark_companies.json`
@@ -228,6 +229,7 @@
 - 输出 `summary.json`，包含 funnel rates、provider distribution、failure stages
 - 可将 `summary.json` 渲染成 Markdown 报告，包含 overview rates、S1-S7 stage funnel、provider/reason 分布、expectation checks 和公司 × 七关矩阵
 - 支持从 prior results/trace 导出可复跑 input，并按 stage、stage status、reason code、provider 过滤
+- 支持验证 replay input 的 checkpoint metadata 是否仍兼容当前 schema / adapter / input fingerprint
 - 支持 `--snapshot-dir` 将 live fetch 的页面保存为脱敏、fixture-compatible snapshots，并写入 `snapshots.jsonl` metadata
 - 支持 `--fetch-retries` / `--retry-base-delay`，只重试标准 reason code 中 `retryable=true` 的 fetch failures，并在 trace 中记录 retry events
 - 支持 `--workers` 进行公司级 bounded concurrency；每家公司仍保留 process-level hard budget，完成一家公司就 checkpoint 一次
@@ -274,7 +276,7 @@
 
 当前测试数量：
 
-- 100 unit tests passing
+- 103 unit tests passing
 
 ## 当前主要短板
 
@@ -720,7 +722,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 4.1 阶段级 Checkpoint 和离线重放
 
-当前状态（2026-07-12）：已完成 replay-level checkpoint metadata。`scripts/export_replay_input.py` 导出的每条 replay record 会写入 checkpoint schema version、result schema version、adapter version 和 stable input fingerprint；现有 input loader 会忽略这些额外字段，因此向后兼容。真正的 stage-level resume/rerun CLI 尚未完成。
+当前状态（2026-07-12）：已完成 replay-level checkpoint metadata。`scripts/export_replay_input.py` 导出的每条 replay record 会写入 checkpoint schema version、result schema version、adapter version 和 stable input fingerprint；`scripts/validate_replay_input.py` 可以在复用旧 replay 前验证这些元数据是否仍兼容当前代码；现有 input loader 会忽略这些额外字段，因此向后兼容。真正的 stage-level resume/rerun CLI 尚未完成。
 
 目标：
 

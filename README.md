@@ -274,6 +274,14 @@ python3 scripts/export_replay_input.py \
 
 The exported records preserve the verified website, career root, LinkedIn title, and replay metadata, so the next run can start from known-good upstream evidence instead of rediscovering everything. Each replay record also includes checkpoint metadata with schema versions, adapter version, and a stable input fingerprint for later resume/cache compatibility checks.
 
+Validate replay compatibility before reusing an old replay file:
+
+```bash
+python3 scripts/validate_replay_input.py \
+  --input /tmp/live-fixed-opening-misses.json \
+  --summary-output /tmp/live-fixed-opening-misses-validation.json
+```
+
 To capture sanitized page snapshots while running a live batch, add `--snapshot-dir`:
 
 ```bash
