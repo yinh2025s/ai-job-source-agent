@@ -1,0 +1,26 @@
+[
+  {
+    "company_name": "X",
+    "linkedin_company_url": "https://www.linkedin.com/company/x-corp"
+  },
+  {
+    "company_name": "Mistral AI",
+    "linkedin_company_url": "https://www.linkedin.com/company/mistralai"
+  },
+  {
+    "company_name": "Hugging Face",
+    "linkedin_company_url": "https://www.linkedin.com/company/huggingface"
+  },
+  {
+    "company_name": "Google DeepMind",
+    "linkedin_company_url": "https://www.linkedin.com/company/googledeepmind"
+  },
+  {
+    "company_name": "MatrixSpace",
+    "linkedin_company_url": "https://www.linkedin.com/company/matrixspaceai"
+  },
+  {
+    "company_name": "Northstar Labs",
+    "linkedin_company_url": "https://www.linkedin.com/company/northstar-labs"
+  }
+]

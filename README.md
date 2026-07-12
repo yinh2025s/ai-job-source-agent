@@ -224,6 +224,25 @@ The companion [benchmark expectations](samples/benchmark_expectations.json) decl
 
 Pass `--baseline-summary previous-summary.json` to either evaluator to add rate, pipeline-status, and per-stage success deltas to its summary. Each stage also reports duration count, P50, and P95 in milliseconds.
 
+Archive summaries into an atomic, content-addressed history and compare each run with the latest baseline:
+
+```bash
+python3 scripts/archive_evaluation.py \
+  --summary /tmp/live-batch-summary.json \
+  --history-dir /tmp/job-source-evaluation-history \
+  --label "live-46" \
+  --benchmark-command "python3 scripts/live_batch_eval.py --input samples/live_benchmark_companies.json --workers 4"
+```
+
+Run the independent offline website resolver benchmark for inputs that provide only a company name and LinkedIn company URL:
+
+```bash
+python3 scripts/resolver_benchmark.py \
+  --output /tmp/resolver-benchmark-results.json
+```
+
+Its six fixed cases cover short names, non-`.com` domains, canonical migration, parent-domain rejection, and a negative no-selection case.
+
 Render a human-readable Markdown report from any evaluator summary:
 
 ```bash

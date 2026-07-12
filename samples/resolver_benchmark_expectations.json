@@ -1,0 +1,38 @@
+[
+  {
+    "company_name": "X",
+    "fixture_case": "x-short-name",
+    "expected_official_domain": "x.com",
+    "must_reject_domains": []
+  },
+  {
+    "company_name": "Mistral AI",
+    "fixture_case": "mistral-non-com",
+    "expected_official_domain": "mistral.ai",
+    "must_reject_domains": []
+  },
+  {
+    "company_name": "Hugging Face",
+    "fixture_case": "hugging-face-non-com",
+    "expected_official_domain": "huggingface.co",
+    "must_reject_domains": []
+  },
+  {
+    "company_name": "Google DeepMind",
+    "fixture_case": "deepmind-parent-trap",
+    "expected_official_domain": "deepmind.google",
+    "must_reject_domains": ["google.com"]
+  },
+  {
+    "company_name": "MatrixSpace",
+    "fixture_case": "matrixspace-canonical",
+    "expected_official_domain": "matrixspace.com",
+    "must_reject_domains": []
+  },
+  {
+    "company_name": "Northstar Labs",
+    "fixture_case": "north-star-negative",
+    "expected_official_domain": null,
+    "must_reject_domains": ["northstar.com"]
+  }
+]

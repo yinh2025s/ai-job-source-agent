@@ -81,6 +81,8 @@
 - LinkedIn saved/public payload parser 只采信明确 Website label 或与 company identity 同对象的官网字段，规范化 locale LinkedIn company/job URL 并删除 tracking query；不再把第一个外部 URL 当官网。
 - Website resolver 支持单字符品牌的精确 LinkedIn slug/domain 证据，并要求多词公司 canonical/主页证据覆盖完整 identity，拒绝 `Google DeepMind → google.com` 一类父域误判。
 - Career search 按 Bing RSS、Bing HTML、DuckDuckGo HTML 逐源 fallback，并使用独立 source-fetch budget；只接受官方 career/job path 或包含完整公司 identity 的 ATS URL，安全解码 redirect、去重 ATS filter query；S2/S4 语义变化将 `ADAPTER_VERSION` 提升到 `2026-07-12.11`。
+- 新增 6-case 固定离线 resolver benchmark，覆盖短名、非 `.com`、多词父域陷阱、canonical migration 和纯负样本。
+- 新增原子、内容寻址 evaluation history：run 记录 UTC 时间、summary hash、commit、adapter version、Python/platform 和 benchmark command，自动与 latest baseline 生成 regression delta。
 
 ## [0.1.0] - 2026-07-12
 
@@ -99,7 +101,7 @@
 
 ### Known Limitations
 
-- S4-S6 仍集中在 `JobSourceAgent` 中，尚未成为真正独立的 stage runner。
-- Provider 识别、请求构造和响应解析仍集中在 `opening_matcher.py` 的条件分支中。
-- 任意 stage checkpoint store 和 `--rerun-stage` 尚未完成。
-- Live 成功率仍受未知 ATS、JavaScript 页面、防爬和网络质量影响。
+- Google Careers、Meta Careers 和 generic fallback 仍保留 compatibility path；其余 10 个主要 ATS 已使用原生 adapter registry。
+- SuccessFactors、iCIMS 的更多 tenant/theme 变体以及 5 家独立 SuccessFactors live 覆盖仍未完成。
+- 固定 5 家 JS-heavy browser cohort 和 30+ 公司中断恢复压力验收仍未完成。
+- Live 成功率仍受未知 ATS、JavaScript 页面、防爬、岗位下架和网络质量影响。
