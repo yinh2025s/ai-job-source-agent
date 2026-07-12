@@ -1,0 +1,145 @@
+# Architecture
+
+## Purpose
+
+AI Job Source Agent 将 LinkedIn 或固定公司输入转换成经过验证的官网、招聘页、job board 和具体 opening。系统优先保证证据可追踪、失败可分类和结果不编造。
+
+## Dependency Direction
+
+依赖只能由外向内流动：
+
+```text
+CLI / batch scripts
+        |
+        v
+orchestration / stage runner
+        |
+        v
+stage contracts and application services
+        |
+        +------------------+
+        v                  v
+provider adapters      resolver services
+        |                  |
+        +---------+--------+
+                  v
+             fetch contract
+                  |
+                  v
+      HTTP / browser / retry / snapshot
+
+models, reason codes and schemas are shared contracts at the center.
+evaluation/reporting consume versioned outputs and do not control execution.
+```
+
+内层模块不得 import CLI 或 batch runner。Provider adapter 不得依赖某个具体 browser/fetcher。Reporting 不得读取 runner 的进程内对象。
+
+## Standard Pipeline
+
+| Stage | Owner | Input | Output |
+| --- | --- | --- | --- |
+| S1 LinkedIn discovery | discovery | search request | company job inputs |
+| S2 Website resolution | resolver | company identity hints | verified official website |
+| S3 Hiring identity | resolver | company and website evidence | hiring entity and career root |
+| S4 Career discovery | stage | verified company context | verified career page |
+| S5 Job board discovery | stage/provider registry | career page evidence | provider and verified board |
+| S6 Opening match | provider/matcher | board, title, location | ranked opening or normal no-match |
+| S7 Result validation | validation | accumulated stage outputs | versioned final result |
+
+同一家公司的 hard dependencies 顺序执行；不同公司可以 bounded parallel。S4 内的独立 probe 可以受预算约束并发，但第一个结果仍需通过统一验证。
+
+## Target Contracts
+
+Stage 只接收和返回版本化数据，不互相调用内部方法：
+
+```python
+class Stage:
+    name: str
+
+    def run(self, context: PipelineContext) -> StageExecution:
+        ...
+```
+
+Provider adapter 封装自己的识别、请求和解析变化：
+
+```python
+class ProviderAdapter:
+    name: str
+
+    def recognize(self, url: str, page: Page | None = None) -> bool:
+        ...
+
+    def list_jobs(self, board: JobBoard, query: JobQuery) -> AdapterResult:
+        ...
+```
+
+Registry 负责选择 adapter；新增 provider 应主要通过增加模块和注册项完成，而不是修改多个中央条件分支。
+
+Fetcher contract 保持最小：
+
+```python
+class FetchClient(Protocol):
+    def fetch(
+        self,
+        url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> Page:
+        ...
+```
+
+HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
+
+## SOLID Rules
+
+### Single Responsibility
+
+- Stage 只负责一个 pipeline 关卡。
+- Adapter 只负责一个 provider family。
+- Runner 只负责调度、预算和 checkpoint，不做页面解析。
+- Evaluation 只消费结果，不发网络请求。
+
+### Open/Closed
+
+- 新 provider 通过新 adapter 和 registry registration 扩展。
+- 新 fetch behavior 通过 wrapper 扩展。
+- 新报告通过消费 schema 扩展，不修改 pipeline。
+
+### Liskov Substitution
+
+- 所有 fetcher 对相同请求返回 `Page` 或抛出 `FetchError`。
+- 所有 adapter 对空结果、unsupported 和 retryable failure 使用统一语义。
+
+### Interface Segregation
+
+- Stage、provider、fetch 和 checkpoint contract 分开定义。
+- Adapter 不必实现 browser、snapshot 或 reporting 方法。
+
+### Dependency Inversion
+
+- Stage 依赖 `FetchClient`、adapter registry 和 store contract。
+- 具体 HTTP/Playwright/filesystem 实现在 composition root 注入。
+- 测试使用 fixture-backed implementations，不改业务逻辑。
+
+## Current Technical Debt
+
+- `JobSourceAgent` 当前同时负责 S4-S7 orchestration 和部分业务规则。
+- `opening_matcher.py` 当前同时负责 provider detection、request building、parsing 和 matching。
+- `live_batch_eval.py` 当前同时包含 composition、调度、checkpoint 和输出。
+- Fetch wrappers 使用 duck typing，尚未有显式 `Protocol` 和 contract test suite。
+- Replay 已支持上游证据复用，但任意 stage checkpoint store 尚未完成。
+
+这些债务必须先在 `IMPLEMENTATION_PLAN.md` 的 SOLID architecture phase 中解决，再继续大规模并行增加 adapter。
+
+## Ownership Boundaries
+
+| Workstream | Target ownership | 不应修改 |
+| --- | --- | --- |
+| Stage orchestration | `stages/`, runner, checkpoint contracts | provider parsing internals |
+| Provider adapters | `providers/<name>.py`, provider fixtures/tests | stage runner and CLI |
+| Resolver | website, identity and career discovery services | provider response parser |
+| Fetch infrastructure | fetch protocol and wrappers | resolver scoring rules |
+| Evaluation | benchmark, summary and reports | live navigation logic |
+
+需要跨边界时，先通过小型 contract change 集成，再继续并行开发。
+

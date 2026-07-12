@@ -4,7 +4,13 @@ Take-home implementation for Part 2: discover companies hiring on LinkedIn, reso
 
 The implementation is intentionally agentic but controlled: deterministic link extraction and scoring do the first pass, then the agent follows promising career/job-listing pages for a few hops. The pipeline keeps trace data for every navigation decision.
 
-For a detailed progress summary and roadmap, see [IMPLEMENTATION_PLAN.md](IMPLEMENTATION_PLAN.md).
+Project documentation:
+
+- [Implementation plan](IMPLEMENTATION_PLAN.md)
+- [Architecture](docs/ARCHITECTURE.md)
+- [Development governance](DEVELOPMENT_GOVERNANCE.md)
+- [Changelog](CHANGELOG.md)
+- [Architecture decisions](docs/adr/README.md)
 
 The project supports two flows:
 

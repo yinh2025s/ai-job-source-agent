@@ -2,6 +2,8 @@
 
 本文档记录当前项目进度、已经实现的能力、仍然不完整的部分，以及后续补齐计划。它的目的不是包装结果，而是让后续开发和汇报都能围绕清晰的工程路线推进。
 
+项目变更记录、稳定架构边界和决策依据分别由 `CHANGELOG.md`、`docs/ARCHITECTURE.md`、`DEVELOPMENT_GOVERNANCE.md` 和 `docs/adr/` 管理。路线图发生变化时必须同步这些文档，不能只修改代码或只更新计划。
+
 ## 目标
 
 从 LinkedIn job search 或预处理后的公司列表出发，自动发现：
@@ -280,7 +282,19 @@
 
 ## 当前主要短板
 
-### 1. Provider Adapter Still Incomplete
+### 1. Core Modules Still Violate SOLID Boundaries
+
+当前已有 resolver、fetch wrapper、result schema 和测试分层，但还没有完成真正的低耦合 stage/provider 架构：
+
+- `JobSourceAgent` 同时负责 S4-S7 调度、页面发现、provider routing、结果组装和验证。
+- `opening_matcher.py` 同时负责 provider detection、request construction、response parsing 和 title matching。
+- `live_batch_eval.py` 同时负责 composition、并发、预算、checkpoint 和输出。
+- 新增 provider 需要修改多个中央条件分支，尚未达到 Open/Closed。
+- Fetcher 依赖注入方向正确，但缺少显式 protocol 和跨实现 contract tests。
+
+这项短板优先于继续扩展 provider。必须先完成 behavior-preserving architecture refactor，让后续 adapter 能够独立开发、测试和合并。
+
+### 2. Provider Adapter Still Incomplete
 
 虽然已经开始做 provider-specific adapters，但仍有一部分 ATS 只是结构化页面抽取，还没有完成稳定 live search/list API。
 
@@ -291,7 +305,7 @@
 - Workable public API research / hardening
 - Ashby embedded JSON fallback
 
-### 2. Browser Rendering Needs Live Hardening
+### 3. Browser Rendering Needs Live Hardening
 
 已有 `RenderedFetcher` 和 `SmartRenderedFetcher`，并已接入 CLI / live batch runner：
 
@@ -310,7 +324,7 @@
 - 搜索结果中 provider page 为空时更精确地触发 render
 - live batch 中验证 render budget 不会拖垮吞吐
 
-### 3. Search Fallback Needs Better Sources
+### 4. Search Fallback Needs Better Sources
 
 当前 search fallback 使用 Bing RSS、Bing HTML 和 DuckDuckGo HTML。
 
@@ -333,7 +347,7 @@
   - `{company} smartrecruiters`
 - 在 Bing 失败后，已增加 bounded deterministic ATS board probes（Lever、Greenhouse、Ashby、SmartRecruiters、Workable、BambooHR、Rippling）；它们仍不能覆盖自建招聘系统或未知 slug。
 
-### 4. Official Website Resolver Needs Stronger Evidence
+### 5. Official Website Resolver Needs Stronger Evidence
 
 当前官网解析对短名称公司仍可能选错。
 
@@ -344,7 +358,7 @@
 - homepage content verification 和 canonical URL 归一
 - company alias / parent-company relationship table
 
-### 5. Live Success Rate Is Improving But Not Yet Product-Grade
+### 6. Live Success Rate Is Improving But Not Yet Product-Grade
 
 当前系统适合展示架构和工程思路，但还不是稳定产品。
 
@@ -355,7 +369,7 @@
 - JS-heavy pages not fully supported
 - batch run lacks robust parallel execution and budgets
 
-### 6. Stage 状态已标准化第一版
+### 7. Stage 状态已标准化第一版
 
 当前状态：已完成第一版标准化。`DiscoveryResult` 现在包含 `pipeline_status`、`error_code` 和版本化 `stages` 数组。每家公司都会输出 S1-S7 的 status、reason_code、retryable、owner、provider、duration、input/output counts 和 evidence。
 
@@ -384,7 +398,7 @@
 }
 ```
 
-### 7. 错误码与失败归属已完成第一版
+### 8. 错误码与失败归属已完成第一版
 
 当前已有集中维护的 `reason_code` 目录，覆盖网络、HTTP、防护、身份、页面发现、provider、解析、匹配、业务和预算类错误。旧版 lowercase `error` 字段保留给 CLI 兼容；新版分析统一使用 uppercase `error_code / reason_code`。
 
@@ -412,11 +426,11 @@
 - `owner`：`network / resolver / provider / parser / matcher / external`
 - 简短、可脱敏的 detail
 
-### 8. Checkpoint 已公司级落盘，Replay/Snapshot 已完成第一版
+### 9. Checkpoint 已公司级落盘，Replay/Snapshot 已完成第一版
 
 当前 batch checkpoint 能避免整个批次结果丢失；`live_batch_eval.py` 还把 S2/S3 和 S4-S6 分成两个 killable checkpoint，因此官网解析成功后，career discovery timeout 会保留已验证官网和 identity evidence。`scripts/export_replay_input.py` 可以把 prior results/trace 按 stage、stage status、reason code、provider 过滤成新的 input，保留 verified website、career root、LinkedIn title 和 replay metadata；每条 replay record 已包含 `checkpoint_schema_version`、`result_schema_version`、`adapter_version` 和稳定 input fingerprint。`--snapshot-dir` 可以把 live fetch 的页面保存成脱敏、fixture-compatible snapshots，后续可用 `Fetcher(fixtures_dir=.../sites, offline=True)` 读回。
 
-真正的阶段级 resume 仍待补：snapshot 已经能保存 provider HTML/JSON，replay input 已有兼容性元数据，但 CLI 还没有 `--resume-from-stage` / `--rerun-stage`，也没有真正按 stage checkpoint 复用中间结果。
+真正的任意阶段 checkpoint 仍待补：snapshot 已经能保存 provider HTML/JSON，replay input 已有兼容性元数据，CLI 也已有有限的 `--resume-from-stage`；但还没有 `--rerun-stage`，也没有真正按每个 stage checkpoint 复用和失效中间结果。
 
 后续需要保存关键中间产物：
 
@@ -438,7 +452,7 @@ checkpoint 必须带 `schema_version`、输入指纹和代码/adapter 版本。R
 - 只重试 `retryable=true` 的失败
 - 在修复 parser 后，用保存的 snapshot 离线重放，不依赖真实网站仍然在线
 
-### 9. Provider 级可靠性指标已完成第一版
+### 10. Provider 级可靠性指标已完成第一版
 
 当前 summary 已经输出以下统计，用于判断修复哪一项收益最大：
 
@@ -457,7 +471,7 @@ checkpoint 必须带 `schema_version`、输入指纹和代码/adapter 版本。R
 | B | Workday | ✓ | ✓ | ✓ | ✓ | ✗ | — | — | `RATE_LIMITED` |
 | C | Unknown | ✓ | ✓ | ✓ | ✓ | unsupported | — | ✓ | `PROVIDER_UNSUPPORTED` |
 
-### 10. 开发优先级尚未完全由数据驱动
+### 11. 开发优先级尚未完全由数据驱动
 
 当前 adapter 路线方向正确，但不能仅按 Workday、iCIMS、SuccessFactors 的固定名单顺序开发。每轮应先读取固定 benchmark 的失败分布，再选择预期收益最大的工作项。
 
@@ -475,9 +489,27 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 4. 数据正确性和“不乱编 URL”高于表面成功率。
 5. 公司级 hardcode 只作为最后手段，并必须记录原因和退出条件。
 
+## 架构与治理原则
+
+后续实现统一遵循 SOLID 和明确 ownership boundary：
+
+- **Single Responsibility**：每个 stage、resolver、provider adapter、fetch wrapper 和 reporter 只有一个主要变化原因。
+- **Open/Closed**：新增 ATS 主要通过新增 adapter 和 registry registration 完成，不继续扩大中央条件分支。
+- **Liskov Substitution**：所有 fetcher、stage 和 provider implementation 遵循相同成功、空结果和异常语义。
+- **Interface Segregation**：stage、provider、fetch、checkpoint 和 reporting 使用独立的小型 contract。
+- **Dependency Inversion**：业务 stage 依赖 protocol/contract；HTTP、Playwright、filesystem 和具体 adapter 在 composition root 注入。
+
+治理要求：
+
+- 每个可交付开发任务必须更新 `CHANGELOG.md` 的 `Unreleased`。
+- 计划状态或优先级改变时更新本文档。
+- 模块边界改变时更新 `docs/ARCHITECTURE.md`。
+- 核心 abstraction、schema、持久化或并发模型改变时增加 ADR。
+- 行为、接口和架构变化必须有单一目的 commit；Git commit 是详细历史，changelog 是版本级摘要。
+
 ## 下一阶段计划
 
-下面的 Phase 按顺序执行。Phase 0 和 Phase 1 是后续开发的控制基础；完成后，具体 adapter 的先后顺序由 benchmark 数据动态决定。
+下面的 Phase 按顺序执行。Phase 0 和 Phase 1 已建立可靠性与评测基线；Phase 2 是继续并行扩展 adapter 之前的架构门槛。完成 Phase 2 后，具体 adapter 的先后顺序由 benchmark 数据动态决定。
 
 ### Phase 0: Reliability Contract And Stage Model
 
@@ -589,11 +621,100 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 3. 比较 baseline 与新结果。
 4. 达到验收指标才关闭任务；否则保留失败样本和原因。
 
-### Phase 2: Complete Provider Adapters
+### Phase 2: SOLID Architecture Decomposition
+
+当前状态（2026-07-12）：治理、目标架构和第一份 ADR 已建立；代码拆分尚未开始。现有测试与固定 benchmark 作为 behavior-preserving refactor 的安全网。
+
+这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
+
+#### 2.1 Freeze Small Contracts
+
+目标：
+
+- 定义 `FetchClient` protocol，统一 HTTP、browser、retry、snapshot 和 fixture fetcher 的行为。
+- 定义版本化 `PipelineContext`、`StageExecution` 和 `Stage` contract。
+- 定义 `ProviderAdapter`、`JobBoard`、`JobQuery` 和 `AdapterResult` contract。
+- 定义 checkpoint store contract，不让 stage 直接依赖 filesystem。
+- 为每类 contract 建立 implementation-independent contract tests。
+
+验收标准：
+
+- 业务模块依赖 contract，而不是具体 HTTP、Playwright 或 filesystem class。
+- 所有 fetch implementation 对成功、`FetchError`、timeout 和空 body 语义一致。
+- Contract schema 有版本和兼容性测试。
+- Contract 不暴露自由格式内部 trace 作为下游必需输入。
+
+#### 2.2 Extract Independent Stages
+
+目标：
+
+- 将 S2-S7 拆成单一职责 stage；S1 保持独立 discovery source。
+- Runner 只负责依赖顺序、预算、retry policy、checkpoint 和取消。
+- 保留 `JobSourceAgent.discover()` 作为兼容 facade，内部委托新 runner。
+- 每个 stage 只读自己的声明输入，只写自己的声明输出。
+
+验收标准：
+
+- S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
+- 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
+- 重构前后现有 105 个测试和固定 benchmark 结果一致。
+- Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
+
+#### 2.3 Introduce Provider Adapter Registry
+
+目标：
+
+- 新建 `providers/base.py`、`providers/registry.py` 和 provider-specific modules。
+- 将 detection、board identifier、request construction、response parsing 和 URL normalization 收进对应 adapter。
+- 将 title/location ranking 保留为共享 matcher service，不复制到每个 adapter。
+- 逐个迁移现有 provider，每次只迁移一个并运行全量回归。
+
+验收标准：
+
+- 新增 provider 主要通过新增 adapter、fixture、测试和一条 registry registration 完成。
+- Stage runner 和 opening matcher 不再包含不断增长的 `if provider == ...` 分支。
+- Provider 空结果、unsupported variant、retryable failure 和 parsing failure 使用统一结果语义。
+- 每个 adapter 可以完全离线测试。
+
+#### 2.4 Establish A Composition Root
+
+目标：
+
+- 将具体 fetcher、resolver、registry、stage、store 和 policy 的构造集中到一个 composition root。
+- CLI 和 batch scripts 只解析参数、调用 application service 和输出结果。
+- 将并发、process budget 和 checkpoint writing 从页面解析逻辑中移出。
+
+验收标准：
+
+- `live_batch_eval.py` 不再直接实现 resolver/provider 业务规则。
+- 单测可以注入 fake stage、fake adapter、fake store 和 fixture fetcher。
+- Browser、retry 和 snapshot 可以通过配置组合，不改变 stage 代码。
+
+#### 2.5 Parallel Development Gate
+
+完成以下条件后，才开启多个 provider 分支并行开发：
+
+- Stage/provider/fetch/checkpoint contracts 已合并到 `main`。
+- Registry 和至少一个代表性 provider 已完成迁移。
+- Contract tests、全量测试和离线 benchmark 全部通过。
+- `docs/ARCHITECTURE.md` 与代码目录一致。
+- 每条并行工作线已有明确 ownership，且不需要共同修改中央文件。
+
+推荐并行线：
+
+| Workstream | Ownership | 可并行内容 |
+| --- | --- | --- |
+| Pipeline | stages、runner、checkpoint contracts | stage resume/rerun |
+| Provider | 单个 provider module、fixture、tests | Workday/iCIMS/SuccessFactors 等 |
+| Resolver | website、identity、career discovery | evidence 和 search hardening |
+| Fetch | browser、retry、snapshot、budget | network reliability |
+| Evaluation | benchmark、summary、reports | regression governance |
+
+### Phase 3: Complete Provider Adapters
 
 以下是已知 adapter backlog，不代表固定执行顺序。进入本 Phase 后，应由 Phase 1 的失败分布选择优先项。
 
-#### 2.1 Workday Adapter
+#### 3.1 Workday Adapter
 
 当前状态：
 
@@ -615,7 +736,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - live smoke 至少能稳定返回 Workday board URL
 - title mismatch 不产生假阳性 opening
 
-#### 2.2 iCIMS Adapter
+#### 3.2 iCIMS Adapter
 
 当前状态：
 
@@ -637,7 +758,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 离线 fixture 覆盖 search page + detail page + JSON-LD + embedded JSON
 - live smoke 能返回 iCIMS job list
 
-#### 2.3 SuccessFactors Adapter
+#### 3.3 SuccessFactors Adapter
 
 当前状态：
 
@@ -658,7 +779,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 离线 fixture 覆盖 list + query detail
 - error page guard 保持有效
 
-#### 2.4 Ashby Adapter
+#### 3.4 Ashby Adapter
 
 当前状态：
 
@@ -677,7 +798,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 离线 fixture 覆盖 Ashby structured response
 - live smoke 覆盖至少一个 Ashby board
 
-#### 2.5 Workable Adapter
+#### 3.5 Workable Adapter
 
 当前状态：
 
@@ -697,7 +818,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 离线 fixture 覆盖 board + detail
 - live smoke 覆盖一个 Workable board
 
-### Phase 3: Browser Fallback
+### Phase 4: Browser Fallback
 
 当前状态：
 
@@ -718,9 +839,9 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - batch run 不会无限卡住
 - 不触发本地 Python crash reporter
 
-### Phase 4: Stage Checkpoint, Retry And Safer Batch Runner
+### Phase 5: Stage Checkpoint, Retry And Safer Batch Runner
 
-#### 4.1 阶段级 Checkpoint 和离线重放
+#### 5.1 阶段级 Checkpoint 和离线重放
 
 当前状态（2026-07-12）：已完成 replay-level checkpoint metadata。`scripts/export_replay_input.py` 导出的每条 replay record 会写入 checkpoint schema version、result schema version、adapter version 和 stable input fingerprint；`scripts/validate_replay_input.py` 可以在复用旧 replay 前验证这些元数据是否仍兼容当前代码；`live_batch_eval.py --resume-from-stage career_discovery|job_board_discovery|opening_match` 可以复用 replay input 中的 verified website/career root 并跳过 S2/S3 官网解析。现有 input loader 会忽略这些额外字段，因此向后兼容。真正的任意 stage-level checkpoint store 和 `--rerun-stage` 仍未完成。
 
@@ -738,7 +859,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 上游输入或 adapter 版本变化时，相关 stage checkpoint 自动失效
 - checkpoint 损坏不会导致错误成功，系统会安全地重新执行
 
-#### 4.2 Retry Policy
+#### 5.2 Retry Policy
 
 当前状态（2026-07-12）：已完成第一版 fetch-level retry wrapper。`RetryingFetcher` 会根据 `classify_fetch_error -> reason_spec.retryable` 判断是否重试；timeout、DNS、rate limit、server error 等可重试，HTTP 403、login/bot protection、parser/title mismatch 等不会重试。live batch runner 已接入 `--fetch-retries` 和 `--retry-base-delay`，retry events 会进入 `source_trace` 或 result trace。
 
@@ -755,7 +876,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 达到预算后返回标准 budget error，不会无限卡住
 - 自动重试不会绕过登录、验证码或网站访问限制
 
-#### 4.3 Safer Batch Runner
+#### 5.3 Safer Batch Runner
 
 当前状态（2026-07-12）：已完成第一版 bounded company concurrency。`live_batch_eval.py --workers N` 使用 thread pool 调度公司级任务，每个公司内部仍通过 process-level hard budget 防止 DNS/socket/native code 卡死；主线程按完成顺序写 results / trace / summary checkpoint。2-company/2-worker fixed live smoke 已通过。
 
@@ -781,18 +902,21 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 30 companies batch 不会因为单家公司卡住而丢失结果
 - 能输出 provider-level failure distribution
 
-### Phase 5: Evaluation And Reporting Hardening
+### Phase 6: Evaluation And Reporting Hardening
 
-当前状态：
+当前状态（2026-07-12）：
 
 - 已建立固定离线 benchmark set
+- 已建立固定 live benchmark 第一版
 - 覆盖 Greenhouse、Lever、SmartRecruiters、Workday、Ashby、iCIMS、SuccessFactors、Workable、Google Careers
 - `scripts/benchmark_eval.py` 可输出 results / trace / summary
 - `scripts/live_batch_eval.py` 已支持持续写入 summary checkpoint
+- Markdown report 已包含 rates、S1-S7 funnel、stage duration、provider/reason 分布、regression 和公司 stage matrix
 
 目标：
 
-- 建立固定 live benchmark set
+- 将固定 live benchmark 扩展到每个主要 provider 至少 5 家
+- 保存带时间戳的历史 baseline 和 regression artifact
 - 不只依赖 LinkedIn 当天随机结果
 
 建议 benchmark：
@@ -816,18 +940,17 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
-以下顺序取代原先固定的 provider 开发名单：
+Phase 0、Phase 1 和治理基线已经完成。接下来统一按以下顺序执行：
 
-1. 实现 `StageResult / PipelineResult` 和七关状态机。
-2. 建立统一错误码、retryable 和 owner 映射。
-3. 明确 hard dependency、降级及顶层成功语义。
-4. 升级离线 benchmark schema，建立当前 baseline。
-5. 输出公司 × 七关矩阵和 provider 交叉统计。
-6. 根据最大 failure cluster 选择第一个修复目标。
-7. 为该目标增加失败 fixture，再实现 adapter/resolver/browser 修复。
-8. 运行全量 benchmark，确认目标提升且无回归。
-9. 实现阶段 checkpoint、snapshot replay 和有限重试。
-10. 在正确性稳定后，再加入 bounded concurrency 优化吞吐。
+1. Freeze fetch、stage、provider 和 checkpoint 小型 contracts。
+2. 先抽取 S4-S6，并保留当前 `JobSourceAgent` 兼容 facade。
+3. 建立 provider registry，迁移一个代表性 structured API adapter 验证设计。
+4. 逐个迁移其余 provider；每次迁移都运行全量测试和固定 benchmark。
+5. 建立 composition root，缩减 CLI/live runner 的业务职责。
+6. 达到 Phase 2.5 gate 后，开启多个 provider/resolver/fetch/evaluation 分支并行开发。
+7. 每轮由最大 `stage × provider × reason_code` failure cluster 决定功能目标。
+8. 完成任意 stage checkpoint、`--rerun-stage` 和 snapshot offline replay。
+9. 扩大固定 live benchmark，持续验证 browser budget、并发吞吐和跨运行 regression。
 
 Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 backlog 中，但每一轮具体选谁必须由 benchmark 结果决定。
 
@@ -837,6 +960,9 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 - 问题能够用固定输入或保存的 snapshot 稳定复现。
 - 已明确所属 stage、provider、reason code 和影响样本数。
+- 修改位于明确 ownership boundary；跨边界变化先更新 contract 和 contract tests。
+- 新增 provider 不增加 stage runner 或 matcher 中的中央 provider 条件分支。
+- 业务模块依赖 protocol/contract，不直接构造 HTTP、browser 或 filesystem implementation。
 - 正常路径有测试。
 - 常见异常路径、空结果和 title mismatch 有测试。
 - 不把 404、error page 或推测 URL 当作成功。
@@ -844,7 +970,9 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - 对应 fixture/benchmark 已加入，修复前失败、修复后通过。
 - 全量回归没有降低其他 provider 的正确率。
 - benchmark 前后指标已记录。
-- 相关计划状态和说明已更新。
+- `CHANGELOG.md` 的 `Unreleased` 已更新。
+- 计划、架构边界或重大决策变化时，对应 `IMPLEMENTATION_PLAN.md`、`docs/ARCHITECTURE.md` 或 ADR 已更新。
+- 变更形成单一目的、可独立回滚的 commit。
 
 ## 日常执行循环
 
@@ -861,7 +989,9 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
   -> 跑局部测试
   -> 跑全量 benchmark
   -> 比较 baseline、检查回归
-  -> 更新计划并进入下一轮
+  -> 更新 changelog/计划/ADR
+  -> 创建单一目的 commit
+  -> 进入下一轮
 ```
 
 遇到单个特殊公司时，先按以下顺序判断：
@@ -880,7 +1010,7 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - LinkedIn discovery 已经接入
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
-- provider-specific ATS adapter 层已经建立
+- provider-specific ATS 能力已经建立第一版，但当前仍集中在中央 matcher，下一步会迁移到独立 registry/adapter modules
 - Greenhouse、Lever、SmartRecruiters、Workday、Ashby 已接 structured API
 - iCIMS、SuccessFactors、Workable 已加入 structured page / embedded JSON extraction，但还需要更多真实站点 live hardening
 - browser fallback 已经从全量渲染升级为 smart fallback + render budget
@@ -888,4 +1018,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 架构方向正确，关键模块已经搭起来，多个 ATS 已进入结构化 API/structured extraction 阶段；七关状态模型、统一错误码和 benchmark 矩阵已经完成第一版。现在重点是用固定 live benchmark 和失败矩阵继续驱动 provider hardening、browser fallback、阶段重试、snapshot replay 和吞吐优化。
+> 七关状态模型、统一错误码、benchmark 矩阵和多个 ATS 的 structured extraction 已完成第一版。当前主要工程短板是 S4-S6 与 provider 规则仍集中在少数中央模块；下一步先按 SOLID 拆出 stage contract、provider registry 和 composition root，再并行进行 provider hardening、阶段 replay 和 live reliability 优化。
