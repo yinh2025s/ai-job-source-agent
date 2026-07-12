@@ -56,7 +56,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
     if destination_root == source_root or _is_within(destination_root, source_root):
         raise SnapshotReplayError("Replay output must not be the snapshot directory or one of its children")
 
-    records = _read_records(index_path)
+    records, skipped_corrupt_tail = _read_records(index_path)
     selected_by_path: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     duplicate_count = 0
     superseded_count = 0
@@ -123,6 +123,8 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         "artifact_count": len(artifacts),
         "duplicate_records": duplicate_count,
         "superseded_records": superseded_count,
+        "skipped_records": skipped_corrupt_tail,
+        "corrupt_tail_records": skipped_corrupt_tail,
         "status": "success",
     }
     manifest_path = destination_root / "replay-manifest.json"
@@ -132,21 +134,39 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
     return ReplayResult(manifest, summary, manifest_path, summary_path)
 
 
-def _read_records(index_path: Path) -> list[tuple[int, dict[str, Any]]]:
+def _read_records(index_path: Path) -> tuple[list[tuple[int, dict[str, Any]]], int]:
     records: list[tuple[int, dict[str, Any]]] = []
-    for line_number, raw_line in enumerate(index_path.read_text(encoding="utf-8").splitlines(), start=1):
+    raw_index = index_path.read_text(encoding="utf-8")
+    physical_lines = raw_index.splitlines()
+    skipped_corrupt_tail = 0
+    for line_number, raw_line in enumerate(physical_lines, start=1):
         if not raw_line.strip():
             raise SnapshotReplayError(f"Line {line_number}: blank snapshot records are not allowed")
         try:
             record = json.loads(raw_line)
         except json.JSONDecodeError as exc:
+            if (
+                line_number == len(physical_lines)
+                and not raw_index.endswith(("\n", "\r"))
+                and _is_incomplete_json_tail(raw_line, exc)
+            ):
+                skipped_corrupt_tail = 1
+                continue
             raise SnapshotReplayError(f"Line {line_number}: invalid JSON: {exc.msg}") from exc
         if not isinstance(record, dict):
             raise SnapshotReplayError(f"Line {line_number}: snapshot record must be an object")
         records.append((line_number, record))
     if not records:
         raise SnapshotReplayError("Snapshot index contains no records")
-    return records
+    return records, skipped_corrupt_tail
+
+
+def _is_incomplete_json_tail(raw_line: str, error: json.JSONDecodeError) -> bool:
+    """Return true only when valid JSON could be formed by appending at EOF."""
+    stripped = raw_line.rstrip()
+    if error.msg.startswith("Unterminated string"):
+        return True
+    return error.pos >= len(stripped)
 
 
 def _validate_record(source_root: Path, record: dict[str, Any], line_number: int) -> dict[str, Any]:

@@ -69,6 +69,7 @@
 - 固定离线 benchmark 增加 traditional iCIMS HTML fixture，扩展到 13/13 exact opening；固定 live benchmark 增加 Prime Healthcare、Peraton 和 Chenega，扩展到 30/30 job list、28/30 exact opening 和 30/30 expectations。
 - SmartRecruiters adapter 增加 target-title `q` 查询、有界 offset pagination、exact-title early stop、API/company redirect 隔离和 public detail URL 校验；`ADAPTER_VERSION` 提升到 `2026-07-12.8`。
 - 固定 live benchmark 增加 Bosch、Ubisoft、Delivery Hero 和 SGS，SmartRecruiters 达到 5 家覆盖；基线扩展到 34/34 job list、32/34 exact opening 和 34/34 expectations。
+- Snapshot replay 可恢复进程中断产生的唯一 EOF 截断尾行，并显式报告 skipped/corrupt-tail 统计；中间损坏和完整非法记录仍严格失败。
 
 ## [0.1.0] - 2026-07-12
 

@@ -148,6 +148,57 @@ class SnapshotReplayTests(unittest.TestCase):
             with self.assertRaisesRegex(SnapshotReplayError, "path does not match sanitized_url"):
                 replay_snapshots(snapshots, root / "replay")
 
+    def test_skips_single_incomplete_final_physical_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._write_snapshot(snapshots)
+            index = snapshots / "snapshots.jsonl"
+            with index.open("a", encoding="utf-8") as handle:
+                handle.write('{"request_url": "https://interrupted.example.com')
+
+            result = replay_snapshots(snapshots, root / "replay")
+
+        self.assertEqual(result.summary["snapshot_records"], 1)
+        self.assertEqual(result.summary["skipped_records"], 1)
+        self.assertEqual(result.summary["corrupt_tail_records"], 1)
+
+    def test_rejects_incomplete_json_before_final_physical_line(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._write_snapshot(snapshots)
+            index = snapshots / "snapshots.jsonl"
+            valid_record = index.read_text(encoding="utf-8")
+            index.write_text('{"request_url":\n' + valid_record, encoding="utf-8")
+
+            with self.assertRaisesRegex(SnapshotReplayError, "Line 1: invalid JSON"):
+                replay_snapshots(snapshots, root / "replay")
+
+    def test_rejects_complete_but_invalid_final_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._write_snapshot(snapshots)
+            index = snapshots / "snapshots.jsonl"
+            with index.open("a", encoding="utf-8") as handle:
+                handle.write('{"request_url": invalid}')
+
+            with self.assertRaisesRegex(SnapshotReplayError, "Line 2: invalid JSON"):
+                replay_snapshots(snapshots, root / "replay")
+
+    def test_rejects_invalid_final_record_terminated_by_newline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._write_snapshot(snapshots)
+            index = snapshots / "snapshots.jsonl"
+            with index.open("a", encoding="utf-8") as handle:
+                handle.write('{"request_url":\n')
+
+            with self.assertRaisesRegex(SnapshotReplayError, "Line 2: invalid JSON"):
+                replay_snapshots(snapshots, root / "replay")
+
     def test_cli_writes_summary_and_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
