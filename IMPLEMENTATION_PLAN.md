@@ -192,7 +192,7 @@
 | Google Careers | Partial adapter | 可生成 title query URL |
 | Meta Careers | Partial adapter | 可生成 title query URL |
 | Lever | Native API adapter | 自动发现；使用 `api.lever.co/v0/postings/{company}` |
-| Greenhouse | Native API adapter | 自动发现；使用 `boards-api.greenhouse.io/v1/boards/{board}/jobs` |
+| Greenhouse | Native API/page adapter | 自动发现 hosted board；使用 Boards API；first-party frontend 可从 `__NEXT_DATA__` 完整 Greenhouse schema 识别并读取同源岗位 |
 | SmartRecruiters | Native API adapter | 自动发现；使用 `api.smartrecruiters.com/v1/companies/{company}/postings` |
 | Ashby | Native API adapter | 自动发现；使用 `api.ashbyhq.com/posting-api/job-board/{board}` |
 | Workable | Native structured-page adapter | 自动发现；解析 embedded JSON 并还原 `apply.workable.com/{company}/j/{shortcode}/` |
@@ -256,6 +256,7 @@
 - 2026-07-11 focused live checks: Cricut reached `https://cricut.com/careers`; Carv's public Rippling board matched `Growth Product Manager` to its exact job-detail URL. The full Carv homepage-to-board run remains sensitive to transient website timeouts.
 - Follow-up live verification: ReachMobi now maps `Product Manager` through BambooHR to `/careers/270`; MatrixSpace reaches its localized careers page and Ashby board; ONEOK retains its legitimate Workday board instead of a false `/assets/logo` URL.
 - Ardent Health 的 Jibe customer-owned iCIMS 页面已通过 page evidence 识别；`Registered Nurse` 经带品牌/地区隔离的 `/api/jobs` 返回具体 canonical opening，已加入固定 live benchmark。
+- Brex first-party careers 的 `__NEXT_DATA__` 保留完整 Greenhouse job schema；page-evidence adapter 已精确匹配 `Data Analyst II`，不再作为 generic board 处理。
 
 当前限制：
 
@@ -279,7 +280,7 @@
 
 当前测试数量：
 
-- 278 unit tests passing
+- 283 unit tests passing
 
 ## 当前主要短板
 
@@ -625,7 +626,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；278 个单元测试、12/12 固定离线 benchmark 和 12-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；283 个单元测试、12/12 固定离线 benchmark 和 12-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -663,7 +664,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 278 个测试和固定 benchmark 结果一致。
+- 重构后 283 个测试和固定 benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
@@ -702,7 +703,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；主线 architecture validator、278 个测试、12/12 offline benchmark 和 12/12 fixed live expectations 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
+当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；主线 architecture validator、283 个测试、12/12 offline benchmark 和 12/12 fixed live expectations 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -1036,4 +1037,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner 和并发安全 filesystem stage store 已接管 production CLI 与 live batch。失败样本可由 snapshot 一键生成离线 replay bundle。多轮并行开发通过 278 个测试和 12/12 offline benchmark 验证；最新固定 live benchmark 为 12/12 官网、12/12 job list、9/12 exact opening、12/12 expectation，覆盖 Greenhouse、Lever、Ashby、SmartRecruiters、Workday、Rippling、Workable、BambooHR 和 customer-owned iCIMS Jibe。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner 和并发安全 filesystem stage store 已接管 production CLI 与 live batch。失败样本可由 snapshot 一键生成离线 replay bundle。多轮并行开发通过 283 个测试和 12/12 offline benchmark 验证；最新固定 live benchmark 为 12/12 官网、12/12 job list、10/12 exact opening、12/12 expectation，覆盖 Greenhouse（含 first-party frontend）、Lever、Ashby、SmartRecruiters、Workday、Rippling、Workable、BambooHR 和 customer-owned iCIMS Jibe。

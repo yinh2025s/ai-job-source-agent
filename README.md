@@ -273,7 +273,7 @@ Latest live checks on July 11, 2026:
 - Fixed live benchmark: 6 named companies, 6/6 official websites, 6/6 official job-list pages, 1/6 exact opening, and 6/6 expectation checks passed. Providers covered in that small set are Greenhouse, Lever, Ashby, PostHog's first-party careers page, and Brex's first-party careers page.
 - July 12 rerun after the stage-runner migration: 6/6 official websites, 6/6 job-list pages, 5/6 exact openings, and 6/6 expectation checks. Provider attribution now follows stage evidence, so Greenhouse roles with an external CareerPuck apply URL remain classified as Greenhouse.
 - Expanded July 12 fixed live benchmark: 9/9 official websites, 9/9 job-list pages, 7/9 exact openings, and 9/9 expectation checks in 17.6 seconds. The added samples cover SanDisk/SmartRecruiters, ONEOK/Workday, and Carv/Rippling.
-- Follow-up expansion: 12/12 official websites, 12/12 job-list pages, 9/12 exact openings, and 12/12 expectation checks in 30.0 seconds. Ardent Health adds customer-owned iCIMS Jibe coverage alongside Workable and BambooHR.
+- Follow-up expansion: 12/12 official websites, 12/12 job-list pages, 10/12 exact openings, and 12/12 expectation checks in 29.1 seconds. Ardent Health adds customer-owned iCIMS Jibe coverage; Brex validates first-party Greenhouse payload detection.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
 

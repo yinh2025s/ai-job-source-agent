@@ -30,6 +30,7 @@
 - 固定离线 benchmark 增加 Rippling exact-opening 样本，从 11 家扩展到 12 家。
 - Markdown summary report 增加 `provider x stage x status` 和 `provider x reason_code` 可靠性表。
 - Provider registry 增加可选 page-evidence adapter 扩展；iCIMS 支持 Jibe customer-owned career domains、页面 search override 隔离和同源 `/api/jobs` structured listing。
+- Greenhouse adapter 支持从 first-party `__NEXT_DATA__` 中识别完整 Greenhouse job schema，并对 custom frontend canonical URL 做同源校验。
 
 ### Changed
 
@@ -49,11 +50,12 @@
 - Provider attribution 优先使用 opening/job-board stage evidence，避免 Greenhouse 返回外部 apply host 时被错误归类；replay export 使用同一归属规则。
 - 固定 live benchmark 从 6 家扩展到 9 家，新增 SanDisk/SmartRecruiters、ONEOK/Workday 和 Carv/Rippling 覆盖。
 - 固定 live benchmark 继续扩展到 11 家，新增 Plum/Workable 和 ReachMobi/BambooHR 覆盖。
-- 固定 live benchmark 扩展到 12 家，新增 Ardent Health/customer-owned iCIMS Jibe；本轮达到 12/12 job list、9/12 exact opening 和 12/12 expectations。
+- 固定 live benchmark 扩展到 12 家，新增 Ardent Health/customer-owned iCIMS Jibe，并由 Brex first-party Greenhouse 支持将基线提升到 12/12 job list、10/12 exact opening 和 12/12 expectations。
 - BambooHR adapter 增加标准端口、单 tenant、API redirect、候选 URL/ID 校验及 retryable fetch failure；`ADAPTER_VERSION` 提升到 `2026-07-12.3`。
 - Ashby/Workable 解析语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.2`。
 - Page-aware provider 识别和 iCIMS Jibe 解析语义加入后将 `ADAPTER_VERSION` 提升到 `2026-07-12.4`，避免恢复旧 S5/S6 generic checkpoint。
 - Workday CXS 请求增加同源 `Origin`/`Referer`、tenant/redirect/detail URL 隔离，并将不兼容的 `limit=50` 改为 20 条有界分页。
+- Greenhouse custom frontend 加入后将 `ADAPTER_VERSION` 提升到 `2026-07-12.5`；Brex live expectation 提升为必须精确 opening。
 
 ## [0.1.0] - 2026-07-12
 
