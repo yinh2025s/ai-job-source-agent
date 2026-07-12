@@ -18,14 +18,21 @@
 - 增加 composition root，集中构造 fetch wrappers、provider registry 和 agent，并让 CLI/live runner 使用统一依赖组合。
 - 增加独立 S2 website、S3 hiring identity 和 S7 result validation stages；招聘主体和 career root 通过声明式 context 输出传递。
 - 将 Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors 和 Workable 迁移为自动发现的原生 adapter。
+- 将 Rippling 迁移为自动发现的原生 HTML adapter，验证同一 company board 的具体职位链接。
 - 增加跨 Fetcher/Retry/Snapshot/SmartRender 实现的 FetchClient contract suite。
 - 增加 `scripts/validate_architecture.py`，自动验证原生 adapter contract、唯一性和 registry 接管状态。
+- 增加通用 `ApplicationRunner`，支持按 S1-S7 顺序执行、`start_at`/`stop_after` 和复用上游 stage result。
+- 增加原子写入的 filesystem stage checkpoint store，使用 schema、adapter version 和 input fingerprint 验证兼容性并支持下游失效。
+- Markdown summary report 增加 `provider x stage x status` 和 `provider x reason_code` 可靠性表。
 
 ### Changed
 
 - 将 SOLID 架构拆分设为继续扩展 ATS provider 之前的前置阶段。
 - 明确 stage、provider、fetcher、orchestration 和 reporting 的依赖方向与并行开发边界。
 - 第一轮和第二轮 provider/stage 并行开发通过统一集成门禁；一个 Workable 脏 URL 问题由跨工作线全量测试发现并修复。
+- 官网解析对短名和歧义名增加 LinkedIn slug、搜索 title/snippet、主页 title 和 canonical domain 身份证据，降低误认官网风险。
+- Smart browser fallback 会识别没有可用职位链接的非空 JS shell，保留结构化 JSON/static link 页面，并记录 render budget 耗尽事件。
+- Architecture validator 会拒绝原生 adapter 中未登记的 literal reason code；`PROVIDER_FETCH_FAILED` 已纳入统一重试和 owner 语义。
 
 ## [0.1.0] - 2026-07-12
 

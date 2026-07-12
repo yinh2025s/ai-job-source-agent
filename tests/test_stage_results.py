@@ -10,7 +10,7 @@ from job_source_agent.models import (
     CompanyInput,
 )
 from job_source_agent.pipeline import JobSourceAgent
-from job_source_agent.reasons import classify_fetch_error
+from job_source_agent.reasons import classify_fetch_error, make_stage_result
 from job_source_agent.web import Fetcher
 
 
@@ -85,6 +85,18 @@ class StageResultTests(unittest.TestCase):
         self.assertEqual(classify_fetch_error("The read operation timed out"), "NETWORK_TIMEOUT")
         self.assertEqual(classify_fetch_error("[Errno 8] nodename nor servname provided"), "DNS_FAILED")
         self.assertEqual(classify_fetch_error("HTTP Error 429: Too Many Requests"), "RATE_LIMITED")
+
+    def test_provider_fetch_failures_keep_retry_and_owner_semantics(self):
+        result = make_stage_result(
+            STAGE_OPENING_MATCH,
+            "failed",
+            reason_code="PROVIDER_FETCH_FAILED",
+            provider="icims",
+        )
+
+        self.assertEqual(result.reason_code, "PROVIDER_FETCH_FAILED")
+        self.assertTrue(result.retryable)
+        self.assertEqual(result.owner, "network")
 
 
 if __name__ == "__main__":

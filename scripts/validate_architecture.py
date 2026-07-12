@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import argparse
+import ast
+import inspect
 import json
 import sys
 from pathlib import Path
@@ -12,6 +14,7 @@ from job_source_agent.providers import (
     build_default_provider_registry,
     discover_native_adapters,
 )
+from job_source_agent.reasons import REASON_SPECS
 
 
 def validate_architecture() -> dict:
@@ -48,6 +51,15 @@ def validate_architecture() -> dict:
         )
         if selected is None or selected is not adapter or not selected.supports_listing:
             issues.append({"provider": adapter.name, "code": "NATIVE_ADAPTER_NOT_SELECTED"})
+        for reason_code in _declared_reason_codes(adapter):
+            if reason_code not in REASON_SPECS:
+                issues.append(
+                    {
+                        "provider": adapter.name,
+                        "code": "UNKNOWN_PROVIDER_REASON_CODE",
+                        "detail": reason_code,
+                    }
+                )
 
     return {
         "valid": not issues,
@@ -56,6 +68,23 @@ def validate_architecture() -> dict:
         "registry_adapter_count": len(registry.adapters),
         "issues": issues,
     }
+
+
+def _declared_reason_codes(adapter: ProviderAdapter) -> set[str]:
+    module = sys.modules.get(adapter.__class__.__module__)
+    if module is None:
+        return set()
+    try:
+        tree = ast.parse(inspect.getsource(module))
+    except (OSError, TypeError, SyntaxError):
+        return set()
+    codes = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.keyword) or node.arg != "reason_code":
+            continue
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            codes.add(node.value.value)
+    return codes
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Validate architecture extension contracts.")
     parser.add_argument("--output", help="Optional JSON report path.")

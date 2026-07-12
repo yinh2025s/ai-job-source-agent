@@ -278,7 +278,7 @@
 
 当前测试数量：
 
-- 193 unit tests passing
+- 221 unit tests passing
 
 ## 当前主要短板
 
@@ -286,10 +286,10 @@
 
 当前已完成第一轮 SOLID 拆分，但仍有兼容层需要逐步迁移：
 
-- S4-S6 已通过独立 stage/context/runner 执行，但 `JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- 9 个 provider 已迁移为原生 adapter；Google Careers、Meta Careers、Rippling 和 generic fallback 仍走 compatibility path。
+- S2-S7 已有独立 stage，通用 `ApplicationRunner` 支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
+- 10 个 provider 已迁移为原生 adapter，包括 Rippling；Google Careers、Meta Careers 和 generic fallback 仍走 compatibility path。
 - `live_batch_eval.py` 已使用 composition root，但调度、预算和 checkpoint 仍在同一 runner script 中。
-- Fetcher 已有显式 protocol 和跨实现 contract suite；S2/S3/S7 已有独立 stage，尚待接入 production runner/checkpoint flow。
+- Fetcher 已有显式 protocol 和跨实现 contract suite；filesystem stage store 已完成，通用 runner/store 尚待完全接管 production CLI/live flow。
 - 原生 adapter 已支持包内自动发现；新 provider 不再需要修改中央 registry。
 
 Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resolver、Fetch 和 Evaluation 工作线并行，同时继续收缩 legacy compatibility path。
@@ -304,7 +304,7 @@ Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resol
 - SuccessFactors 更多 theme/AJAX payload 变体
 - Workable public API research 和真实站点 hardening
 - Ashby embedded JSON fallback
-- Rippling 独立原生 adapter
+- Rippling 更多 public board/live 变体 hardening
 
 ### 3. Browser Rendering Needs Live Hardening
 
@@ -322,7 +322,7 @@ Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resol
 
 仍需补：
 
-- 搜索结果中 provider page 为空时更精确地触发 render
+- 继续用真实 JS-heavy provider 变体校准 render trigger
 - live batch 中验证 render budget 不会拖垮吞吐
 
 ### 4. Search Fallback Needs Better Sources
@@ -624,7 +624,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成两轮并行验证。版本化 contracts、S2-S7 独立 stage classes、provider registry、9 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；193 个单元测试、11/11 固定离线 benchmark 和离线 CLI smoke 均通过。S2/S3/S7 尚待接入 production runner/checkpoint flow。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S2-S7 独立 stage classes、通用 `ApplicationRunner`、filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；221 个单元测试、11/11 固定离线 benchmark 和离线 CLI smoke 均通过。通用 runner/store 尚待完全接管 production CLI/live flow。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -649,7 +649,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.2 Extract Independent Stages
 
-当前状态：S2 website、S3 hiring identity、S4 career、S5 job-board、S6 opening 和 S7 validation 都已有独立 stage class。S4-S6 已由 `PipelineStageRunner` 执行；`JobSourceAgent.discover()` 保留兼容 facade。S2/S3/S7 的 production runner/checkpoint 接入留给后续 Pipeline 工作线。
+当前状态：S2 website、S3 hiring identity、S4 career、S5 job-board、S6 opening 和 S7 validation 都已有独立 stage class。`ApplicationRunner` 可按标准顺序执行 stage、限制 `start_at`/`stop_after`、复用上游结果并确定性标记下游 `not_run`；`JobSourceAgent.discover()` 保留兼容 facade。production CLI/live flow 的完整委托留给后续 Pipeline 工作线。
 
 目标：
 
@@ -662,12 +662,12 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 193 个测试和固定 benchmark 结果一致。
+- 重构后 221 个测试和固定 benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
 
-当前状态：已完成可并行扩展的第一版。Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors 和 Workable 已迁移为原生 adapter；provider module 通过导出 `ADAPTER` 自动注册。Google Careers、Meta Careers、Rippling 和 generic fallback 暂时保留 compatibility path。
+当前状态：已完成可并行扩展的第一版。Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors、Workable 和 Rippling 已迁移为原生 adapter；provider module 通过导出 `ADAPTER` 自动注册。Google Careers、Meta Careers 和 generic fallback 暂时保留 compatibility path。
 
 目标：
 
@@ -701,7 +701,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。两轮共十条独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch 变化；主线 architecture validator、193 个测试、11/11 benchmark 和 CLI smoke 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
+当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；主线 architecture validator、221 个测试、11/11 benchmark 和 CLI smoke 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -838,6 +838,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - live batch runner 支持 `--render-js`、per-company `--render-budget`、render events trace 和截图 artifact snapshot
 - Playwright-managed Chromium 缺失时可 fallback 到本机 Google Chrome channel
 - 单测覆盖静态优先、JS shell fallback、静态失败 fallback、budget guard、local Chrome fallback、artifact source trace 和 snapshot artifact metadata
+- 非空 job-context JS shell 在没有可用 job link 时会触发 browser；结构化 jobs payload 和已有可用链接的静态页面不会浪费 render budget
+- render budget 耗尽会在 trace 中记录 `skipped_budget`
 
 目标：
 
@@ -854,7 +856,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 5.1 阶段级 Checkpoint 和离线重放
 
-当前状态（2026-07-12）：已完成 replay-level checkpoint metadata。`scripts/export_replay_input.py` 导出的每条 replay record 会写入 checkpoint schema version、result schema version、adapter version 和 stable input fingerprint；`scripts/validate_replay_input.py` 可以在复用旧 replay 前验证这些元数据是否仍兼容当前代码；`live_batch_eval.py --resume-from-stage career_discovery|job_board_discovery|opening_match` 可以复用 replay input 中的 verified website/career root 并跳过 S2/S3 官网解析。现有 input loader 会忽略这些额外字段，因此向后兼容。真正的任意 stage-level checkpoint store 和 `--rerun-stage` 仍未完成。
+当前状态（2026-07-12）：已完成 replay-level checkpoint metadata 和通用 filesystem stage checkpoint store。Store 对每个 stage 原子保存 `StageExecution`，通过 schema version、adapter version 和 input fingerprint 校验兼容性，损坏文件按安全 cache miss 处理，并可从指定 stage 向下失效。`ApplicationRunner` 支持上游结果复用和范围重跑；现有 `live_batch_eval.py --resume-from-stage career_discovery|job_board_discovery|opening_match` 继续兼容 replay input。剩余工作是把 runner/store 完整接入 production CLI/live flow、暴露 `--rerun-stage`，并完成跨进程 snapshot replay。
 
 目标：
 
@@ -923,6 +925,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - `scripts/benchmark_eval.py` 可输出 results / trace / summary
 - `scripts/live_batch_eval.py` 已支持持续写入 summary checkpoint
 - Markdown report 已包含 rates、S1-S7 funnel、stage duration、provider/reason 分布、regression 和公司 stage matrix
+- Markdown report 已增加 `provider x stage x status` 和 `provider x reason_code` 交叉表，便于定位 ATS 级可靠性问题
 
 目标：
 
@@ -1021,12 +1024,12 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - LinkedIn discovery 已经接入
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
-- provider-specific ATS 能力已经建立第一版，但当前仍集中在中央 matcher，下一步会迁移到独立 registry/adapter modules
-- Greenhouse、Lever、SmartRecruiters、Workday、Ashby 已接 structured API
-- iCIMS、SuccessFactors、Workable 已加入 structured page / embedded JSON extraction，但还需要更多真实站点 live hardening
+- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 10 个原生 adapter
+- Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR 已接 structured API
+- iCIMS、SuccessFactors、Workable、Rippling 已加入原生 structured page / embedded JSON / verified-link extraction，但还需要更多真实站点 live hardening
 - browser fallback 已经从全量渲染升级为 smart fallback + render budget
 - batch evaluator 已经能输出 results / trace / summary，固定离线 benchmark 可作为回归测试
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S2-S7 都有独立 stage class，9 个主要 ATS 已迁移到自动发现的原生 adapter，CLI/live runner 使用统一 composition root。两轮并行开发通过 193 个测试和 11/11 benchmark 验证；下一步重点是接入 S2/S3/S7 checkpoint runner、迁移 Rippling，以及继续做 live hardening 和 benchmark 扩展。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S2-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner 和 filesystem stage store 已实现，CLI/live runner 使用统一 composition root。多轮并行开发通过 221 个测试和 11/11 benchmark 验证；下一步重点是让通用 runner/store 完全接管 production CLI/live flow，并继续做 live hardening 和 benchmark 扩展。

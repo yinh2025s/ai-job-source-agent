@@ -39,6 +39,30 @@ SUMMARY = {
         "result_validation": {"count": 2, "p50": 0, "p95": 0},
     },
     "provider_counts": {"greenhouse": 1, "lever": 1},
+    "provider_stage_status_counts": {
+        "lever": {
+            "linkedin_discovery": {"success": 1},
+            "website_resolution": {"success": 1},
+            "hiring_identity_resolution": {"success": 1},
+            "career_discovery": {"success": 1},
+            "job_board_discovery": {"success": 1},
+            "opening_match": {"partial": 1},
+            "result_validation": {"success": 1},
+        },
+        "greenhouse": {
+            "linkedin_discovery": {"success": 1},
+            "website_resolution": {"success": 1},
+            "hiring_identity_resolution": {"success": 1},
+            "career_discovery": {"success": 1},
+            "job_board_discovery": {"success": 1},
+            "opening_match": {"success": 1, "failed": 2},
+            "result_validation": {"success": 1},
+        },
+    },
+    "provider_reason_code_counts": {
+        "lever": {"OPENING_NOT_FOUND": 1, "FETCH_FAILED": 2},
+        "greenhouse": {},
+    },
     "reason_code_counts": {"OPENING_NOT_FOUND": 1},
     "expectation_checks": {"total": 2, "passed": 2, "failed": 0},
     "company_stage_matrix": [
@@ -85,8 +109,22 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("## Stage Durations", report)
         self.assertIn("| S6 opening_match | 2 | 70 | 80 |", report)
         self.assertIn("| opening | 50.0% |", report)
+        self.assertIn("## Provider Stage Reliability", report)
+        self.assertIn("| greenhouse | 1 OK | 1 OK | 1 OK | 1 OK | 1 OK | 1 OK, 2 FAIL | 1 OK |", report)
+        self.assertLess(report.index("| greenhouse | 1 OK"), report.index("| lever | 1 OK"))
+        self.assertIn("## Provider Reason Codes", report)
+        self.assertIn("| lever | FETCH_FAILED | 2 |", report)
+        self.assertLess(report.index("| lever | FETCH_FAILED | 2 |"), report.index("| lever | OPENING_NOT_FOUND | 1 |"))
         self.assertIn("| B | lever | partial | OPENING_NOT_FOUND", report)
         self.assertIn("## Expectations", report)
+
+    def test_provider_reliability_sections_handle_missing_data(self):
+        report = render_markdown_report({})
+
+        self.assertIn("## Provider Stage Reliability", report)
+        self.assertIn("| none | - | - | - | - | - | - | - |", report)
+        self.assertIn("## Provider Reason Codes", report)
+        self.assertIn("| none | none | 0 |", report)
 
     def test_cli_writes_report_file(self):
         with tempfile.TemporaryDirectory() as directory:

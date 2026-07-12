@@ -30,6 +30,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "PROVIDER_UNKNOWN": ReasonSpec(False, "provider"),
     "PROVIDER_UNSUPPORTED": ReasonSpec(False, "provider"),
     "PROVIDER_VARIANT_UNSUPPORTED": ReasonSpec(False, "provider"),
+    "PROVIDER_FETCH_FAILED": ReasonSpec(True, "network"),
     "PARSING_FAILED": ReasonSpec(False, "parser"),
     "INVALID_STRUCTURED_DATA": ReasonSpec(False, "parser"),
     "EMPTY_PROVIDER_RESPONSE": ReasonSpec(False, "provider"),

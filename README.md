@@ -210,7 +210,7 @@ python3 scripts/render_summary_report.py \
   --title "Offline Benchmark Report"
 ```
 
-The report includes overview rates, the S1-S7 stage funnel, provider and reason-code distributions, expectation results, and a company-by-stage matrix for quick review.
+The report includes overview rates, the S1-S7 stage funnel, provider-by-stage reliability, provider reason-code counts, expectation results, and a company-by-stage matrix for quick review.
 
 For larger live checks, use the checkpointing evaluator instead of one long CLI run. It writes results after every company, so a slow or blocked website does not erase earlier progress:
 
@@ -377,7 +377,7 @@ Career page finder
         |
         v
 Job-list/opening finder
-  - auto-discovered native adapters for Greenhouse, Lever, SmartRecruiters, Workday, Ashby, BambooHR, iCIMS, SuccessFactors, and Workable
+  - auto-discovered native adapters for Greenhouse, Lever, SmartRecruiters, Workday, Ashby, BambooHR, iCIMS, SuccessFactors, Workable, and Rippling
   - Workday CXS jobs API adapter with title search payloads
   - structured JSON-LD / embedded JSON extraction for iCIMS, SuccessFactors, and Workable-style pages
   - provider-aware search URLs for Google Careers and Meta Careers
@@ -403,9 +403,10 @@ results.json + trace.json
 - Career-page discovery uses deterministic scoring before any expensive browser/LLM-style behavior.
 - Career-page discovery combines homepage links, common path probes, brand-specific join paths, and sitemap URLs.
 - When direct navigation fails, career-page discovery can fall back to search results while preserving full career/job paths.
-- Common ATS providers such as Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, and SuccessFactors are recognized explicitly.
+- Common ATS providers such as Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, SuccessFactors, and Rippling are recognized explicitly.
 - Greenhouse, Lever, SmartRecruiters, Workday, Ashby, and BambooHR use native structured API adapters before falling back to HTML link extraction.
 - iCIMS, SuccessFactors, and Workable use native structured-page adapters for JSON-LD, embedded application JSON, or verified job links.
+- Rippling uses a native HTML adapter that canonicalizes public boards and accepts only verified same-company job-detail links.
 - Provider-specific matchers build provider-appropriate search URLs and preserve stable job-board fallbacks when a concrete title match is not available.
 - Concrete opening selection is gated by the LinkedIn target title to avoid false-positive job URLs.
 - Error and 404 pages are rejected even if their URL or HTML contains career-like keywords.

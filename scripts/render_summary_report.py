@@ -30,6 +30,8 @@ STATUS_LABELS = {
     "not_recorded": "-",
 }
 
+STATUS_ORDER = tuple(STATUS_LABELS)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Render a benchmark/live summary JSON as a Markdown report.")
@@ -56,6 +58,8 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines.extend(_stage_funnel(summary))
     lines.extend(_stage_durations(summary))
     lines.extend(_simple_count_table("Provider Distribution", summary.get("provider_counts", {}), "Provider"))
+    lines.extend(_provider_stage_reliability(summary))
+    lines.extend(_provider_reason_codes(summary))
     lines.extend(_simple_count_table("Reason Codes", summary.get("reason_code_counts", {}), "Reason"))
     lines.extend(_expectations(summary))
     lines.extend(_company_matrix(summary, max_rows=max_matrix_rows))
@@ -171,6 +175,51 @@ def _simple_count_table(title: str, counts: dict, label: str) -> list[str]:
         lines.append("| none | 0 |")
     lines.append("")
     return lines
+
+
+def _provider_stage_reliability(summary: dict) -> list[str]:
+    provider_counts = summary.get("provider_stage_status_counts") or {}
+    stage_headers = [STAGE_LABELS.get(stage, stage) for stage in PIPELINE_STAGES]
+    lines = [
+        "## Provider Stage Reliability",
+        "",
+        f"| Provider | {' | '.join(stage_headers)} |",
+        f"| --- | {' | '.join('---' for _ in stage_headers)} |",
+    ]
+    for provider, stages in sorted(provider_counts.items(), key=lambda item: str(item[0])):
+        stage_cells = [_format_status_counts((stages or {}).get(stage, {})) for stage in PIPELINE_STAGES]
+        lines.append(f"| {_escape(provider)} | {' | '.join(stage_cells)} |")
+    if not provider_counts:
+        lines.append(f"| none | {' | '.join('-' for _ in stage_headers)} |")
+    lines.append("")
+    return lines
+
+
+def _provider_reason_codes(summary: dict) -> list[str]:
+    provider_counts = summary.get("provider_reason_code_counts") or {}
+    lines = [
+        "## Provider Reason Codes",
+        "",
+        "| Provider | Reason | Count |",
+        "| --- | --- | ---: |",
+    ]
+    has_reasons = False
+    for provider, reason_counts in sorted(provider_counts.items(), key=lambda item: str(item[0])):
+        for reason, count in sorted((reason_counts or {}).items(), key=lambda item: (-int(item[1]), str(item[0]))):
+            lines.append(f"| {_escape(provider)} | {_escape(reason)} | {count} |")
+            has_reasons = True
+    if not has_reasons:
+        lines.append("| none | none | 0 |")
+    lines.append("")
+    return lines
+
+
+def _format_status_counts(counts: dict) -> str:
+    if not counts:
+        return "-"
+    ordered_statuses = [status for status in STATUS_ORDER if status in counts]
+    ordered_statuses.extend(sorted(status for status in counts if status not in STATUS_LABELS))
+    return ", ".join(f"{counts[status]} {STATUS_LABELS.get(status, status)}" for status in ordered_statuses)
 
 
 def _expectations(summary: dict) -> list[str]:
