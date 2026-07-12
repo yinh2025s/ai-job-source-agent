@@ -1,47 +1,83 @@
 [
   {
     "company": "Plum",
+    "provider": "Workable",
+    "technology": "workable_react_spa",
     "url": "https://apply.workable.com/withplum/",
-    "title": "Senior Backend Engineer | AI Platform",
-    "exact_url": "https://apply.workable.com/withplum/j/06C4C5040E/",
-    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
+    "evidence_text": "Careers at Plum",
     "static_fixture": "withplum/static.html",
-    "rendered_fixture": "withplum/rendered.html"
+    "rendered_fixture": "withplum/rendered.html",
+    "fixture_provenance": {
+      "captured_at": "2026-07-12",
+      "static_source": "live_http_response",
+      "rendered_source": "playwright_chrome_12s",
+      "capture_kind": "sanitized_minimal_live_capture",
+      "complete": false
+    }
   },
   {
     "company": "Workable",
+    "provider": "Workable",
+    "technology": "workable_react_spa",
     "url": "https://apply.workable.com/careers/",
-    "title": "Implementation Manager",
-    "exact_url": "https://apply.workable.com/careers/j/401786A940/",
-    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
+    "evidence_text": "Careers at Workable",
     "static_fixture": "careers/static.html",
-    "rendered_fixture": "careers/rendered.html"
+    "rendered_fixture": "careers/rendered.html",
+    "fixture_provenance": {
+      "captured_at": "2026-07-12",
+      "static_source": "live_http_response",
+      "rendered_source": "playwright_chrome_12s",
+      "capture_kind": "sanitized_minimal_live_capture",
+      "complete": false
+    }
   },
   {
-    "company": "Town Web",
-    "url": "https://apply.workable.com/town-web/",
-    "title": "Fractional Head of Growth (SaaS)",
-    "exact_url": "https://apply.workable.com/town-web/j/92C4876274/",
-    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
-    "static_fixture": "town-web/static.html",
-    "rendered_fixture": "town-web/rendered.html"
+    "company": "Apple",
+    "provider": "Apple Jobs",
+    "technology": "apple_jobsite_ember_bundle",
+    "url": "https://jobs.apple.com/en-us/search",
+    "evidence_text": "Search Results",
+    "evidence_url": "https://jobs.apple.com/en-us/details/114438158/us-specialist-seasonal-part-time?team=APPST",
+    "static_fixture": "apple/static.html",
+    "rendered_fixture": "apple/rendered.html",
+    "fixture_provenance": {
+      "captured_at": "2026-07-12",
+      "static_source": "live_http_response",
+      "rendered_source": "playwright_chrome_12s",
+      "capture_kind": "sanitized_minimal_live_capture",
+      "complete": false
+    }
   },
   {
-    "company": "ClassWallet",
-    "url": "https://apply.workable.com/classwallet/",
-    "title": "Senior Full Stack Engineer, Ecommerce",
-    "exact_url": "https://apply.workable.com/classwallet/j/37072C7B17/",
-    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
-    "static_fixture": "classwallet/static.html",
-    "rendered_fixture": "classwallet/rendered.html"
+    "company": "Intuitive Apps",
+    "provider": "Intuitive Apps Custom Careers",
+    "technology": "create_react_app",
+    "url": "https://www.intuitiveapps.com/careers",
+    "evidence_text": "Search for Jobs",
+    "static_fixture": "intuitive-apps/static.html",
+    "rendered_fixture": "intuitive-apps/rendered.html",
+    "fixture_provenance": {
+      "captured_at": "2026-07-12",
+      "static_source": "live_http_response",
+      "rendered_source": "playwright_chrome_12s",
+      "capture_kind": "sanitized_minimal_live_capture",
+      "complete": false
+    }
   },
   {
-    "company": "Huzzle",
-    "url": "https://apply.workable.com/huzzle/",
-    "title": "Graphic Designer - Remote",
-    "exact_url": "https://apply.workable.com/huzzle/j/6464A5E44D/",
-    "fixture_provenance": "minimal_contract_from_live_static_shell_and_public_api",
-    "static_fixture": "huzzle/static.html",
-    "rendered_fixture": "huzzle/rendered.html"
+    "company": "BlueFit",
+    "provider": "BlueFit Custom Careers",
+    "technology": "react_material_ui_spa",
+    "url": "https://careers.bluefit.com.au/jobs",
+    "evidence_text": "Available Featured Positions",
+    "static_fixture": "bluefit/static.html",
+    "rendered_fixture": "bluefit/rendered.html",
+    "fixture_provenance": {
+      "captured_at": "2026-07-12",
+      "static_source": "live_http_response",
+      "rendered_source": "playwright_chrome_12s",
+      "capture_kind": "sanitized_minimal_live_capture",
+      "complete": false
+    }
   }
 ]

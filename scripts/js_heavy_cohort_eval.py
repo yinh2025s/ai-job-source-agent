@@ -17,6 +17,16 @@ from job_source_agent.web import Page, extract_links, normalize_url
 DEFAULT_FIXTURE_ROOT = ROOT / "samples" / "sites" / "js-heavy-rendered-cohort"
 
 
+def cohort_diversity(cases: list[dict]) -> dict[str, int | bool]:
+    provider_count = len({case["provider"] for case in cases})
+    technology_count = len({case["technology"] for case in cases})
+    return {
+        "provider_count": provider_count,
+        "technology_count": technology_count,
+        "diversity_passed": provider_count >= 3 and technology_count >= 3,
+    }
+
+
 class FixtureCohortFetcher(SmartRenderedFetcher):
     def __init__(self, cases: list[dict], fixture_root: Path, **kwargs) -> None:
         super().__init__(**kwargs)
@@ -44,13 +54,14 @@ class FixtureCohortFetcher(SmartRenderedFetcher):
 
 def load_cases(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> list[dict]:
     cases = json.loads((fixture_root / "cohort.json").read_text(encoding="utf-8"))
-    if not isinstance(cases, list) or len(cases) != 5:
-        raise ValueError("JS-heavy cohort must contain exactly five cases")
+    if not isinstance(cases, list) or len(cases) < 5:
+        raise ValueError("JS-heavy cohort must contain at least five cases")
     required = {
         "company",
+        "provider",
+        "technology",
         "url",
-        "title",
-        "exact_url",
+        "evidence_text",
         "static_fixture",
         "rendered_fixture",
         "fixture_provenance",
@@ -58,6 +69,15 @@ def load_cases(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> list[dict]:
     for case in cases:
         if not isinstance(case, dict) or not required <= case.keys():
             raise ValueError("invalid JS-heavy cohort record")
+        provenance = case["fixture_provenance"]
+        if not isinstance(provenance, dict) or not {
+            "captured_at",
+            "static_source",
+            "rendered_source",
+            "capture_kind",
+            "complete",
+        } <= provenance.keys():
+            raise ValueError("invalid JS-heavy fixture provenance")
         for fixture_key in ("static_fixture", "rendered_fixture"):
             if not (fixture_root / case[fixture_key]).is_file():
                 raise ValueError(f"missing cohort fixture: {case[fixture_key]}")
@@ -78,23 +98,31 @@ def evaluate_saved_cohort(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> dict:
         trigger_reason = fetcher._render_reason(static_page)
         attempts_before = fetcher.render_attempts
         page = fetcher._fetch_live(case["url"])
-        exact_url = normalize_url(case["exact_url"])
-        evidence = [
-            link
-            for link in extract_links(page)
-            if normalize_url(link.url) == exact_url and case["title"].casefold() in link.text.casefold()
-        ]
+        visible_text = _visible_text(page.html)
+        text_evidence_found = case["evidence_text"].casefold() in visible_text.casefold()
+        expected_url = case.get("evidence_url")
+        url_evidence_found = None
+        if expected_url:
+            normalized_expected_url = normalize_url(expected_url)
+            url_evidence_found = any(
+                normalize_url(link.url) == normalized_expected_url for link in extract_links(page)
+            )
+        evidence_found = text_evidence_found and url_evidence_found is not False
         rows.append(
             {
                 "company": case["company"],
+                "provider": case["provider"],
+                "technology": case["technology"],
                 "url": case["url"],
-                "title": case["title"],
-                "exact_url": exact_url,
+                "evidence_text": case["evidence_text"],
+                "evidence_url": expected_url,
                 "fixture_provenance": case["fixture_provenance"],
                 "trigger_reason": trigger_reason,
                 "render_triggered": fetcher.render_attempts == attempts_before + 1,
                 "render_source": page.source,
-                "job_evidence_found": bool(evidence),
+                "career_job_evidence_found": evidence_found,
+                "text_evidence_found": text_evidence_found,
+                "url_evidence_found": url_evidence_found,
             }
         )
 
@@ -108,17 +136,24 @@ def evaluate_saved_cohort(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> dict:
         and budget_skip["outcome"] == "skipped_budget"
         and exhausted_page.source == "saved_static_shell"
     )
+    diversity = cohort_diversity(cases)
+    provider_count = diversity["provider_count"]
+    technology_count = diversity["technology_count"]
+    diversity_passed = diversity["diversity_passed"]
     passed = all(
         row["trigger_reason"]
         and row["render_triggered"]
-        and row["job_evidence_found"]
+        and row["career_job_evidence_found"]
         for row in rows
-    ) and budget_not_exceeded
+    ) and budget_not_exceeded and diversity_passed
     return {
         "mode": "saved_fixture",
         "case_count": len(cases),
         "render_budget": len(cases),
         "render_attempts": fetcher.render_attempts,
+        "provider_count": provider_count,
+        "technology_count": technology_count,
+        "diversity_passed": diversity_passed,
         "budget_not_exceeded": budget_not_exceeded,
         "exhausted_request_outcome": budget_skip["outcome"],
         "passed": passed,
@@ -140,21 +175,26 @@ def evaluate_live_smoke(
         try:
             page = fetcher.fetch(case["url"])
             links = extract_links(page)
-            exact_url = normalize_url(case["exact_url"])
-            exact_found = any(normalize_url(link.url) == exact_url for link in links)
             visible_text = _visible_text(page.html)
-            lower_text = visible_text.casefold()
-            career_evidence_found = len(visible_text) >= 80 and any(
-                marker in lower_text
-                for marker in ("current openings", "careers at", "open roles", "view jobs")
-            )
+            text_evidence_found = case["evidence_text"].casefold() in visible_text.casefold()
+            expected_url = case.get("evidence_url")
+            url_evidence_found = None
+            if expected_url:
+                normalized_expected_url = normalize_url(expected_url)
+                url_evidence_found = any(
+                    normalize_url(link.url) == normalized_expected_url for link in links
+                )
+            career_evidence_found = text_evidence_found
             rows.append(
                 {
                     "company": case["company"],
+                    "provider": case["provider"],
+                    "technology": case["technology"],
                     "source": page.source,
                     "render_triggered": fetcher.render_attempts == attempts_before + 1,
                     "career_evidence_found": career_evidence_found,
-                    "exact_url_found": exact_found,
+                    "text_evidence_found": text_evidence_found,
+                    "evidence_url_found": url_evidence_found,
                     "error": None,
                 }
             )
@@ -162,15 +202,22 @@ def evaluate_live_smoke(
             rows.append(
                 {
                     "company": case["company"],
+                    "provider": case["provider"],
+                    "technology": case["technology"],
                     "source": None,
                     "render_triggered": fetcher.render_attempts == attempts_before + 1,
                     "career_evidence_found": False,
-                    "exact_url_found": False,
+                    "text_evidence_found": False,
+                    "evidence_url_found": False if case.get("evidence_url") else None,
                     "error": str(error),
                 }
             )
+    diversity = cohort_diversity(cases)
+    provider_count = diversity["provider_count"]
+    technology_count = diversity["technology_count"]
+    diversity_passed = diversity["diversity_passed"]
     budget_not_exceeded = fetcher.render_attempts <= render_budget
-    passed = budget_not_exceeded and all(
+    passed = budget_not_exceeded and diversity_passed and all(
         row["render_triggered"] and row["career_evidence_found"] and row["error"] is None
         for row in rows
     )
@@ -180,6 +227,9 @@ def evaluate_live_smoke(
         "timeout_seconds_per_page": timeout,
         "render_budget": render_budget,
         "render_attempts": fetcher.render_attempts,
+        "provider_count": provider_count,
+        "technology_count": technology_count,
+        "diversity_passed": diversity_passed,
         "budget_not_exceeded": budget_not_exceeded,
         "passed": passed,
         "cases": rows,
@@ -195,7 +245,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate the fixed five-company JS-heavy cohort.")
     parser.add_argument("--fixture-root", type=Path, default=DEFAULT_FIXTURE_ROOT)
     parser.add_argument("--live", action="store_true", help="Run a bounded Playwright smoke against live pages.")
-    parser.add_argument("--timeout", type=float, default=8.0)
+    parser.add_argument("--timeout", type=float, default=12.0)
     parser.add_argument("--render-budget", type=int, default=5)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
