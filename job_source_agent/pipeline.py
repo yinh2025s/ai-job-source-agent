@@ -467,6 +467,20 @@ class JobSourceAgent:
                 trace["fetch_errors"].append({"url": page_url, "error": str(exc)})
                 continue
             actual_page_url = page.final_url or page.url
+            page_board = self.provider_registry.board_for_page(page)
+            if page_board is not None:
+                adapter, board = page_board
+                trace["provider"] = adapter.name
+                trace["provider_detection"] = {
+                    "method": "page_evidence",
+                    "provider": adapter.name,
+                    "url": board.url,
+                }
+                trace["job_list_page_url"] = board.url
+                trace["pages_visited"].append(
+                    {"url": actual_page_url, "source": page.source, "top_candidates": []}
+                )
+                return None, board.url, trace
             if self._is_provider_job_board_url(actual_page_url):
                 trace["job_list_page_url"] = actual_page_url
             scored = sorted(

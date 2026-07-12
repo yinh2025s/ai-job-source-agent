@@ -29,6 +29,9 @@ class WorkdayAdapterTests(unittest.TestCase):
         self.assertTrue(adapter.recognizes("https://acme.workdayjobs.com/jobs"))
         self.assertFalse(adapter.recognizes("https://myworkdayjobs.com.evil.example/jobs"))
         self.assertFalse(adapter.recognizes("https://careers.example.com/jobs"))
+        self.assertFalse(adapter.recognizes("https://evil@acme.wd5.myworkdayjobs.com/jobs"))
+        self.assertFalse(adapter.recognizes("https://acme.wd5.myworkdayjobs.com:8443/jobs"))
+        self.assertFalse(adapter.recognizes("http://[invalid/jobs"))
 
     def test_identifies_tenant_site_and_canonical_board(self):
         adapter = WorkdayAdapter()
@@ -86,9 +89,14 @@ class WorkdayAdapterTests(unittest.TestCase):
         )
         self.assertEqual(
             json.loads(call["data"]),
-            {"appliedFacets": {}, "limit": 50, "offset": 0, "searchText": "Data Analyst"},
+            {"appliedFacets": {}, "limit": 20, "offset": 0, "searchText": "Data Analyst"},
         )
         self.assertEqual(call["headers"]["Content-Type"], "application/json")
+        self.assertEqual(call["headers"]["Origin"], "https://company.wd5.myworkdayjobs.com")
+        self.assertEqual(
+            call["headers"]["Referer"],
+            "https://company.wd5.myworkdayjobs.com/en-US/acme",
+        )
         self.assertEqual(len(result.candidates), 2)
         self.assertEqual(
             result.candidates[0].url,
@@ -96,6 +104,42 @@ class WorkdayAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result.candidates[0].location, "New York, NY")
         self.assertEqual(result.trace["candidate_count"], 2)
+
+    def test_paginates_with_tenant_compatible_page_size(self):
+        adapter = WorkdayAdapter()
+        board = adapter.identify_board("https://company.wd5.myworkdayjobs.com/en-US/acme")
+
+        class PaginatedFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                payload = json.loads(data)
+                self.calls.append(payload)
+                offset = payload["offset"]
+                count = 20 if offset == 0 else 1
+                postings = [
+                    {
+                        "title": f"Role {offset + index}",
+                        "externalPath": f"/job/Role-{offset + index}_R{offset + index}",
+                    }
+                    for index in range(count)
+                ]
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=json.dumps({"total": 21, "jobPostings": postings}),
+                    source="workday-fixture",
+                )
+
+        fetcher = PaginatedFetcher()
+        result = adapter.list_jobs(fetcher, board, JobQuery(title="Role"))
+
+        self.assertEqual([call["limit"] for call in fetcher.calls], [20, 20])
+        self.assertEqual([call["offset"] for call in fetcher.calls], [0, 20])
+        self.assertEqual(len(result.candidates), 21)
+        self.assertEqual(result.trace["page_count"], 2)
+        self.assertEqual(result.trace["total"], 21)
 
     def test_normalizes_absolute_and_site_root_detail_urls(self):
         adapter = WorkdayAdapter()
@@ -115,6 +159,10 @@ class WorkdayAdapterTests(unittest.TestCase):
                             "title": "Rooted",
                             "externalPath": "/en-US/acme/job/B_R2",
                         },
+                        {
+                            "title": "Cross tenant",
+                            "externalPath": "https://evil.example/job/C_R3",
+                        },
                     ]
                 }
             )
@@ -129,6 +177,33 @@ class WorkdayAdapterTests(unittest.TestCase):
                 "https://company.wd5.myworkdayjobs.com/en-US/acme/job/B_R2",
             ],
         )
+
+    def test_rejects_mismatched_tenant_and_cross_host_api_redirect(self):
+        adapter = WorkdayAdapter()
+        mismatched = JobBoard(
+            url="https://other.wd5.myworkdayjobs.com/en-US/acme",
+            provider="workday",
+            identifier="company/acme",
+        )
+
+        result = adapter.list_jobs(RecordingFetcher('{"jobPostings": []}'), mismatched, JobQuery())
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+
+        class RedirectFetcher(RecordingFetcher):
+            def fetch(self, url, data=None, headers=None):
+                page = super().fetch(url, data=data, headers=headers)
+                page.final_url = "https://evil.example/wday/cxs/company/acme/jobs"
+                return page
+
+        board = adapter.identify_board("https://company.wd5.myworkdayjobs.com/en-US/acme")
+        redirected = adapter.list_jobs(
+            RedirectFetcher('{"jobPostings": []}'),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(redirected.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
 
     def test_reports_invalid_and_empty_responses(self):
         adapter = WorkdayAdapter()

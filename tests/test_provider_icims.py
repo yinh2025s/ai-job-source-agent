@@ -1,5 +1,7 @@
 import unittest
+import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from job_source_agent.providers.base import JobBoard, JobQuery
 from job_source_agent.providers.icims import ICIMSAdapter
@@ -75,6 +77,114 @@ class ICIMSAdapterTests(unittest.TestCase):
             provider="icims",
             identifier="careers-acme.icims.com",
         ))
+
+    def test_identifies_customer_owned_jibe_board_from_strong_page_evidence(self):
+        page = Page(
+            url="https://jobs.example.org/region/jobs",
+            final_url="https://jobs.example.org/region/jobs",
+            html=(
+                '<html data-jibe-search-version="4.11">'
+                '<script>window.searchConfig = {"externalSearch":true};</script>'
+                '<script src="https://app.jibecdn.com/prod/search/4/main.js"></script>'
+            ),
+        )
+
+        board = self.adapter.identify_board_from_page(page)
+
+        self.assertEqual(board, JobBoard(
+            url="https://jobs.example.org/region/jobs",
+            provider="icims",
+            identifier="jobs.example.org",
+        ))
+        weak_page = Page(
+            url="https://example.org/jobs",
+            html='<a href="https://www.icims.com/privacy">Privacy</a>',
+        )
+        self.assertIsNone(self.adapter.identify_board_from_page(weak_page))
+
+    def test_lists_customer_owned_jibe_api_with_page_search_isolation(self):
+        board_url = "https://jobs.example.org/region/jobs"
+        board_html = (
+            '<html data-jibe-search-version="4.11">'
+            '<script src="https://app.jibecdn.com/prod/search/4/main.js"></script>'
+            '<script>window.searchConfig = '
+            '{"externalSearch":true,"searchOverride":'
+            '{"brand":"Example Health","state":"New Mexico|NM"}};'
+            '</script></html>'
+        )
+        api_payload = json.dumps({
+            "count": 2,
+            "totalCount": 2,
+            "jobs": [
+                {"data": {
+                    "slug": "135333",
+                    "title": "Registered Nurse / RN IMC",
+                    "ats_code": "icims",
+                    "full_location": "Albuquerque, New Mexico",
+                    "meta_data": {
+                        "canonical_url": "https://jobs.example.org/jobs/135333?lang=en-us"
+                    },
+                }},
+                {"data": {
+                    "slug": "outside",
+                    "title": "External Role",
+                    "ats_code": "other",
+                    "meta_data": {
+                        "canonical_url": "https://jobs.example.org/jobs/outside"
+                    },
+                }},
+            ],
+        })
+
+        class JibeFetcher:
+            def __init__(self):
+                self.requested_urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested_urls.append(url)
+                html = board_html if url == board_url else api_payload
+                return Page(url=url, final_url=url, html=html, source="jibe-fixture")
+
+        fetcher = JibeFetcher()
+        board = self.adapter.identify_board_from_page(
+            Page(url=board_url, final_url=board_url, html=board_html)
+        )
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery(title="Registered Nurse"))
+
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(result.candidates[0].url, "https://jobs.example.org/jobs/135333?lang=en-us")
+        self.assertEqual(result.candidates[0].location, "Albuquerque, New Mexico")
+        params = parse_qs(urlparse(fetcher.requested_urls[1]).query)
+        self.assertEqual(params["keywords"], ["Registered Nurse"])
+        self.assertEqual(params["brand"], ["Example Health"])
+        self.assertEqual(params["state"], ["New Mexico|NM"])
+        self.assertEqual(result.trace["variant"], "jibe")
+        self.assertEqual(result.trace["search_override_keys"], ["brand", "state"])
+
+    def test_rejects_customer_owned_jibe_api_cross_origin_redirect(self):
+        board_url = "https://jobs.example.org/region/jobs"
+        board_html = (
+            '<html data-jibe-search-version="4.11">'
+            '<script src="https://app.jibecdn.com/prod/search/4/main.js"></script>'
+            '<script>window.searchConfig = {"externalSearch":true};</script></html>'
+        )
+
+        class RedirectFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == board_url:
+                    return Page(url=url, final_url=url, html=board_html)
+                return Page(
+                    url=url,
+                    final_url="https://evil.example/api/jobs",
+                    html='{"jobs":[]}',
+                )
+
+        board = self.adapter.identify_board_from_page(Page(url=board_url, html=board_html))
+        result = self.adapter.list_jobs(RedirectFetcher(), board, JobQuery())
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertIn("redirected outside", result.trace["error"])
 
     def test_lists_json_ld_job_postings_and_normalizes_locations(self):
         fetcher = StubFetcher("""

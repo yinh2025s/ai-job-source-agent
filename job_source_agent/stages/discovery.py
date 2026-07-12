@@ -126,7 +126,7 @@ class JobBoardDiscoveryStage:
                 trace=exc.trace,
             )
 
-        provider = self.provider_registry.detect(job_list_url)
+        provider = trace.get("provider") or self.provider_registry.detect(job_list_url)
         provider = None if provider == "generic" else provider
         return StageExecution(
             result=make_stage_result(

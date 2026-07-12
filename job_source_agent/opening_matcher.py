@@ -68,6 +68,8 @@ class JobOpeningMatcher:
 
         api_match, api_trace = self._match_provider_api(job_list_url, target_title)
         trace["provider_api"] = api_trace
+        if api_trace.get("provider") and api_trace["provider"] != "generic":
+            trace["provider"] = api_trace["provider"]
         if api_match:
             trace["selected"] = {
                 "url": api_match.url,
@@ -140,8 +142,24 @@ class JobOpeningMatcher:
     def _match_provider_api(self, job_list_url: str, target_title: str) -> tuple[OpeningMatch | None, dict]:
         provider = self.provider_registry.detect(job_list_url)
         adapter = self.provider_registry.adapter_for(job_list_url)
+        board = adapter.identify_board(job_list_url) if adapter else None
+        page_detection = None
+        if adapter is None:
+            try:
+                page = self.fetcher.fetch(job_list_url)
+            except FetchError as exc:
+                page_detection = {"method": "page_evidence", "error": str(exc)}
+            else:
+                identified = self.provider_registry.board_for_page(page)
+                if identified is not None:
+                    adapter, board = identified
+                    provider = adapter.name
+                    page_detection = {
+                        "method": "page_evidence",
+                        "provider": provider,
+                        "url": board.url,
+                    }
         if adapter:
-            board = adapter.identify_board(job_list_url)
             if board:
                 try:
                     adapter_result = adapter.list_jobs(
@@ -151,13 +169,16 @@ class JobOpeningMatcher:
                     )
                 except FetchError as exc:
                     if adapter.supports_listing:
-                        return None, {
+                        failure_trace = {
                             "provider": provider,
                             "adapter": adapter.name,
                             "api_urls": [],
                             "candidates": [],
                             "errors": [{"url": job_list_url, "error": str(exc)}],
                         }
+                        if page_detection is not None:
+                            failure_trace["provider_detection"] = page_detection
+                        return None, failure_trace
                 else:
                     if adapter_result.reason_code != "PROVIDER_VARIANT_UNSUPPORTED":
                         trace = {
@@ -167,6 +188,8 @@ class JobOpeningMatcher:
                             "candidates": [],
                             "adapter_trace": adapter_result.trace,
                         }
+                        if page_detection is not None:
+                            trace["provider_detection"] = page_detection
                         scored = []
                         for candidate in adapter_result.candidates:
                             title_score, title_reasons = score_title_match(candidate.title, target_title)

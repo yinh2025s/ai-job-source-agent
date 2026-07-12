@@ -9,7 +9,7 @@ from job_source_agent.providers import (
     build_default_provider_registry,
     discover_native_adapters,
 )
-from job_source_agent.web import Fetcher
+from job_source_agent.web import Fetcher, Page
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -41,6 +41,22 @@ class ProviderRegistryTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             registry.register(GreenhouseAdapter())
+
+    def test_registry_detects_page_aware_provider_without_hardcoding_domain(self):
+        registry = build_default_provider_registry()
+        page = Page(
+            url="https://jobs.example.org/region/jobs",
+            html=(
+                '<html data-jibe-search-version="4.11">'
+                '<script>window.searchConfig = {"externalSearch":true};</script>'
+                '<script src="https://app.jibecdn.com/prod/search/4/main.js"></script>'
+            ),
+        )
+
+        adapter, board = registry.board_for_page(page)
+
+        self.assertEqual(adapter.name, "icims")
+        self.assertEqual(board.identifier, "jobs.example.org")
 
     def test_greenhouse_adapter_lists_normalized_candidates(self):
         adapter = GreenhouseAdapter()

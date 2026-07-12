@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from ..contracts import FetchClient
+from ..web import Page
 
 
 @dataclass(frozen=True)
@@ -55,4 +56,12 @@ class ProviderAdapter(Protocol):
         board: JobBoard,
         query: JobQuery,
     ) -> AdapterResult:
+        ...
+
+
+@runtime_checkable
+class PageAwareProviderAdapter(Protocol):
+    """Optional extension for providers hidden behind customer-owned domains."""
+
+    def identify_board_from_page(self, page: Page) -> JobBoard | None:
         ...

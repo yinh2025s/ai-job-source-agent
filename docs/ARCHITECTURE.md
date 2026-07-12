@@ -75,6 +75,8 @@ class ProviderAdapter:
 
 Registry 负责选择 adapter。原生 provider module 导出一个 `ADAPTER` 实例后会被自动发现；新增 provider 不需要修改中央 registry 或 stage 条件分支。
 
+对 customer-owned career domain，adapter 可以选择实现 `PageAwareProviderAdapter.identify_board_from_page(Page)`。Registry 只负责依次询问实现该扩展的 adapter；ATS 指纹、tenant isolation 和 board 构造仍封装在 provider module 内。URL host 识别优先，只有 URL 不透明时才使用已抓取页面证据。
+
 Fetcher contract 保持最小：
 
 ```python

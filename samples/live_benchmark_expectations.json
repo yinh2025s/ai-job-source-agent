@@ -64,5 +64,11 @@
     "expected_minimum_stage": "job_board_discovery",
     "require_exact_opening": false,
     "allow_job_board_fallback": true
+  },
+  "Ardent Health": {
+    "expected_provider": "icims",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
   }
 }

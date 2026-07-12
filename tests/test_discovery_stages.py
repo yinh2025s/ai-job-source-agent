@@ -52,6 +52,22 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(execution.result.status, "success")
         self.assertEqual(execution.updates["job_list_page_url"], "https://boards.greenhouse.io/acme")
 
+    def test_job_board_stage_accepts_provider_from_verified_page_evidence(self):
+        class PageAwareService(FakeDiscoveryService):
+            def find_job_board(self, career_page_url):
+                return career_page_url, {
+                    "provider": "icims",
+                    "provider_detection": {"method": "page_evidence"},
+                }
+
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = "https://jobs.acme.example/region/jobs"
+
+        execution = JobBoardDiscoveryStage(PageAwareService()).run(context)
+
+        self.assertEqual(execution.result.provider, "icims")
+        self.assertEqual(execution.updates["provider"], "icims")
+
     def test_opening_no_match_is_partial_not_failed(self):
         class NoMatchService(FakeDiscoveryService):
             def match_opening(self, job_list_url, target_title=None, target_location=None):
@@ -86,4 +102,3 @@ class DiscoveryStageTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -4,7 +4,8 @@ from collections.abc import Iterable
 import importlib
 import pkgutil
 
-from .base import ProviderAdapter
+from ..web import Page
+from .base import JobBoard, PageAwareProviderAdapter, ProviderAdapter
 from .domain import DomainProviderAdapter
 
 
@@ -25,6 +26,16 @@ class ProviderRegistry:
     def detect(self, url: str) -> str:
         adapter = self.adapter_for(url)
         return adapter.name if adapter else "generic"
+
+    def board_for_page(self, page: Page) -> tuple[ProviderAdapter, JobBoard] | None:
+        """Identify a provider from fetched page evidence when its URL is opaque."""
+        for adapter in self._adapters:
+            if not isinstance(adapter, PageAwareProviderAdapter):
+                continue
+            board = adapter.identify_board_from_page(page)
+            if board is not None:
+                return adapter, board
+        return None
 
     @property
     def adapters(self) -> tuple[ProviderAdapter, ...]:

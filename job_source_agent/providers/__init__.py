@@ -1,4 +1,11 @@
-from .base import AdapterResult, JobBoard, JobCandidate, JobQuery, ProviderAdapter
+from .base import (
+    AdapterResult,
+    JobBoard,
+    JobCandidate,
+    JobQuery,
+    PageAwareProviderAdapter,
+    ProviderAdapter,
+)
 from .greenhouse import GreenhouseAdapter
 from .registry import (
     DEFAULT_PROVIDER_REGISTRY,
@@ -12,6 +19,7 @@ __all__ = [
     "JobBoard",
     "JobCandidate",
     "JobQuery",
+    "PageAwareProviderAdapter",
     "ProviderAdapter",
     "GreenhouseAdapter",
     "ProviderRegistry",

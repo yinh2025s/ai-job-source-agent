@@ -1,4 +1,5 @@
 import unittest
+import json
 from pathlib import Path
 
 from job_source_agent.opening_matcher import (
@@ -9,7 +10,7 @@ from job_source_agent.opening_matcher import (
     score_title_match,
     structured_job_links,
 )
-from job_source_agent.web import Fetcher
+from job_source_agent.web import Fetcher, Page
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,6 +97,51 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertIsNotNone(match)
         self.assertIn("b4f5c9d3", match.url)
         self.assertEqual(trace["provider"], "rippling")
+
+    def test_page_evidence_routes_customer_owned_jibe_board_to_icims_adapter(self):
+        board_url = "https://jobs.example.org/region/jobs"
+        board_html = (
+            '<html data-jibe-search-version="4.11">'
+            '<script src="https://app.jibecdn.com/prod/search/4/main.js"></script>'
+            '<script>window.searchConfig = '
+            '{"externalSearch":true,"searchOverride":{"brand":"Example Health"}};'
+            '</script></html>'
+        )
+        api_payload = json.dumps({
+            "count": 1,
+            "totalCount": 1,
+            "jobs": [{"data": {
+                "slug": "135333",
+                "title": "Registered Nurse / RN IMC",
+                "ats_code": "icims",
+                "meta_data": {
+                    "canonical_url": "https://jobs.example.org/jobs/135333?lang=en-us"
+                },
+            }}],
+        })
+
+        class JibeFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=board_html if url == board_url else api_payload,
+                    source="jibe-fixture",
+                )
+
+        match, trace = JobOpeningMatcher(JibeFetcher()).match(
+            board_url,
+            "Registered Nurse",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, "https://jobs.example.org/jobs/135333?lang=en-us")
+        self.assertEqual(trace["provider"], "icims")
+        self.assertEqual(trace["provider_api"]["adapter"], "icims")
+        self.assertEqual(
+            trace["provider_api"]["provider_detection"]["method"],
+            "page_evidence",
+        )
 
     def test_structured_provider_apis_are_used_before_html(self):
         matcher = JobOpeningMatcher(
