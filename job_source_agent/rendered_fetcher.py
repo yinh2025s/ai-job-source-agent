@@ -314,6 +314,32 @@ def _navigate_with_settle(
         # Analytics, long polling, and streaming requests can keep a useful job
         # page permanently non-idle. DOM readiness remains the hard boundary.
         return
+    remaining_ms = int((deadline - clock()) * 1000)
+    if remaining_ms > 0:
+        _wait_for_job_dom(page, url, remaining_ms, timeout_error_type)
+
+
+def _wait_for_job_dom(page, url: str, timeout_ms: int, timeout_error_type) -> None:
+    """Spend only remaining navigation budget waiting for client-rendered job evidence."""
+
+    wait_for_function = getattr(page, "wait_for_function", None)
+    if wait_for_function is None or not _has_job_context(url, ""):
+        return
+    expression = """() => {
+      const body = document.body;
+      if (!body) return false;
+      const text = (body.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase();
+      const hasJobLink = Array.from(document.querySelectorAll('a[href]')).some((link) =>
+        /(?:career|job|opening|position|vacanc)/i.test(link.href || '')
+      );
+      const hasJobText = text.length >= 120 &&
+        /(?:career|job|open role|open position|join our team|vacanc|we are hiring|we're hiring)/i.test(text);
+      return hasJobLink || hasJobText;
+    }"""
+    try:
+        wait_for_function(expression, timeout=max(1, timeout_ms))
+    except timeout_error_type:
+        return
 
 
 def _has_usable_rendered_dom(page, requested_url: str) -> bool:

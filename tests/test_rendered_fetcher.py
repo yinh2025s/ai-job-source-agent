@@ -446,6 +446,61 @@ class SmartRenderedFetcherTests(unittest.TestCase):
 
         self.assertEqual([call[0] for call in page.calls], ["goto"])
 
+    def test_navigation_spends_only_remaining_budget_waiting_for_client_job_dom(self):
+        class NavigationTimeout(Exception):
+            pass
+
+        class FakePage:
+            def __init__(self):
+                self.calls = []
+
+            def goto(self, url, **kwargs):
+                self.calls.append(("goto", url, kwargs))
+
+            def wait_for_load_state(self, state, **kwargs):
+                self.calls.append(("wait", state, kwargs))
+
+            def wait_for_function(self, expression, **kwargs):
+                self.calls.append(("function", expression, kwargs))
+
+        times = iter((30.0, 30.4, 30.9))
+        page = FakePage()
+
+        _navigate_with_settle(
+            page,
+            "https://example.com/careers",
+            timeout_seconds=2,
+            timeout_error_type=NavigationTimeout,
+            clock=lambda: next(times),
+        )
+
+        self.assertEqual([call[0] for call in page.calls], ["goto", "wait", "function"])
+        self.assertLessEqual(page.calls[2][2]["timeout"], 1100)
+        self.assertIn("querySelectorAll('a[href]')", page.calls[2][1])
+
+    def test_client_job_dom_wait_timeout_is_soft(self):
+        class NavigationTimeout(Exception):
+            pass
+
+        class FakePage:
+            def goto(self, url, **kwargs):
+                return None
+
+            def wait_for_load_state(self, state, **kwargs):
+                return None
+
+            def wait_for_function(self, expression, **kwargs):
+                raise NavigationTimeout("jobs did not render")
+
+        times = iter((40.0, 40.1, 40.2))
+        _navigate_with_settle(
+            FakePage(),
+            "https://example.com/jobs",
+            timeout_seconds=1,
+            timeout_error_type=NavigationTimeout,
+            clock=lambda: next(times),
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
