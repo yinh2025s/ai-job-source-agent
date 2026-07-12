@@ -36,6 +36,7 @@ class FetcherConfig:
     capture_screenshot: bool = False
     retries: int = 0
     retry_base_delay: float = 0.25
+    retry_deadline: float | None = None
     snapshot_dir: str | Path | None = None
 
 
@@ -86,6 +87,7 @@ def build_fetcher(config: FetcherConfig) -> FetchClient:
             fetcher,
             max_retries=config.retries,
             base_delay=config.retry_base_delay,
+            deadline=config.retry_deadline,
         )
     if config.snapshot_dir:
         fetcher = SnapshottingFetcher(fetcher, config.snapshot_dir)

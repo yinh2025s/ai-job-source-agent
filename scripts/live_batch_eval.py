@@ -427,6 +427,11 @@ def record_checkpoint(
 
 def _atomic_write_json(path: Path, payload) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
+    for stale_path in path.parent.glob(f".{path.name}.*.tmp"):
+        try:
+            stale_path.unlink()
+        except FileNotFoundError:
+            pass
     temporary_path: str | None = None
     try:
         with tempfile.NamedTemporaryFile(
@@ -457,6 +462,8 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
     if resume_uses_replay_upstream(args):
         prepare_replay_company_for_resume(company, args)
     else:
+        upstream_budget = min(args.website_time_budget, args.company_time_budget)
+        upstream_deadline = time.monotonic() + upstream_budget
         try:
             upstream_result = run_with_process_budget(
                 run_pipeline_phase,
@@ -466,8 +473,9 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                     None,
                     STAGE_HIRING_IDENTITY_RESOLUTION,
                     _upstream_rerun_stage(args),
+                    upstream_deadline,
                 ),
-                timeout=min(args.website_time_budget, args.company_time_budget),
+                timeout=upstream_budget,
             )
         except ProcessBudgetExceeded:
             return failure_result(
@@ -499,6 +507,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             detail=f"Exceeded the {args.company_time_budget:g}-second company budget after website resolution.",
         )
     try:
+        downstream_deadline = time.monotonic() + remaining
         return run_with_process_budget(
             run_pipeline_phase,
             (
@@ -507,6 +516,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                 downstream_start,
                 None,
                 _downstream_rerun_stage(args),
+                downstream_deadline,
             ),
             timeout=remaining,
         )
@@ -688,9 +698,10 @@ def run_pipeline_phase(
     start_at: str | None,
     stop_after: str | None,
     rerun_from: str | None,
+    retry_deadline: float | None = None,
 ) -> DiscoveryResult:
     application = build_application(
-        _company_fetcher_config(args),
+        _company_fetcher_config(args, retry_deadline=retry_deadline),
         AgentConfig(
             max_candidates=args.max_career_candidates,
             max_job_pages=args.max_job_pages,
@@ -722,7 +733,11 @@ def build_company_fetcher(args: argparse.Namespace):
     return build_fetcher(_company_fetcher_config(args))
 
 
-def _company_fetcher_config(args: argparse.Namespace) -> FetcherConfig:
+def _company_fetcher_config(
+    args: argparse.Namespace,
+    *,
+    retry_deadline: float | None = None,
+) -> FetcherConfig:
     return FetcherConfig(
         fixtures_dir=getattr(args, "fixtures_dir", None),
         offline=bool(getattr(args, "offline", False)),
@@ -732,6 +747,7 @@ def _company_fetcher_config(args: argparse.Namespace) -> FetcherConfig:
         capture_screenshot=bool(getattr(args, "render_screenshot", False)),
         retries=int(getattr(args, "fetch_retries", 0) or 0),
         retry_base_delay=float(getattr(args, "retry_base_delay", 0.25) or 0),
+        retry_deadline=retry_deadline,
         snapshot_dir=getattr(args, "snapshot_dir", None),
     )
 

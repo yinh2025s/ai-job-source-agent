@@ -162,6 +162,43 @@ class ICIMSAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["variant"], "jibe")
         self.assertEqual(result.trace["search_override_keys"], ["brand", "state"])
 
+    def test_govcio_live_contract_finds_exact_opening_and_rejects_mismatched_job_ids(self):
+        fixture_root = ROOT / "samples" / "sites" / "icims.example" / "govcio"
+        board_url = "https://careers.govcio.com/careers-home/jobs"
+        api_url = (
+            "https://careers.govcio.com/api/jobs?"
+            "keywords=Systems+Engineer&limit=100&page=1"
+        )
+        fetcher = FixtureMappingFetcher({
+            board_url: fixture_root / "board.html",
+            api_url: fixture_root / "systems-engineer-page-1.json",
+        })
+        board_page = Page(
+            url=board_url,
+            final_url=board_url,
+            html=(fixture_root / "board.html").read_text(encoding="utf-8"),
+            source="govcio-live-contract",
+        )
+
+        board = self.adapter.identify_board_from_page(board_page)
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Systems Engineer"),
+        )
+
+        self.assertEqual(fetcher.requested_urls, [board_url, api_url])
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(result.candidates[0].title, "Systems Engineer")
+        self.assertEqual(result.candidates[0].location, "Hampton, Virginia")
+        self.assertEqual(
+            result.candidates[0].url,
+            "https://careers.govcio.com/careers-home/jobs/7858?lang=en-us",
+        )
+        self.assertEqual(result.candidates[0].raw["slug"], "7858")
+        self.assertEqual(result.trace["variant"], "jibe")
+        self.assertEqual(result.trace["candidate_count"], 1)
+
     def test_rejects_customer_owned_jibe_api_cross_origin_redirect(self):
         board_url = "https://jobs.example.org/region/jobs"
         board_html = (

@@ -1,0 +1,37 @@
+{
+  "count": 3,
+  "totalCount": 3,
+  "jobs": [
+    {
+      "data": {
+        "slug": "7858",
+        "title": "Systems Engineer",
+        "ats_code": "icims",
+        "full_location": "Hampton, Virginia",
+        "meta_data": {
+          "canonical_url": "https://careers.govcio.com/careers-home/jobs/7858?lang=en-us"
+        }
+      }
+    },
+    {
+      "data": {
+        "slug": "7858",
+        "title": "Mismatched Job ID",
+        "ats_code": "icims",
+        "meta_data": {
+          "canonical_url": "https://careers.govcio.com/careers-home/jobs/9999?lang=en-us"
+        }
+      }
+    },
+    {
+      "data": {
+        "slug": "7858",
+        "title": "Cross-tenant Job",
+        "ats_code": "icims",
+        "meta_data": {
+          "canonical_url": "https://careers-other.example/careers-home/jobs/7858?lang=en-us"
+        }
+      }
+    }
+  ]
+}

@@ -345,5 +345,12 @@
     "company_website_url": "https://nova.gr/",
     "career_root_url": "https://novagr.jobs.hr.cloud.sap/search/?locale=en_US",
     "job_title": "Presales Engineer (B2B)"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "GovCIO",
+    "company_website_url": "https://govcio.com/",
+    "career_root_url": "https://careers.govcio.com/careers-home/jobs",
+    "job_title": "Systems Engineer"
   }
 ]

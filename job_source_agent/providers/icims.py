@@ -652,7 +652,12 @@ def _jibe_candidates(
             suffix = f"?lang={language}" if language else ""
             raw_url = f"/jobs/{slug}{suffix}"
         detail_url = safe_normalize_url(raw_url, board_url)
-        if not title or not slug or not detail_url or not _is_same_safe_origin(detail_url, expected_host):
+        if (
+            not title
+            or not slug
+            or not detail_url
+            or not _is_jibe_detail_url(detail_url, expected_host, slug)
+        ):
             continue
         location = str(record.get("full_location") or record.get("location_name") or "").strip() or None
         candidates.append(
@@ -665,6 +670,16 @@ def _jibe_candidates(
             )
         )
     return candidates
+
+
+def _is_jibe_detail_url(url: str, expected_host: str, expected_job_id: str) -> bool:
+    if not expected_job_id.isdigit() or not _is_same_safe_origin(url, expected_host):
+        return False
+    try:
+        parts = [part for part in urlparse(url).path.split("/") if part]
+    except (TypeError, ValueError):
+        return False
+    return len(parts) >= 2 and parts[-2].casefold() == "jobs" and parts[-1] == expected_job_id
 
 
 def _nonnegative_int(value: Any) -> int | None:

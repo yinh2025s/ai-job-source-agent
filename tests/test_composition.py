@@ -29,6 +29,14 @@ class CompositionTests(unittest.TestCase):
         self.assertIsInstance(fetcher.fetcher, RetryingFetcher)
         self.assertIsInstance(fetcher.fetcher.fetcher, SmartRenderedFetcher)
 
+    def test_retry_deadline_is_injected_by_composition(self):
+        fetcher = build_fetcher(
+            FetcherConfig(offline=True, retries=1, retry_deadline=123.5)
+        )
+
+        self.assertIsInstance(fetcher, RetryingFetcher)
+        self.assertEqual(fetcher._deadline, 123.5)
+
     def test_application_shares_registry_between_agent_and_matcher_boundary(self):
         application = build_application(
             FetcherConfig(offline=True),
@@ -46,4 +54,3 @@ class CompositionTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
