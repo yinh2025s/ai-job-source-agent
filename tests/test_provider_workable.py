@@ -1,17 +1,24 @@
 import unittest
+from pathlib import Path
 
 from job_source_agent.providers.base import JobBoard, JobQuery
 from job_source_agent.providers.workable import WorkableAdapter
-from job_source_agent.web import Page
+from job_source_agent.web import FetchError, Page
+
+
+FIXTURES = Path(__file__).parents[1] / "samples" / "sites" / "apply.workable.com" / "acme"
 
 
 class StubFetcher:
-    def __init__(self, html):
+    def __init__(self, html="", error=None):
         self.html = html
+        self.error = error
         self.requested_urls = []
 
     def fetch(self, url, data=None, headers=None):
         self.requested_urls.append(url)
+        if self.error:
+            raise self.error
         return Page(url=url, final_url=url, html=self.html, source="workable-fixture")
 
 
@@ -22,9 +29,15 @@ class WorkableAdapterTests(unittest.TestCase):
     def test_recognizes_only_public_workable_host(self):
         self.assertTrue(self.adapter.recognizes("https://apply.workable.com/acme/"))
         self.assertTrue(self.adapter.recognizes("https://APPLY.WORKABLE.COM/acme/j/ABC123/"))
+        self.assertTrue(self.adapter.recognizes("http://apply.workable.com:80/acme/"))
         self.assertFalse(self.adapter.recognizes("https://workable.com/acme"))
         self.assertFalse(self.adapter.recognizes("https://apply.workable.com.example.com/acme"))
         self.assertFalse(self.adapter.recognizes("https://apply.workable.com:bad/acme"))
+        self.assertFalse(self.adapter.recognizes("ftp://apply.workable.com/acme"))
+        self.assertFalse(self.adapter.recognizes("https://user@apply.workable.com/acme"))
+        self.assertFalse(self.adapter.recognizes("https://apply.workable.com:8443/acme"))
+        self.assertFalse(self.adapter.recognizes("https://apply.workable.com:80/acme"))
+        self.assertFalse(self.adapter.recognizes("http://apply.workable.com:443/acme"))
 
     def test_identifies_canonical_account_board_from_list_or_detail_url(self):
         board = self.adapter.identify_board(
@@ -91,6 +104,70 @@ class WorkableAdapterTests(unittest.TestCase):
 
         self.assertEqual(len(result.candidates), 1)
         self.assertEqual(result.candidates[0].url, "https://apply.workable.com/acme/j/DATA_1/")
+
+    def test_parses_public_links_nested_payload_and_pagination_metadata(self):
+        html = (FIXTURES / "public-nested.html").read_text(encoding="utf-8")
+        board = self.adapter.identify_board("https://apply.workable.com/acme")
+
+        result = self.adapter.list_jobs(StubFetcher(html), board, JobQuery())
+
+        self.assertEqual(
+            [(item.title, item.url, item.location) for item in result.candidates],
+            [
+                (
+                    "Machine Learning Engineer",
+                    "https://apply.workable.com/acme/j/ML-100/",
+                    None,
+                ),
+                (
+                    "Platform Engineer",
+                    "https://apply.workable.com/acme/j/PLAT_2/",
+                    "Remote, US",
+                ),
+            ],
+        )
+        self.assertEqual(result.trace["pagination"]["currentPage"], 1)
+        self.assertEqual(result.trace["pagination"]["totalPages"], 3)
+        self.assertEqual(result.trace["pagination"]["hasNextPage"], True)
+        self.assertEqual(result.trace["public_link_count"], 3)
+
+    def test_rejects_cross_account_and_unsafe_explicit_urls_without_shortcode_bypass(self):
+        fetcher = StubFetcher(
+            """
+            <script type="application/json">{"jobs":[
+              {"title":"Other account","shortcode":"SAFE1",
+               "url":"https://apply.workable.com/other/j/EVIL1/"},
+              {"title":"Credentials","url":"https://user@apply.workable.com/acme/j/EVIL2/"},
+              {"title":"Port","url":"https://apply.workable.com:8443/acme/j/EVIL3/"},
+              {"title":"Query","url":"/acme/j/EVIL4/?redirect=other"},
+              {"title":"Malformed IPv6","url":"https://[broken/j/EVIL5/"},
+              {"title":"Valid relative","url":"/acme/j/GOOD5/"}
+            ]}</script>
+            <a href="/other/j/NOPE/">Cross account anchor</a>
+            """
+        )
+        board = self.adapter.identify_board("https://apply.workable.com/acme")
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual([item.title for item in result.candidates], ["Valid relative"])
+        self.assertEqual(
+            result.candidates[0].url,
+            "https://apply.workable.com/acme/j/GOOD5/",
+        )
+
+    def test_fetch_failure_has_retryable_provider_reason(self):
+        board = self.adapter.identify_board("https://apply.workable.com/acme")
+
+        result = self.adapter.list_jobs(
+            StubFetcher(error=FetchError("offline")),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(result.reason_code, "PROVIDER_FETCH_FAILED")
+        self.assertTrue(result.retryable)
+        self.assertEqual(result.candidates, [])
 
     def test_missing_identifier_returns_structured_failure(self):
         board = JobBoard(url="https://apply.workable.com/", provider="workable")
