@@ -192,6 +192,17 @@ The companion [benchmark expectations](samples/benchmark_expectations.json) decl
 
 Pass `--baseline-summary previous-summary.json` to either evaluator to add rate, pipeline-status, and per-stage success deltas to its summary. Each stage also reports duration count, P50, and P95 in milliseconds.
 
+Render a human-readable Markdown report from any evaluator summary:
+
+```bash
+python3 scripts/render_summary_report.py \
+  --summary /tmp/benchmark-summary.json \
+  --output /tmp/benchmark-report.md \
+  --title "Offline Benchmark Report"
+```
+
+The report includes overview rates, the S1-S7 stage funnel, provider and reason-code distributions, expectation results, and a company-by-stage matrix for quick review.
+
 For larger live checks, use the checkpointing evaluator instead of one long CLI run. It writes results after every company, so a slow or blocked website does not erase earlier progress:
 
 ```bash

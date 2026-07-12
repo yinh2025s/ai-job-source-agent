@@ -221,10 +221,12 @@
 - `scripts/live_batch_eval.py`
 - `scripts/benchmark_eval.py`
 - `scripts/export_replay_input.py`
+- `scripts/render_summary_report.py`
 - 固定离线 benchmark：`samples/benchmark_companies.json`
 - 固定 live benchmark：`samples/live_benchmark_companies.json`
 - 每家公司处理后 checkpoint 写结果
 - 输出 `summary.json`，包含 funnel rates、provider distribution、failure stages
+- 可将 `summary.json` 渲染成 Markdown 报告，包含 overview rates、S1-S7 stage funnel、provider/reason 分布、expectation checks 和公司 × 七关矩阵
 - 支持从 prior results/trace 导出可复跑 input，并按 stage、stage status、reason code、provider 过滤
 - 支持 `--snapshot-dir` 将 live fetch 的页面保存为脱敏、fixture-compatible snapshots，并写入 `snapshots.jsonl` metadata
 - 支持 `--fetch-retries` / `--retry-base-delay`，只重试标准 reason code 中 `retryable=true` 的 fetch failures，并在 trace 中记录 retry events
@@ -252,7 +254,7 @@
 
 当前限制：
 
-- live batch 仍是串行公司级执行，吞吐不高；但每家公司有 process-level hard deadline 和 checkpoint。
+- live batch 已支持 bounded company concurrency，但 live 网站吞吐仍受网络质量、上游限流和每家公司 hard deadline 影响。
 - Python 3.14 在被强杀的 worker socket 清理时偶尔输出 harmless cleanup warning；业务结果和 JSON checkpoint 不受影响。
 - 后续需要固定 live benchmark set，不能只依赖 LinkedIn 当天随机结果。
 
@@ -272,7 +274,7 @@
 
 当前测试数量：
 
-- 73 unit tests passing
+- 92 unit tests passing
 
 ## 当前主要短板
 
@@ -526,7 +528,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 1: Baseline, Matrix And Data-Driven Prioritization
 
-当前进度（2026-07-11）：1.1 的固定离线 benchmark 已有 11 个 provider/path fixture，并由 `samples/benchmark_expectations.json` 声明 provider、最低成功关卡和 exact-opening 要求；回归不满足预期会以非零退出。固定 live benchmark 第一版已加入 `samples/live_benchmark_companies.json` 和 `samples/live_benchmark_expectations.json`。1.2 的 JSON 漏斗、公司七关矩阵、`provider × stage × status`、`provider × reason_code`、阶段耗时 P50/P95 和跨运行 regression delta 已实现。
+当前进度（2026-07-12）：1.1 的固定离线 benchmark 已有 11 个 provider/path fixture，并由 `samples/benchmark_expectations.json` 声明 provider、最低成功关卡和 exact-opening 要求；回归不满足预期会以非零退出。固定 live benchmark 第一版已加入 `samples/live_benchmark_companies.json` 和 `samples/live_benchmark_expectations.json`。1.2 的 JSON 漏斗、公司七关矩阵、`provider × stage × status`、`provider × reason_code`、阶段耗时 P50/P95、跨运行 regression delta 和 Markdown summary report 已实现。
 
 #### 1.1 固定 benchmark 分层
 
