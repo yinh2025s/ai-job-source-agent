@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
@@ -75,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--summary-output", default="/tmp/live-batch-summary.json")
     parser.add_argument("--snapshot-dir", help="Optional directory for sanitized page snapshots.")
     parser.add_argument("--baseline-summary", help="Optional prior summary JSON used for regression deltas.")
+    parser.add_argument("--workers", type=int, default=1, help="Number of companies to process concurrently.")
     parser.add_argument(
         "--require-all-expectations",
         action="store_true",
@@ -96,27 +98,43 @@ def main() -> None:
     started = time.time()
 
     print(f"unique companies: {len(companies)}", flush=True)
-    for index, company in enumerate(companies, start=1):
-        item_started = time.time()
-        result = run_company(company, args)
-        elapsed = round(time.time() - item_started, 1)
-        results.append(result.result_record())
-        traces.append(dataclass_to_dict(result.trace_record()))
-        output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
-        trace_path.write_text(json.dumps(traces, indent=2), encoding="utf-8")
-        summary = build_summary(results, args, elapsed_sec=round(time.time() - started, 1))
-        summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
-
-        print(
-            f"[{index:02d}/{len(companies):02d}] "
-            f"{result.status.upper()} {result.company_name} "
-            f"career={bool(result.career_page_url)} "
-            f"job_list={bool(result.job_list_page_url)} "
-            f"opening={bool(result.open_position_url)} "
-            f"error={result.error} "
-            f"elapsed={elapsed}s",
-            flush=True,
-        )
+    if args.workers <= 1:
+        for index, company in enumerate(companies, start=1):
+            index, result, elapsed = run_company_timed(index, company, args)
+            record_checkpoint(
+                index,
+                len(companies),
+                result,
+                elapsed,
+                results,
+                traces,
+                output_path,
+                trace_path,
+                summary_path,
+                args,
+                started,
+            )
+    else:
+        with ThreadPoolExecutor(max_workers=args.workers, thread_name_prefix="live-company") as executor:
+            futures = [
+                executor.submit(run_company_timed, index, company, args)
+                for index, company in enumerate(companies, start=1)
+            ]
+            for future in as_completed(futures):
+                index, result, elapsed = future.result()
+                record_checkpoint(
+                    index,
+                    len(companies),
+                    result,
+                    elapsed,
+                    results,
+                    traces,
+                    output_path,
+                    trace_path,
+                    summary_path,
+                    args,
+                    started,
+                )
 
     summary = build_summary(results, args, elapsed_sec=round(time.time() - started, 1))
     if args.baseline_summary:
@@ -159,6 +177,44 @@ def build_summary(results: list[dict], args: argparse.Namespace, elapsed_sec: fl
             }
         summary["expectation_checks"] = evaluate_expectations(results, expectations)
     return summary
+
+
+def run_company_timed(index: int, company: CompanyInput, args: argparse.Namespace) -> tuple[int, DiscoveryResult, float]:
+    item_started = time.time()
+    result = run_company(company, args)
+    elapsed = round(time.time() - item_started, 1)
+    return index, result, elapsed
+
+
+def record_checkpoint(
+    index: int,
+    total: int,
+    result: DiscoveryResult,
+    elapsed: float,
+    results: list[dict],
+    traces: list[dict],
+    output_path: Path,
+    trace_path: Path,
+    summary_path: Path,
+    args: argparse.Namespace,
+    started: float,
+) -> None:
+    results.append(result.result_record())
+    traces.append(dataclass_to_dict(result.trace_record()))
+    output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+    trace_path.write_text(json.dumps(traces, indent=2), encoding="utf-8")
+    summary = build_summary(results, args, elapsed_sec=round(time.time() - started, 1))
+    summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    print(
+        f"[{index:02d}/{total:02d}] "
+        f"{result.status.upper()} {result.company_name} "
+        f"career={bool(result.career_page_url)} "
+        f"job_list={bool(result.job_list_page_url)} "
+        f"opening={bool(result.open_position_url)} "
+        f"error={result.error} "
+        f"elapsed={elapsed}s",
+        flush=True,
+    )
 
 
 def run_company(company: CompanyInput, args: argparse.Namespace):

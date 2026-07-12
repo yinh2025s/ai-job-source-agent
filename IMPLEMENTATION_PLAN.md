@@ -228,6 +228,7 @@
 - 支持从 prior results/trace 导出可复跑 input，并按 stage、stage status、reason code、provider 过滤
 - 支持 `--snapshot-dir` 将 live fetch 的页面保存为脱敏、fixture-compatible snapshots，并写入 `snapshots.jsonl` metadata
 - 支持 `--fetch-retries` / `--retry-base-delay`，只重试标准 reason code 中 `retryable=true` 的 fetch failures，并在 trace 中记录 retry events
+- 支持 `--workers` 进行公司级 bounded concurrency；每家公司仍保留 process-level hard budget，完成一家公司就 checkpoint 一次
 - 支持 fast mode：
   - `--skip-sitemap`
   - `--fetch-timeout`
@@ -746,6 +747,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 自动重试不会绕过登录、验证码或网站访问限制
 
 #### 4.3 Safer Batch Runner
+
+当前状态（2026-07-12）：已完成第一版 bounded company concurrency。`live_batch_eval.py --workers N` 使用 thread pool 调度公司级任务，每个公司内部仍通过 process-level hard budget 防止 DNS/socket/native code 卡死；主线程按完成顺序写 results / trace / summary checkpoint。2-company/2-worker fixed live smoke 已通过。
 
 目标：
 

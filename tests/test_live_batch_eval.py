@@ -3,9 +3,9 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from job_source_agent.models import CompanyInput
+from job_source_agent.models import CompanyInput, DiscoveryResult
 from job_source_agent.web import Fetcher
-from scripts.live_batch_eval import build_summary, load_batch_companies, prepare_company
+from scripts.live_batch_eval import build_summary, load_batch_companies, prepare_company, record_checkpoint
 
 
 class LiveBatchEvalTests(unittest.TestCase):
@@ -118,6 +118,41 @@ class LiveBatchEvalTests(unittest.TestCase):
 
         self.assertEqual(summary["expectation_checks"]["total"], 2)
         self.assertEqual(summary["expectation_checks"]["failed"], 1)
+
+    def test_record_checkpoint_writes_results_trace_and_summary(self):
+        result = DiscoveryResult(
+            company_name="A",
+            company_website_url="https://a.example",
+            career_page_url="https://a.example/careers",
+            job_list_page_url="https://a.example/careers",
+            status="success",
+            pipeline_status="partial",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            output_path = Path(directory) / "results.json"
+            trace_path = Path(directory) / "trace.json"
+            summary_path = Path(directory) / "summary.json"
+            args = SimpleNamespace(expectations=None)
+            results = []
+            traces = []
+
+            record_checkpoint(
+                1,
+                1,
+                result,
+                0.1,
+                results,
+                traces,
+                output_path,
+                trace_path,
+                summary_path,
+                args,
+                0.0,
+            )
+
+            self.assertTrue(output_path.exists())
+            self.assertTrue(trace_path.exists())
+            self.assertTrue(summary_path.exists())
 
 
 if __name__ == "__main__":
