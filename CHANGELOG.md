@@ -95,6 +95,9 @@
 - iCIMS/retry budget 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.13`。
 - Google Careers 从 detection-only compatibility path 迁移为自动发现的第 11 个原生 adapter：使用公开 SSR title search、提取 canonical detail URL，并拒绝 credentials、非标准端口、跨域 redirect、非 Careers 路径和无数字 job ID 的候选。
 - Google Careers 原生迁移后将 `ADAPTER_VERSION` 提升到 `2026-07-12.14`；13/13 provider benchmark 保持 exact-opening 全绿。
+- JS-heavy 固定 cohort 从单一 Workable 扩展为 5 家、4 个 provider、4 类技术栈：Plum、Workable、Apple Jobs、Intuitive Apps 和 BlueFit；脱敏真实 static/browser capture 的确定性回放为 5/5，并将 provider/technology diversity 纳入门禁。
+- 跨 provider 12 秒 Playwright live gate 保持诚实非零：连续运行分别为 3/5 和 4/5 career/job evidence，均 5/5 触发 browser 且不超预算，暴露 DOMContentLoaded/异步内容的时间敏感性。
+- Meta Careers 原生迁移调查确认默认静态响应只提供 Comet/Relay shell，列表依赖动态内部 GraphQL；匿名 browser 可见 numeric canonical job detail，但在形成稳定 rendered contract 前继续保留 compatibility path。
 
 ## [0.1.0] - 2026-07-12
 
