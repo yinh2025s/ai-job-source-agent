@@ -68,7 +68,7 @@ class LiveBatchEvalTests(unittest.TestCase):
             {company["company_name"] for company in companies},
             set(expectations),
         )
-        self.assertEqual(len(companies), 30)
+        self.assertEqual(len(companies), 34)
 
     def test_prepare_company_preserves_provided_website(self):
         company = CompanyInput(

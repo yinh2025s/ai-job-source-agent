@@ -1,5 +1,7 @@
 import unittest
+import json
 from pathlib import Path
+from urllib.parse import parse_qs, urlparse
 
 from job_source_agent.providers.base import JobQuery
 from job_source_agent.providers.smartrecruiters import SmartRecruitersAdapter
@@ -24,6 +26,8 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
         self.assertTrue(adapter.recognizes("https://jobs.smartrecruiters.com/AcmeCorp"))
         self.assertFalse(adapter.recognizes("https://api.smartrecruiters.com/v1/companies/AcmeCorp"))
         self.assertFalse(adapter.recognizes("https://smartrecruiters.com.example.com/AcmeCorp"))
+        self.assertFalse(adapter.recognizes("https://user@jobs.smartrecruiters.com/AcmeCorp"))
+        self.assertFalse(adapter.recognizes("https://jobs.smartrecruiters.com:8443/AcmeCorp"))
 
     def test_identifies_company_from_board_or_detail_url(self):
         adapter = SmartRecruitersAdapter()
@@ -56,6 +60,102 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
             "https://jobs.smartrecruiters.com/AcmeApi/743999222222222-sales-manager",
         )
         self.assertEqual(result.trace["candidate_count"], 2)
+
+    def test_uses_keyword_query_and_follows_bounded_offset_pages(self):
+        adapter = SmartRecruitersAdapter()
+        board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
+
+        class PagedFetcher:
+            def __init__(self):
+                self.requested_urls = []
+
+            def fetch(self, url):
+                self.requested_urls.append(url)
+                params = parse_qs(urlparse(url).query)
+                offset = int(params.get("offset", ["0"])[0])
+                payload = {
+                    "totalFound": 2,
+                    "limit": 1,
+                    "offset": offset,
+                    "content": [
+                        {
+                            "name": "Data Analyst" if offset == 0 else "Senior Data Analyst",
+                            "id": f"job-{offset}",
+                        }
+                    ],
+                }
+                return Page(url=url, final_url=url, html=json.dumps(payload), source="paged")
+
+        fetcher = PagedFetcher()
+        result = adapter.list_jobs(fetcher, board, JobQuery(title="Target Analyst"))
+
+        first_params = parse_qs(urlparse(fetcher.requested_urls[0]).query)
+        second_params = parse_qs(urlparse(fetcher.requested_urls[1]).query)
+        self.assertEqual(first_params["q"], ["Target Analyst"])
+        self.assertNotIn("offset", first_params)
+        self.assertEqual(second_params["offset"], ["1"])
+        self.assertEqual(result.trace["page_count"], 2)
+        self.assertEqual(result.trace["total_found"], 2)
+        self.assertFalse(result.trace["exact_title_found"])
+        self.assertEqual(len(result.candidates), 2)
+
+    def test_stops_pagination_after_exact_normalized_title(self):
+        adapter = SmartRecruitersAdapter()
+        board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
+
+        class ExactFetcher:
+            def __init__(self):
+                self.requested_urls = []
+
+            def fetch(self, url):
+                self.requested_urls.append(url)
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=json.dumps({
+                        "totalFound": 300,
+                        "limit": 100,
+                        "offset": 0,
+                        "content": [{"name": "  Data   Analyst ", "id": "job-1"}],
+                    }),
+                )
+
+        fetcher = ExactFetcher()
+        result = adapter.list_jobs(fetcher, board, JobQuery(title="data analyst"))
+
+        self.assertEqual(len(fetcher.requested_urls), 1)
+        self.assertTrue(result.trace["exact_title_found"])
+        self.assertEqual(result.candidates[0].title, "Data   Analyst")
+
+    def test_rejects_cross_company_api_redirect(self):
+        adapter = SmartRecruitersAdapter()
+        board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
+
+        class RedirectFetcher:
+            def fetch(self, url):
+                return Page(
+                    url=url,
+                    final_url="https://api.smartrecruiters.com/v1/companies/Other/postings",
+                    html='{"content":[]}',
+                )
+
+        result = adapter.list_jobs(RedirectFetcher(), board, JobQuery())
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertIn("redirected outside", result.trace["error"])
+
+    def test_rejects_cross_company_detail_without_safe_id_fallback(self):
+        adapter = SmartRecruitersAdapter()
+        board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
+        fetcher = _StaticFetcher(
+            '{"content":[{"name":"External","actions":'
+            '{"details":"https://jobs.smartrecruiters.com/Other/job-1"}}]}'
+        )
+
+        result = adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
 
     def test_normalizes_location_and_relative_detail_url(self):
         adapter = SmartRecruitersAdapter()

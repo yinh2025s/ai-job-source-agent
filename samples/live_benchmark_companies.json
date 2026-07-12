@@ -205,5 +205,33 @@
     "company_website_url": "https://www.chenega.com",
     "career_root_url": "https://careers-chenega.icims.com/jobs/search",
     "job_title": "Video Teleconference Technician"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Bosch",
+    "company_website_url": "https://www.bosch.com",
+    "career_root_url": "https://jobs.smartrecruiters.com/BoschGroup",
+    "job_title": "IN_RBIN_Assistant Manager/Senior Engineer_Data Scientist"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Ubisoft",
+    "company_website_url": "https://www.ubisoft.com",
+    "career_root_url": "https://jobs.smartrecruiters.com/Ubisoft2",
+    "job_title": "User Interface Artist"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Delivery Hero",
+    "company_website_url": "https://www.deliveryhero.com",
+    "career_root_url": "https://jobs.smartrecruiters.com/DeliveryHero",
+    "job_title": "Lead, Account Management"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "SGS",
+    "company_website_url": "https://www.sgs.com",
+    "career_root_url": "https://jobs.smartrecruiters.com/SGS",
+    "job_title": "Administrativo/a- Facturación y gestión"
   }
 ]

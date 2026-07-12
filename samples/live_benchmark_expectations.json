@@ -178,5 +178,29 @@
     "expected_minimum_stage": "opening_match",
     "require_exact_opening": true,
     "allow_job_board_fallback": false
+  },
+  "Bosch": {
+    "expected_provider": "smartrecruiters",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Ubisoft": {
+    "expected_provider": "smartrecruiters",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Delivery Hero": {
+    "expected_provider": "smartrecruiters",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "SGS": {
+    "expected_provider": "smartrecruiters",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
   }
 }

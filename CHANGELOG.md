@@ -67,6 +67,8 @@
 - SAP Career Site v1 加入后将 `ADAPTER_VERSION` 提升到 `2026-07-12.6`；DeLaval/SuccessFactors 加入固定 live benchmark 并要求精确 opening。
 - iCIMS adapter 增加同 tenant keyword iframe search 和传统 hosted HTML job-link 解析，拒绝跨 tenant/非数字 ID/非详情路径；`ADAPTER_VERSION` 提升到 `2026-07-12.7`。
 - 固定离线 benchmark 增加 traditional iCIMS HTML fixture，扩展到 13/13 exact opening；固定 live benchmark 增加 Prime Healthcare、Peraton 和 Chenega，扩展到 30/30 job list、28/30 exact opening 和 30/30 expectations。
+- SmartRecruiters adapter 增加 target-title `q` 查询、有界 offset pagination、exact-title early stop、API/company redirect 隔离和 public detail URL 校验；`ADAPTER_VERSION` 提升到 `2026-07-12.8`。
+- 固定 live benchmark 增加 Bosch、Ubisoft、Delivery Hero 和 SGS，SmartRecruiters 达到 5 家覆盖；基线扩展到 34/34 job list、32/34 exact opening 和 34/34 expectations。
 
 ## [0.1.0] - 2026-07-12
 
