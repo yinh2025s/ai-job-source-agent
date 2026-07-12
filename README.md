@@ -296,7 +296,7 @@ Latest live checks on July 12, 2026:
 - July 12 rerun after the stage-runner migration: 6/6 official websites, 6/6 job-list pages, 5/6 exact openings, and 6/6 expectation checks. Provider attribution now follows stage evidence, so Greenhouse roles with an external CareerPuck apply URL remain classified as Greenhouse.
 - Expanded July 12 fixed live benchmark: 9/9 official websites, 9/9 job-list pages, 7/9 exact openings, and 9/9 expectation checks in 17.6 seconds. The added samples cover SanDisk/SmartRecruiters, ONEOK/Workday, and Carv/Rippling.
 - Current fixed live benchmark: 51/51 official websites, 51/51 career/job-list pages, 50/51 exact openings, and 51/51 expectation checks in 77.7 seconds with four workers. Greenhouse, Ashby, Lever, Workday, SmartRecruiters, Workable, Rippling, BambooHR, iCIMS, and SuccessFactors each have five fixed live companies.
-- Fixed JS-heavy browser cohort: five companies across four providers and four technologies (Plum, Workable, Apple Jobs, Intuitive Apps, and BlueFit). The strict saved/live evidence gate requires a successful render event, structured heading/navigation evidence, optional expected URL, sufficient visible text, no loading state, and no classified error. Plum, Workable, and Apple pass; Intuitive Apps remains in `Loading jobs...`, and BlueFit exposes filters without loaded job evidence, so the current baseline is honestly red at 3/5 while all five stay within the shared render budget.
+- Fixed JS-heavy browser cohort: five companies across five providers and five technologies (Plum, Meta, Apple Jobs, Spotify, and IIC Lakshya). The strict saved/live evidence gate requires a successful render event, structured selector evidence, optional expected URL, sufficient visible text, no loading state, and no final classified error. Saved replay and the 15-second live gate both pass 5/5 within the shared render budget; Meta exercises static HTTP 400 to browser fallback, and Meta, Apple, and IIC require exact job URLs.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
 
@@ -304,7 +304,7 @@ Run the deterministic JS-heavy contract cohort without browser dependencies, or 
 
 ```bash
 python3 scripts/js_heavy_cohort_eval.py --output /tmp/js-heavy-contract.json
-python3 scripts/js_heavy_cohort_eval.py --live --timeout 12 --output /tmp/js-heavy-live.json
+python3 scripts/js_heavy_cohort_eval.py --live --timeout 15 --output /tmp/js-heavy-live.json
 ```
 
 The command exits nonzero unless every case triggers browser rendering, passes the same strict evidence gate, and stays within the shared render budget. The summary records render outcome, error class, visible-text length, selector/URL matches, forbidden loading evidence, and per-case pass status.

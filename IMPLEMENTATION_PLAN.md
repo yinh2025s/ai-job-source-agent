@@ -284,7 +284,7 @@
 
 当前测试数量：
 
-- 398 unit tests passing
+- 401 unit tests passing
 
 ## 当前主要短板
 
@@ -634,7 +634,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、11 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；398 个单元测试、13/13 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、11 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；401 个单元测试、13/13 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -672,7 +672,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 398 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 结果一致。
+- 重构后 401 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
@@ -711,7 +711,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近九轮并行交付 provider、checkpoint/replay、crash recovery、browser、discovery、evaluation history 和 retry policy。主线 architecture validator、398 个测试、13/13 provider benchmark、6/6 resolver benchmark 和 51/51 fixed live expectations 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
+当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近十轮并行交付 provider、checkpoint/replay、crash recovery、browser、discovery、evaluation history 和 retry policy。主线 architecture validator、401 个测试、13/13 provider benchmark、6/6 resolver benchmark、51/51 fixed live expectations 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -865,9 +865,9 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - render budget 耗尽会在 trace 中记录 `skipped_budget`
 - Workable `#app` shell、locale/self-link 和静态资源过滤已用 5 个真实静态页面回放验证
 - Stripe、Microsoft、Uber 等长轮询页面证明 networkidle 不能作为硬成功条件；已改为剩余预算内软等待
-- 固定 5-company cohort 已扩展到 Plum、Workable、Apple Jobs、Intuitive Apps 和 BlueFit，共 4 个 provider、4 类技术栈
+- 固定 5-company cohort 为 Plum、Meta、Apple Jobs、Spotify 和 IIC Lakshya，共 5 个 provider、5 类技术栈
 - fixture 使用真实 HTTP static shell 和 Playwright Chrome 12 秒 browser DOM 的脱敏最小 capture，明确 `complete=false`
-- saved/live 共用严格 evidence gate：成功 render event、结构化 selector 文本、可选 expected URL、最小正文、无 loading/error；当前 Plum、Workable、Apple 为 3/5，Intuitive Apps 卡在 `Loading jobs...`，BlueFit 只有筛选 UI，命令保持非零
+- saved/live 共用严格 evidence gate：成功 render event、结构化 selector 文本、可选 expected URL、最小正文、无 loading/final error；saved replay 与 15 秒 live 均为 5/5，Meta 验证 static HTTP 400 -> browser，Meta/Apple/IIC 验证 exact job URL
 
 目标：
 
@@ -976,7 +976,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 5 known Workable（已完成：Plum、Workable、Town Web、ClassWallet、Huzzle）
 - 5 known Rippling（已完成：Carv、AllVoices、Terradot、RevOptimal、Spangle AI）
 - 5 known BambooHR（已完成：ReachMobi、Soundstripe、beehiiv、Signal 1、SAI360）
-- 5 known JS-heavy company career pages（跨 provider cohort 已建立：Plum、Workable、Apple Jobs、Intuitive Apps、BlueFit；严格 gate 当前 3/5，仍为红基线）
+- 5 known JS-heavy company career pages（已完成：Plum、Meta、Apple Jobs、Spotify、IIC Lakshya；5 provider/5 technology saved + live 严格 gate 5/5）
 
 验收标准：
 
@@ -1068,4 +1068,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，11 个主要 provider（含 Rippling 和 Google Careers）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 398 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 验证；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；跨 provider JS-heavy 严格 gate 当前为 3/5 并保持非零红门禁；Meta Careers 与 generic fallback 仍是 compatibility path。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，11 个主要 provider（含 Rippling 和 Google Careers）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 401 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 验证；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation；5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。

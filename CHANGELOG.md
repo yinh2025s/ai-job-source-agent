@@ -101,6 +101,9 @@
 - Browser navigation 在 `DOMContentLoaded` timeout 后会无额外等待地检查当前 DOM：仅当存在可用 job/career link，或至少 120 字符且包含招聘语义时保留；空 root/noscript shell 继续抛原始 timeout，`networkidle` 仍只使用剩余预算。
 - JS-heavy evaluator 改为 saved/live 共用严格 evidence gate：要求成功 render event、结构化 heading/nav 文本、可选 URL、最小正文长度、无 loading/错误状态，并输出 visible length、matched evidence、error class 和逐例 pass；旧宽松 5/5 被校正为 Plum/Workable/Apple 3/5，Intuitive Apps 卡在 loading、BlueFit 仅有筛选 UI。
 - Browser/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.15`。
+- Browser navigation 在 networkidle 提前完成后会用剩余预算等待通用 job DOM 条件，修复 Meta Relay 等客户端数据晚于 lifecycle event 的空壳截取；不增加固定 sleep，软超时后仍返回当前 DOM。
+- 严格 JS-heavy cohort 用 Spotify、IIC Lakshya 和 Meta 替换 loading/空列表/时序波动样本，达到 saved/live 5/5；覆盖 5 个 provider 和 5 类技术栈，Meta 从 static HTTP 400 fallback 到 browser，Meta、Apple、IIC 均验证精确 job URL。
+- Evaluator 修复成功 static-error fallback 被初始 HTTP error 错误标为最终失败的问题；初始错误保留在 render event，成功 browser outcome 的最终 error class 为 null。
 
 ## [0.1.0] - 2026-07-12
 
