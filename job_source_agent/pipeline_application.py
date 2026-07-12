@@ -65,6 +65,7 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
             "linkedin_job_title": company.job_title,
             "source_trace": company.source_trace,
             "stages": context.trace.get("stages", {}),
+            "checkpoint_events": context.trace.get("checkpoint_events", []),
             "steps": [],
         },
     )

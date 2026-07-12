@@ -240,6 +240,10 @@ class ApplicationRunnerTests(unittest.TestCase):
             if result.stage == STAGE_WEBSITE_RESOLUTION
         )
         self.assertEqual(restored.status, "success")
+        self.assertIn(
+            {"stage": STAGE_WEBSITE_RESOLUTION, "action": "restore"},
+            context.trace["checkpoint_events"],
+        )
         self.assertEqual(
             [stage for loaded_fingerprint, stage in store.loaded if loaded_fingerprint == fingerprint],
             list(PIPELINE_STAGES[:3]),
@@ -282,8 +286,9 @@ class ApplicationRunnerTests(unittest.TestCase):
             [RecordingStage(STAGE_WEBSITE_RESOLUTION, calls)],
             checkpoint_store=store,
         )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
         runner.run(
-            PipelineContext.from_company(CompanyInput(company_name="Acme")),
+            context,
             stop_after=STAGE_WEBSITE_RESOLUTION,
             input_fingerprint="input-v1",
         )
@@ -291,6 +296,10 @@ class ApplicationRunnerTests(unittest.TestCase):
         self.assertEqual(len(store.saved), 1)
         self.assertEqual(store.saved[0][0], "input-v1")
         self.assertEqual(store.saved[0][1].result.stage, STAGE_WEBSITE_RESOLUTION)
+        self.assertIn(
+            {"stage": STAGE_WEBSITE_RESOLUTION, "action": "save"},
+            context.trace["checkpoint_events"],
+        )
 
         class RaisingStage:
             name = STAGE_WEBSITE_RESOLUTION
@@ -325,8 +334,9 @@ class ApplicationRunnerTests(unittest.TestCase):
             checkpoint_store=store,
         )
 
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
         runner.run(
-            PipelineContext.from_company(CompanyInput(company_name="Acme")),
+            context,
             rerun_from=STAGE_CAREER_DISCOVERY,
             stop_after=STAGE_JOB_BOARD_DISCOVERY,
             input_fingerprint=fingerprint,
@@ -335,6 +345,10 @@ class ApplicationRunnerTests(unittest.TestCase):
         self.assertEqual(
             store.invalidated,
             [(fingerprint, STAGE_CAREER_DISCOVERY)],
+        )
+        self.assertEqual(
+            context.trace["checkpoint_events"][0],
+            {"stage": STAGE_CAREER_DISCOVERY, "action": "invalidate_from"},
         )
         self.assertEqual(calls, [STAGE_CAREER_DISCOVERY, STAGE_JOB_BOARD_DISCOVERY])
         self.assertEqual(

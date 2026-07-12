@@ -67,6 +67,10 @@ class PipelineApplicationTests(unittest.TestCase):
             resumed.trace["stages"][STAGE_WEBSITE_RESOLUTION],
             first.trace["stages"][STAGE_WEBSITE_RESOLUTION],
         )
+        self.assertIn(
+            {"stage": STAGE_WEBSITE_RESOLUTION, "action": "restore"},
+            resumed.trace["checkpoint_events"],
+        )
 
 
 if __name__ == "__main__":

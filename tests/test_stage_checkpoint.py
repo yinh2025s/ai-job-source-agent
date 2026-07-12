@@ -1,7 +1,11 @@
+import hashlib
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
+from unittest.mock import patch
 
 from job_source_agent.checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from job_source_agent.contracts import CheckpointStore, StageExecution
@@ -97,6 +101,100 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.assertEqual(len(paths), 1)
         self.assertTrue(paths[0].is_relative_to(self.root))
         self.assertEqual(self.store.load("../../outside", "career_discovery"), execution)
+
+    def test_concurrent_saves_publish_one_complete_execution(self):
+        executions = [
+            StageExecution(
+                StageResult(stage="career_discovery", status="success", output_count=index),
+                updates={"writer": index, "payload": "x" * 4096},
+            )
+            for index in range(12)
+        ]
+        barrier = Barrier(len(executions))
+
+        def save(execution):
+            barrier.wait()
+            self.store.save(self.fingerprint, execution)
+
+        with ThreadPoolExecutor(max_workers=len(executions)) as executor:
+            list(executor.map(save, executions))
+
+        self.assertIn(self.store.load(self.fingerprint, "career_discovery"), executions)
+        self.assertEqual(list(self.root.rglob(".career_discovery.*.tmp")), [])
+
+    def test_failed_atomic_replace_and_next_save_clean_temporary_files(self):
+        execution = StageExecution(StageResult(stage="career_discovery", status="success"))
+        with patch("job_source_agent.stage_checkpoint.os.replace", side_effect=OSError("replace failed")):
+            with self.assertRaisesRegex(OSError, "replace failed"):
+                self.store.save(self.fingerprint, execution)
+        self.assertEqual(list(self.root.rglob(".career_discovery.*.tmp")), [])
+
+        directory = self.store._fingerprint_directory(self.fingerprint)
+        directory.mkdir(parents=True, exist_ok=True)
+        (directory / ".career_discovery.crashed.tmp").write_text("partial", encoding="utf-8")
+        self.store.save(self.fingerprint, execution)
+        self.assertEqual(list(self.root.rglob(".career_discovery.*.tmp")), [])
+
+    def test_parallel_first_saves_tolerate_shared_parent_directory_race(self):
+        first = "parent-race-0"
+        prefix = hashlib.sha256(first.encode()).hexdigest()[:2]
+        second = next(
+            f"parent-race-{index}"
+            for index in range(1, 10_000)
+            if hashlib.sha256(f"parent-race-{index}".encode()).hexdigest()[:2] == prefix
+        )
+        barrier = Barrier(2)
+
+        def save(fingerprint):
+            barrier.wait()
+            execution = StageExecution(
+                StageResult(stage="career_discovery", status="success"),
+                updates={"fingerprint": fingerprint},
+            )
+            self.store.save(fingerprint, execution)
+            return execution
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            expected = list(executor.map(save, (first, second)))
+
+        self.assertEqual(self.store.load(first, "career_discovery"), expected[0])
+        self.assertEqual(self.store.load(second, "career_discovery"), expected[1])
+
+    def test_load_save_and_invalidate_race_returns_only_complete_value_or_miss(self):
+        old = StageExecution(
+            StageResult(stage="career_discovery", status="success", output_count=1),
+            updates={"version": "old"},
+        )
+        new = StageExecution(
+            StageResult(stage="career_discovery", status="success", output_count=2),
+            updates={"version": "new"},
+        )
+        self.store.save(self.fingerprint, old)
+        barrier = Barrier(3)
+
+        def load():
+            barrier.wait()
+            return self.store.load(self.fingerprint, "career_discovery")
+
+        def save():
+            barrier.wait()
+            self.store.save(self.fingerprint, new)
+
+        def invalidate():
+            barrier.wait()
+            self.store.invalidate_from(self.fingerprint, "career_discovery")
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            load_future = executor.submit(load)
+            save_future = executor.submit(save)
+            invalidate_future = executor.submit(invalidate)
+            observed = load_future.result()
+            save_future.result()
+            invalidate_future.result()
+
+        self.assertIn(observed, (None, old, new))
+        self.assertIn(self.store.load(self.fingerprint, "career_discovery"), (None, new))
+        self.assertEqual(list(self.root.rglob(".career_discovery.*.tmp")), [])
 
 
 if __name__ == "__main__":

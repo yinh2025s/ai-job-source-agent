@@ -76,6 +76,7 @@ class ApplicationRunner:
             assert self._checkpoint_store is not None
             assert input_fingerprint is not None
             self._checkpoint_store.invalidate_from(input_fingerprint, rerun_from)
+            _record_checkpoint_event(context, rerun_from, "invalidate_from")
 
         previous_results = _index_existing_results(context)
         previous_traces = dict(context.trace.get("stages", {}))
@@ -88,12 +89,15 @@ class ApplicationRunner:
                 if checkpoint is not None:
                     _validate_execution(checkpoint, stage_name, source="Checkpoint")
                     context.apply(checkpoint)
+                    _record_checkpoint_event(context, stage_name, "restore")
                 elif (previous := previous_results.get(stage_name)) is not None:
                     context.apply(StageExecution(
                         result=previous,
                         trace=previous_traces.get(stage_name, {}),
                     ))
                 else:
+                    if self._checkpoint_store is not None:
+                        _record_checkpoint_event(context, stage_name, "miss")
                     context.apply(
                         _not_run(
                             stage_name,
@@ -130,6 +134,7 @@ class ApplicationRunner:
             if self._checkpoint_store is not None:
                 assert input_fingerprint is not None
                 self._checkpoint_store.save(input_fingerprint, execution)
+                _record_checkpoint_event(context, stage_name, "save")
 
         return context
 
@@ -188,6 +193,16 @@ def _validate_execution(
             f"{source} for {stage_name!r} returned a result for "
             f"{execution.result.stage!r}"
         )
+
+
+def _record_checkpoint_event(
+    context: PipelineContext,
+    stage_name: str,
+    action: str,
+) -> None:
+    context.trace.setdefault("checkpoint_events", []).append(
+        {"stage": stage_name, "action": action}
+    )
 
 
 def _not_run(stage_name: str, detail: str, *, scheduler_reason: str) -> StageExecution:
