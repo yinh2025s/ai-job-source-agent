@@ -32,6 +32,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Render every live HTML page through Playwright instead of using smart fallback.",
     )
     parser.add_argument("--render-budget", type=int, default=3, help="Maximum browser-rendered pages per run.")
+    parser.add_argument(
+        "--render-screenshot",
+        action="store_true",
+        help="Capture a browser screenshot artifact for pages rendered with Playwright.",
+    )
     parser.add_argument("--fetch-timeout", type=float, default=8, help="Per-page fetch timeout in seconds.")
     parser.add_argument("--limit", type=int, help="Optional limit for quick demo runs.")
     return parser
@@ -40,13 +45,19 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if args.render_js_always:
-        fetcher = RenderedFetcher(fixtures_dir=args.fixtures_dir, offline=args.offline, timeout=args.fetch_timeout)
+        fetcher = RenderedFetcher(
+            fixtures_dir=args.fixtures_dir,
+            offline=args.offline,
+            timeout=args.fetch_timeout,
+            capture_screenshot=args.render_screenshot,
+        )
     elif args.render_js:
         fetcher = SmartRenderedFetcher(
             fixtures_dir=args.fixtures_dir,
             offline=args.offline,
             timeout=args.fetch_timeout,
             render_budget=args.render_budget,
+            capture_screenshot=args.render_screenshot,
         )
     else:
         fetcher = Fetcher(fixtures_dir=args.fixtures_dir, offline=args.offline, timeout=args.fetch_timeout)

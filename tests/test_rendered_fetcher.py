@@ -21,7 +21,7 @@ class FakeSmartRenderedFetcher(SmartRenderedFetcher):
             raise self.static_error
         return self.static_page
 
-    def _render_live(self, url):
+    def _render_live(self, url, reason="manual"):
         self.render_attempts += 1
         return self.rendered_page
 
@@ -54,6 +54,8 @@ class SmartRenderedFetcherTests(unittest.TestCase):
 
         self.assertEqual(page.source, "browser_after_static_shell")
         self.assertEqual(fetcher.render_attempts, 1)
+        self.assertEqual(fetcher.render_events[0]["reason"], "static_shell")
+        self.assertEqual(fetcher.render_events[0]["outcome"], "success")
 
     def test_static_error_can_fall_back_to_browser(self):
         fetcher = FakeSmartRenderedFetcher(
@@ -65,6 +67,28 @@ class SmartRenderedFetcherTests(unittest.TestCase):
 
         self.assertTrue(page.source.startswith("browser_after_static_error"))
         self.assertEqual(fetcher.render_attempts, 1)
+        self.assertEqual(fetcher.render_events[0]["reason"], "static_error")
+
+    def test_rendered_source_keeps_artifact_marker(self):
+        rendered_page = Page(
+            url="https://example.com",
+            html="<html><body>Rendered jobs</body></html>",
+            final_url="https://example.com",
+            source="browser|artifact:screenshot_png",
+            artifacts={"screenshot_png": b"fake-png"},
+        )
+        static_page = Page(
+            url="https://example.com",
+            html='<html><body><div id="root"></div><script src="/app.js"></script></body></html>',
+            final_url="https://example.com",
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(static_page=static_page, rendered_page=rendered_page, render_budget=1)
+
+        page = fetcher._fetch_live("https://example.com")
+
+        self.assertEqual(page.source, "browser_after_static_shell|artifact:screenshot_png")
+        self.assertEqual(fetcher.render_events[0]["source"], page.source)
 
     def test_render_budget_is_respected(self):
         fetcher = FakeSmartRenderedFetcher(

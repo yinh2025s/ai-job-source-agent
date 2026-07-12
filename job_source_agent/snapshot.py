@@ -38,6 +38,7 @@ class SnapshotRecord:
     sanitized_url: str
     source: str
     path: str
+    artifact_paths: dict[str, str]
     sha256: str
     byte_count: int
     captured_at_epoch: float
@@ -58,6 +59,7 @@ class SnapshotStore:
         path = snapshot_path_for_url(self.fixtures_dir, sanitized_final_url)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(html, encoding="utf-8")
+        artifact_paths = self._write_artifacts(page, sanitized_final_url)
         record = SnapshotRecord(
             request_url=sanitize_url(request_url or page.url),
             page_url=sanitize_url(page.url),
@@ -65,6 +67,7 @@ class SnapshotStore:
             sanitized_url=sanitized_final_url,
             source=page.source,
             path=str(path.relative_to(self.root_dir)),
+            artifact_paths=artifact_paths,
             sha256=hashlib.sha256(encoded).hexdigest(),
             byte_count=len(encoded),
             captured_at_epoch=round(time.time(), 3),
@@ -73,6 +76,17 @@ class SnapshotStore:
         with self.index_path.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record.__dict__, sort_keys=True) + "\n")
         return record
+
+    def _write_artifacts(self, page: Page, sanitized_url: str) -> dict[str, str]:
+        artifact_paths: dict[str, str] = {}
+        for name, content in (page.artifacts or {}).items():
+            if not isinstance(content, bytes):
+                continue
+            artifact_path = snapshot_artifact_path_for_url(self.root_dir / "artifacts", sanitized_url, name)
+            artifact_path.parent.mkdir(parents=True, exist_ok=True)
+            artifact_path.write_bytes(content)
+            artifact_paths[name] = str(artifact_path.relative_to(self.root_dir))
+        return artifact_paths
 
 
 class SnapshottingFetcher:
@@ -104,6 +118,14 @@ def snapshot_path_for_url(fixtures_dir: str | Path, url: str) -> Path:
     if candidate.suffix:
         return candidate
     return candidate / "index.html"
+
+
+def snapshot_artifact_path_for_url(artifacts_dir: str | Path, url: str, artifact_name: str) -> Path:
+    extension = {
+        "screenshot_png": "png",
+    }.get(artifact_name, "bin")
+    safe_name = f"{_safe_path_part(artifact_name)}.{extension}"
+    return snapshot_path_for_url(artifacts_dir, url).with_name(safe_name)
 
 
 def sanitize_url(url: str) -> str:

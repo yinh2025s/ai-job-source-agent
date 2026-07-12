@@ -117,11 +117,12 @@ python3 -m job_source_agent \
   --limit 3 \
   --render-js \
   --render-budget 3 \
+  --render-screenshot \
   --output linkedin-results.json \
   --trace-output linkedin-trace.json
 ```
 
-For debugging, `--render-js-always` forces every live HTML page through Playwright.
+For debugging, `--render-js-always` forces every live HTML page through Playwright. `--render-screenshot` records screenshot artifacts for rendered pages; pair it with `--snapshot-dir` in batch runs to persist the files.
 
 ## Run Against Live Websites
 
@@ -277,13 +278,15 @@ To capture sanitized page snapshots while running a live batch, add `--snapshot-
 python3 scripts/live_batch_eval.py \
   --input samples/live_benchmark_companies.json \
   --expectations samples/live_benchmark_expectations.json \
+  --render-js \
+  --render-screenshot \
   --snapshot-dir /tmp/job-source-snapshots \
   --output /tmp/live-fixed-results.json \
   --trace-output /tmp/live-fixed-trace.json \
   --summary-output /tmp/live-fixed-summary.json
 ```
 
-Snapshots are written under `/tmp/job-source-snapshots/sites` using the same layout as offline fixtures, plus `/tmp/job-source-snapshots/snapshots.jsonl` metadata. Sensitive query values and common token-like values are redacted before writing.
+Snapshots are written under `/tmp/job-source-snapshots/sites` using the same layout as offline fixtures, plus `/tmp/job-source-snapshots/snapshots.jsonl` metadata. Rendered screenshots are written under `/tmp/job-source-snapshots/artifacts` and referenced from the same metadata file. Sensitive query values and common token-like values are redacted before writing.
 
 `--fetch-retries` retries only retryable fetch failures such as timeouts, DNS failures, rate limits, and server errors. Non-retryable external blockers such as HTTP 403, login walls, bot protection, and parser/title-match failures are not retried.
 

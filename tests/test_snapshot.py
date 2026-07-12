@@ -3,7 +3,13 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from job_source_agent.snapshot import SnapshotStore, SnapshottingFetcher, sanitize_snapshot_body, sanitize_url
+from job_source_agent.snapshot import (
+    SnapshotStore,
+    SnapshottingFetcher,
+    sanitize_snapshot_body,
+    sanitize_url,
+    snapshot_artifact_path_for_url,
+)
 from job_source_agent.web import Fetcher, Page
 
 
@@ -58,6 +64,30 @@ class SnapshotTests(unittest.TestCase):
 
         self.assertIn("snapshot:sites/example.com/careers/index.html", page.source)
         self.assertTrue(index_exists)
+
+    def test_snapshot_store_writes_page_artifacts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            record = store.write_page(
+                Page(
+                    url="https://jobs.example.com/search",
+                    final_url="https://jobs.example.com/search",
+                    html="<html>ok</html>",
+                    source="browser_after_static_shell|artifact:screenshot_png",
+                    artifacts={"screenshot_png": b"fake-png"},
+                )
+            )
+            artifact_path = Path(directory) / record.artifact_paths["screenshot_png"]
+            metadata = [json.loads(line) for line in Path(store.index_path).read_text(encoding="utf-8").splitlines()]
+            artifact_bytes = artifact_path.read_bytes()
+
+        self.assertEqual(artifact_bytes, b"fake-png")
+        self.assertEqual(metadata[0]["artifact_paths"]["screenshot_png"], record.artifact_paths["screenshot_png"])
+
+    def test_snapshot_artifact_path_uses_safe_extension(self):
+        path = snapshot_artifact_path_for_url("/tmp/artifacts", "https://example.com/jobs?token=x", "screenshot_png")
+
+        self.assertEqual(path.name, "screenshot_png.png")
 
 
 if __name__ == "__main__":

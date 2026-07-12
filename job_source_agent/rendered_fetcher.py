@@ -13,6 +13,10 @@ class RenderedFetcher(Fetcher):
     chromium` before using `--render-js`.
     """
 
+    def __init__(self, *args, capture_screenshot: bool = False, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        self.capture_screenshot = capture_screenshot
+
     def _fetch_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
         if data is not None:
             return super()._fetch_live(url, data=data, headers=headers)
@@ -40,11 +44,16 @@ class RenderedFetcher(Fetcher):
                 page.goto(normalized, wait_until="networkidle", timeout=int(self.timeout * 1000))
                 html = page.content()
                 final_url = page.url
+                artifacts = {}
+                if self.capture_screenshot:
+                    artifacts["screenshot_png"] = page.screenshot(full_page=True)
                 browser.close()
         except PlaywrightError as exc:
             raise FetchError(str(exc)) from exc
 
-        return Page(url=normalized, html=html, final_url=final_url, source="browser")
+        page = Page(url=normalized, html=html, final_url=final_url, source="browser", artifacts=artifacts)
+        page.source = _source_with_artifacts(page.source, page)
+        return page
 
 
 class SmartRenderedFetcher(Fetcher):
@@ -55,12 +64,15 @@ class SmartRenderedFetcher(Fetcher):
         *args,
         render_budget: int = 3,
         min_visible_text_chars: int = 120,
+        capture_screenshot: bool = False,
         **kwargs,
     ) -> None:
         super().__init__(*args, **kwargs)
         self.render_budget = render_budget
         self.min_visible_text_chars = min_visible_text_chars
+        self.capture_screenshot = capture_screenshot
         self.render_attempts = 0
+        self.render_events: list[dict[str, str | int]] = []
 
     def _fetch_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
         if data is not None:
@@ -68,29 +80,55 @@ class SmartRenderedFetcher(Fetcher):
 
         try:
             static_page = self._static_live(url, data=data, headers=headers)
-        except FetchError:
+        except FetchError as exc:
             if not self._can_render():
                 raise
-            rendered = self._render_live(url)
-            rendered.source = "browser_after_static_error"
+            try:
+                rendered = self._render_live(url, reason="static_error")
+            except FetchError as render_exc:
+                self._record_render_event(url, "static_error", "failed", source="browser", error=str(render_exc))
+                raise
+            rendered.source = _source_with_artifacts("browser_after_static_error", rendered)
+            self._record_render_event(url, "static_error", "success", source=rendered.source, error=str(exc))
             return rendered
 
         if not self._should_render(static_page) or not self._can_render():
             return static_page
 
         try:
-            rendered = self._render_live(url)
-            rendered.source = "browser_after_static_shell"
+            rendered = self._render_live(url, reason="static_shell")
+            rendered.source = _source_with_artifacts("browser_after_static_shell", rendered)
+            self._record_render_event(url, "static_shell", "success", source=rendered.source)
             return rendered
-        except FetchError:
+        except FetchError as exc:
+            self._record_render_event(url, "static_shell", "failed", source=static_page.source, error=str(exc))
             return static_page
 
     def _static_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
         return super()._fetch_live(url, data=data, headers=headers)
 
-    def _render_live(self, url: str) -> Page:
+    def _render_live(self, url: str, reason: str = "manual") -> Page:
         self.render_attempts += 1
-        return RenderedFetcher(timeout=self.timeout)._fetch_live(url)
+        return RenderedFetcher(timeout=self.timeout, capture_screenshot=self.capture_screenshot)._fetch_live(url)
+
+    def _record_render_event(
+        self,
+        url: str,
+        reason: str,
+        outcome: str,
+        source: str,
+        error: str | None = None,
+    ) -> None:
+        event: dict[str, str | int] = {
+            "url": url,
+            "reason": reason,
+            "outcome": outcome,
+            "source": source,
+            "attempt": self.render_attempts,
+        }
+        if error:
+            event["error"] = error
+        self.render_events.append(event)
 
     def _can_render(self) -> bool:
         return self.render_attempts < self.render_budget
@@ -126,3 +164,13 @@ def _visible_text(html: str) -> str:
     text = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", html, flags=re.I | re.S)
     text = re.sub(r"<[^>]+>", " ", text)
     return " ".join(text.split())
+
+
+def _source_with_artifacts(source: str, page: Page) -> str:
+    source_parts = source.split("|")
+    existing = set(source_parts)
+    for artifact_name in sorted(page.artifacts or {}):
+        marker = f"artifact:{artifact_name}"
+        if marker not in existing:
+            source_parts.append(marker)
+    return "|".join(source_parts)

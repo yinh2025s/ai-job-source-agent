@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from html.parser import HTMLParser
 from html import unescape
 from pathlib import Path
@@ -41,6 +41,7 @@ class Page:
     html: str
     final_url: str | None = None
     source: str = "live"
+    artifacts: dict[str, bytes] = field(default_factory=dict)
 
 
 class FetchError(RuntimeError):

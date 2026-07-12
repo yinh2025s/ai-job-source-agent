@@ -274,7 +274,7 @@
 
 当前测试数量：
 
-- 92 unit tests passing
+- 95 unit tests passing
 
 ## 当前主要短板
 
@@ -298,11 +298,12 @@
 - 页面明显是 JS shell 时可自动 render
 - 支持 per-run / per-company render budget
 - trace 中可看到 browser source
+- live batch trace 中会记录 render events
+- `--render-screenshot` 可为 Playwright-rendered page 保存截图 artifact；配合 `--snapshot-dir` 写入 `snapshots.jsonl` metadata
 
 仍需补：
 
 - 搜索结果中 provider page 为空时更精确地触发 render
-- JS-heavy career page render 后做截图/HTML snapshot trace
 - live batch 中验证 render budget 不会拖垮吞吐
 
 ### 3. Search Fallback Needs Better Sources
@@ -697,15 +698,14 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 当前状态：
 
 - 已实现 `SmartRenderedFetcher`
-- CLI 支持 `--render-js` smart fallback、`--render-budget`、`--render-js-always`
-- live batch runner 支持 `--render-js` 和 per-company `--render-budget`
-- 单测覆盖静态优先、JS shell fallback、静态失败 fallback、budget guard
+- CLI 支持 `--render-js` smart fallback、`--render-budget`、`--render-js-always` 和 `--render-screenshot`
+- live batch runner 支持 `--render-js`、per-company `--render-budget`、render events trace 和截图 artifact snapshot
+- 单测覆盖静态优先、JS shell fallback、静态失败 fallback、budget guard、artifact source trace 和 snapshot artifact metadata
 
 目标：
 
 - 继续优化 render 触发条件
-- trace 中记录 `source=browser`
-- 增加 screenshot / HTML snapshot trace
+- 用 live benchmark 验证 render budget 不会拖垮吞吐
 
 验收标准：
 

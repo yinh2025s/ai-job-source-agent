@@ -71,6 +71,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--skip-sitemap", action="store_true")
     parser.add_argument("--render-js", action="store_true", help="Use smart browser fallback for company pages.")
     parser.add_argument("--render-budget", type=int, default=2, help="Browser-rendered pages allowed per company.")
+    parser.add_argument(
+        "--render-screenshot",
+        action="store_true",
+        help="Capture screenshot artifacts for Playwright-rendered pages when snapshots are enabled.",
+    )
     parser.add_argument("--output", default="/tmp/live-batch-results.json")
     parser.add_argument("--trace-output", default="/tmp/live-batch-trace.json")
     parser.add_argument("--summary-output", default="/tmp/live-batch-summary.json")
@@ -330,12 +335,19 @@ def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -
     retry_events = getattr(fetcher, "retry_events", None)
     if retry_events:
         result.trace["retry_events"] = retry_events
+    render_events = getattr(fetcher, "render_events", None)
+    if render_events:
+        result.trace["render_events"] = render_events
     return result
 
 
 def build_company_fetcher(args: argparse.Namespace):
     if args.render_js:
-        fetcher = SmartRenderedFetcher(timeout=args.fetch_timeout, render_budget=args.render_budget)
+        fetcher = SmartRenderedFetcher(
+            timeout=args.fetch_timeout,
+            render_budget=args.render_budget,
+            capture_screenshot=bool(getattr(args, "render_screenshot", False)),
+        )
     else:
         fetcher = Fetcher(timeout=args.fetch_timeout)
     fetch_retries = int(getattr(args, "fetch_retries", 0) or 0)
