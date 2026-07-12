@@ -128,7 +128,9 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 - `live_batch_eval.py` 只负责公司级并发、两段 process hard budget 和输出；实际 S1-S7 执行委托 `PipelineApplication`，S1-S3 与 S4-S7 通过 filesystem stage checkpoint 衔接。
 - Fetch wrappers 已满足显式 `FetchClient` protocol 和跨实现 contract suite；browser live variants 仍需持续验证。
 - Filesystem stage checkpoint store 已支持原子保存、兼容性校验、安全 cache miss 和从指定 stage 向下失效。
-- Production CLI 和 live batch 均由 `PipelineApplication` 和通用 runner/store 执行；live batch 保留两段 process hard budget，snapshot 跨进程离线 replay 仍待完善。
+- Production CLI 和 live batch 均由 `PipelineApplication` 和通用 runner/store 执行；live batch 保留两段 process hard budget。
+- Stage store 通过 fingerprint 级进程锁和原子替换保证并发安全；checkpoint trace 明确记录 save、restore、miss 和 invalidate。
+- Sanitized live snapshots 可通过 `scripts/replay_snapshots.py` 验证并转换成 deterministic fixture tree；更高层的“一条命令重放指定失败样本”仍待整合。
 
 当前结构已经达到 provider/resolver/fetch/evaluation 并行开发门槛；剩余债务按 ownership workstream 继续收缩。
 

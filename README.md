@@ -217,7 +217,7 @@ benchmark summary:
   success: 11
   with_job_list: 11
   with_opening: 11
-  expectations: 11/11 passed
+  expectations: 12/12 passed
 ```
 
 The companion [benchmark expectations](samples/benchmark_expectations.json) declares the provider, minimum successful stage, and whether an exact opening is required for each fixture. The evaluator exits nonzero if a declared expectation regresses.
@@ -338,6 +338,23 @@ python3 scripts/live_batch_eval.py \
   --trace-output /tmp/live-fixed-trace.json \
   --summary-output /tmp/live-fixed-summary.json
 ```
+
+Convert a completed snapshot set into verified deterministic fixtures:
+
+```bash
+python3 scripts/replay_snapshots.py \
+  --snapshot-dir /tmp/job-source-snapshots \
+  --output-dir /tmp/job-source-replay
+
+python3 -m job_source_agent \
+  --input samples/live_benchmark_companies.json \
+  --fixtures-dir /tmp/job-source-replay/sites \
+  --offline \
+  --output /tmp/replay-results.json \
+  --trace-output /tmp/replay-trace.json
+```
+
+Replay conversion verifies metadata, hashes, byte counts, URL sanitization and path containment before copying files. It rejects missing artifacts, symlink/path escapes and conflicting fixture content.
 
 Snapshots are written under `/tmp/job-source-snapshots/sites` using the same layout as offline fixtures, plus `/tmp/job-source-snapshots/snapshots.jsonl` metadata. Rendered screenshots are written under `/tmp/job-source-snapshots/artifacts` and referenced from the same metadata file. Sensitive query values and common token-like values are redacted before writing.
 

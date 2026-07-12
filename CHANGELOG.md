@@ -25,6 +25,8 @@
 - 增加原子写入的 filesystem stage checkpoint store，使用 schema、adapter version 和 input fingerprint 验证兼容性并支持下游失效。
 - Production CLI 改由 `PipelineApplication` 执行完整 S1-S7，并增加 `--checkpoint-dir`、`--resume-from-stage`、`--rerun-stage` 和 `--stop-after-stage`。
 - Live batch 改为两段 process-budget 包裹同一 `PipelineApplication`：S1-S3 完成后逐 stage 落盘，S4-S7 从 checkpoint 恢复；增加 live `--checkpoint-dir`、`--rerun-stage` 和 deterministic offline batch 参数。
+- 增加安全 snapshot replay CLI，将脱敏 live snapshot 校验并转换成可由 fixture Fetcher 直接消费的离线 replay 目录。
+- 固定离线 benchmark 增加 Rippling exact-opening 样本，从 11 家扩展到 12 家。
 - Markdown summary report 增加 `provider x stage x status` 和 `provider x reason_code` 可靠性表。
 
 ### Changed
@@ -36,6 +38,10 @@
 - Smart browser fallback 会识别没有可用职位链接的非空 JS shell，保留结构化 JSON/static link 页面，并记录 render budget 耗尽事件。
 - Architecture validator 会拒绝原生 adapter 中未登记的 literal reason code；`PROVIDER_FETCH_FAILED` 已纳入统一重试和 owner 语义。
 - LinkedIn CLI 入口只负责产生公司输入，官网与招聘主体解析移入 S2/S3，避免入口脚本绕过 stage contract。
+- Filesystem stage store 增加 fingerprint 级进程锁、目录同步、临时文件清理和并发 invalidate/load/save 安全语义；trace 增加 checkpoint save/restore/miss/invalidate 事件。
+- iCIMS 原生 adapter 增加最多 5 页 hosted-search pagination、嵌套 payload 和跨页去重，并拒绝跨 tenant redirect。
+- SuccessFactors 原生 adapter 增加 AJAX/theme/嵌套 JSON、分页 metadata 和同 tenant URL 校验。
+- Provider 解析语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.1`，旧 stage checkpoint 会安全失效。
 
 ## [0.1.0] - 2026-07-12
 

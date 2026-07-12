@@ -60,6 +60,12 @@
     "job_title": "Data Analyst"
   },
   {
+    "company_name": "Acme Rippling",
+    "company_website_url": "https://ats.rippling.com/embed/acme-rippling/jobs",
+    "career_root_url": "https://ats.rippling.com/embed/acme-rippling/jobs",
+    "job_title": "Data Analyst"
+  },
+  {
     "company_name": "Google",
     "company_website_url": "https://www.google.com",
     "career_root_url": "https://www.google.com/about/careers/applications/",

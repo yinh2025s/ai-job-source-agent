@@ -59,6 +59,12 @@
     "require_exact_opening": true,
     "allow_job_board_fallback": false
   },
+  "Acme Rippling": {
+    "expected_provider": "rippling",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
   "Google": {
     "expected_provider": "google_careers",
     "expected_minimum_stage": "opening_match",
