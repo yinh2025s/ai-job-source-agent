@@ -5,14 +5,30 @@ from html.parser import HTMLParser
 import json
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
 
-from ..web import safe_normalize_url
+from ..web import FetchError, safe_normalize_url
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _HOST_SUFFIXES = ("successfactors.com", "sapsf.com")
-_DETAIL_ID_FIELDS = ("career_job_req_id", "jobReqId", "job_req_id")
-_TITLE_FIELDS = ("jobTitle", "title", "job_title", "name")
-_URL_FIELDS = ("jobUrl", "job_url", "detailUrl", "jobDetailUrl", "url", "href")
+_DETAIL_ID_FIELDS = (
+    "career_job_req_id",
+    "jobReqId",
+    "job_req_id",
+    "requisitionId",
+    "jobRequisitionId",
+    "externalCode",
+)
+_TITLE_FIELDS = ("jobTitle", "title", "job_title", "jobTitleText", "name")
+_URL_FIELDS = (
+    "jobUrl",
+    "job_url",
+    "detailUrl",
+    "jobDetailUrl",
+    "jobPath",
+    "externalPath",
+    "url",
+    "href",
+)
 _DETAIL_QUERY_KEYS = {"career_job_req_id", "jobreqid", "job_req_id"}
 _SEARCH_QUERY_KEYS = {"keyword", "q", "search"}
 
@@ -23,10 +39,18 @@ class SuccessFactorsAdapter:
 
     def recognizes(self, url: str) -> bool:
         try:
-            host = (urlparse(url).hostname or "").lower()
+            parsed = urlparse(url)
+            host = (parsed.hostname or "").lower()
+            port = parsed.port
         except ValueError:
             return False
-        return any(host == suffix or host.endswith(f".{suffix}") for suffix in _HOST_SUFFIXES)
+        return (
+            parsed.scheme.casefold() in {"http", "https"}
+            and not parsed.username
+            and not parsed.password
+            and port in {None, 80, 443}
+            and any(host == suffix or host.endswith(f".{suffix}") for suffix in _HOST_SUFFIXES)
+        )
 
     def identify_board(self, url: str) -> JobBoard | None:
         if not self.recognizes(url):
@@ -62,15 +86,27 @@ class SuccessFactorsAdapter:
             )
 
         search_url = _search_url(board.url, query.title)
-        page = fetcher.fetch(search_url)
+        try:
+            page = fetcher.fetch(search_url)
+        except FetchError as exc:
+            return AdapterResult(
+                provider=self.name,
+                board=board,
+                reason_code="PROVIDER_FETCH_FAILED",
+                retryable=True,
+                trace={"adapter": self.name, "search_urls": [search_url], "error": str(exc)},
+            )
         parser = _SuccessFactorsHTMLParser()
         parser.feed(page.html or "")
 
         candidates = _anchor_candidates(parser.links, board)
+        candidates.extend(_record_candidate(record, board) for record in parser.theme_records)
+        candidates = [candidate for candidate in candidates if candidate is not None]
         values, malformed_json = _embedded_json_values(page.html or "", parser.scripts)
         for value in values:
             candidates.extend(_walk_candidates(value, board))
         candidates = _dedupe_candidates(candidates)
+        pagination = _pagination_metadata(values)
 
         reason_code = None
         if not candidates:
@@ -86,6 +122,7 @@ class SuccessFactorsAdapter:
                 "response_source": page.source,
                 "candidate_count": len(candidates),
                 "embedded_payload_count": len(values),
+                "pagination": pagination,
             },
         )
 
@@ -95,6 +132,7 @@ class _SuccessFactorsHTMLParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.scripts: list[tuple[str, str]] = []
         self.links: list[tuple[str, str]] = []
+        self.theme_records: list[dict] = []
         self._script_type = ""
         self._script_parts: list[str] | None = None
         self._href = ""
@@ -108,6 +146,30 @@ class _SuccessFactorsHTMLParser(HTMLParser):
         elif tag.casefold() == "a" and attributes.get("href"):
             self._href = attributes["href"]
             self._link_parts = []
+        job_req_id = next(
+            (
+                attributes[key]
+                for key in ("data-job-req-id", "data-jobreqid", "data-job-id")
+                if attributes.get(key)
+            ),
+            "",
+        )
+        title = next(
+            (
+                attributes[key]
+                for key in ("data-job-title", "data-title", "aria-label")
+                if attributes.get(key)
+            ),
+            "",
+        )
+        if job_req_id and title:
+            self.theme_records.append(
+                {
+                    "jobReqId": job_req_id,
+                    "jobTitle": title,
+                    "location": attributes.get("data-location", ""),
+                }
+            )
 
     def handle_data(self, data: str) -> None:
         if self._script_parts is not None:
@@ -189,6 +251,13 @@ def _walk_candidates(value: object, board: JobBoard):
     elif isinstance(value, list):
         for child in value:
             yield from _walk_candidates(child, board)
+    elif isinstance(value, str):
+        decoded = value.strip()
+        if decoded.startswith(("{", "[")):
+            try:
+                yield from _walk_candidates(json.loads(decoded), board)
+            except json.JSONDecodeError:
+                return
 
 
 def _record_candidate(record: dict, board: JobBoard) -> JobCandidate | None:
@@ -196,7 +265,10 @@ def _record_candidate(record: dict, board: JobBoard) -> JobCandidate | None:
     if not title:
         return None
     job_req_id = _first_text(record, _DETAIL_ID_FIELDS)
+    has_explicit_url = bool(_first_text(record, _URL_FIELDS))
     detail_url = _explicit_detail_url(record, board)
+    if has_explicit_url and not detail_url:
+        return None
     if not detail_url and job_req_id:
         detail_url = _reconstruct_detail_url(board.url, job_req_id)
     if not detail_url:
@@ -214,7 +286,10 @@ def _anchor_candidates(links: list[tuple[str, str]], board: JobBoard) -> list[Jo
     candidates = []
     for href, text in links:
         normalized = safe_normalize_url(href, board.url)
-        if not normalized or not _recognized_host(normalized):
+        if not normalized:
+            continue
+        normalized = _inherit_board_company(normalized, board)
+        if not _same_board_tenant(normalized, board):
             continue
         query = {key.casefold(): value for key, value in parse_qsl(urlparse(normalized).query)}
         job_req_id = next((query[key] for key in _DETAIL_QUERY_KEYS if query.get(key)), "")
@@ -236,7 +311,10 @@ def _explicit_detail_url(record: dict, board: JobBoard) -> str | None:
     if not raw_url:
         return None
     normalized = safe_normalize_url(urljoin(board.url, raw_url))
-    return normalized if normalized and _recognized_host(normalized) else None
+    if not normalized:
+        return None
+    normalized = _inherit_board_company(normalized, board)
+    return normalized if _same_board_tenant(normalized, board) else None
 
 
 def _reconstruct_detail_url(board_url: str, job_req_id: str) -> str:
@@ -254,7 +332,17 @@ def _reconstruct_detail_url(board_url: str, job_req_id: str) -> str:
 
 def _location(record: dict) -> str | None:
     value = next(
-        (record[field] for field in ("location", "jobLocation", "locationName") if record.get(field)),
+        (
+            record[field]
+            for field in (
+                "location",
+                "jobLocation",
+                "locationName",
+                "formattedLocation",
+                "jobLocationText",
+            )
+            if record.get(field)
+        ),
         None,
     )
     if isinstance(value, str):
@@ -279,6 +367,10 @@ def _first_text(record: dict, fields: tuple[str, ...]) -> str:
             return value.strip()
         if isinstance(value, int):
             return str(value)
+        if isinstance(value, dict):
+            nested = _first_text(value, ("value", "label", "text", "name"))
+            if nested:
+                return nested
     return ""
 
 
@@ -290,11 +382,98 @@ def _recognized_host(url: str) -> bool:
     return any(host == suffix or host.endswith(f".{suffix}") for suffix in _HOST_SUFFIXES)
 
 
+def _same_board_tenant(url: str, board: JobBoard) -> bool:
+    if not _recognized_host(url):
+        return False
+    try:
+        candidate = urlparse(url)
+        expected = urlparse(board.url)
+        candidate_port = candidate.port
+    except ValueError:
+        return False
+    if (
+        candidate.scheme.casefold() not in {"http", "https"}
+        or candidate.username
+        or candidate.password
+        or candidate_port not in {None, 80, 443}
+        or (candidate.hostname or "").casefold() != (expected.hostname or "").casefold()
+    ):
+        return False
+    expected_companies = _query_values(expected.query, "company")
+    candidate_companies = _query_values(candidate.query, "company")
+    return not expected_companies or candidate_companies == expected_companies
+
+
+def _inherit_board_company(url: str, board: JobBoard) -> str:
+    parsed = urlparse(url)
+    company = _query_value(urlparse(board.url).query, "company")
+    if not company or _query_value(parsed.query, "company"):
+        return url
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    query.append(("company", company))
+    return urlunparse(parsed._replace(query=urlencode(query, doseq=True)))
+
+
+def _query_value(query: str, expected_key: str) -> str:
+    return next(
+        (
+            value.strip()
+            for key, value in parse_qsl(query, keep_blank_values=True)
+            if key.casefold() == expected_key.casefold() and value.strip()
+        ),
+        "",
+    )
+
+
+def _query_values(query: str, expected_key: str) -> set[str]:
+    return {
+        value.strip().casefold()
+        for key, value in parse_qsl(query, keep_blank_values=True)
+        if key.casefold() == expected_key.casefold() and value.strip()
+    }
+
+
+def _pagination_metadata(values: list[object]) -> dict[str, object]:
+    aliases = {
+        "total_results": ("totalResults", "totalCount"),
+        "page_size": ("pageSize", "resultsPerPage"),
+        "current_page": ("currentPage", "pageNumber"),
+        "offset": ("startRow", "offset", "startIndex"),
+        "has_more": ("hasMore", "moreAvailable"),
+        "next_page": ("nextPage", "nextPageUrl"),
+    }
+    metadata: dict[str, object] = {}
+    for value in values:
+        for record in _walk_records(value):
+            for normalized_key, fields in aliases.items():
+                if normalized_key in metadata:
+                    continue
+                raw = next((record[field] for field in fields if field in record), None)
+                if isinstance(raw, (str, int, float, bool)) and raw != "":
+                    metadata[normalized_key] = raw
+    return metadata
+
+
+def _walk_records(value: object):
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_records(child)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_records(child)
+    elif isinstance(value, str) and value.strip().startswith(("{", "[")):
+        try:
+            yield from _walk_records(json.loads(value))
+        except json.JSONDecodeError:
+            return
+
+
 def _dedupe_candidates(candidates: list[JobCandidate]) -> list[JobCandidate]:
     seen = set()
     deduped = []
     for candidate in candidates:
-        key = (candidate.url.rstrip("/"), candidate.title.casefold())
+        key = candidate.url.rstrip("/")
         if key in seen:
             continue
         seen.add(key)

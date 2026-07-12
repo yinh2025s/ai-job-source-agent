@@ -1,8 +1,18 @@
 import unittest
+from pathlib import Path
 
 from job_source_agent.providers.base import JobBoard, JobQuery, ProviderAdapter
 from job_source_agent.providers.successfactors import ADAPTER, SuccessFactorsAdapter
-from job_source_agent.web import Page
+from job_source_agent.web import FetchError, Page
+
+
+FIXTURE = (
+    Path(__file__).parents[1]
+    / "samples"
+    / "sites"
+    / "successfactors.example"
+    / "ajax-theme.html"
+)
 
 
 class StubFetcher:
@@ -29,6 +39,9 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
         self.assertTrue(self.adapter.recognizes("https://acme.jobs.sapsf.com/career"))
         self.assertFalse(self.adapter.recognizes("https://successfactors.com.evil.example/career"))
         self.assertFalse(self.adapter.recognizes("https://example.com/successfactors.com/career"))
+        self.assertFalse(self.adapter.recognizes("ftp://career4.successfactors.com/career"))
+        self.assertFalse(self.adapter.recognizes("https://career4.successfactors.com:8443/career"))
+        self.assertFalse(self.adapter.recognizes("https://user@career4.successfactors.com/career"))
         self.assertFalse(self.adapter.recognizes("https://[broken/career"))
 
     def test_identifies_board_and_removes_detail_or_search_parameters(self):
@@ -125,6 +138,72 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
 
         self.assertEqual(result.candidates, [])
         self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+
+    def test_parses_theme_ajax_nested_payload_and_pagination_metadata(self):
+        board = self.adapter.identify_board(
+            "https://career4.successfactors.com/career?company=Acme&rcm_site_locale=en_US"
+        )
+
+        result = self.adapter.list_jobs(
+            StubFetcher(FIXTURE.read_text(encoding="utf-8")),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(
+            [candidate.title for candidate in result.candidates],
+            ["Theme Platform Engineer", "AJAX Data Engineer"],
+        )
+        self.assertEqual(result.candidates[0].location, "Austin, TX")
+        self.assertEqual(result.candidates[1].location, "Remote - US")
+        self.assertTrue(all("company=Acme" in candidate.url for candidate in result.candidates))
+        self.assertEqual(result.trace["pagination"], {
+            "total_results": 42,
+            "page_size": 10,
+            "current_page": 2,
+            "offset": 10,
+            "has_more": True,
+            "next_page": 3,
+        })
+
+    def test_rejects_other_successfactors_hosts_and_companies(self):
+        html = """
+        <script type="application/json">{"jobs":[
+          {"jobTitle":"Other Company","jobReqId":"1",
+           "jobUrl":"https://career4.successfactors.com/career?company=Other&career_job_req_id=1"},
+          {"jobTitle":"Other Host","jobReqId":"2",
+           "jobUrl":"https://career5.successfactors.com/career?company=Acme&career_job_req_id=2"},
+          {"jobTitle":"Bad Scheme","jobReqId":"4",
+           "jobUrl":"ftp://career4.successfactors.com/career?company=Acme&career_job_req_id=4"},
+          {"jobTitle":"Ambiguous Company","jobReqId":"5",
+           "jobUrl":"/career?company=Acme&company=Other&career_job_req_id=5"},
+          {"jobTitle":"Relative Same Tenant","jobReqId":"3",
+           "jobUrl":"/career?career_job_req_id=3"}
+        ]}</script>
+        """
+        board = self.adapter.identify_board(
+            "https://career4.successfactors.com/career?company=Acme"
+        )
+
+        result = self.adapter.list_jobs(StubFetcher(html), board, JobQuery())
+
+        self.assertEqual([candidate.title for candidate in result.candidates], ["Relative Same Tenant"])
+        self.assertIn("company=Acme", result.candidates[0].url)
+
+    def test_returns_retryable_fetch_failure(self):
+        class FailingFetcher:
+            def fetch(self, url, data=None, headers=None):
+                raise FetchError("offline")
+
+        board = self.adapter.identify_board(
+            "https://career4.successfactors.com/career?company=Acme"
+        )
+
+        result = self.adapter.list_jobs(FailingFetcher(), board, JobQuery())
+
+        self.assertEqual(result.reason_code, "PROVIDER_FETCH_FAILED")
+        self.assertTrue(result.retryable)
+        self.assertIn("offline", result.trace["error"])
 
     def test_returns_structured_errors_for_missing_identifier_invalid_and_empty_data(self):
         missing = JobBoard(
