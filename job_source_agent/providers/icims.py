@@ -4,7 +4,7 @@ from html.parser import HTMLParser
 import json
 import re
 from typing import Any, Iterator
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 from ..web import FetchError, safe_normalize_url
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
@@ -22,6 +22,10 @@ _JOB_CONTAINER_KEYS = {
 }
 _ID_FIELDS = ("id", "jobId", "job_id", "jobNumber", "job_number")
 _URL_FIELDS = ("url", "jobUrl", "job_url", "detailUrl", "detail_url", "link")
+_NESTED_RECORD_KEYS = ("job", "fields", "data", "posting")
+_PAGINATION_KEYS = {"next", "nextpage", "next_page", "nexturl", "next_url"}
+_PAGINATION_QUERY_KEYS = {"o", "offset", "page", "pr", "start"}
+_MAX_PAGES = 5
 
 
 class ICIMSAdapter:
@@ -33,9 +37,8 @@ class ICIMSAdapter:
             parsed = urlparse(url)
         except (TypeError, ValueError):
             return False
-        host = (parsed.hostname or "").lower()
         parts = [part.lower() for part in parsed.path.split("/") if part]
-        if not _ICIMS_HOST.fullmatch(host) or len(parts) < 2 or parts[0] != "jobs":
+        if not _is_safe_icims_origin(parsed) or len(parts) < 2 or parts[0] != "jobs":
             return False
         return parts[1].startswith("search") or (
             parts[1].isdigit() and "job" in parts[2:]
@@ -58,7 +61,11 @@ class ICIMSAdapter:
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
-        if not board.identifier or not _ICIMS_HOST.fullmatch(board.identifier):
+        if (
+            not board.identifier
+            or not _ICIMS_HOST.fullmatch(board.identifier)
+            or not _is_icims_search_url(board.url, board.identifier)
+        ):
             return AdapterResult(
                 provider=self.name,
                 board=board,
@@ -66,53 +73,83 @@ class ICIMSAdapter:
                 trace={"adapter": self.name, "error": "missing iCIMS careers board identifier"},
             )
 
-        try:
-            page = fetcher.fetch(board.url)
-        except (FetchError, OSError, TimeoutError) as error:
-            return AdapterResult(
-                provider=self.name,
-                board=board,
-                reason_code="PROVIDER_FETCH_FAILED",
-                retryable=True,
-                trace={"adapter": self.name, "board_urls": [board.url], "error": str(error)},
-            )
-
-        scripts = _ScriptParser()
-        try:
-            scripts.feed(page.html)
-        except (TypeError, ValueError) as error:
-            return AdapterResult(
-                provider=self.name,
-                board=board,
-                reason_code="INVALID_STRUCTURED_DATA",
-                trace={"adapter": self.name, "board_urls": [board.url], "error": str(error)},
-            )
-
         candidates: list[JobCandidate] = []
         structured_script_count = 0
-        for script_type, content in scripts.scripts:
-            payload = _decode_script_json(content)
-            if payload is None:
+        page_urls: list[str] = []
+        page_errors: list[dict[str, str]] = []
+        rejected_pagination_urls: list[str] = []
+        pending = [board.url]
+        queued = {board.url}
+        response_source: str | None = None
+
+        while pending and len(page_urls) < _MAX_PAGES:
+            requested_url = pending.pop(0)
+            try:
+                page = fetcher.fetch(requested_url)
+            except (FetchError, OSError, TimeoutError) as error:
+                page_errors.append({"url": requested_url, "error": str(error)})
                 continue
-            structured_script_count += 1
-            is_json_ld = script_type == "application/ld+json"
-            for record in _walk_job_records(payload, json_ld=is_json_ld):
-                candidate = _candidate_from_record(record, board, json_ld=is_json_ld)
-                if candidate is not None:
-                    candidates.append(candidate)
+
+            final_url = page.final_url or page.url
+            if not _is_icims_search_url(final_url, board.identifier):
+                rejected_pagination_urls.append(final_url)
+                continue
+
+            queued.add(final_url)
+            page_urls.append(final_url)
+            if response_source is None:
+                response_source = page.source
+            scripts = _ScriptParser()
+            try:
+                scripts.feed(page.html)
+            except (TypeError, ValueError) as error:
+                page_errors.append({"url": final_url, "error": str(error)})
+                continue
+
+            discovered_urls = list(scripts.pagination_hrefs)
+            for script_type, content in scripts.scripts:
+                payload = _decode_script_json(content)
+                if payload is None:
+                    continue
+                structured_script_count += 1
+                is_json_ld = script_type == "application/ld+json"
+                for record in _walk_job_records(payload, json_ld=is_json_ld):
+                    candidate = _candidate_from_record(record, board, json_ld=is_json_ld)
+                    if candidate is not None:
+                        candidates.append(candidate)
+                discovered_urls.extend(_walk_pagination_values(payload))
+
+            for raw_url in discovered_urls:
+                normalized = safe_normalize_url(raw_url, final_url)
+                if not normalized or not _is_icims_search_url(normalized, board.identifier):
+                    rejected_pagination_urls.append(str(raw_url))
+                    continue
+                if normalized not in queued:
+                    queued.add(normalized)
+                    pending.append(normalized)
 
         candidates = _dedupe_candidates(candidates)
+        if not page_urls and rejected_pagination_urls:
+            reason_code = "PROVIDER_VARIANT_UNSUPPORTED"
+        elif not candidates and page_errors:
+            reason_code = "PROVIDER_FETCH_FAILED"
+        else:
+            reason_code = None if candidates else "EMPTY_PROVIDER_RESPONSE"
         return AdapterResult(
             provider=self.name,
             board=board,
             candidates=candidates,
-            reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            reason_code=reason_code,
+            retryable=reason_code == "PROVIDER_FETCH_FAILED",
             trace={
                 "adapter": self.name,
-                "board_urls": [board.url],
-                "response_source": page.source,
+                "board_urls": page_urls or [board.url],
+                "response_source": response_source,
                 "structured_script_count": structured_script_count,
                 "candidate_count": len(candidates),
+                "page_count": len(page_urls),
+                "page_errors": page_errors,
+                "rejected_pagination_urls": list(dict.fromkeys(rejected_pagination_urls)),
             },
         )
 
@@ -121,13 +158,26 @@ class _ScriptParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.scripts: list[tuple[str, str]] = []
+        self.pagination_hrefs: list[str] = []
         self._script_type: str | None = None
         self._content: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
-        if tag.lower() != "script":
-            return
+        tag_name = tag.lower()
         attributes = {key.lower(): (value or "") for key, value in attrs}
+        if tag_name == "a":
+            href = attributes.get("href", "")
+            rel = attributes.get("rel", "").casefold().split()
+            classes = attributes.get("class", "").casefold().split()
+            if href and (
+                "next" in rel
+                or any("paging" in class_name or "pagination" in class_name for class_name in classes)
+                or _has_pagination_query(href)
+            ):
+                self.pagination_hrefs.append(href)
+            return
+        if tag_name != "script":
+            return
         script_type = attributes.get("type", "").lower().split(";", 1)[0].strip()
         if script_type in {"application/ld+json", "application/json"}:
             self._script_type = script_type
@@ -192,6 +242,23 @@ def _walk_job_records(
             )
 
 
+def _walk_pagination_values(value: Any) -> Iterator[str]:
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if str(key).casefold() in _PAGINATION_KEYS:
+                if isinstance(child, str):
+                    yield child
+                elif isinstance(child, dict):
+                    for field in ("href", "url"):
+                        target = child.get(field)
+                        if isinstance(target, str):
+                            yield target
+            yield from _walk_pagination_values(child)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_pagination_values(item)
+
+
 def _candidate_from_record(
     record: dict[str, Any],
     board: JobBoard,
@@ -228,19 +295,38 @@ def _candidate_from_record(
 
 
 def _first_text(record: dict[str, Any], fields: tuple[str, ...]) -> str:
-    for field in fields:
-        value = record.get(field)
-        if isinstance(value, (str, int)) and str(value).strip():
-            return str(value).strip()
+    for source in _record_sources(record):
+        for field in fields:
+            value = source.get(field)
+            if isinstance(value, dict) and "value" in value:
+                value = value["value"]
+            if isinstance(value, (str, int)) and str(value).strip():
+                return str(value).strip()
     return ""
 
 
+def _record_sources(record: dict[str, Any]) -> Iterator[dict[str, Any]]:
+    yield record
+    for key in _NESTED_RECORD_KEYS:
+        nested = record.get(key)
+        if isinstance(nested, dict):
+            yield nested
+
+
 def _location(record: dict[str, Any]) -> str | None:
-    value = record.get("location") or record.get("jobLocation") or record.get("locations")
-    if isinstance(value, list):
-        locations = [location for item in value if (location := _location_value(item))]
-        return "; ".join(dict.fromkeys(locations)) or None
-    return _location_value(value)
+    for source in _record_sources(record):
+        value = source.get("location") or source.get("jobLocation") or source.get("locations")
+        if isinstance(value, dict) and "value" in value:
+            value = value["value"]
+        if isinstance(value, list):
+            locations = [location for item in value if (location := _location_value(item))]
+            if locations:
+                return "; ".join(dict.fromkeys(locations))
+        else:
+            location = _location_value(value)
+            if location:
+                return location
+    return None
 
 
 def _location_value(value: Any) -> str | None:
@@ -266,11 +352,51 @@ def _is_icims_detail_url(url: str, expected_host: str | None) -> bool:
         return False
     parts = [part.lower() for part in parsed.path.split("/") if part]
     return (
-        (parsed.hostname or "").lower() == (expected_host or "").lower()
+        _is_safe_icims_origin(parsed, expected_host)
         and len(parts) >= 3
         and parts[0] == "jobs"
         and parts[1].isdigit()
         and "job" in parts[2:]
+    )
+
+
+def _is_icims_search_url(url: str, expected_host: str | None) -> bool:
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    parts = [part.casefold() for part in parsed.path.split("/") if part]
+    return (
+        _is_safe_icims_origin(parsed, expected_host)
+        and len(parts) >= 2
+        and parts[0] == "jobs"
+        and parts[1].startswith("search")
+    )
+
+
+def _has_pagination_query(url: str) -> bool:
+    try:
+        return any(key.casefold() in _PAGINATION_QUERY_KEYS for key, _ in parse_qsl(urlparse(url).query))
+    except ValueError:
+        return False
+
+
+def _is_safe_icims_origin(parsed, expected_host: str | None = None) -> bool:
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    host = (parsed.hostname or "").casefold()
+    standard_port = port is None or (parsed.scheme == "https" and port == 443) or (
+        parsed.scheme == "http" and port == 80
+    )
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.username is None
+        and parsed.password is None
+        and standard_port
+        and bool(_ICIMS_HOST.fullmatch(host))
+        and (expected_host is None or host == expected_host.casefold())
     )
 
 

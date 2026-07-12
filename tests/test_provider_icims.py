@@ -1,8 +1,12 @@
 import unittest
+from pathlib import Path
 
 from job_source_agent.providers.base import JobBoard, JobQuery
 from job_source_agent.providers.icims import ICIMSAdapter
 from job_source_agent.web import FetchError, Page
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class StubFetcher:
@@ -18,6 +22,25 @@ class StubFetcher:
         return Page(url=url, final_url=url, html=self.html, source="icims-fixture")
 
 
+class FixtureMappingFetcher:
+    def __init__(self, pages: dict[str, Path], errors: dict[str, Exception] | None = None):
+        self.pages = pages
+        self.errors = errors or {}
+        self.requested_urls = []
+
+    def fetch(self, url, data=None, headers=None):
+        self.requested_urls.append(url)
+        if url in self.errors:
+            raise self.errors[url]
+        path = self.pages[url]
+        return Page(
+            url=url,
+            final_url=url,
+            html=path.read_text(encoding="utf-8"),
+            source=str(path),
+        )
+
+
 class ICIMSAdapterTests(unittest.TestCase):
     def setUp(self):
         self.adapter = ICIMSAdapter()
@@ -30,6 +53,8 @@ class ICIMSAdapterTests(unittest.TestCase):
         self.assertFalse(self.adapter.recognizes("https://jobs-acme.icims.com/jobs/search"))
         self.assertFalse(self.adapter.recognizes("https://example.com/jobs/careers-acme.icims.com/jobs/search"))
         self.assertFalse(self.adapter.recognizes("https://careers-.icims.com/jobs/search"))
+        self.assertFalse(self.adapter.recognizes("https://evil@careers-acme.icims.com/jobs/search"))
+        self.assertFalse(self.adapter.recognizes("https://careers-acme.icims.com:8443/jobs/search"))
         self.assertFalse(self.adapter.recognizes("http://[invalid/jobs/search"))
 
     def test_identifies_search_page_and_canonicalizes_detail_to_board(self):
@@ -138,6 +163,97 @@ class ICIMSAdapterTests(unittest.TestCase):
         result = self.adapter.list_jobs(fetcher, board, JobQuery())
 
         self.assertEqual(len(result.candidates), 1)
+
+    def test_follows_hosted_search_pagination_and_reads_nested_payload_fixture(self):
+        fixture_root = (
+            ROOT / "samples" / "sites" / "careers-acme.icims.com" / "jobs" / "search-hosted"
+        )
+        first_url = "https://careers-acme.icims.com/jobs/search"
+        second_url = "https://careers-acme.icims.com/jobs/search?pr=1"
+        fetcher = FixtureMappingFetcher({
+            first_url: fixture_root / "page-0.html",
+            second_url: fixture_root / "page-1.html",
+        })
+        board = self.adapter.identify_board(first_url)
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual(fetcher.requested_urls, [first_url, second_url])
+        self.assertEqual(
+            [candidate.title for candidate in result.candidates],
+            ["Platform Engineer", "Security Analyst"],
+        )
+        self.assertEqual(result.candidates[0].location, "Austin, TX")
+        self.assertEqual(result.candidates[1].location, "Remote")
+        self.assertEqual(result.trace["page_count"], 2)
+        self.assertEqual(result.trace["candidate_count"], 2)
+        self.assertIn(
+            "https://careers-other.icims.com/jobs/search?pr=2",
+            result.trace["rejected_pagination_urls"],
+        )
+        self.assertIsNone(result.reason_code)
+
+    def test_keeps_first_page_candidates_when_a_later_page_fetch_fails(self):
+        fixture = (
+            ROOT
+            / "samples"
+            / "sites"
+            / "careers-acme.icims.com"
+            / "jobs"
+            / "search-hosted"
+            / "page-0.html"
+        )
+        first_url = "https://careers-acme.icims.com/jobs/search"
+        second_url = "https://careers-acme.icims.com/jobs/search?pr=1"
+        fetcher = FixtureMappingFetcher(
+            {first_url: fixture},
+            errors={second_url: FetchError("page two blocked")},
+        )
+        board = self.adapter.identify_board(first_url)
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual([candidate.title for candidate in result.candidates], ["Platform Engineer"])
+        self.assertIsNone(result.reason_code)
+        self.assertFalse(result.retryable)
+        self.assertEqual(result.trace["page_errors"], [
+            {"url": second_url, "error": "page two blocked"},
+        ])
+
+    def test_rejects_cross_tenant_initial_redirect(self):
+        class RedirectFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://careers-other.icims.com/jobs/search",
+                    html='<script type="application/json">{"jobs":[]}</script>',
+                    source="redirect-fixture",
+                )
+
+        board = self.adapter.identify_board("https://careers-acme.icims.com/jobs/search")
+
+        result = self.adapter.list_jobs(RedirectFetcher(), board, JobQuery())
+
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertEqual(result.trace["page_count"], 0)
+        self.assertEqual(
+            result.trace["rejected_pagination_urls"],
+            ["https://careers-other.icims.com/jobs/search"],
+        )
+
+    def test_rejects_mismatched_board_before_fetching(self):
+        fetcher = StubFetcher()
+        board = JobBoard(
+            url="https://careers-other.icims.com/jobs/search",
+            provider="icims",
+            identifier="careers-acme.icims.com",
+        )
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual(fetcher.requested_urls, [])
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
 
     def test_returns_structured_failures(self):
         unsupported = self.adapter.list_jobs(
