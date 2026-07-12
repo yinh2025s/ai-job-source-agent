@@ -317,6 +317,111 @@ class SmartRenderedFetcherTests(unittest.TestCase):
         self.assertEqual(page.calls[1][0:2], ("wait", "networkidle"))
         self.assertLessEqual(page.calls[1][2]["timeout"], 1600)
 
+    def test_domcontentloaded_timeout_salvages_usable_job_dom_without_more_waiting(self):
+        class NavigationTimeout(Exception):
+            pass
+
+        class FakePage:
+            url = "https://example.com/careers"
+
+            def __init__(self):
+                self.calls = []
+
+            def goto(self, url, **kwargs):
+                self.calls.append(("goto", url, kwargs))
+                raise NavigationTimeout("DOMContentLoaded did not fire")
+
+            def content(self):
+                self.calls.append(("content",))
+                return (
+                    "<main><h1>Careers at Example</h1>"
+                    "<p>Join our team and build products used by customers around the world. "
+                    "We support thoughtful collaboration, learning, and meaningful career growth.</p>"
+                    '<a href="/careers/jobs/123">View open job</a></main>'
+                )
+
+            def wait_for_load_state(self, state, **kwargs):
+                self.calls.append(("wait", state, kwargs))
+
+        page = FakePage()
+
+        _navigate_with_settle(
+            page,
+            page.url,
+            timeout_seconds=2,
+            timeout_error_type=NavigationTimeout,
+            clock=lambda: 10.0,
+        )
+
+        self.assertEqual([call[0] for call in page.calls], ["goto", "content"])
+        self.assertEqual(page.calls[0][2]["timeout"], 2000)
+
+    def test_domcontentloaded_timeout_salvages_substantial_career_dom_without_job_link(self):
+        class NavigationTimeout(Exception):
+            pass
+
+        class FakePage:
+            url = "https://apply.example/careers"
+
+            def goto(self, url, **kwargs):
+                raise NavigationTimeout("DOMContentLoaded did not fire")
+
+            def content(self):
+                return (
+                    "<main><h1>Careers at Example</h1>"
+                    "<p>We are building the future of workplace technology. Join our team of "
+                    "engineers, designers, and customer advocates working across several offices.</p>"
+                    '<a href="/careers">View jobs</a></main>'
+                )
+
+            def wait_for_load_state(self, state, **kwargs):
+                self.fail("networkidle must not run after navigation timeout")
+
+        _navigate_with_settle(
+            FakePage(),
+            FakePage.url,
+            timeout_seconds=2,
+            timeout_error_type=NavigationTimeout,
+            clock=lambda: 10.0,
+        )
+
+    def test_domcontentloaded_timeout_rejects_empty_javascript_shell(self):
+        class NavigationTimeout(Exception):
+            pass
+
+        class FakePage:
+            url = "https://example.com/careers"
+
+            def __init__(self):
+                self.calls = []
+
+            def goto(self, url, **kwargs):
+                self.calls.append(("goto", url, kwargs))
+                raise NavigationTimeout("DOMContentLoaded did not fire")
+
+            def content(self):
+                self.calls.append(("content",))
+                return (
+                    "<html><body><noscript>You need to enable JavaScript to run this app.</noscript>"
+                    '<div id="root"></div><script src="/app.js"></script></body></html>'
+                )
+
+            def wait_for_load_state(self, state, **kwargs):
+                self.calls.append(("wait", state, kwargs))
+
+        page = FakePage()
+
+        with self.assertRaisesRegex(NavigationTimeout, "DOMContentLoaded did not fire"):
+            _navigate_with_settle(
+                page,
+                page.url,
+                timeout_seconds=2,
+                timeout_error_type=NavigationTimeout,
+                clock=lambda: 10.0,
+            )
+
+        self.assertEqual([call[0] for call in page.calls], ["goto", "content"])
+
     def test_navigation_does_not_exceed_budget_after_dom_ready(self):
         class FakePage:
             def __init__(self):

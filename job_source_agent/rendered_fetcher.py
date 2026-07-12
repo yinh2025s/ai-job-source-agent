@@ -291,11 +291,20 @@ def _navigate_with_settle(
     timeout_error_type,
     clock=monotonic,
 ) -> None:
-    """Require DOM readiness, then spend only remaining budget on network idle."""
+    """Navigate within one budget, salvaging a useful DOM after readiness timeout."""
 
     timeout_ms = max(1, int(timeout_seconds * 1000))
     deadline = clock() + timeout_seconds
-    page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+    try:
+        page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+    except timeout_error_type:
+        # Chromium can have a useful application DOM even when a slow script,
+        # frame, or response prevents the DOMContentLoaded lifecycle event.
+        # Snapshot once without adding another browser wait; empty JS shells
+        # still fail with the original navigation timeout.
+        if not _has_usable_rendered_dom(page, url):
+            raise
+        return
     remaining_ms = int((deadline - clock()) * 1000)
     if remaining_ms <= 0:
         return
@@ -305,6 +314,35 @@ def _navigate_with_settle(
         # Analytics, long polling, and streaming requests can keep a useful job
         # page permanently non-idle. DOM readiness remains the hard boundary.
         return
+
+
+def _has_usable_rendered_dom(page, requested_url: str) -> bool:
+    try:
+        html = page.content()
+    except Exception:
+        return False
+    if not isinstance(html, str) or not html.strip():
+        return False
+
+    current_url = getattr(page, "url", None) or requested_url
+    rendered_page = Page(
+        url=requested_url,
+        final_url=current_url,
+        html=html,
+        source="browser_navigation_timeout",
+    )
+    try:
+        links = extract_links(rendered_page)
+    except (TypeError, ValueError):
+        links = []
+    if any(_is_usable_job_link(link.url, link.text, current_url) for link in links):
+        return True
+
+    visible_text = _visible_text(html)
+    if len(visible_text) < 120:
+        return False
+    lower_text = visible_text.casefold()
+    return any(marker in lower_text for marker in JOB_TEXT_MARKERS)
 
 
 def _local_chrome_available() -> bool:
