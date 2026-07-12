@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 from job_source_agent.models import CompanyInput
 from job_source_agent.web import Fetcher
-from scripts.live_batch_eval import load_batch_companies, prepare_company
+from scripts.live_batch_eval import build_summary, load_batch_companies, prepare_company
 
 
 class LiveBatchEvalTests(unittest.TestCase):
@@ -66,6 +66,58 @@ class LiveBatchEvalTests(unittest.TestCase):
 
         self.assertEqual(len(companies), 1)
         self.assertEqual(companies[0].company_name, "A")
+
+    def test_live_expectations_default_to_present_companies_only(self):
+        result = {
+            "company_name": "A",
+            "company_website_url": "https://a.example",
+            "career_page_url": "https://a.example/careers",
+            "job_list_page_url": "https://a.example/careers",
+            "pipeline_status": "partial",
+            "status": "success",
+            "stages": [{"stage": "job_board_discovery", "status": "success"}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "expectations.json"
+            path.write_text(
+                """{
+                  "A": {"expected_minimum_stage": "job_board_discovery"},
+                  "B": {"expected_minimum_stage": "job_board_discovery"}
+                }""",
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(expectations=str(path), require_all_expectations=False)
+
+            summary = build_summary([result], args, elapsed_sec=1.0)
+
+        self.assertEqual(summary["expectation_checks"]["total"], 1)
+        self.assertEqual(summary["expectation_checks"]["failed"], 0)
+
+    def test_live_expectations_can_require_all_companies(self):
+        result = {
+            "company_name": "A",
+            "company_website_url": "https://a.example",
+            "career_page_url": "https://a.example/careers",
+            "job_list_page_url": "https://a.example/careers",
+            "pipeline_status": "partial",
+            "status": "success",
+            "stages": [{"stage": "job_board_discovery", "status": "success"}],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "expectations.json"
+            path.write_text(
+                """{
+                  "A": {"expected_minimum_stage": "job_board_discovery"},
+                  "B": {"expected_minimum_stage": "job_board_discovery"}
+                }""",
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(expectations=str(path), require_all_expectations=True)
+
+            summary = build_summary([result], args, elapsed_sec=1.0)
+
+        self.assertEqual(summary["expectation_checks"]["total"], 2)
+        self.assertEqual(summary["expectation_checks"]["failed"], 1)
 
 
 if __name__ == "__main__":

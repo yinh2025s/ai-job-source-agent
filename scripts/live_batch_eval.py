@@ -31,6 +31,7 @@ from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.process_budget import ProcessBudgetExceeded, RemoteProcessError, run_with_process_budget
 from job_source_agent.reasons import canonical_reason_code, make_stage_result
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
+from job_source_agent.snapshot import SnapshottingFetcher
 from job_source_agent.web import Fetcher, normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
 
@@ -69,7 +70,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", default="/tmp/live-batch-results.json")
     parser.add_argument("--trace-output", default="/tmp/live-batch-trace.json")
     parser.add_argument("--summary-output", default="/tmp/live-batch-summary.json")
+    parser.add_argument("--snapshot-dir", help="Optional directory for sanitized page snapshots.")
     parser.add_argument("--baseline-summary", help="Optional prior summary JSON used for regression deltas.")
+    parser.add_argument(
+        "--require-all-expectations",
+        action="store_true",
+        help="Fail expectation checks for companies that are not present in a partial live run.",
+    )
     return parser
 
 
@@ -140,6 +147,13 @@ def build_summary(results: list[dict], args: argparse.Namespace, elapsed_sec: fl
     summary = summarize_results(results, elapsed_sec=elapsed_sec)
     if args.expectations:
         expectations = json.loads(Path(args.expectations).read_text(encoding="utf-8"))
+        if not getattr(args, "require_all_expectations", False):
+            present_companies = {str(result.get("company_name")) for result in results}
+            expectations = {
+                company_name: expectation
+                for company_name, expectation in expectations.items()
+                if company_name in present_companies
+            }
         summary["expectation_checks"] = evaluate_expectations(results, expectations)
     return summary
 
@@ -255,8 +269,13 @@ def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -
 
 def build_company_fetcher(args: argparse.Namespace):
     if args.render_js:
-        return SmartRenderedFetcher(timeout=args.fetch_timeout, render_budget=args.render_budget)
-    return Fetcher(timeout=args.fetch_timeout)
+        fetcher = SmartRenderedFetcher(timeout=args.fetch_timeout, render_budget=args.render_budget)
+    else:
+        fetcher = Fetcher(timeout=args.fetch_timeout)
+    snapshot_dir = getattr(args, "snapshot_dir", None)
+    if snapshot_dir:
+        return SnapshottingFetcher(fetcher, snapshot_dir)
+    return fetcher
 
 
 def failure_result(company: CompanyInput, error: str, detail: str | None = None) -> DiscoveryResult:

@@ -257,6 +257,20 @@ python3 scripts/export_replay_input.py \
 
 The exported records preserve the verified website, career root, LinkedIn title, and replay metadata, so the next run can start from known-good upstream evidence instead of rediscovering everything.
 
+To capture sanitized page snapshots while running a live batch, add `--snapshot-dir`:
+
+```bash
+python3 scripts/live_batch_eval.py \
+  --input samples/live_benchmark_companies.json \
+  --expectations samples/live_benchmark_expectations.json \
+  --snapshot-dir /tmp/job-source-snapshots \
+  --output /tmp/live-fixed-results.json \
+  --trace-output /tmp/live-fixed-trace.json \
+  --summary-output /tmp/live-fixed-summary.json
+```
+
+Snapshots are written under `/tmp/job-source-snapshots/sites` using the same layout as offline fixtures, plus `/tmp/job-source-snapshots/snapshots.jsonl` metadata. Sensitive query values and common token-like values are redacted before writing.
+
 ## Optional Saved LinkedIn HTML Input
 
 If you save a LinkedIn job page HTML locally, a record may provide `linkedin_html_path`. The parser will try to infer the company name and external website from the saved HTML:
