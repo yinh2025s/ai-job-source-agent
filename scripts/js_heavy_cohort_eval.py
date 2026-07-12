@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+from html.parser import HTMLParser
 import json
 from pathlib import Path
 import sys
@@ -11,7 +12,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher, _visible_text
-from job_source_agent.web import Page, extract_links, normalize_url
+from job_source_agent.web import FetchError, Page, extract_links, normalize_url
 
 
 DEFAULT_FIXTURE_ROOT = ROOT / "samples" / "sites" / "js-heavy-rendered-cohort"
@@ -62,6 +63,7 @@ def load_cases(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> list[dict]:
         "technology",
         "url",
         "evidence_text",
+        "evidence_selector",
         "static_fixture",
         "rendered_fixture",
         "fixture_provenance",
@@ -81,7 +83,126 @@ def load_cases(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> list[dict]:
         for fixture_key in ("static_fixture", "rendered_fixture"):
             if not (fixture_root / case[fixture_key]).is_file():
                 raise ValueError(f"missing cohort fixture: {case[fixture_key]}")
+        if case["evidence_selector"] not in {"h1", "h2", "h3", "nav"}:
+            raise ValueError("unsupported cohort evidence selector")
     return cases
+
+
+class _SelectedTextParser(HTMLParser):
+    def __init__(self, selector: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.selector = selector
+        self.matches: list[str] = []
+        self._depth = 0
+        self._text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.casefold() == self.selector:
+            if self._depth == 0:
+                self._text = []
+            self._depth += 1
+
+    def handle_data(self, data: str) -> None:
+        if self._depth:
+            self._text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() != self.selector or not self._depth:
+            return
+        self._depth -= 1
+        if self._depth == 0:
+            text = " ".join("".join(self._text).split())
+            if text:
+                self.matches.append(text)
+
+
+def evaluate_page_evidence(page: Page, case: dict) -> dict:
+    visible_text = _visible_text(page.html)
+    expected_text = " ".join(str(case["evidence_text"]).split())
+    selector = str(case["evidence_selector"])
+    parser = _SelectedTextParser(selector)
+    parser.feed(page.html)
+    selector_matches = [
+        text for text in parser.matches if expected_text.casefold() in text.casefold()
+    ]
+    text_evidence_found = bool(selector_matches)
+
+    expected_url = case.get("evidence_url")
+    matched_urls: list[str] = []
+    url_evidence_found: bool | None = None
+    if expected_url:
+        try:
+            normalized_expected_url = normalize_url(expected_url)
+        except (TypeError, ValueError):
+            normalized_expected_url = ""
+        for link in extract_links(page):
+            try:
+                if normalized_expected_url and normalize_url(link.url) == normalized_expected_url:
+                    matched_urls.append(link.url)
+            except (TypeError, ValueError):
+                continue
+        url_evidence_found = bool(matched_urls)
+
+    forbidden_matches = [
+        forbidden
+        for forbidden in case.get("forbidden_text", [])
+        if str(forbidden).casefold() in visible_text.casefold()
+    ]
+    minimum_visible_text_length = int(case.get("minimum_visible_text_length", 1))
+    visible_text_length = len(visible_text)
+    evidence_found = (
+        text_evidence_found
+        and url_evidence_found is not False
+        and not forbidden_matches
+        and visible_text_length >= minimum_visible_text_length
+    )
+    return {
+        "career_job_evidence_found": evidence_found,
+        "text_evidence_found": text_evidence_found,
+        "url_evidence_found": url_evidence_found,
+        "visible_text_length": visible_text_length,
+        "minimum_visible_text_length": minimum_visible_text_length,
+        "evidence_selector": selector,
+        "evidence_text_matches": selector_matches,
+        "evidence_url_matches": matched_urls,
+        "forbidden_evidence_matches": forbidden_matches,
+    }
+
+
+def _render_diagnostics(fetcher: SmartRenderedFetcher, event_start: int) -> dict:
+    events = fetcher.render_events[event_start:]
+    event = events[-1] if events else None
+    return {
+        "trigger_reason": event.get("reason") if event else None,
+        "render_outcome": event.get("outcome") if event else "not_triggered",
+        "render_event_error": event.get("error") if event else None,
+        "render_events": events,
+    }
+
+
+def _classify_error(error: Exception | None, render_error: str | None = None) -> str | None:
+    if error is None and not render_error:
+        return None
+    message = f"{error or ''} {render_error or ''}".casefold()
+    if "timeout" in message or "timed out" in message:
+        return "timeout"
+    if "playwright is not installed" in message or "browser executable" in message:
+        return "browser_unavailable"
+    if "http error" in message:
+        return "http_error"
+    if isinstance(error, FetchError) or render_error:
+        return "fetch_or_render_error"
+    return "unexpected_error"
+
+
+def _case_pass(row: dict) -> bool:
+    return bool(
+        row["trigger_reason"]
+        and row["render_triggered"]
+        and row["render_outcome"] == "success"
+        and row["career_job_evidence_found"]
+        and row["error_class"] is None
+    )
 
 
 def evaluate_saved_cohort(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> dict:
@@ -94,37 +215,30 @@ def evaluate_saved_cohort(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> dict:
     )
     rows = []
     for case in cases:
-        static_page = fetcher._static_live(case["url"])
-        trigger_reason = fetcher._render_reason(static_page)
         attempts_before = fetcher.render_attempts
+        event_start = len(fetcher.render_events)
         page = fetcher._fetch_live(case["url"])
-        visible_text = _visible_text(page.html)
-        text_evidence_found = case["evidence_text"].casefold() in visible_text.casefold()
-        expected_url = case.get("evidence_url")
-        url_evidence_found = None
-        if expected_url:
-            normalized_expected_url = normalize_url(expected_url)
-            url_evidence_found = any(
-                normalize_url(link.url) == normalized_expected_url for link in extract_links(page)
-            )
-        evidence_found = text_evidence_found and url_evidence_found is not False
-        rows.append(
-            {
+        render = _render_diagnostics(fetcher, event_start)
+        evidence = evaluate_page_evidence(page, case)
+        row = {
                 "company": case["company"],
                 "provider": case["provider"],
                 "technology": case["technology"],
                 "url": case["url"],
                 "evidence_text": case["evidence_text"],
-                "evidence_url": expected_url,
+                "evidence_url": case.get("evidence_url"),
                 "fixture_provenance": case["fixture_provenance"],
-                "trigger_reason": trigger_reason,
                 "render_triggered": fetcher.render_attempts == attempts_before + 1,
                 "render_source": page.source,
-                "career_job_evidence_found": evidence_found,
-                "text_evidence_found": text_evidence_found,
-                "url_evidence_found": url_evidence_found,
+                "error": None,
+                "error_class": _classify_error(None, render["render_event_error"]),
+                "post_fetch_wait_supported": False,
+                "evidence_timing": "fetcher_return_snapshot",
+                **render,
+                **evidence,
             }
-        )
+        row["passed"] = _case_pass(row)
+        rows.append(row)
 
     # A sixth renderable request must consume no browser work after the shared
     # five-page budget is exhausted.
@@ -140,12 +254,7 @@ def evaluate_saved_cohort(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> dict:
     provider_count = diversity["provider_count"]
     technology_count = diversity["technology_count"]
     diversity_passed = diversity["diversity_passed"]
-    passed = all(
-        row["trigger_reason"]
-        and row["render_triggered"]
-        and row["career_job_evidence_found"]
-        for row in rows
-    ) and budget_not_exceeded and diversity_passed
+    passed = all(row["passed"] for row in rows) and budget_not_exceeded and diversity_passed
     return {
         "mode": "saved_fixture",
         "case_count": len(cases),
@@ -172,55 +281,57 @@ def evaluate_live_smoke(
     rows = []
     for case in cases:
         attempts_before = fetcher.render_attempts
+        event_start = len(fetcher.render_events)
         try:
             page = fetcher.fetch(case["url"])
-            links = extract_links(page)
-            visible_text = _visible_text(page.html)
-            text_evidence_found = case["evidence_text"].casefold() in visible_text.casefold()
-            expected_url = case.get("evidence_url")
-            url_evidence_found = None
-            if expected_url:
-                normalized_expected_url = normalize_url(expected_url)
-                url_evidence_found = any(
-                    normalize_url(link.url) == normalized_expected_url for link in links
-                )
-            career_evidence_found = text_evidence_found
-            rows.append(
-                {
+            render = _render_diagnostics(fetcher, event_start)
+            evidence = evaluate_page_evidence(page, case)
+            row = {
                     "company": case["company"],
                     "provider": case["provider"],
                     "technology": case["technology"],
                     "source": page.source,
                     "render_triggered": fetcher.render_attempts == attempts_before + 1,
-                    "career_evidence_found": career_evidence_found,
-                    "text_evidence_found": text_evidence_found,
-                    "evidence_url_found": url_evidence_found,
                     "error": None,
+                    "error_class": _classify_error(None, render["render_event_error"]),
+                    "post_fetch_wait_supported": False,
+                    "evidence_timing": "fetcher_return_snapshot",
+                    **render,
+                    **evidence,
                 }
-            )
+            row["passed"] = _case_pass(row)
+            rows.append(row)
         except Exception as error:  # live smoke records environmental failures
-            rows.append(
-                {
+            render = _render_diagnostics(fetcher, event_start)
+            row = {
                     "company": case["company"],
                     "provider": case["provider"],
                     "technology": case["technology"],
                     "source": None,
                     "render_triggered": fetcher.render_attempts == attempts_before + 1,
-                    "career_evidence_found": False,
+                    "career_job_evidence_found": False,
                     "text_evidence_found": False,
-                    "evidence_url_found": False if case.get("evidence_url") else None,
+                    "url_evidence_found": False if case.get("evidence_url") else None,
+                    "visible_text_length": 0,
+                    "minimum_visible_text_length": int(case.get("minimum_visible_text_length", 1)),
+                    "evidence_selector": case["evidence_selector"],
+                    "evidence_text_matches": [],
+                    "evidence_url_matches": [],
+                    "forbidden_evidence_matches": [],
                     "error": str(error),
+                    "error_class": _classify_error(error, render["render_event_error"]),
+                    "post_fetch_wait_supported": False,
+                    "evidence_timing": "fetcher_return_snapshot",
+                    **render,
                 }
-            )
+            row["passed"] = False
+            rows.append(row)
     diversity = cohort_diversity(cases)
     provider_count = diversity["provider_count"]
     technology_count = diversity["technology_count"]
     diversity_passed = diversity["diversity_passed"]
     budget_not_exceeded = fetcher.render_attempts <= render_budget
-    passed = budget_not_exceeded and diversity_passed and all(
-        row["render_triggered"] and row["career_evidence_found"] and row["error"] is None
-        for row in rows
-    )
+    passed = budget_not_exceeded and diversity_passed and all(row["passed"] for row in rows)
     return {
         "mode": "live_browser_smoke",
         "case_count": len(cases),

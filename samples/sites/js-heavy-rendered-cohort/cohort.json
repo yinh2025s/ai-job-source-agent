@@ -5,6 +5,8 @@
     "technology": "workable_react_spa",
     "url": "https://apply.workable.com/withplum/",
     "evidence_text": "Careers at Plum",
+    "evidence_selector": "h1",
+    "minimum_visible_text_length": 200,
     "static_fixture": "withplum/static.html",
     "rendered_fixture": "withplum/rendered.html",
     "fixture_provenance": {
@@ -21,6 +23,8 @@
     "technology": "workable_react_spa",
     "url": "https://apply.workable.com/careers/",
     "evidence_text": "Careers at Workable",
+    "evidence_selector": "h1",
+    "minimum_visible_text_length": 200,
     "static_fixture": "careers/static.html",
     "rendered_fixture": "careers/rendered.html",
     "fixture_provenance": {
@@ -37,6 +41,7 @@
     "technology": "apple_jobsite_ember_bundle",
     "url": "https://jobs.apple.com/en-us/search",
     "evidence_text": "Search Results",
+    "evidence_selector": "h2",
     "evidence_url": "https://jobs.apple.com/en-us/details/114438158/us-specialist-seasonal-part-time?team=APPST",
     "static_fixture": "apple/static.html",
     "rendered_fixture": "apple/rendered.html",
@@ -54,6 +59,9 @@
     "technology": "create_react_app",
     "url": "https://www.intuitiveapps.com/careers",
     "evidence_text": "Search for Jobs",
+    "evidence_selector": "nav",
+    "forbidden_text": ["Loading jobs..."],
+    "minimum_visible_text_length": 100,
     "static_fixture": "intuitive-apps/static.html",
     "rendered_fixture": "intuitive-apps/rendered.html",
     "fixture_provenance": {
@@ -70,6 +78,8 @@
     "technology": "react_material_ui_spa",
     "url": "https://careers.bluefit.com.au/jobs",
     "evidence_text": "Available Featured Positions",
+    "evidence_selector": "h2",
+    "minimum_visible_text_length": 100,
     "static_fixture": "bluefit/static.html",
     "rendered_fixture": "bluefit/rendered.html",
     "fixture_provenance": {
