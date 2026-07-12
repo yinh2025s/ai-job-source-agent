@@ -1,0 +1,35 @@
+{
+  "company": "IIC Lakshya",
+  "real_url": "https://careers.iiclakshya.com/",
+  "provider": "IIC Lakshya custom careers with Keka job details",
+  "technology": "Vite + React SPA",
+  "captured_at": "2026-07-12",
+  "capture_kind": "sanitized_minimal_live_capture",
+  "complete": false,
+  "static_capture": {
+    "source": "live HTTP response",
+    "original_visible_length": 25,
+    "trigger_reason": "static_no_usable_job_links",
+    "shell_evidence": "div#root with Vite module bundle and no static job links"
+  },
+  "rendered_capture": {
+    "source": "Playwright local Chrome",
+    "timeout_seconds": 12,
+    "render_outcome": "success",
+    "page_source": "browser_after_static_shell",
+    "original_visible_length": 3393,
+    "opportunity_count_text": "34 Opportunities available to be a maximiser.",
+    "structured_selector": "a[href*='lepl.keka.com/careers/jobdetails/']",
+    "evidence_text": "Manager - Talent Acquisition",
+    "stable_job_url": "https://lepl.keka.com/careers/jobdetails/79266",
+    "additional_observed_job_urls": [
+      "https://lepl.keka.com/careers/jobdetails/78940",
+      "https://lepl.keka.com/careers/jobdetails/78879",
+      "https://lepl.keka.com/careers/jobdetails/78872"
+    ]
+  },
+  "redactions": [
+    "Removed analytics, images, navigation, employee content, and unneeded job cards.",
+    "Preserved observed headings, opportunity count, job titles, and public Keka detail URLs."
+  ]
+}

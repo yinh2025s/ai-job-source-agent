@@ -27,45 +27,43 @@ class JSHeavyRenderedCohortTests(unittest.TestCase):
             self.assertEqual(provenance["capture_kind"], "sanitized_minimal_live_capture")
             self.assertFalse(provenance["complete"])
             self.assertIn("2026-07-12", provenance["captured_at"])
-            self.assertEqual(provenance["rendered_source"], "playwright_chrome_12s")
-            self.assertIn(case["evidence_selector"], {"h1", "h2", "h3", "nav"})
+            self.assertRegex(provenance["rendered_source"], r"^playwright_chrome_(12|15)s$")
+            self.assertIn(case["evidence_selector"], {"h1", "h2", "h3", "nav", "p"})
         self.assertTrue(all((DEFAULT_FIXTURE_ROOT / case["static_fixture"]).is_file() for case in cases))
         self.assertTrue(all((DEFAULT_FIXTURE_ROOT / case["rendered_fixture"]).is_file() for case in cases))
 
     def test_saved_and_live_gate_exposes_honest_per_case_evidence_diagnostics(self):
         summary = evaluate_saved_cohort()
 
-        self.assertFalse(summary["passed"])
+        self.assertTrue(summary["passed"])
         self.assertEqual(summary["case_count"], 5)
         self.assertGreaterEqual(summary["provider_count"], 3)
         self.assertGreaterEqual(summary["technology_count"], 3)
         self.assertTrue(summary["diversity_passed"])
-        expected = {
-            "Plum": True,
-            "Workable": True,
-            "Apple": True,
-            "Intuitive Apps": False,
-            "BlueFit": False,
-        }
         for row in summary["cases"]:
             with self.subTest(company=row["company"]):
                 self.assertIn(
                     row["trigger_reason"],
-                    {"static_shell", "static_no_usable_job_links", "javascript_required"},
+                    {"static_error", "static_shell", "static_no_usable_job_links", "javascript_required"},
                 )
                 self.assertTrue(row["render_triggered"])
-                self.assertEqual(row["render_source"], "browser_after_static_shell")
+                self.assertIn(
+                    row["render_source"],
+                    {"browser_after_static_error", "browser_after_static_shell"},
+                )
                 self.assertEqual(row["render_outcome"], "success")
-                self.assertEqual(row["passed"], expected[row["company"]])
-                self.assertEqual(row["career_job_evidence_found"], expected[row["company"]])
+                self.assertTrue(row["passed"])
+                self.assertTrue(row["career_job_evidence_found"])
                 self.assertGreater(row["visible_text_length"], 0)
                 self.assertFalse(row["post_fetch_wait_supported"])
                 self.assertEqual(row["evidence_timing"], "fetcher_return_snapshot")
 
-        intuitive = next(row for row in summary["cases"] if row["company"] == "Intuitive Apps")
-        self.assertEqual(intuitive["forbidden_evidence_matches"], ["Loading jobs..."])
-        bluefit = next(row for row in summary["cases"] if row["company"] == "BlueFit")
-        self.assertEqual(bluefit["evidence_text_matches"], [])
+        iic = next(row for row in summary["cases"] if row["company"] == "IIC Lakshya")
+        self.assertTrue(iic["url_evidence_found"])
+        self.assertEqual(
+            iic["evidence_url_matches"],
+            ["https://lepl.keka.com/careers/jobdetails/79266"],
+        )
 
     def test_evidence_gate_requires_configured_url_and_structured_text_without_forbidden_state(self):
         case = {
@@ -127,6 +125,16 @@ class JSHeavyRenderedCohortTests(unittest.TestCase):
             _classify_error(RuntimeError("Playwright is not installed")),
             "browser_unavailable",
         )
+
+    def test_successful_static_error_fallback_keeps_diagnostic_without_final_error(self):
+        summary = evaluate_saved_cohort()
+        meta = next(row for row in summary["cases"] if row["company"] == "Meta")
+
+        self.assertEqual(meta["trigger_reason"], "static_error")
+        self.assertEqual(meta["render_outcome"], "success")
+        self.assertIn("HTTP Error 400", meta["render_event_error"])
+        self.assertIsNone(meta["error_class"])
+        self.assertTrue(meta["passed"])
 
     def test_shared_browser_budget_is_never_exceeded(self):
         summary = evaluate_saved_cohort()

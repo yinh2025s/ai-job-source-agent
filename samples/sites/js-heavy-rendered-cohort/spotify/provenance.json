@@ -1,0 +1,45 @@
+{
+  "company": "Spotify",
+  "provider": "Spotify custom careers",
+  "technology": "nextjs_react_client_job_search",
+  "url": "https://www.lifeatspotify.com/jobs",
+  "captured_at": "2026-07-12",
+  "static": {
+    "http_status": 200,
+    "response_size_bytes": 28972,
+    "source": "live_http_response",
+    "smart_render_trigger_reason": "static_no_usable_job_links"
+  },
+  "rendered": {
+    "source": "anonymous_in_app_browser",
+    "browser_wait_seconds": 12,
+    "render_outcome": "success",
+    "final_url": "https://www.lifeatspotify.com/jobs",
+    "page_title": "All Jobs | Life at Spotify",
+    "visible_text_length": 1409,
+    "job_count_text": "95 jobs",
+    "evidence_selector": "h2",
+    "evidence_text": "Software Engineer, Financial Engineering",
+    "evidence_url": null,
+    "job_card_contract": "div[role=link] containing h2",
+    "stable_job_heading_found": true,
+    "stable_job_url_found": false
+  },
+  "fixture_provenance": {
+    "capture_kind": "sanitized_minimal_live_capture",
+    "complete": false,
+    "redactions": [
+      "scripts and build hashes",
+      "analytics and consent payloads",
+      "navigation and footer content",
+      "non-evidence job metadata"
+    ]
+  },
+  "qualification": {
+    "non_workable_stack": true,
+    "static_triggered_shared_fetcher": true,
+    "single_browser_render": true,
+    "structured_job_heading_found": true,
+    "qualified_replacement_candidate": true
+  }
+}

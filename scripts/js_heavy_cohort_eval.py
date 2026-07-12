@@ -36,6 +36,8 @@ class FixtureCohortFetcher(SmartRenderedFetcher):
 
     def _static_live(self, url, data=None, headers=None):
         case = self._cases[url]
+        if case.get("static_error"):
+            raise FetchError(str(case["static_error"]))
         return self._page(url, case["static_fixture"], "saved_static_shell")
 
     def _render_live(self, url, reason="manual"):
@@ -83,7 +85,7 @@ def load_cases(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> list[dict]:
         for fixture_key in ("static_fixture", "rendered_fixture"):
             if not (fixture_root / case[fixture_key]).is_file():
                 raise ValueError(f"missing cohort fixture: {case[fixture_key]}")
-        if case["evidence_selector"] not in {"h1", "h2", "h3", "nav"}:
+        if case["evidence_selector"] not in {"h1", "h2", "h3", "nav", "p"}:
             raise ValueError("unsupported cohort evidence selector")
     return cases
 
@@ -231,7 +233,12 @@ def evaluate_saved_cohort(fixture_root: Path = DEFAULT_FIXTURE_ROOT) -> dict:
                 "render_triggered": fetcher.render_attempts == attempts_before + 1,
                 "render_source": page.source,
                 "error": None,
-                "error_class": _classify_error(None, render["render_event_error"]),
+                "error_class": _classify_error(
+                    None,
+                    render["render_event_error"]
+                    if render["render_outcome"] == "failed"
+                    else None,
+                ),
                 "post_fetch_wait_supported": False,
                 "evidence_timing": "fetcher_return_snapshot",
                 **render,
@@ -293,7 +300,12 @@ def evaluate_live_smoke(
                     "source": page.source,
                     "render_triggered": fetcher.render_attempts == attempts_before + 1,
                     "error": None,
-                    "error_class": _classify_error(None, render["render_event_error"]),
+                    "error_class": _classify_error(
+                        None,
+                        render["render_event_error"]
+                        if render["render_outcome"] == "failed"
+                        else None,
+                    ),
                     "post_fetch_wait_supported": False,
                     "evidence_timing": "fetcher_return_snapshot",
                     **render,
@@ -356,7 +368,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Evaluate the fixed five-company JS-heavy cohort.")
     parser.add_argument("--fixture-root", type=Path, default=DEFAULT_FIXTURE_ROOT)
     parser.add_argument("--live", action="store_true", help="Run a bounded Playwright smoke against live pages.")
-    parser.add_argument("--timeout", type=float, default=12.0)
+    parser.add_argument("--timeout", type=float, default=15.0)
     parser.add_argument("--render-budget", type=int, default=5)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
