@@ -63,6 +63,13 @@ class WebsiteCandidate:
     reasons: list[str] = field(default_factory=list)
 
 
+@dataclass(frozen=True)
+class SearchEvidence:
+    url: str
+    title: str = ""
+    snippet: str = ""
+
+
 class CompanyWebsiteResolver:
     def __init__(
         self,
@@ -107,12 +114,15 @@ class CompanyWebsiteResolver:
             return fast_selected.url, trace
 
         linkedin_candidates = self._linkedin_company_candidates(linkedin_company_url)
-        search_candidates = self._search_candidates(company_name)
+        search_evidence = self._search_candidates_with_evidence(company_name)
+        search_candidates = [result.url for result in search_evidence]
+        evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
         all_candidates = dedupe_urls(linkedin_candidates[:5] + search_candidates[:5] + guessed_candidates[:6])
         scored = self._rank_and_verify_candidates(
             all_candidates,
             company_name,
             linkedin_company_url,
+            search_evidence=evidence_by_domain,
         )
         seen_domains = {domain_of(str(item.get("url") or "")) for item in trace["candidates"]}
         trace["candidates"].extend(
@@ -137,13 +147,16 @@ class CompanyWebsiteResolver:
         candidates: list[str],
         company_name: str,
         linkedin_company_url: str | None,
+        search_evidence: dict[str, SearchEvidence] | None = None,
     ) -> list[WebsiteCandidate]:
+        search_evidence = search_evidence or {}
         base_scored = [
             self._score_candidate(
                 candidate,
                 company_name,
                 linkedin_company_url=linkedin_company_url,
                 verify=False,
+                search_evidence=search_evidence.get(domain_of(candidate)),
             )
             for candidate in candidates
         ]
@@ -160,6 +173,7 @@ class CompanyWebsiteResolver:
                             company_name,
                             linkedin_company_url=linkedin_company_url,
                             verify=True,
+                            search_evidence=search_evidence.get(domain_of(candidate.url)),
                         ),
                         to_verify,
                     )
@@ -170,35 +184,38 @@ class CompanyWebsiteResolver:
         return sorted(refined, key=lambda candidate: candidate.score, reverse=True)
 
     def _search_candidates(self, company_name: str) -> list[str]:
+        return [result.url for result in self._search_candidates_with_evidence(company_name)]
+
+    def _search_candidates_with_evidence(self, company_name: str) -> list[SearchEvidence]:
         query = urlencode({"q": f"{company_name} official website", "setlang": "en-us", "cc": "us"})
         rss_query = urlencode(
             {"q": f"{company_name} official website", "format": "rss", "setlang": "en-us", "cc": "us"}
         )
-        urls: list[str] = []
+        results: list[SearchEvidence] = []
         seen: set[str] = set()
         searches = (
-            (f"{SEARCH_ENDPOINT}?{rss_query}", _bing_rss_urls),
-            (f"{SEARCH_ENDPOINT}?{query}", _bing_html_urls),
-            (f"{DUCKDUCKGO_SEARCH_ENDPOINT}?{query}", _duckduckgo_html_urls),
+            (f"{SEARCH_ENDPOINT}?{rss_query}", _bing_rss_results),
+            (f"{SEARCH_ENDPOINT}?{query}", _bing_html_results),
+            (f"{DUCKDUCKGO_SEARCH_ENDPOINT}?{query}", _duckduckgo_html_results),
         )
         for search_url, extract_urls in searches:
             try:
                 page = self.fetcher.fetch(search_url)
             except FetchError:
                 continue
-            raw_urls = extract_urls(page.html)
-            for url in raw_urls:
-                cleaned = clean_search_url(url)
+            raw_results = extract_urls(page.html)
+            for result in raw_results:
+                cleaned = clean_search_url(result.url)
                 if not cleaned or is_blocked_domain(cleaned):
                     continue
                 domain = domain_of(cleaned)
                 if domain in seen:
                     continue
                 seen.add(domain)
-                urls.append(cleaned)
-            if urls:
+                results.append(SearchEvidence(cleaned, result.title, result.snippet))
+            if results:
                 break
-        return urls
+        return results
 
     def _linkedin_company_candidates(self, linkedin_company_url: str | None) -> list[str]:
         if not linkedin_company_url:
@@ -264,6 +281,16 @@ class CompanyWebsiteResolver:
                 continue
             if "homepage verified" not in candidate.reasons:
                 continue
+            if "ambiguous company name" in candidate.reasons and not any(
+                reason in candidate.reasons
+                for reason in (
+                    "LinkedIn slug confirms domain",
+                    "search result confirms company identity",
+                    "homepage title confirms company identity",
+                    "homepage canonical confirms company identity",
+                )
+            ):
+                continue
             if require_fast_confidence and not (
                 "preferred .com TLD" in candidate.reasons
                 or "LinkedIn company slug matches domain TLD" in candidate.reasons
@@ -279,11 +306,15 @@ class CompanyWebsiteResolver:
         company_name: str,
         linkedin_company_url: str | None = None,
         verify: bool = True,
+        search_evidence: SearchEvidence | None = None,
     ) -> WebsiteCandidate:
         score = 0
         reasons: list[str] = []
         domain = domain_of(url)
         company_tokens = tokenize_company_name(company_name)
+        ambiguous_name = _is_ambiguous_company_name(company_tokens)
+        if ambiguous_name:
+            reasons.append("ambiguous company name")
 
         for token in company_tokens:
             if token and token in domain:
@@ -301,6 +332,16 @@ class CompanyWebsiteResolver:
         if slug_tld_score:
             score += slug_tld_score
             reasons.append("LinkedIn company slug matches domain TLD")
+
+        if _linkedin_slug_confirms_domain(domain, company_tokens, linkedin_company_url):
+            score += 30
+            reasons.append("LinkedIn slug confirms domain")
+
+        if search_evidence and _text_confirms_company_identity(
+            f"{search_evidence.title} {search_evidence.snippet}", company_tokens
+        ):
+            score += 25
+            reasons.append("search result confirms company identity")
 
         if not verify:
             reasons.append("domain-only score")
@@ -322,11 +363,18 @@ class CompanyWebsiteResolver:
         if canonical_url:
             resolved_url = canonical_url
             reasons.append("homepage canonical URL")
+            if _domain_confirms_company_identity(domain_of(canonical_url), company_tokens):
+                score += 20
+                reasons.append("homepage canonical confirms company identity")
 
-        html_head = page.html[:5000].lower()
+        html_head = page.html[:5000]
+        homepage_title = _html_title(html_head)
+        if _text_confirms_company_identity(homepage_title, company_tokens):
+            score += 25
+            reasons.append("homepage title confirms company identity")
         token_in_homepage = False
         for token in company_tokens:
-            if token and token in html_head:
+            if _contains_identity_token(html_head, token):
                 score += 15
                 token_in_homepage = True
                 reasons.append(f"company token '{token}' in homepage")
@@ -368,54 +416,142 @@ class _SearchResultParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.urls: list[str] = []
+        self.results: list[SearchEvidence] = []
         self._in_h2 = False
+        self._in_caption = False
+        self._in_snippet = False
+        self._current_url = ""
+        self._current_title: list[str] = []
+        self._current_snippet: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {key.lower(): value or "" for key, value in attrs}
         if tag == "h2":
             self._in_h2 = True
+        elif tag in {"div", "section"} and "b_caption" in attrs_dict.get("class", ""):
+            self._in_caption = True
+        elif tag == "p" and self._in_caption:
+            self._in_snippet = True
         elif tag == "a" and self._in_h2 and attrs_dict.get("href"):
-            self.urls.append(attrs_dict["href"])
+            self._current_url = attrs_dict["href"]
+
+    def handle_data(self, data: str) -> None:
+        if self._in_h2 and self._current_url:
+            self._current_title.append(data)
+        elif self._in_snippet:
+            self._current_snippet.append(data)
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "h2":
+            if self._current_url:
+                title = " ".join("".join(self._current_title).split())
+                self.urls.append(self._current_url)
+                self.results.append(SearchEvidence(self._current_url, title=title))
             self._in_h2 = False
+            self._current_url = ""
+            self._current_title = []
+        elif tag == "p" and self._in_snippet:
+            snippet = " ".join("".join(self._current_snippet).split())
+            if snippet and self.results:
+                previous = self.results[-1]
+                self.results[-1] = SearchEvidence(previous.url, previous.title, snippet)
+            self._in_snippet = False
+            self._current_snippet = []
+        elif tag in {"div", "section"} and self._in_caption:
+            self._in_caption = False
 
 
 class _DuckDuckGoResultParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.urls: list[str] = []
+        self.results: list[SearchEvidence] = []
+        self._current_url = ""
+        self._current_title: list[str] = []
+        self._in_snippet = False
+        self._current_snippet: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {key.lower(): value or "" for key, value in attrs}
         if tag == "a" and "result__a" in attrs_dict.get("class", "") and attrs_dict.get("href"):
-            self.urls.append(attrs_dict["href"])
+            self._current_url = attrs_dict["href"]
+        elif "result__snippet" in attrs_dict.get("class", ""):
+            self._in_snippet = True
+
+    def handle_data(self, data: str) -> None:
+        if self._current_url:
+            self._current_title.append(data)
+        elif self._in_snippet:
+            self._current_snippet.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._current_url:
+            title = " ".join("".join(self._current_title).split())
+            self.urls.append(self._current_url)
+            self.results.append(SearchEvidence(self._current_url, title=title))
+            self._current_url = ""
+            self._current_title = []
+        elif self._in_snippet and tag in {"a", "div", "span"}:
+            snippet = " ".join("".join(self._current_snippet).split())
+            if snippet and self.results:
+                previous = self.results[-1]
+                self.results[-1] = SearchEvidence(previous.url, previous.title, snippet)
+            self._in_snippet = False
+            self._current_snippet = []
 
 
-def _bing_rss_urls(body: str) -> list[str]:
+def _bing_rss_results(body: str) -> list[SearchEvidence]:
     try:
         root = ET.fromstring(body)
     except ET.ParseError:
         return []
-    return [
-        link.text.strip()
-        for item in root.findall(".//item")
-        for link in item.findall("link")
-        if link.text and link.text.strip()
+    results: list[SearchEvidence] = []
+    for item in root.findall(".//item"):
+        url = (item.findtext("link") or "").strip()
+        if not url:
+            continue
+        results.append(
+            SearchEvidence(
+                url=url,
+                title=(item.findtext("title") or "").strip(),
+                snippet=(item.findtext("description") or "").strip(),
+            )
+        )
+    return results
+
+
+def _bing_rss_urls(body: str) -> list[str]:
+    return [result.url for result in _bing_rss_results(body)]
+
+
+def _bing_html_results(body: str) -> list[SearchEvidence]:
+    parser = _SearchResultParser()
+    parser.feed(body)
+    seen = {result.url for result in parser.results}
+    return parser.results + [
+        SearchEvidence(url)
+        for url in re.findall(r"https?://[^\"'<>\s)]+", body)
+        if url not in seen
     ]
 
 
 def _bing_html_urls(body: str) -> list[str]:
-    parser = _SearchResultParser()
+    return [result.url for result in _bing_html_results(body)]
+
+
+def _duckduckgo_html_results(body: str) -> list[SearchEvidence]:
+    parser = _DuckDuckGoResultParser()
     parser.feed(body)
-    return parser.urls + re.findall(r"https?://[^\"'<>\s)]+", body)
+    seen = {result.url for result in parser.results}
+    return parser.results + [
+        SearchEvidence(url)
+        for url in re.findall(r"https?://[^\"'<>\s)]+", body)
+        if url not in seen
+    ]
 
 
 def _duckduckgo_html_urls(body: str) -> list[str]:
-    parser = _DuckDuckGoResultParser()
-    parser.feed(body)
-    return parser.urls + re.findall(r"https?://[^\"'<>\s)]+", body)
+    return [result.url for result in _duckduckgo_html_results(body)]
 
 
 class _CanonicalLinkParser(HTMLParser):
@@ -430,6 +566,76 @@ class _CanonicalLinkParser(HTMLParser):
         rel_values = {value.lower() for value in attrs_dict.get("rel", "").split()}
         if "canonical" in rel_values and attrs_dict.get("href"):
             self.href = attrs_dict["href"]
+
+
+def _is_ambiguous_company_name(company_tokens: list[str]) -> bool:
+    return len(company_tokens) == 1 and len(company_tokens[0]) <= 5
+
+
+def _contains_identity_token(text: str, token: str) -> bool:
+    if not token:
+        return False
+    return re.search(rf"(?<![a-z0-9]){re.escape(token)}(?![a-z0-9])", text, flags=re.I) is not None
+
+
+def _text_confirms_company_identity(text: str, company_tokens: list[str]) -> bool:
+    if not text or not company_tokens:
+        return False
+    if not all(_contains_identity_token(text, token) for token in company_tokens):
+        return False
+    if not _is_ambiguous_company_name(company_tokens):
+        return True
+    token = re.escape(company_tokens[0])
+    normalized = " ".join(html_unescape(text).split())
+    return any(
+        re.search(pattern, normalized, flags=re.I) is not None
+        for pattern in (
+            rf"^\s*{token}\s*(?:$|[|,:\-])",
+            rf"\bofficial\s+(?:website|homepage)\s+(?:of|for)\s+{token}(?:\W|$)",
+            rf"\b{token}\s+(?:official\s+)?(?:website|homepage)(?:\W|$)",
+        )
+    )
+
+
+def _domain_confirms_company_identity(domain: str, company_tokens: list[str]) -> bool:
+    if not domain or not company_tokens:
+        return False
+    label = domain.split(".")[-2] if "." in domain else domain
+    compact_name = "".join(company_tokens)
+    dashed_name = "-".join(company_tokens)
+    return label in {compact_name, dashed_name}
+
+
+def _linkedin_slug_confirms_domain(
+    domain: str,
+    company_tokens: list[str],
+    linkedin_company_url: str | None,
+) -> bool:
+    if not linkedin_company_url or not _domain_confirms_company_identity(domain, company_tokens):
+        return False
+    path_parts = [part for part in urlparse(linkedin_company_url).path.split("/") if part]
+    if len(path_parts) < 2 or path_parts[0].lower() != "company":
+        return False
+    slug = re.sub(r"[^a-z0-9]", "", path_parts[1].lower())
+    compact_name = "".join(company_tokens)
+    domain_parts = domain.split(".")
+    tld = domain_parts[-1] if len(domain_parts) > 1 else ""
+    accepted = {
+        compact_name,
+        f"{compact_name}{tld}",
+        f"{compact_name}hq",
+        f"get{compact_name}",
+        f"join{compact_name}",
+    }
+    return slug in accepted
+
+
+def _html_title(html: str) -> str:
+    match = re.search(r"<title\b[^>]*>(.*?)</title\s*>", html, flags=re.I | re.S)
+    if not match:
+        return ""
+    title = re.sub(r"<[^>]+>", " ", match.group(1))
+    return " ".join(html_unescape(title).split())
 
 
 def _canonical_company_url(html: str, base_url: str, company_tokens: list[str]) -> str | None:

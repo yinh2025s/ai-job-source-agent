@@ -207,6 +207,92 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 0.45)
         self.assertTrue(all("homepage verified" in candidate.reasons for candidate in candidates))
 
+    def test_short_company_name_does_not_match_inside_unrelated_text(self):
+        class UnrelatedFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html="<html><head><title>Someone Else</title></head><body>Someone careers</body></html>",
+                )
+
+        resolver = CompanyWebsiteResolver(UnrelatedFetcher(offline=True))
+
+        candidate = resolver._score_candidate("https://someone.com", "One", verify=True)
+
+        self.assertIn("ambiguous company name", candidate.reasons)
+        self.assertIn("company token missing from homepage", candidate.reasons)
+        self.assertNotIn("homepage title confirms company identity", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_search_snippet_can_confirm_an_ambiguous_company_name(self):
+        class SearchEvidenceFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "format=rss" in url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<rss><channel><item><title>Software company directory</title>"
+                            "<description>Official website for Ada</description>"
+                            "<link>https://ada.com/</link></item></channel></rss>"
+                        ),
+                    )
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                if url.rstrip("/") == "https://ada.com":
+                    return Page(url=url, final_url=url, html="<html><body>Build better software</body></html>")
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(SearchEvidenceFetcher(offline=True), verify_limit=2)
+
+        website_url, trace = resolver.resolve("Ada")
+
+        self.assertEqual(website_url, "https://ada.com")
+        self.assertIn("search result confirms company identity", trace["selected"]["reasons"])
+
+    def test_linkedin_slug_confirms_exact_short_name_domain(self):
+        class GenericHomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(url=url, final_url=url, html="<html><body>Secure cloud content</body></html>")
+
+        resolver = CompanyWebsiteResolver(GenericHomepageFetcher(offline=True))
+        linkedin_url = "https://www.linkedin.com/company/box"
+
+        exact = resolver._score_candidate(
+            "https://box.com",
+            "Box",
+            linkedin_company_url=linkedin_url,
+            verify=True,
+        )
+        unrelated = resolver._score_candidate(
+            "https://boxoffice.com",
+            "Box",
+            linkedin_company_url=linkedin_url,
+            verify=True,
+        )
+
+        self.assertIn("LinkedIn slug confirms domain", exact.reasons)
+        self.assertNotIn("LinkedIn slug confirms domain", unrelated.reasons)
+        self.assertEqual(resolver._select_verified_candidate([exact, unrelated]), exact)
+
+    def test_canonical_domain_confirms_short_company_identity(self):
+        class CanonicalFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html='<html><head><link rel="canonical" href="https://ada.com/"></head></html>',
+                )
+
+        resolver = CompanyWebsiteResolver(CanonicalFetcher(offline=True))
+
+        candidate = resolver._score_candidate("https://ada.ai", "Ada", verify=True)
+
+        self.assertEqual(candidate.url, "https://ada.com/")
+        self.assertIn("homepage canonical confirms company identity", candidate.reasons)
+        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
 
 if __name__ == "__main__":
     unittest.main()
