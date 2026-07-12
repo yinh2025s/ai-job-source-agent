@@ -83,6 +83,11 @@
 - Career search 按 Bing RSS、Bing HTML、DuckDuckGo HTML 逐源 fallback，并使用独立 source-fetch budget；只接受官方 career/job path 或包含完整公司 identity 的 ATS URL，安全解码 redirect、去重 ATS filter query；S2/S4 语义变化将 `ADAPTER_VERSION` 提升到 `2026-07-12.11`。
 - 新增 6-case 固定离线 resolver benchmark，覆盖短名、非 `.com`、多词父域陷阱、canonical migration 和纯负样本。
 - 新增原子、内容寻址 evaluation history：run 记录 UTC 时间、summary hash、commit、adapter version、Python/platform 和 benchmark command，自动与 latest baseline 生成 regression delta。
+- `RetryingFetcher` 增加有界 exponential backoff + jitter、deadline-aware sleep、可注入 clock/RNG/sleeper 和逐次 retry trace；429、5xx、timeout、DNS 可重试，403、登录墙和 parser/title mismatch 不重试，耗尽后保留原始 `FetchError`。
+- 新增 32-company/6-worker crash-recovery stress test，真实 `SIGKILL` 主进程后只恢复未完成公司，并验证稳定输入顺序、无重复、单 worker 失败隔离、原子 JSON 和无残留临时文件。
+- SuccessFactors Cloud SAP adapter 增加页面 locale 优先、record-level `supportedLocales` 和 exact-title early stop；新增 W. L. Gore、Colas、Telstra Broadcast Services、Nova 四个独立 live tenant。
+- 固定 live benchmark 扩展到 50 家：50/50 官网、career/job list 和 expectations，49/50 exact opening；SuccessFactors 达到 5 家独立 live 覆盖。
+- SuccessFactors/retry/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.12`。
 
 ## [0.1.0] - 2026-07-12
 
