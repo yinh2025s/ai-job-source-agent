@@ -172,6 +172,12 @@ class LiveBatchEvalTests(unittest.TestCase):
             job_list_page_url="https://a.example/careers",
             status="success",
             pipeline_status="partial",
+            trace={
+                "checkpoint_events": [
+                    {"stage": "website_resolution", "action": "restore"},
+                    {"stage": "career_discovery", "action": "save"},
+                ]
+            },
         )
         with tempfile.TemporaryDirectory() as directory:
             output_path = Path(directory) / "results.json"
@@ -198,6 +204,40 @@ class LiveBatchEvalTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertTrue(trace_path.exists())
             self.assertTrue(summary_path.exists())
+            result_records = json.loads(output_path.read_text(encoding="utf-8"))
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+
+            self.assertNotIn("trace", result_records[0])
+            self.assertEqual(summary["checkpoint_action_counts"], {"restore": 1, "save": 1})
+            self.assertEqual(
+                summary["checkpoint_stage_counts"],
+                {"website_resolution": 1, "career_discovery": 1},
+            )
+
+    def test_build_summary_uses_trace_records_for_checkpoint_activity(self):
+        result = {
+            "company_name": "A",
+            "status": "success",
+            "pipeline_status": "partial",
+        }
+        trace = {
+            **result,
+            "trace": {
+                "checkpoint_events": [
+                    {"stage": "opening_match", "action": "restore"},
+                ]
+            },
+        }
+
+        summary = build_summary(
+            [result],
+            SimpleNamespace(expectations=None),
+            elapsed_sec=1.0,
+            traces=[trace],
+        )
+
+        self.assertEqual(summary["checkpoint_action_counts"], {"restore": 1})
+        self.assertEqual(summary["checkpoint_stage_counts"], {"opening_match": 1})
 
     def test_resume_from_stage_reuses_replay_upstream_evidence(self):
         company = CompanyInput(

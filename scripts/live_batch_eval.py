@@ -159,7 +159,12 @@ def main() -> None:
                     started,
                 )
 
-    summary = build_summary(results, args, elapsed_sec=round(time.time() - started, 1))
+    summary = build_summary(
+        results,
+        args,
+        elapsed_sec=round(time.time() - started, 1),
+        traces=traces,
+    )
     if args.baseline_summary:
         baseline_summary = json.loads(Path(args.baseline_summary).read_text(encoding="utf-8"))
         summary["regression"] = compare_summaries(summary, baseline_summary)
@@ -187,8 +192,14 @@ def load_batch_companies(args: argparse.Namespace, linkedin_fetcher: FetchClient
     return linkedin_postings_to_company_inputs(postings)[: args.limit]
 
 
-def build_summary(results: list[dict], args: argparse.Namespace, elapsed_sec: float) -> dict:
-    summary = summarize_results(results, elapsed_sec=elapsed_sec)
+def build_summary(
+    results: list[dict],
+    args: argparse.Namespace,
+    elapsed_sec: float,
+    traces: list[dict] | None = None,
+) -> dict:
+    summary_records = traces if traces is not None else results
+    summary = summarize_results(summary_records, elapsed_sec=elapsed_sec)
     if args.expectations:
         expectations = json.loads(Path(args.expectations).read_text(encoding="utf-8"))
         if not getattr(args, "require_all_expectations", False):
@@ -226,7 +237,12 @@ def record_checkpoint(
     traces.append(dataclass_to_dict(result.trace_record()))
     output_path.write_text(json.dumps(results, indent=2), encoding="utf-8")
     trace_path.write_text(json.dumps(traces, indent=2), encoding="utf-8")
-    summary = build_summary(results, args, elapsed_sec=round(time.time() - started, 1))
+    summary = build_summary(
+        results,
+        args,
+        elapsed_sec=round(time.time() - started, 1),
+        traces=traces,
+    )
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(
         f"[{index:02d}/{total:02d}] "

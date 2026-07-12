@@ -48,6 +48,7 @@
 - Provider 解析语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.1`，旧 stage checkpoint 会安全失效。
 - Ashby adapter 保持 Posting API 优先，并在 API 失败、空或异常时回退同 board embedded JSON；Workable 增加同 account 公开链接、嵌套 payload 和分页 metadata 支持。
 - Evaluation summary 和 Markdown report 增加 checkpoint action/stage activity 统计。
+- Live batch 的持续与最终 summary 改为聚合独立 trace records，修复 `results.json` 保持精简时 checkpoint save/restore activity 被错误报告为空的问题。
 - Provider attribution 优先使用 opening/job-board stage evidence，避免 Greenhouse 返回外部 apply host 时被错误归类；replay export 使用同一归属规则。
 - 固定 live benchmark 从 6 家扩展到 9 家，新增 SanDisk/SmartRecruiters、ONEOK/Workday 和 Carv/Rippling 覆盖。
 - 固定 live benchmark 继续扩展到 11 家，新增 Plum/Workable 和 ReachMobi/BambooHR 覆盖。
