@@ -278,7 +278,7 @@
 
 当前测试数量：
 
-- 264 unit tests passing
+- 270 unit tests passing
 
 ## 当前主要短板
 
@@ -624,7 +624,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；264 个单元测试、12/12 固定离线 benchmark 和 9-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；270 个单元测试、12/12 固定离线 benchmark 和 11-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -662,7 +662,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 264 个测试和固定 benchmark 结果一致。
+- 重构后 270 个测试和固定 benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
@@ -701,7 +701,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；主线 architecture validator、264 个测试、12/12 offline benchmark 和 9/9 fixed live expectations 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
+当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；主线 architecture validator、270 个测试、12/12 offline benchmark 和 11/11 fixed live expectations 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -1032,4 +1032,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner 和并发安全 filesystem stage store 已接管 production CLI 与 live batch。失败样本可由 snapshot 一键生成离线 replay bundle。多轮并行开发通过 264 个测试和 12/12 offline benchmark 验证；最新固定 live benchmark 为 9/9 官网、9/9 job list、7/9 exact opening、9/9 expectation，覆盖 Greenhouse、Lever、Ashby、SmartRecruiters、Workday 和 Rippling。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner 和并发安全 filesystem stage store 已接管 production CLI 与 live batch。失败样本可由 snapshot 一键生成离线 replay bundle。多轮并行开发通过 270 个测试和 12/12 offline benchmark 验证；最新固定 live benchmark 为 11/11 官网、11/11 job list、8/11 exact opening、11/11 expectation，覆盖 Greenhouse、Lever、Ashby、SmartRecruiters、Workday、Rippling、Workable 和 BambooHR。

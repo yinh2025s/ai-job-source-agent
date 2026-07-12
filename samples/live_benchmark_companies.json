@@ -58,5 +58,19 @@
     "company_website_url": "https://getcarv.com",
     "career_root_url": "https://ats.rippling.com/carv-careers/jobs",
     "job_title": "Growth Product Manager"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Plum",
+    "company_website_url": "https://withplum.com",
+    "career_root_url": "https://apply.workable.com/withplum/",
+    "job_title": "Data Analyst - Operations"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "ReachMobi",
+    "company_website_url": "https://reachmobi.com",
+    "career_root_url": "https://reachmobi.bamboohr.com/careers",
+    "job_title": "Product Manager - Hybrid"
   }
 ]

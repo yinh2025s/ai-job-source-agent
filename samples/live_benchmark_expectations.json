@@ -52,5 +52,17 @@
     "expected_minimum_stage": "job_board_discovery",
     "require_exact_opening": false,
     "allow_job_board_fallback": true
+  },
+  "Plum": {
+    "expected_provider": "workable",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  },
+  "ReachMobi": {
+    "expected_provider": "bamboohr",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
   }
 }
