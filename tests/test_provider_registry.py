@@ -2,7 +2,13 @@ import unittest
 from pathlib import Path
 
 from job_source_agent.opening_matcher import JobOpeningMatcher
-from job_source_agent.providers import GreenhouseAdapter, JobQuery, ProviderRegistry, build_default_provider_registry
+from job_source_agent.providers import (
+    GreenhouseAdapter,
+    JobQuery,
+    ProviderRegistry,
+    build_default_provider_registry,
+    discover_native_adapters,
+)
 from job_source_agent.web import Fetcher
 
 
@@ -10,6 +16,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class ProviderRegistryTests(unittest.TestCase):
+    def test_native_adapters_are_discovered_without_central_registration(self):
+        adapters = discover_native_adapters()
+
+        self.assertIn("greenhouse", {adapter.name for adapter in adapters})
+        self.assertTrue(next(adapter for adapter in adapters if adapter.name == "greenhouse").supports_listing)
+
     def test_default_registry_preserves_existing_provider_detection(self):
         registry = build_default_provider_registry()
         cases = {
@@ -59,4 +71,3 @@ class ProviderRegistryTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

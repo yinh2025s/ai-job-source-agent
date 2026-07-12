@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from .career_search import CareerSearchResolver
-from .contracts import PipelineContext
+from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
 from .models import (
     STAGE_CAREER_DISCOVERY,
@@ -28,6 +28,7 @@ from .opening_matcher import (
     provider_api_candidates,
     structured_job_links,
 )
+from .providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
 from .reasons import canonical_reason_code, make_stage_result
 from .scoring import (
     is_ats_url,
@@ -38,7 +39,7 @@ from .scoring import (
     score_job_link,
 )
 from .stages import CareerDiscoveryStage, JobBoardDiscoveryStage, OpeningMatchStage, PipelineStageRunner
-from .web import FetchError, Fetcher, Page, RawLink, extract_links, normalize_url
+from .web import FetchError, Page, RawLink, extract_links, normalize_url
 
 
 COMMON_CAREER_PATHS = (
@@ -84,7 +85,8 @@ NON_JOB_BOARD_PATH_PARTS = {
 class JobSourceAgent:
     def __init__(
         self,
-        fetcher: Fetcher,
+        fetcher: FetchClient,
+        provider_registry: ProviderRegistry | None = None,
         max_candidates: int = 12,
         max_job_pages: int = 8,
         max_career_candidate_fetches: int | None = None,
@@ -95,6 +97,7 @@ class JobSourceAgent:
         career_search_timeout: float | None = None,
     ) -> None:
         self.fetcher = fetcher
+        self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
         self.max_candidates = max_candidates
         self.max_job_pages = max_job_pages
         self.max_career_candidate_fetches = (
@@ -145,8 +148,8 @@ class JobSourceAgent:
         PipelineStageRunner(
             (
                 CareerDiscoveryStage(self),
-                JobBoardDiscoveryStage(self),
-                OpeningMatchStage(self),
+                JobBoardDiscoveryStage(self, self.provider_registry),
+                OpeningMatchStage(self, self.provider_registry),
             )
         ).run(context)
         result.career_page_url = context.career_page_url
@@ -386,7 +389,7 @@ class JobSourceAgent:
                 return opening_url, resolved_job_list_url or job_list_url, trace
             trace["opening_error"] = "open_position_not_found"
             return None, resolved_job_list_url or job_list_url, trace
-        match, trace = JobOpeningMatcher(self.fetcher).match(
+        match, trace = JobOpeningMatcher(self.fetcher, self.provider_registry).match(
             job_list_url,
             target_title,
             target_location,
@@ -514,7 +517,7 @@ class JobSourceAgent:
     def _is_provider_job_board_url(self, url: str) -> bool:
         if is_resource_url(url):
             return False
-        provider = detect_provider(url)
+        provider = self.provider_registry.detect(url)
         if provider == "generic":
             return False
         parts = [part.lower() for part in urlparse(url).path.split("/") if part]
@@ -724,7 +727,7 @@ class JobSourceAgent:
         return None
 
     def _verify_derived_provider_board(self, board_url: str, html: str) -> tuple[bool, dict]:
-        provider = detect_provider(board_url)
+        provider = self.provider_registry.detect(board_url)
         verification = {
             "url": board_url,
             "provider": provider,

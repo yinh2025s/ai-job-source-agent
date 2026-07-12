@@ -6,7 +6,7 @@ from typing import Protocol
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
 from ..models import STAGE_CAREER_DISCOVERY, STAGE_JOB_BOARD_DISCOVERY, STAGE_OPENING_MATCH
-from ..opening_matcher import detect_provider
+from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
 from ..reasons import canonical_reason_code, classify_fetch_error, make_stage_result
 from ..web import FetchError, normalize_url
 
@@ -94,8 +94,13 @@ class CareerDiscoveryStage:
 class JobBoardDiscoveryStage:
     name = STAGE_JOB_BOARD_DISCOVERY
 
-    def __init__(self, service: JobBoardDiscoveryService) -> None:
+    def __init__(
+        self,
+        service: JobBoardDiscoveryService,
+        provider_registry: ProviderRegistry | None = None,
+    ) -> None:
         self.service = service
+        self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
 
     def run(self, context: PipelineContext) -> StageExecution:
         if not context.career_page_url:
@@ -121,7 +126,7 @@ class JobBoardDiscoveryStage:
                 trace=exc.trace,
             )
 
-        provider = detect_provider(job_list_url)
+        provider = self.provider_registry.detect(job_list_url)
         provider = None if provider == "generic" else provider
         return StageExecution(
             result=make_stage_result(
@@ -141,8 +146,13 @@ class JobBoardDiscoveryStage:
 class OpeningMatchStage:
     name = STAGE_OPENING_MATCH
 
-    def __init__(self, service: OpeningMatchService) -> None:
+    def __init__(
+        self,
+        service: OpeningMatchService,
+        provider_registry: ProviderRegistry | None = None,
+    ) -> None:
         self.service = service
+        self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
 
     def run(self, context: PipelineContext) -> StageExecution:
         if not context.job_list_page_url:
@@ -178,7 +188,11 @@ class OpeningMatchStage:
                 result=make_stage_result(
                     self.name,
                     "success",
-                    provider=detect_provider(opening_url) if detect_provider(opening_url) != "generic" else context.provider,
+                    provider=(
+                        self.provider_registry.detect(opening_url)
+                        if self.provider_registry.detect(opening_url) != "generic"
+                        else context.provider
+                    ),
                     duration_ms=_elapsed_ms(started),
                     input_count=1,
                     output_count=1,

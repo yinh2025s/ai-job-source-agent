@@ -75,3 +75,6 @@ def _location_name(job: dict) -> str | None:
     if isinstance(location, dict) and location.get("name"):
         return str(location["name"])
     return None
+
+
+ADAPTER = GreenhouseAdapter()

@@ -278,21 +278,21 @@
 
 当前测试数量：
 
-- 105 unit tests passing
+- 122 unit tests passing
 
 ## 当前主要短板
 
 ### 1. Core Modules Still Violate SOLID Boundaries
 
-当前已有 resolver、fetch wrapper、result schema 和测试分层，但还没有完成真正的低耦合 stage/provider 架构：
+当前已完成第一轮 SOLID 拆分，但仍有兼容层需要逐步迁移：
 
-- `JobSourceAgent` 同时负责 S4-S7 调度、页面发现、provider routing、结果组装和验证。
-- `opening_matcher.py` 同时负责 provider detection、request construction、response parsing 和 title matching。
-- `live_batch_eval.py` 同时负责 composition、并发、预算、checkpoint 和输出。
-- 新增 provider 需要修改多个中央条件分支，尚未达到 Open/Closed。
-- Fetcher 依赖注入方向正确，但缺少显式 protocol 和跨实现 contract tests。
+- S4-S6 已通过独立 stage/context/runner 执行，但 `JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
+- Greenhouse 已迁移为原生 adapter；其他 provider 仍由 `opening_matcher.py` 的 legacy compatibility path 提供能力。
+- `live_batch_eval.py` 已使用 composition root，但调度、预算和 checkpoint 仍在同一 runner script 中。
+- Fetcher 已有显式 protocol 和 contract tests；S2/S3/S7 的完整 stage 化仍待 Pipeline 工作线完成。
+- 原生 adapter 已支持包内自动发现；新 provider 不再需要修改中央 registry。
 
-这项短板优先于继续扩展 provider。必须先完成 behavior-preserving architecture refactor，让后续 adapter 能够独立开发、测试和合并。
+Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resolver、Fetch 和 Evaluation 工作线并行，同时继续收缩 legacy compatibility path。
 
 ### 2. Provider Adapter Still Incomplete
 
@@ -494,7 +494,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 后续实现统一遵循 SOLID 和明确 ownership boundary：
 
 - **Single Responsibility**：每个 stage、resolver、provider adapter、fetch wrapper 和 reporter 只有一个主要变化原因。
-- **Open/Closed**：新增 ATS 主要通过新增 adapter 和 registry registration 完成，不继续扩大中央条件分支。
+- **Open/Closed**：新增 ATS 通过新增导出 `ADAPTER` 的 provider module 完成，不修改中央 registry 或扩大条件分支。
 - **Liskov Substitution**：所有 fetcher、stage 和 provider implementation 遵循相同成功、空结果和异常语义。
 - **Interface Segregation**：stage、provider、fetch、checkpoint 和 reporting 使用独立的小型 contract。
 - **Dependency Inversion**：业务 stage 依赖 protocol/contract；HTTP、Playwright、filesystem 和具体 adapter 在 composition root 注入。
@@ -623,11 +623,13 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：治理、目标架构和第一份 ADR 已建立；代码拆分尚未开始。现有测试与固定 benchmark 作为 behavior-preserving refactor 的安全网。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到。版本化 contracts、S4-S6 独立 stage runner、provider registry、Greenhouse 原生 adapter、adapter 自动发现和 composition root 已实现；122 个单元测试、11/11 固定离线 benchmark 和离线 CLI smoke 均通过。S2/S3/S7 stage 化及其 checkpoint runner 继续由后续 Pipeline 工作线完成。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
 #### 2.1 Freeze Small Contracts
+
+当前状态：已完成第一版。`FetchClient`、`PipelineContext`、`StageExecution`、`Stage`、`CheckpointStore`、`ProviderAdapter`、`JobBoard`、`JobQuery` 和 `AdapterResult` 已有显式 contract tests。
 
 目标：
 
@@ -646,6 +648,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.2 Extract Independent Stages
 
+当前状态：S4 career discovery、S5 job-board discovery 和 S6 opening match 已拆成独立 stage，并由 `PipelineStageRunner` 通过版本化 context 执行；`JobSourceAgent.discover()` 保留为兼容 facade。S2/S3/S7 仍待后续 Pipeline 工作线迁移。
+
 目标：
 
 - 将 S2-S7 拆成单一职责 stage；S1 保持独立 discovery source。
@@ -657,10 +661,12 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构前后现有 105 个测试和固定 benchmark 结果一致。
+- 重构后 122 个测试和固定 benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
+
+当前状态：已完成可并行扩展的第一版。Greenhouse 已迁移为原生 structured API adapter；provider module 通过导出 `ADAPTER` 自动注册，其他 provider 暂时保留 detection-only compatibility adapter 和 legacy parser path。
 
 目标：
 
@@ -671,12 +677,14 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 验收标准：
 
-- 新增 provider 主要通过新增 adapter、fixture、测试和一条 registry registration 完成。
+- 新增 provider 通过新增导出 `ADAPTER` 的 module、fixture 和测试完成，不修改中央 registry。
 - Stage runner 和 opening matcher 不再包含不断增长的 `if provider == ...` 分支。
 - Provider 空结果、unsupported variant、retryable failure 和 parsing failure 使用统一结果语义。
 - 每个 adapter 可以完全离线测试。
 
 #### 2.4 Establish A Composition Root
+
+当前状态：已完成第一版。`composition.py` 集中构造 static/browser/retry/snapshot fetcher、provider registry 和 agent；CLI 与 live batch runner 已改用统一 composition functions。
 
 目标：
 
@@ -691,6 +699,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - Browser、retry 和 snapshot 可以通过配置组合，不改变 stage 代码。
 
 #### 2.5 Parallel Development Gate
+
+当前状态（2026-07-12）：已通过。Contracts 已合并；Greenhouse 代表性 adapter 已迁移；native adapter 无中央注册热点；全量测试、benchmark 和 CLI smoke 均通过；架构文档与目录边界已同步。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -1018,4 +1028,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和多个 ATS 的 structured extraction 已完成第一版。当前主要工程短板是 S4-S6 与 provider 规则仍集中在少数中央模块；下一步先按 SOLID 拆出 stage contract、provider registry 和 composition root，再并行进行 provider hardening、阶段 replay 和 live reliability 优化。
+> 七关状态模型、统一错误码、benchmark 矩阵和多个 ATS 的 structured extraction 已完成第一版；SOLID 并行开发门槛也已达到。S4-S6 已成为独立 stage，Greenhouse 已迁移到自动发现的 provider adapter，CLI/live runner 使用统一 composition root。下一步可以并行推进 provider 迁移、S2/S3/S7 stage 化、resolver hardening、fetch reliability 和 benchmark 扩展。

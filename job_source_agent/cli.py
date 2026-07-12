@@ -5,12 +5,11 @@ import json
 from pathlib import Path
 
 from .company_identity import CompanyIdentityResolver
+from .composition import FetcherConfig, build_application
+from .contracts import FetchClient
 from .linkedin import load_company_inputs
 from .linkedin_discovery import LinkedInJobsDiscoverer, linkedin_postings_to_company_inputs
 from .models import dataclass_to_dict
-from .pipeline import JobSourceAgent
-from .rendered_fetcher import RenderedFetcher, SmartRenderedFetcher
-from .web import Fetcher
 from .website_resolver import CompanyWebsiteResolver
 
 
@@ -44,29 +43,22 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
-    if args.render_js_always:
-        fetcher = RenderedFetcher(
+    application = build_application(
+        FetcherConfig(
             fixtures_dir=args.fixtures_dir,
             offline=args.offline,
             timeout=args.fetch_timeout,
-            capture_screenshot=args.render_screenshot,
-        )
-    elif args.render_js:
-        fetcher = SmartRenderedFetcher(
-            fixtures_dir=args.fixtures_dir,
-            offline=args.offline,
-            timeout=args.fetch_timeout,
+            render_mode="always" if args.render_js_always else "smart" if args.render_js else "none",
             render_budget=args.render_budget,
             capture_screenshot=args.render_screenshot,
         )
-    else:
-        fetcher = Fetcher(fixtures_dir=args.fixtures_dir, offline=args.offline, timeout=args.fetch_timeout)
+    )
+    fetcher = application.fetcher
     companies = _load_companies(args, fetcher)
     if args.limit:
         companies = companies[: args.limit]
 
-    agent = JobSourceAgent(fetcher)
-    results = [agent.discover(company) for company in companies]
+    results = [application.agent.discover(company) for company in companies]
 
     Path(args.output).write_text(
         json.dumps([result.result_record() for result in results], indent=2),
@@ -90,7 +82,7 @@ def main(argv: list[str] | None = None) -> None:
             print(f"  error: {result.error}")
 
 
-def _load_companies(args: argparse.Namespace, fetcher: Fetcher):
+def _load_companies(args: argparse.Namespace, fetcher: FetchClient):
     if args.linkedin_keywords:
         discoverer = LinkedInJobsDiscoverer(fetcher)
         postings = discoverer.search(

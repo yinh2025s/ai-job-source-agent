@@ -14,6 +14,8 @@
 - 增加版本化 stage context/execution、最小 fetch client、provider adapter 和 checkpoint store contracts。
 - 增加可独立运行的 S4 career、S5 job board、S6 opening stages 和顺序 stage runner。
 - 增加 provider registry，并将 Greenhouse structured API 迁移为首个原生 provider adapter。
+- 原生 provider adapter 改为包内自动发现，新增 ATS 不再需要修改中央 registry。
+- 增加 composition root，集中构造 fetch wrappers、provider registry 和 agent，并让 CLI/live runner 使用统一依赖组合。
 
 ### Changed
 

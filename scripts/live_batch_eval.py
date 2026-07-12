@@ -10,6 +10,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.company_identity import CompanyIdentityResolver
+from job_source_agent.composition import AgentConfig, FetcherConfig, build_agent, build_fetcher
+from job_source_agent.contracts import FetchClient
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.linkedin_discovery import (
@@ -28,13 +30,9 @@ from job_source_agent.models import (
     DiscoveryResult,
     dataclass_to_dict,
 )
-from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.process_budget import ProcessBudgetExceeded, RemoteProcessError, run_with_process_budget
 from job_source_agent.reasons import canonical_reason_code, make_stage_result
-from job_source_agent.rendered_fetcher import SmartRenderedFetcher
-from job_source_agent.retrying_fetcher import RetryingFetcher
-from job_source_agent.snapshot import SnapshottingFetcher
-from job_source_agent.web import Fetcher, normalize_url
+from job_source_agent.web import normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
 
 
@@ -101,7 +99,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
-    linkedin_fetcher = Fetcher(timeout=max(args.fetch_timeout, 6))
+    linkedin_fetcher = build_fetcher(FetcherConfig(timeout=max(args.fetch_timeout, 6)))
     companies = load_batch_companies(args, linkedin_fetcher)
 
     output_path = Path(args.output)
@@ -164,7 +162,7 @@ def main() -> None:
         raise SystemExit("Live expectations failed; see the summary JSON for details.")
 
 
-def load_batch_companies(args: argparse.Namespace, linkedin_fetcher: Fetcher) -> list[CompanyInput]:
+def load_batch_companies(args: argparse.Namespace, linkedin_fetcher: FetchClient) -> list[CompanyInput]:
     if args.input:
         return load_company_inputs(args.input)[: args.limit]
     if not args.linkedin_keywords:
@@ -372,15 +370,17 @@ def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyI
 
 def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -> DiscoveryResult:
     fetcher = build_company_fetcher(args)
-    result = JobSourceAgent(
+    result = build_agent(
         fetcher,
-        max_candidates=args.max_career_candidates,
-        max_job_pages=args.max_job_pages,
-        max_career_candidate_fetches=args.max_career_fetches,
-        max_career_search_queries=args.max_career_search_queries,
-        max_ats_board_fetches=args.max_ats_board_fetches,
-        enable_sitemap_discovery=not args.skip_sitemap,
-        career_search_timeout=args.career_search_timeout,
+        AgentConfig(
+            max_candidates=args.max_career_candidates,
+            max_job_pages=args.max_job_pages,
+            max_career_candidate_fetches=args.max_career_fetches,
+            max_career_search_queries=args.max_career_search_queries,
+            max_ats_board_fetches=args.max_ats_board_fetches,
+            enable_sitemap_discovery=not args.skip_sitemap,
+            career_search_timeout=args.career_search_timeout,
+        ),
     ).discover(company)
     retry_events = getattr(fetcher, "retry_events", None)
     if retry_events:
@@ -392,25 +392,17 @@ def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -
 
 
 def build_company_fetcher(args: argparse.Namespace):
-    if args.render_js:
-        fetcher = SmartRenderedFetcher(
+    return build_fetcher(
+        FetcherConfig(
             timeout=args.fetch_timeout,
+            render_mode="smart" if args.render_js else "none",
             render_budget=args.render_budget,
             capture_screenshot=bool(getattr(args, "render_screenshot", False)),
+            retries=int(getattr(args, "fetch_retries", 0) or 0),
+            retry_base_delay=float(getattr(args, "retry_base_delay", 0.25) or 0),
+            snapshot_dir=getattr(args, "snapshot_dir", None),
         )
-    else:
-        fetcher = Fetcher(timeout=args.fetch_timeout)
-    fetch_retries = int(getattr(args, "fetch_retries", 0) or 0)
-    if fetch_retries > 0:
-        fetcher = RetryingFetcher(
-            fetcher,
-            max_retries=fetch_retries,
-            base_delay=float(getattr(args, "retry_base_delay", 0.25) or 0),
-        )
-    snapshot_dir = getattr(args, "snapshot_dir", None)
-    if snapshot_dir:
-        return SnapshottingFetcher(fetcher, snapshot_dir)
-    return fetcher
+    )
 
 
 def failure_result(company: CompanyInput, error: str, detail: str | None = None) -> DiscoveryResult:

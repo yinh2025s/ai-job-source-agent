@@ -15,7 +15,7 @@
 
 1. 将 S1-S7 定义成使用版本化 `PipelineContext` 和 `StageExecution` 的独立 stage。
 2. 建立 `ProviderAdapter` contract 和 registry。
-3. 每个 provider 将 detection、request construction 和 response parsing 收进自己的模块。
+3. 每个 provider 将 detection、request construction 和 response parsing 收进自己的模块，并通过导出 `ADAPTER` 自动注册。
 4. Runner 通过依赖注入获得 stage、fetch client、provider registry 和 checkpoint store。
 5. 不同公司允许 bounded parallel，同一家公司的 hard-dependent stages 保持顺序执行。
 6. 新增 provider 不允许继续扩大中央 `if provider == ...` 分支。
@@ -40,7 +40,6 @@
 ## Validation
 
 - 现有全量单测和固定离线 benchmark 在重构前后结果一致。
-- 新增一个示例 provider 只需要新增 adapter、fixture、测试和一个 registry registration。
+- 新增一个示例 provider 只需要新增导出 `ADAPTER` 的 module、fixture 和测试。
 - S4、S5、S6 可以独立运行并分别写入 checkpoint。
 - `--rerun-stage` 能使指定 stage 及下游失效，而不重新执行兼容的上游 stage。
-

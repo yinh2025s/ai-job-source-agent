@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import importlib
+import pkgutil
 
 from .base import ProviderAdapter
 from .domain import DomainProviderAdapter
-from .greenhouse import GreenhouseAdapter
 
 
 class ProviderRegistry:
@@ -31,23 +32,44 @@ class ProviderRegistry:
 
 
 def build_default_provider_registry() -> ProviderRegistry:
-    return ProviderRegistry(
-        (
-            GreenhouseAdapter(),
-            DomainProviderAdapter("google_careers", ("google.com",)),
-            DomainProviderAdapter("meta_careers", ("metacareers.com",)),
-            DomainProviderAdapter("lever", ("lever.co",)),
-            DomainProviderAdapter("ashby", ("ashbyhq.com",)),
-            DomainProviderAdapter("workable", ("workable.com",)),
-            DomainProviderAdapter("smartrecruiters", ("smartrecruiters.com",)),
-            DomainProviderAdapter("icims", ("icims.com",)),
-            DomainProviderAdapter("workday", ("workdayjobs.com", "myworkdayjobs.com")),
-            DomainProviderAdapter("successfactors", ("successfactors.com", "sapsf.com")),
-            DomainProviderAdapter("bamboohr", ("bamboohr.com",)),
-            DomainProviderAdapter("rippling", ("rippling.com",)),
-        )
+    native_adapters = discover_native_adapters()
+    native_names = {adapter.name for adapter in native_adapters}
+    compatibility_adapters = [
+        adapter
+        for adapter in _domain_compatibility_adapters()
+        if adapter.name not in native_names
+    ]
+    return ProviderRegistry((*native_adapters, *compatibility_adapters))
+
+
+def discover_native_adapters() -> tuple[ProviderAdapter, ...]:
+    package = importlib.import_module(__package__)
+    adapters = []
+    excluded_modules = {"base", "domain", "registry"}
+    for module_info in pkgutil.iter_modules(package.__path__):
+        if module_info.name in excluded_modules or module_info.ispkg:
+            continue
+        module = importlib.import_module(f"{__package__}.{module_info.name}")
+        adapter = getattr(module, "ADAPTER", None)
+        if adapter is not None:
+            adapters.append(adapter)
+    return tuple(sorted(adapters, key=lambda adapter: adapter.name))
+
+
+def _domain_compatibility_adapters() -> tuple[DomainProviderAdapter, ...]:
+    return (
+        DomainProviderAdapter("google_careers", ("google.com",)),
+        DomainProviderAdapter("meta_careers", ("metacareers.com",)),
+        DomainProviderAdapter("lever", ("lever.co",)),
+        DomainProviderAdapter("ashby", ("ashbyhq.com",)),
+        DomainProviderAdapter("workable", ("workable.com",)),
+        DomainProviderAdapter("smartrecruiters", ("smartrecruiters.com",)),
+        DomainProviderAdapter("icims", ("icims.com",)),
+        DomainProviderAdapter("workday", ("workdayjobs.com", "myworkdayjobs.com")),
+        DomainProviderAdapter("successfactors", ("successfactors.com", "sapsf.com")),
+        DomainProviderAdapter("bamboohr", ("bamboohr.com",)),
+        DomainProviderAdapter("rippling", ("rippling.com",)),
     )
 
 
 DEFAULT_PROVIDER_REGISTRY = build_default_provider_registry()
-
