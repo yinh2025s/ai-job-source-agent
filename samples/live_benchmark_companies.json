@@ -79,5 +79,12 @@
     "company_website_url": "https://ardenthealth.com",
     "career_root_url": "https://jobs.ardenthealth.com/new-mexico/jobs",
     "job_title": "Registered Nurse"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "DeLaval",
+    "company_website_url": "https://www.delaval.com",
+    "career_root_url": "https://delaval-careers.jobs.hr.cloud.sap/search/?locale=en_GB",
+    "job_title": "Process Engineer"
   }
 ]

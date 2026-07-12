@@ -1,4 +1,5 @@
 import unittest
+import json
 from pathlib import Path
 
 from job_source_agent.providers.base import JobBoard, JobQuery, ProviderAdapter
@@ -37,12 +38,117 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
     def test_recognizes_successfactors_and_sapsf_without_lookalikes(self):
         self.assertTrue(self.adapter.recognizes("https://career4.successfactors.com/career"))
         self.assertTrue(self.adapter.recognizes("https://acme.jobs.sapsf.com/career"))
+        self.assertTrue(self.adapter.recognizes("https://acme-careers.jobs.hr.cloud.sap/search/"))
         self.assertFalse(self.adapter.recognizes("https://successfactors.com.evil.example/career"))
         self.assertFalse(self.adapter.recognizes("https://example.com/successfactors.com/career"))
         self.assertFalse(self.adapter.recognizes("ftp://career4.successfactors.com/career"))
         self.assertFalse(self.adapter.recognizes("https://career4.successfactors.com:8443/career"))
         self.assertFalse(self.adapter.recognizes("https://user@career4.successfactors.com/career"))
         self.assertFalse(self.adapter.recognizes("https://[broken/career"))
+
+    def test_identifies_cloud_sap_board_and_canonicalizes_search_path(self):
+        board = self.adapter.identify_board(
+            "https://acme-careers.jobs.hr.cloud.sap/job/Old/123-en_GB/"
+            "?locale=en_GB&q=Analyst#top"
+        )
+
+        self.assertEqual(board.identifier, "cloud:acme-careers.jobs.hr.cloud.sap")
+        self.assertEqual(
+            board.url,
+            "https://acme-careers.jobs.hr.cloud.sap/search/?locale=en_GB",
+        )
+
+    def test_cloud_sap_api_uses_csrf_paginates_and_builds_detail_urls(self):
+        search_html = """
+        <script>
+          var CSRFToken = "csrf-123";
+          var appParams = { locale: "en_GB" };
+        </script>
+        """
+
+        class CloudFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append({"url": url, "data": data, "headers": headers})
+                if data is None:
+                    return Page(url=url, final_url=url, html=search_html, source="cloud-search")
+                payload = json.loads(data)
+                page_number = payload["pageNumber"]
+                count = 10 if page_number == 0 else 1
+                jobs = [
+                    {"response": {
+                        "id": str(9500 + page_number * 10 + index),
+                        "unifiedStandardTitle": (
+                            "Process Engineer" if page_number == 0 and index == 0 else f"Role {index}"
+                        ),
+                        "unifiedUrlTitle": (
+                            "Process-Engineer" if page_number == 0 and index == 0 else f"Role-{index}"
+                        ),
+                        "jobLocationShort": ["Chillicothe, USA, 64601<br/>"]
+                    }}
+                    for index in range(count)
+                ]
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=json.dumps({"jobSearchResult": jobs, "totalJobs": 11}),
+                    source="cloud-api",
+                )
+
+        fetcher = CloudFetcher()
+        board = self.adapter.identify_board(
+            "https://acme-careers.jobs.hr.cloud.sap/search/?locale=en_GB"
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Process Engineer", location="USA"),
+        )
+
+        self.assertEqual(len(result.candidates), 11)
+        self.assertEqual(
+            result.candidates[0].url,
+            "https://acme-careers.jobs.hr.cloud.sap/job/Process-Engineer/9500-en_GB/",
+        )
+        self.assertEqual(result.candidates[0].location, "Chillicothe, USA, 64601")
+        self.assertEqual(result.trace["variant"], "cloud_sap")
+        self.assertEqual(result.trace["page_count"], 2)
+        api_calls = fetcher.calls[1:]
+        self.assertEqual([json.loads(call["data"])["pageNumber"] for call in api_calls], [0, 1])
+        self.assertEqual(json.loads(api_calls[0]["data"])["keywords"], "Process Engineer")
+        self.assertEqual(json.loads(api_calls[0]["data"])["location"], "USA")
+        self.assertEqual(api_calls[0]["headers"]["X-CSRF-Token"], "csrf-123")
+        self.assertEqual(
+            api_calls[0]["headers"]["Origin"],
+            "https://acme-careers.jobs.hr.cloud.sap",
+        )
+
+    def test_cloud_sap_rejects_missing_page_evidence_and_cross_origin_api(self):
+        board = self.adapter.identify_board(
+            "https://acme-careers.jobs.hr.cloud.sap/search/"
+        )
+        missing = self.adapter.list_jobs(StubFetcher("<html></html>"), board, JobQuery())
+        self.assertEqual(missing.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+
+        class RedirectFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if data is None:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html='var CSRFToken = "token"; var appParams = {locale: "en_GB"};',
+                    )
+                return Page(
+                    url=url,
+                    final_url="https://evil.example/services/recruiting/v1/jobs",
+                    html='{"jobSearchResult": [], "totalJobs": 0}',
+                )
+
+        redirected = self.adapter.list_jobs(RedirectFetcher(), board, JobQuery())
+        self.assertEqual(redirected.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
 
     def test_identifies_board_and_removes_detail_or_search_parameters(self):
         board = self.adapter.identify_board(

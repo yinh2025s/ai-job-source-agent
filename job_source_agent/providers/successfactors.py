@@ -3,13 +3,18 @@ from __future__ import annotations
 from html import unescape
 from html.parser import HTMLParser
 import json
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+import re
+from urllib.parse import parse_qsl, quote, urlencode, urljoin, urlparse, urlunparse
 
 from ..web import FetchError, safe_normalize_url
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _HOST_SUFFIXES = ("successfactors.com", "sapsf.com")
+_CLOUD_SAP_SUFFIX = ".jobs.hr.cloud.sap"
+_CLOUD_IDENTIFIER_PREFIX = "cloud:"
+_CLOUD_PAGE_SIZE = 10
+_CLOUD_MAX_PAGES = 5
 _DETAIL_ID_FIELDS = (
     "career_job_req_id",
     "jobReqId",
@@ -49,7 +54,10 @@ class SuccessFactorsAdapter:
             and not parsed.username
             and not parsed.password
             and port in {None, 80, 443}
-            and any(host == suffix or host.endswith(f".{suffix}") for suffix in _HOST_SUFFIXES)
+            and (
+                any(host == suffix or host.endswith(f".{suffix}") for suffix in _HOST_SUFFIXES)
+                or host.endswith(_CLOUD_SAP_SUFFIX)
+            )
         )
 
     def identify_board(self, url: str) -> JobBoard | None:
@@ -60,6 +68,20 @@ class SuccessFactorsAdapter:
             return None
 
         parsed = urlparse(normalized)
+        if _is_cloud_sap_host(parsed.hostname or ""):
+            query = [
+                (key, value)
+                for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+                if key.casefold() == "locale" and value
+            ]
+            board_url = urlunparse(
+                parsed._replace(path="/search/", query=urlencode(query), fragment="")
+            )
+            return JobBoard(
+                url=board_url,
+                provider=self.name,
+                identifier=f"{_CLOUD_IDENTIFIER_PREFIX}{(parsed.hostname or '').casefold()}",
+            )
         query = []
         company = ""
         for key, value in parse_qsl(parsed.query, keep_blank_values=True):
@@ -84,6 +106,8 @@ class SuccessFactorsAdapter:
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
                 trace={"adapter": self.name, "error": "missing SuccessFactors board identifier"},
             )
+        if board.identifier.startswith(_CLOUD_IDENTIFIER_PREFIX):
+            return self._list_cloud_sap_jobs(fetcher, board, query)
 
         search_url = _search_url(board.url, query.title)
         try:
@@ -123,6 +147,127 @@ class SuccessFactorsAdapter:
                 "candidate_count": len(candidates),
                 "embedded_payload_count": len(values),
                 "pagination": pagination,
+            },
+        )
+
+    def _list_cloud_sap_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
+        expected_host = board.identifier.removeprefix(_CLOUD_IDENTIFIER_PREFIX).casefold()
+        if not expected_host or not _same_safe_host(board.url, expected_host):
+            return _unsupported_cloud_result(board, "invalid SAP Career Site board origin")
+
+        search_url = _cloud_search_url(board.url, query.title)
+        try:
+            page = fetcher.fetch(search_url)
+        except FetchError as exc:
+            return AdapterResult(
+                provider=self.name,
+                board=board,
+                reason_code="PROVIDER_FETCH_FAILED",
+                retryable=True,
+                trace={"adapter": self.name, "variant": "cloud_sap", "search_urls": [search_url], "error": str(exc)},
+            )
+        final_url = page.final_url or page.url
+        if not _same_safe_host(final_url, expected_host):
+            return _unsupported_cloud_result(board, "SAP Career Site search redirected outside origin")
+        csrf_token = _cloud_csrf_token(page.html)
+        locale = _cloud_locale(page.html, final_url)
+        if not csrf_token or not locale:
+            return _unsupported_cloud_result(board, "missing SAP Career Site CSRF token or locale")
+
+        parsed = urlparse(final_url)
+        api_url = urlunparse((parsed.scheme, parsed.netloc, "/services/recruiting/v1/jobs", "", "", ""))
+        candidates: list[JobCandidate] = []
+        api_urls: list[str] = []
+        total_jobs: int | None = None
+        response_source: str | None = None
+        for page_number in range(_CLOUD_MAX_PAGES):
+            payload = {
+                "locale": locale,
+                "pageNumber": page_number,
+                "sortBy": "",
+                "keywords": (query.title or "").strip(),
+                "location": (query.location or "").strip(),
+                "facetFilters": {},
+                "brand": "",
+                "skills": [],
+                "categoryId": 0,
+                "alertId": "",
+                "rcmCandidateId": "",
+            }
+            api_urls.append(api_url)
+            try:
+                response = fetcher.fetch(
+                    api_url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                        "X-CSRF-Token": csrf_token,
+                        "Origin": _origin(final_url),
+                        "Referer": final_url,
+                    },
+                )
+            except FetchError as exc:
+                if candidates:
+                    break
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    reason_code="PROVIDER_FETCH_FAILED",
+                    retryable=True,
+                    trace={
+                        "adapter": self.name,
+                        "variant": "cloud_sap",
+                        "search_urls": [search_url],
+                        "api_urls": api_urls,
+                        "error": str(exc),
+                    },
+                )
+            response_source = response_source or response.source
+            response_url = response.final_url or response.url
+            if not _same_safe_host(response_url, expected_host, expected_path="/services/recruiting/v1/jobs"):
+                return _unsupported_cloud_result(board, "SAP recruiting API redirected outside origin")
+            try:
+                payload_data = json.loads(response.html)
+            except (json.JSONDecodeError, TypeError):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    reason_code="INVALID_STRUCTURED_DATA",
+                    trace={"adapter": self.name, "variant": "cloud_sap", "api_urls": api_urls},
+                )
+            results = payload_data.get("jobSearchResult") if isinstance(payload_data, dict) else None
+            if not isinstance(results, list):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    reason_code="INVALID_STRUCTURED_DATA",
+                    trace={"adapter": self.name, "variant": "cloud_sap", "api_urls": api_urls},
+                )
+            page_candidates = _cloud_candidates(results, final_url, expected_host, locale)
+            candidates.extend(page_candidates)
+            parsed_total = _nonnegative_int(payload_data.get("totalJobs"))
+            if parsed_total is not None:
+                total_jobs = max(total_jobs or 0, parsed_total)
+            if not results or total_jobs is None or len(candidates) >= total_jobs:
+                break
+
+        candidates = _dedupe_candidates(candidates)
+        return AdapterResult(
+            provider=self.name,
+            board=board,
+            candidates=candidates,
+            reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            trace={
+                "adapter": self.name,
+                "variant": "cloud_sap",
+                "search_urls": [search_url],
+                "api_urls": api_urls,
+                "response_source": response_source,
+                "candidate_count": len(candidates),
+                "page_count": len(api_urls),
+                "total_jobs": total_jobs,
+                "locale": locale,
             },
         )
 
@@ -186,6 +331,128 @@ class _SuccessFactorsHTMLParser(HTMLParser):
             self.links.append((self._href, " ".join("".join(self._link_parts).split())))
             self._href = ""
             self._link_parts = None
+
+
+def _cloud_search_url(board_url: str, title: str | None) -> str:
+    parsed = urlparse(board_url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        if key.casefold() != "q"
+    ]
+    if title and title.strip():
+        query.append(("q", title.strip()))
+    return urlunparse(parsed._replace(path="/search/", query=urlencode(query), fragment=""))
+
+
+def _cloud_csrf_token(html: str) -> str:
+    match = re.search(r'\bCSRFToken\s*=\s*["\']([^"\']+)', html or "")
+    return match.group(1).strip() if match else ""
+
+
+def _cloud_locale(html: str, page_url: str) -> str:
+    locale = _query_value(urlparse(page_url).query, "locale")
+    if not locale:
+        match = re.search(r'\blocale\s*:\s*["\']([a-z]{2}_[A-Z]{2})["\']', html or "")
+        locale = match.group(1) if match else ""
+    return locale if re.fullmatch(r"[a-z]{2}_[A-Z]{2}", locale) else ""
+
+
+def _cloud_candidates(
+    results: list[object],
+    board_url: str,
+    expected_host: str,
+    locale: str,
+) -> list[JobCandidate]:
+    candidates = []
+    for item in results:
+        record = item.get("response") if isinstance(item, dict) else None
+        if not isinstance(record, dict):
+            continue
+        title = str(record.get("unifiedStandardTitle") or "").strip()
+        job_id = str(record.get("id") or "").strip()
+        raw_slug = str(record.get("unifiedUrlTitle") or record.get("urlTitle") or "").strip()
+        if not title or not job_id.isdigit() or not raw_slug:
+            continue
+        slug = quote(unescape(raw_slug), safe="-._~%")
+        detail_url = safe_normalize_url(f"/job/{slug}/{job_id}-{locale}/", board_url)
+        if not detail_url or not _same_safe_host(detail_url, expected_host):
+            continue
+        candidates.append(
+            JobCandidate(
+                title=title,
+                url=detail_url,
+                provider="successfactors",
+                location=_cloud_location(record),
+                raw={"job_req_id": job_id},
+            )
+        )
+    return candidates
+
+
+def _cloud_location(record: dict) -> str | None:
+    values = record.get("jobLocationShort")
+    if not isinstance(values, list):
+        return None
+    locations = []
+    for value in values:
+        if not isinstance(value, str):
+            continue
+        text = unescape(re.sub(r"<[^>]+>", " ", value))
+        text = " ".join(text.split())
+        if text and text not in locations:
+            locations.append(text)
+    return "; ".join(locations) or None
+
+
+def _origin(url: str) -> str:
+    parsed = urlparse(url)
+    return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+
+
+def _is_cloud_sap_host(host: str) -> bool:
+    return host.casefold().endswith(_CLOUD_SAP_SUFFIX)
+
+
+def _same_safe_host(
+    url: str,
+    expected_host: str,
+    *,
+    expected_path: str | None = None,
+) -> bool:
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return False
+    standard_port = port is None or (parsed.scheme == "https" and port == 443) or (
+        parsed.scheme == "http" and port == 80
+    )
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.username is None
+        and parsed.password is None
+        and standard_port
+        and (parsed.hostname or "").casefold() == expected_host.casefold()
+        and (expected_path is None or parsed.path.rstrip("/") == expected_path.rstrip("/"))
+    )
+
+
+def _nonnegative_int(value) -> int | None:
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        return None
+    return result if result >= 0 else None
+
+
+def _unsupported_cloud_result(board: JobBoard, error: str) -> AdapterResult:
+    return AdapterResult(
+        provider="successfactors",
+        board=board,
+        reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+        trace={"adapter": "successfactors", "variant": "cloud_sap", "error": error},
+    )
 
 
 def _search_url(board_url: str, title: str | None) -> str:
@@ -379,7 +646,10 @@ def _recognized_host(url: str) -> bool:
         host = (urlparse(url).hostname or "").lower()
     except ValueError:
         return False
-    return any(host == suffix or host.endswith(f".{suffix}") for suffix in _HOST_SUFFIXES)
+    return (
+        any(host == suffix or host.endswith(f".{suffix}") for suffix in _HOST_SUFFIXES)
+        or _is_cloud_sap_host(host)
+    )
 
 
 def _same_board_tenant(url: str, board: JobBoard) -> bool:
