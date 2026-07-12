@@ -58,6 +58,7 @@
 - 固定 live benchmark 扩展到 13 家，新增 DeLaval/SAP SuccessFactors Career Site；达到 13/13 job list、11/13 exact opening 和 13/13 expectations。
 - 固定 live benchmark 扩展到 21 家，新增 4 个 Ashby 和 4 个 Lever 官方 board；两个 provider 均达到 5 家覆盖，基线达到 21/21 job list、19/21 exact opening 和 21/21 expectations。
 - 固定 live benchmark 扩展到 23 家，新增 Datadog 和 Airbnb 两个大型 Greenhouse board；Greenhouse 达到 5 家覆盖，基线达到 23/23 job list、21/23 exact opening 和 23/23 expectations。
+- 固定 live benchmark 扩展到 27 家，新增 NVIDIA、Adobe、Salesforce 和 Autodesk 的 wd1/wd5/wd12 Workday tenant；Workday 达到 5 家覆盖，基线达到 27/27 job list、25/27 exact opening 和 27/27 expectations。
 - BambooHR adapter 增加标准端口、单 tenant、API redirect、候选 URL/ID 校验及 retryable fetch failure；`ADAPTER_VERSION` 提升到 `2026-07-12.3`。
 - Ashby/Workable 解析语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.2`。
 - Page-aware provider 识别和 iCIMS Jibe 解析语义加入后将 `ADAPTER_VERSION` 提升到 `2026-07-12.4`，避免恢复旧 S5/S6 generic checkpoint。

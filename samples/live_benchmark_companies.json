@@ -156,5 +156,33 @@
     "company_website_url": "https://www.airbnb.com",
     "career_root_url": "https://job-boards.greenhouse.io/airbnb",
     "job_title": "AI Engineer, Community Support Engineering"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "NVIDIA",
+    "company_website_url": "https://www.nvidia.com",
+    "career_root_url": "https://nvidia.wd5.myworkdayjobs.com/NVIDIAExternalCareerSite",
+    "job_title": "DevOps Engineer"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Adobe",
+    "company_website_url": "https://www.adobe.com",
+    "career_root_url": "https://adobe.wd5.myworkdayjobs.com/external_experienced",
+    "job_title": "Senior Applied Scientist"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Salesforce",
+    "company_website_url": "https://www.salesforce.com",
+    "career_root_url": "https://salesforce.wd12.myworkdayjobs.com/External_Career_Site",
+    "job_title": "Specialist Account Executive"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Autodesk",
+    "company_website_url": "https://www.autodesk.com",
+    "career_root_url": "https://autodesk.wd1.myworkdayjobs.com/Ext",
+    "job_title": "Media & Entertainment Technical Enablement Specialist"
   }
 ]
