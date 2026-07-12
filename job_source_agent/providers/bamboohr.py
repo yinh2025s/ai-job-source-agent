@@ -131,7 +131,10 @@ class BambooHRAdapter:
             title=title,
             url=detail_url,
             provider=self.name,
-            location=_location_name(record.get("location")),
+            location=(
+                _location_name(record.get("location"))
+                or _location_name(record.get("atsLocation"))
+            ),
             raw=dict(record),
         )
 

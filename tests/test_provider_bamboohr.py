@@ -1,9 +1,13 @@
 import json
 import unittest
+from pathlib import Path
 
 from job_source_agent.providers.bamboohr import ADAPTER, BambooHRAdapter
 from job_source_agent.providers.base import JobBoard, JobQuery
 from job_source_agent.web import FetchError, Page
+
+
+FIXTURES = Path(__file__).parents[1] / "samples" / "sites" / "bamboohr"
 
 
 class RecordingFetcher:
@@ -102,6 +106,89 @@ class BambooHRAdapterTests(unittest.TestCase):
         self.assertEqual(result.candidates[1].location, "Remote")
         self.assertIsNone(result.reason_code)
         self.assertEqual(result.trace["candidate_count"], 2)
+
+    def test_matches_real_multi_tenant_public_contracts(self):
+        cases = [
+            (
+                "soundstripe",
+                "Head of Sales (Remote)",
+                "https://soundstripe.bamboohr.com/careers/167",
+                "Nashville, Tennessee, United States",
+            ),
+            (
+                "beehiiv",
+                "Senior Product Marketing Manager (global)",
+                "https://beehiiv.bamboohr.com/careers/58",
+                None,
+            ),
+            (
+                "signal1",
+                "Senior Full Stack Software\u00a0Engineer",
+                "https://signal1.bamboohr.com/careers/39",
+                "Toronto, Ontario",
+            ),
+            (
+                "sai360",
+                "Product Manager",
+                "https://sai360.bamboohr.com/careers/191",
+                "United States",
+            ),
+        ]
+
+        for tenant, title, expected_url, expected_location in cases:
+            with self.subTest(tenant=tenant):
+                payload = json.loads((FIXTURES / f"{tenant}.json").read_text())
+                board = ADAPTER.identify_board(
+                    f"https://{tenant}.bamboohr.com/careers"
+                )
+
+                result = ADAPTER.list_jobs(
+                    RecordingFetcher(payload), board, JobQuery(title=title)
+                )
+
+                self.assertIsNone(result.reason_code)
+                self.assertEqual(result.trace["candidate_count"], 1)
+                self.assertEqual(result.candidates[0].title.strip(), title)
+                self.assertEqual(result.candidates[0].url, expected_url)
+                self.assertEqual(result.candidates[0].location, expected_location)
+
+    def test_uses_ats_location_only_when_primary_location_is_empty(self):
+        board = ADAPTER.identify_board("https://acme.bamboohr.com/careers")
+        result = ADAPTER.list_jobs(
+            RecordingFetcher(
+                {
+                    "result": [
+                        {
+                            "id": "270",
+                            "jobOpeningName": "Primary Location",
+                            "location": {"city": "Toronto", "state": "Ontario"},
+                            "atsLocation": {
+                                "city": "Nashville",
+                                "state": "Tennessee",
+                                "country": "United States",
+                            },
+                        },
+                        {
+                            "id": "271",
+                            "jobOpeningName": "ATS Fallback",
+                            "location": {"city": None, "state": None},
+                            "atsLocation": {
+                                "city": "Nashville",
+                                "state": "Tennessee",
+                                "country": "United States",
+                            },
+                        },
+                    ]
+                }
+            ),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(
+            [candidate.location for candidate in result.candidates],
+            ["Toronto, Ontario", "Nashville, Tennessee, United States"],
+        )
 
     def test_reports_empty_and_invalid_provider_responses(self):
         board = ADAPTER.identify_board("https://acme.bamboohr.com/careers")

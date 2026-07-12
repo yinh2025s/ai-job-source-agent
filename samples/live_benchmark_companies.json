@@ -261,5 +261,61 @@
     "company_website_url": "https://www.huzzle.app",
     "career_root_url": "https://apply.workable.com/huzzle/",
     "job_title": "Graphic Designer - Remote"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "AllVoices",
+    "company_website_url": "https://www.allvoices.co",
+    "career_root_url": "https://ats.rippling.com/allvoices/jobs",
+    "job_title": "Technical Customer Success Manager"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Terradot",
+    "company_website_url": "https://www.terradot.earth",
+    "career_root_url": "https://ats.rippling.com/terradot-careers/jobs",
+    "job_title": "Head of Policy"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "RevOptimal",
+    "company_website_url": "https://www.revoptimal.com",
+    "career_root_url": "https://ats.rippling.com/revoptimal/jobs",
+    "job_title": "InfoSec & IT Lead"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Spangle AI",
+    "company_website_url": "https://www.spangle.ai",
+    "career_root_url": "https://ats.rippling.com/spangleai/jobs",
+    "job_title": "AI/ML Scientist"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Soundstripe",
+    "company_website_url": "https://www.soundstripe.com",
+    "career_root_url": "https://soundstripe.bamboohr.com/careers",
+    "job_title": "Head of Sales (Remote)"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "beehiiv",
+    "company_website_url": "https://www.beehiiv.com",
+    "career_root_url": "https://beehiiv.bamboohr.com/careers",
+    "job_title": "Senior Product Marketing Manager (global)"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Signal 1",
+    "company_website_url": "https://www.signal1.ai",
+    "career_root_url": "https://signal1.bamboohr.com/careers",
+    "job_title": "Senior Full Stack Software Engineer"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "SAI360",
+    "company_website_url": "https://www.sai360.com",
+    "career_root_url": "https://sai360.bamboohr.com/careers",
+    "job_title": "Product Manager"
   }
 ]

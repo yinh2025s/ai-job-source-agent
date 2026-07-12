@@ -1,0 +1,21 @@
+{
+  "meta": {"totalCount": 9},
+  "result": [
+    {
+      "id": "191",
+      "jobOpeningName": "Product Manager ",
+      "departmentId": "18644",
+      "departmentLabel": "Product Management",
+      "employmentStatusLabel": "Full-Time",
+      "location": {"city": null, "state": null},
+      "atsLocation": {
+        "country": "United States",
+        "state": null,
+        "province": null,
+        "city": null
+      },
+      "isRemote": null,
+      "locationType": "1"
+    }
+  ]
+}

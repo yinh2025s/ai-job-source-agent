@@ -1,0 +1,21 @@
+{
+  "meta": {"totalCount": 1},
+  "result": [
+    {
+      "id": "167",
+      "jobOpeningName": "Head of Sales (Remote)",
+      "departmentId": "18660",
+      "departmentLabel": "Sales",
+      "employmentStatusLabel": "Full-Time",
+      "location": {"city": null, "state": null},
+      "atsLocation": {
+        "country": "United States",
+        "state": "Tennessee",
+        "province": null,
+        "city": "Nashville"
+      },
+      "isRemote": null,
+      "locationType": "1"
+    }
+  ]
+}

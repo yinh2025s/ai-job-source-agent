@@ -276,7 +276,7 @@ Latest live checks on July 11, 2026:
 - Fixed live benchmark: 6 named companies, 6/6 official websites, 6/6 official job-list pages, 1/6 exact opening, and 6/6 expectation checks passed. Providers covered in that small set are Greenhouse, Lever, Ashby, PostHog's first-party careers page, and Brex's first-party careers page.
 - July 12 rerun after the stage-runner migration: 6/6 official websites, 6/6 job-list pages, 5/6 exact openings, and 6/6 expectation checks. Provider attribution now follows stage evidence, so Greenhouse roles with an external CareerPuck apply URL remain classified as Greenhouse.
 - Expanded July 12 fixed live benchmark: 9/9 official websites, 9/9 job-list pages, 7/9 exact openings, and 9/9 expectation checks in 17.6 seconds. The added samples cover SanDisk/SmartRecruiters, ONEOK/Workday, and Carv/Rippling.
-- Current fixed live benchmark: 38/38 official websites, 38/38 job-list pages, 37/38 exact openings, and 38/38 expectation checks. Greenhouse, Ashby, Lever, Workday, SmartRecruiters, and Workable each have five fixed live companies; iCIMS/SuccessFactors also has five combined samples spanning Jibe, traditional hosted HTML, and SAP Career Site v1. A restart restored 37 compatible company envelopes and ran only the replaced Wishpond input.
+- Current fixed live benchmark: 46/46 official websites, 46/46 job-list pages, 45/46 exact openings, and 46/46 expectation checks in 57.4 seconds with four workers. Greenhouse, Ashby, Lever, Workday, SmartRecruiters, Workable, Rippling, and BambooHR each have five fixed live companies; iCIMS/SuccessFactors also has five combined samples spanning Jibe, traditional hosted HTML, and SAP Career Site v1.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
 
@@ -471,7 +471,7 @@ results.json + trace.json
 - Common ATS providers such as Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, SuccessFactors, and Rippling are recognized explicitly.
 - Greenhouse, Lever, SmartRecruiters, Workday, Ashby, and BambooHR use native structured API adapters before falling back to HTML link extraction.
 - iCIMS, SuccessFactors, and Workable use native structured-page adapters for JSON-LD, embedded application JSON, or verified job links.
-- Rippling uses a native HTML adapter that canonicalizes public boards and accepts only verified same-company job-detail links.
+- Rippling uses a native structured-page adapter that merges verified same-tenant anchors with Next.js job state while preserving location and department metadata.
 - Provider-specific matchers build provider-appropriate search URLs and preserve stable job-board fallbacks when a concrete title match is not available.
 - Concrete opening selection is gated by the LinkedIn target title to avoid false-positive job URLs.
 - Error and 404 pages are rejected even if their URL or HTML contains career-like keywords.

@@ -37,6 +37,7 @@ from job_source_agent.models import (
 )
 from job_source_agent.process_budget import ProcessBudgetExceeded, RemoteProcessError, run_with_process_budget
 from job_source_agent.reasons import canonical_reason_code, make_stage_result
+from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.web import normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
 from scripts.replay_failure_bundle import replay_failure_bundle
@@ -479,15 +480,15 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         if not upstream_result.company_website_url:
             return upstream_result
 
-    if (
-        resume_uses_replay_upstream(args)
-        and not company.company_website_url
-        and not getattr(args, "checkpoint_dir", None)
-    ):
+    downstream_start, resume_fallback = _downstream_start_stage(company, args)
+    if resume_fallback == "missing_resume_evidence":
         return failure_result(
             company,
             error="website_not_resolved",
-            detail=f"--resume-from-stage {args.resume_from_stage} requires replay input with company_website_url or compatible stage checkpoints.",
+            detail=(
+                f"--resume-from-stage {args.resume_from_stage} requires a complete, "
+                "compatible upstream checkpoint chain or replay input with company_website_url."
+            ),
         )
 
     remaining = args.company_time_budget - (time.monotonic() - started)
@@ -503,7 +504,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             (
                 company,
                 args,
-                _downstream_start_stage(args),
+                downstream_start,
                 None,
                 _downstream_rerun_stage(args),
             ),
@@ -529,10 +530,56 @@ def _upstream_rerun_stage(args: argparse.Namespace) -> str | None:
     return None
 
 
-def _downstream_start_stage(args: argparse.Namespace) -> str:
-    # Replay records carry S2/S3 evidence, not complete S4/S5 StageExecutions.
-    # Rebuild the downstream chain so a requested later stage has valid inputs.
-    return STAGE_CAREER_DISCOVERY
+def _downstream_start_stage(
+    company: CompanyInput,
+    args: argparse.Namespace,
+) -> tuple[str, str | None]:
+    requested = getattr(args, "resume_from_stage", None)
+    if requested not in {STAGE_JOB_BOARD_DISCOVERY, STAGE_OPENING_MATCH}:
+        return STAGE_CAREER_DISCOVERY, None
+
+    missing = _missing_resume_checkpoints(company, args, requested)
+    if not missing:
+        company.source_trace.setdefault("resume", {}).update(
+            {
+                "effective_start_stage": requested,
+                "checkpoint_chain": "complete",
+                "used_replay_upstream": False,
+                "skipped_stages": [],
+            }
+        )
+        return requested, None
+
+    resume_trace = company.source_trace.setdefault("resume", {})
+    resume_trace.update(
+        {
+            "effective_start_stage": STAGE_CAREER_DISCOVERY,
+            "checkpoint_chain": "incomplete",
+            "missing_checkpoints": missing,
+            "used_replay_upstream": True,
+        }
+    )
+    if company.company_website_url:
+        resume_trace["fallback"] = "rebuild_downstream_from_career_discovery"
+        return STAGE_CAREER_DISCOVERY, "rebuild_downstream"
+    resume_trace["fallback"] = "missing_resume_evidence"
+    return STAGE_CAREER_DISCOVERY, "missing_resume_evidence"
+
+
+def _missing_resume_checkpoints(
+    company: CompanyInput,
+    args: argparse.Namespace,
+    requested: str,
+) -> list[str]:
+    fingerprint = input_fingerprint(dataclass_to_dict(company))
+    store = FilesystemCheckpointStore(_checkpoint_dir(args))
+    requested_index = PIPELINE_STAGES.index(requested)
+    missing: list[str] = []
+    for stage in PIPELINE_STAGES[:requested_index]:
+        execution = store.load(fingerprint, stage)
+        if execution is None or execution.result.status not in {"success", "not_applicable"}:
+            missing.append(stage)
+    return missing
 
 
 def _downstream_rerun_stage(args: argparse.Namespace) -> str | None:

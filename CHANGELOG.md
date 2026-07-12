@@ -73,6 +73,9 @@
 - Live batch 增加版本化 company-completion store：每家公司以 input fingerprint、adapter version 和原子 envelope 独立发布；重启默认跳过兼容的已完成公司，`--no-resume` / `--rerun-stage` 可强制重跑，结果按原输入顺序重建。
 - Workable adapter 接入官方 public jobs cursor API，支持 title query、最多 5 页、重复 token 停止、exact-title early stop、同 tenant board/API redirect 校验和旧 HTML fallback；`ADAPTER_VERSION` 提升到 `2026-07-12.9`。
 - 固定 live benchmark 增加 Workable、Town Web、ClassWallet、Huzzle，并将已迁离 Lever 的 Veeva 样本替换为 Wishpond；Workable 达到 5 家 exact-opening 覆盖，集合扩展到 38 家。
+- Live batch 的 later-stage resume 会验证完整 checkpoint chain：S5 可恢复 S1-S4，S6 可恢复 S1-S5；链不完整时基于 replay 官网证据回退到 S4，否则返回结构化失败。
+- Rippling adapter 合并真实 Next.js `__NEXT_DATA__` 与 anchors，保留 location/department/language，支持 `es-419` locale，并区分空 board、损坏 state 和 JS shell；BambooHR 在主 location 为空时使用真实 `atsLocation` fallback；`ADAPTER_VERSION` 提升到 `2026-07-12.10`。
+- 固定 live benchmark 新增 AllVoices、Terradot、RevOptimal、Spangle AI、Soundstripe、beehiiv、Signal 1 和 SAI360；Rippling、BambooHR 均达到 5 家 exact-opening 覆盖，集合扩展到 46 家。
 
 ## [0.1.0] - 2026-07-12
 

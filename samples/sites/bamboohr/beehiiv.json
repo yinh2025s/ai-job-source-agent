@@ -1,0 +1,21 @@
+{
+  "meta": {"totalCount": 1},
+  "result": [
+    {
+      "id": "58",
+      "jobOpeningName": "Senior Product Marketing Manager (global)",
+      "departmentId": "18602",
+      "departmentLabel": "Growth",
+      "employmentStatusLabel": "Full-Time",
+      "location": {"city": null, "state": null},
+      "atsLocation": {
+        "country": null,
+        "state": null,
+        "province": null,
+        "city": null
+      },
+      "isRemote": null,
+      "locationType": "1"
+    }
+  ]
+}

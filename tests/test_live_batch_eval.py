@@ -12,6 +12,7 @@ from scripts.live_batch_eval import (
     build_automatic_failure_bundle,
     build_summary,
     _load_completed_companies,
+    _downstream_start_stage,
     _ordered_records,
     _record_company_completion,
     load_batch_companies,
@@ -72,7 +73,7 @@ class LiveBatchEvalTests(unittest.TestCase):
             {company["company_name"] for company in companies},
             set(expectations),
         )
-        self.assertEqual(len(companies), 38)
+        self.assertEqual(len(companies), 46)
 
     def test_prepare_company_preserves_provided_website(self):
         company = CompanyInput(
@@ -459,7 +460,97 @@ class LiveBatchEvalTests(unittest.TestCase):
         result = run_company(company, args)
 
         self.assertEqual(result.error_code, "WEBSITE_NOT_RESOLVED")
-        self.assertIn("requires replay input", result.trace["batch_error_detail"])
+        self.assertIn("or replay input", result.trace["batch_error_detail"])
+
+    def test_resume_from_job_board_restores_s1_to_s4_without_reexecution(self):
+        company = CompanyInput(
+            company_name="Aurora Data",
+            company_website_url="https://aurora-data.example",
+            job_title="AI Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.company_time_budget = 10
+            args.website_time_budget = 5
+            args.resume_from_stage = None
+            args.rerun_stage = None
+            first = run_company(company, args)
+            self.assertEqual(first.status, "success")
+
+            args.resume_from_stage = "job_board_discovery"
+            resumed = run_company(company, args)
+
+        events = resumed.trace["checkpoint_events"]
+        restored = [event["stage"] for event in events if event["action"] == "restore"]
+        saved = [event["stage"] for event in events if event["action"] == "save"]
+        self.assertEqual(
+            restored,
+            [
+                "linkedin_discovery",
+                "website_resolution",
+                "hiring_identity_resolution",
+                "career_discovery",
+            ],
+        )
+        self.assertNotIn("career_discovery", saved)
+        self.assertEqual(saved[0], "job_board_discovery")
+        self.assertEqual(
+            resumed.trace["source_trace"]["resume"]["effective_start_stage"],
+            "job_board_discovery",
+        )
+
+    def test_resume_from_opening_match_restores_s1_to_s5_without_reexecution(self):
+        company = CompanyInput(
+            company_name="Aurora Data",
+            company_website_url="https://aurora-data.example",
+            job_title="AI Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.company_time_budget = 10
+            args.website_time_budget = 5
+            args.resume_from_stage = None
+            args.rerun_stage = None
+            run_company(company, args)
+
+            args.resume_from_stage = "opening_match"
+            resumed = run_company(company, args)
+
+        events = resumed.trace["checkpoint_events"]
+        restored = [event["stage"] for event in events if event["action"] == "restore"]
+        saved = [event["stage"] for event in events if event["action"] == "save"]
+        self.assertEqual(
+            restored,
+            [
+                "linkedin_discovery",
+                "website_resolution",
+                "hiring_identity_resolution",
+                "career_discovery",
+                "job_board_discovery",
+            ],
+        )
+        self.assertNotIn("job_board_discovery", saved)
+        self.assertEqual(saved[0], "opening_match")
+        self.assertIn("d9d64766", resumed.open_position_url)
+
+    def test_later_resume_without_complete_checkpoints_falls_back_to_career_discovery(
+        self,
+    ):
+        company = CompanyInput(
+            company_name="Aurora Data",
+            company_website_url="https://aurora-data.example",
+            job_title="AI Engineer",
+            source="replay_input",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.resume_from_stage = "opening_match"
+
+            start_at, fallback = _downstream_start_stage(company, args)
+
+        self.assertEqual(start_at, "career_discovery")
+        self.assertEqual(fallback, "rebuild_downstream")
+        self.assertIn("job_board_discovery", company.source_trace["resume"]["missing_checkpoints"])
 
     def test_two_pipeline_phases_restore_s1_to_s3_checkpoint_updates(self):
         company = CompanyInput(

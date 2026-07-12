@@ -1,0 +1,21 @@
+{
+  "meta": {"totalCount": 4},
+  "result": [
+    {
+      "id": "39",
+      "jobOpeningName": "Senior Full Stack Software\u00a0Engineer\u00a0",
+      "departmentId": "18573",
+      "departmentLabel": "Application Engineering",
+      "employmentStatusLabel": "Full-Time",
+      "location": {"city": "Toronto", "state": "Ontario"},
+      "atsLocation": {
+        "country": null,
+        "state": null,
+        "province": null,
+        "city": null
+      },
+      "isRemote": null,
+      "locationType": "2"
+    }
+  ]
+}

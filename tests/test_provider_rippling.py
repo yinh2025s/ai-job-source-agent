@@ -1,21 +1,31 @@
 import unittest
+from pathlib import Path
 
 from job_source_agent.providers.base import JobBoard, JobQuery
 from job_source_agent.providers.rippling import RipplingAdapter
 from job_source_agent.web import FetchError, Page
 
 
+FIXTURES = Path(__file__).parents[1] / "samples" / "sites" / "ats.rippling.com"
+
+
 class StubFetcher:
-    def __init__(self, html="", error=None):
+    def __init__(self, html="", error=None, final_url=None):
         self.html = html
         self.error = error
+        self.final_url = final_url
         self.requested_urls = []
 
     def fetch(self, url, data=None, headers=None):
         self.requested_urls.append(url)
         if self.error is not None:
             raise self.error
-        return Page(url=url, final_url=url, html=self.html, source="rippling-fixture")
+        return Page(
+            url=url,
+            final_url=self.final_url or url,
+            html=self.html,
+            source="rippling-fixture",
+        )
 
 
 class RipplingAdapterTests(unittest.TestCase):
@@ -27,6 +37,7 @@ class RipplingAdapterTests(unittest.TestCase):
             "https://ats.rippling.com/embed/acme/jobs",
             "https://ats.rippling.com/acme/jobs",
             "https://ats.rippling.com/en-US/acme/jobs/12345678-abcd-1234-abcd-1234567890ab",
+            "https://ats.rippling.com/es-419/acme/jobs/12345678-abcd-1234-abcd-1234567890ab",
         )
         rejected = (
             "https://rippling.com/acme/jobs",
@@ -58,6 +69,12 @@ class RipplingAdapterTests(unittest.TestCase):
         self.assertEqual(
             self.adapter.identify_board(
                 "https://ats.rippling.com/en-US/acme-inc/jobs/12345678-abcd-1234-abcd-1234567890ab?source=test"
+            ),
+            expected,
+        )
+        self.assertEqual(
+            self.adapter.identify_board(
+                "https://ats.rippling.com/es-419/acme-inc/jobs/12345678-abcd-1234-abcd-1234567890ab"
             ),
             expected,
         )
@@ -132,9 +149,106 @@ class RipplingAdapterTests(unittest.TestCase):
             JobQuery(),
         )
 
-        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
         self.assertEqual(result.candidates, [])
         self.assertEqual(result.trace["candidate_count"], 0)
+
+    def test_live_shape_next_data_enriches_anchor_candidates(self):
+        html = (FIXTURES / "allvoices" / "jobs" / "index.html").read_text(encoding="utf-8")
+        board = self.adapter.identify_board("https://ats.rippling.com/allvoices/jobs")
+
+        result = self.adapter.list_jobs(
+            StubFetcher(html),
+            board,
+            JobQuery(title="Technical QA Automation Specialist"),
+        )
+
+        self.assertIsNone(result.reason_code)
+        self.assertEqual(len(result.candidates), 2)
+        candidate = result.candidates[1]
+        self.assertEqual(candidate.title, "Technical QA Automation Specialist")
+        self.assertEqual(
+            candidate.url,
+            "https://ats.rippling.com/allvoices/jobs/33b302b3-3a5e-4603-9a5a-79ec67793e73",
+        )
+        self.assertEqual(candidate.location, "Santa Monica, CA; Remote (United States)")
+        self.assertEqual(
+            candidate.raw,
+            {
+                "job_id": "33b302b3-3a5e-4603-9a5a-79ec67793e73",
+                "department": "Technology",
+                "language": "en-US",
+            },
+        )
+        self.assertEqual(result.trace["structured_state"], "present")
+        self.assertEqual(result.trace["structured_record_count"], 2)
+        self.assertEqual(result.trace["candidate_count"], 2)
+
+    def test_live_shape_explicit_empty_jobs_state_is_not_a_js_shell_failure(self):
+        html = (FIXTURES / "swiftcomply" / "jobs" / "index.html").read_text(encoding="utf-8")
+        board = self.adapter.identify_board("https://ats.rippling.com/swiftcomply/jobs")
+
+        result = self.adapter.list_jobs(StubFetcher(html), board, JobQuery())
+
+        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertEqual(result.trace["structured_state"], "empty")
+
+    def test_malformed_next_data_is_reported_but_valid_anchors_survive(self):
+        html = """
+        <a href="/acme/jobs/12345678-aaaa-1234-abcd-1234567890ab">Data Analyst</a>
+        <script id="__NEXT_DATA__" type="application/json">{broken</script>
+        """
+        board = self.adapter.identify_board("https://ats.rippling.com/acme/jobs")
+
+        result = self.adapter.list_jobs(StubFetcher(html), board, JobQuery())
+
+        self.assertIsNone(result.reason_code)
+        self.assertEqual([candidate.title for candidate in result.candidates], ["Data Analyst"])
+        self.assertEqual(result.trace["structured_state"], "invalid")
+        self.assertIn("structured_error", result.trace)
+
+    def test_js_shell_without_jobs_state_is_classified_as_unsupported_variant(self):
+        board = self.adapter.identify_board("https://ats.rippling.com/acme/jobs")
+
+        result = self.adapter.list_jobs(
+            StubFetcher('<div id="__next"></div>'),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertEqual(result.trace["structured_state"], "missing")
+
+    def test_rejects_cross_tenant_board_redirect(self):
+        board = self.adapter.identify_board("https://ats.rippling.com/acme/jobs")
+
+        result = self.adapter.list_jobs(
+            StubFetcher(
+                "<html></html>",
+                final_url="https://ats.rippling.com/other/jobs",
+            ),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertIn("outside the expected tenant", result.trace["error"])
+
+    def test_structured_state_rejects_cross_tenant_and_mismatched_job_urls(self):
+        html = """
+        <script id="__NEXT_DATA__" type="application/json">
+        {"props":{"pageProps":{"dehydratedState":{"queries":[{"state":{"data":{"items":[
+          {"id":"12345678-aaaa-1234-abcd-1234567890ab","name":"Other tenant","url":"https://ats.rippling.com/other/jobs/12345678-aaaa-1234-abcd-1234567890ab"},
+          {"id":"87654321-bbbb-1234-abcd-1234567890ab","name":"Wrong id","url":"https://ats.rippling.com/acme/jobs/12345678-aaaa-1234-abcd-1234567890ab"}
+        ]}}}]}}}}
+        </script>
+        """
+        board = self.adapter.identify_board("https://ats.rippling.com/acme/jobs")
+
+        result = self.adapter.list_jobs(StubFetcher(html), board, JobQuery())
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertEqual(result.candidates, [])
 
 
 if __name__ == "__main__":
