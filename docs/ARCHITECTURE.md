@@ -124,10 +124,10 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 ## Current Technical Debt
 
 - S4-S6 已通过独立 stage runner 执行，但 `JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- Greenhouse 已使用原生 adapter；其他 provider 仍依赖 `opening_matcher.py` 的 legacy request/parsing compatibility path。
+- 9 个主要 provider 已使用原生 adapter；Google Careers、Meta Careers、Rippling 和 generic fallback 仍依赖 compatibility path。
 - `live_batch_eval.py` 已通过 composition root 构造依赖，但仍同时负责调度、预算、checkpoint 和输出。
-- Fetch wrappers 已满足显式 `FetchClient` protocol；更完整的跨实现错误 contract 仍可继续扩展。
-- S2/S3/S7 尚未完全迁移到 stage runner。
+- Fetch wrappers 已满足显式 `FetchClient` protocol 和跨实现 contract suite；browser live variants 仍需持续验证。
+- S2/S3/S7 已有独立 stage class，但尚未接入 production runner/checkpoint flow。
 - Replay 已支持上游证据复用，但任意 stage checkpoint store 尚未完成。
 
 当前结构已经达到 provider/resolver/fetch/evaluation 并行开发门槛；剩余债务按 ownership workstream 继续收缩。

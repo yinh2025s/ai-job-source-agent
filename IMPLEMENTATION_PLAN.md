@@ -191,16 +191,16 @@
 | --- | --- | --- |
 | Google Careers | Partial adapter | 可生成 title query URL |
 | Meta Careers | Partial adapter | 可生成 title query URL |
-| Lever | Structured API adapter | 使用 `api.lever.co/v0/postings/{company}` |
-| Greenhouse | Structured API adapter | 使用 `boards-api.greenhouse.io/v1/boards/{board}/jobs` |
-| SmartRecruiters | Structured API adapter | 使用 `api.smartrecruiters.com/v1/companies/{company}/postings` |
-| Ashby | Structured posting API adapter | 使用 `api.ashbyhq.com/posting-api/job-board/{board}` |
-| Workable | Structured page extraction | 支持 embedded JSON job records，并可还原 `apply.workable.com/{company}/j/{shortcode}/` |
-| iCIMS | Structured page extraction | 支持 JSON-LD / embedded JSON job records，并可还原 `/jobs/{id}/{slug}/job` |
-| Workday | Structured CXS API adapter | 已支持从 Workday board URL 构造 `/wday/cxs/{tenant}/{site}/jobs` 并用 title payload 搜索 |
-| SuccessFactors | Structured page extraction | 支持 embedded JSON job records 和 `jobReqId` -> detail URL 还原 |
+| Lever | Native API adapter | 自动发现；使用 `api.lever.co/v0/postings/{company}` |
+| Greenhouse | Native API adapter | 自动发现；使用 `boards-api.greenhouse.io/v1/boards/{board}/jobs` |
+| SmartRecruiters | Native API adapter | 自动发现；使用 `api.smartrecruiters.com/v1/companies/{company}/postings` |
+| Ashby | Native API adapter | 自动发现；使用 `api.ashbyhq.com/posting-api/job-board/{board}` |
+| Workable | Native structured-page adapter | 自动发现；解析 embedded JSON 并还原 `apply.workable.com/{company}/j/{shortcode}/` |
+| iCIMS | Native structured-page adapter | 自动发现；解析 JSON-LD / embedded JSON 并还原 `/jobs/{id}/{slug}/job` |
+| Workday | Native CXS API adapter | 自动发现；构造 `/wday/cxs/{tenant}/{site}/jobs` 并用 title payload 搜索 |
+| SuccessFactors | Native structured-page adapter | 自动发现；解析 job links/embedded JSON 和 `jobReqId` |
 | Rippling | Structured HTML adapter | 支持公开 board 中的静态职位链接和 title matching |
-| BambooHR | Structured listing API adapter | 使用公开 `/careers/list` JSON 返回职位并还原详情 URL |
+| BambooHR | Native listing API adapter | 自动发现；使用公开 `/careers/list` JSON 返回职位并还原详情 URL |
 
 已验证的离线 fixtures：
 
@@ -278,7 +278,7 @@
 
 当前测试数量：
 
-- 122 unit tests passing
+- 193 unit tests passing
 
 ## 当前主要短板
 
@@ -287,9 +287,9 @@
 当前已完成第一轮 SOLID 拆分，但仍有兼容层需要逐步迁移：
 
 - S4-S6 已通过独立 stage/context/runner 执行，但 `JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- Greenhouse 已迁移为原生 adapter；其他 provider 仍由 `opening_matcher.py` 的 legacy compatibility path 提供能力。
+- 9 个 provider 已迁移为原生 adapter；Google Careers、Meta Careers、Rippling 和 generic fallback 仍走 compatibility path。
 - `live_batch_eval.py` 已使用 composition root，但调度、预算和 checkpoint 仍在同一 runner script 中。
-- Fetcher 已有显式 protocol 和 contract tests；S2/S3/S7 的完整 stage 化仍待 Pipeline 工作线完成。
+- Fetcher 已有显式 protocol 和跨实现 contract suite；S2/S3/S7 已有独立 stage，尚待接入 production runner/checkpoint flow。
 - 原生 adapter 已支持包内自动发现；新 provider 不再需要修改中央 registry。
 
 Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resolver、Fetch 和 Evaluation 工作线并行，同时继续收缩 legacy compatibility path。
@@ -298,12 +298,13 @@ Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resol
 
 虽然已经开始做 provider-specific adapters，但仍有一部分 ATS 只是结构化页面抽取，还没有完成稳定 live search/list API。
 
-仍需系统补齐：
+仍需系统补齐或 live hardening：
 
-- SuccessFactors search/list extraction
-- iCIMS hosted search API / pagination extraction
-- Workable public API research / hardening
+- iCIMS hosted search pagination/API 变体
+- SuccessFactors 更多 theme/AJAX payload 变体
+- Workable public API research 和真实站点 hardening
 - Ashby embedded JSON fallback
+- Rippling 独立原生 adapter
 
 ### 3. Browser Rendering Needs Live Hardening
 
@@ -623,7 +624,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到。版本化 contracts、S4-S6 独立 stage runner、provider registry、Greenhouse 原生 adapter、adapter 自动发现和 composition root 已实现；122 个单元测试、11/11 固定离线 benchmark 和离线 CLI smoke 均通过。S2/S3/S7 stage 化及其 checkpoint runner 继续由后续 Pipeline 工作线完成。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成两轮并行验证。版本化 contracts、S2-S7 独立 stage classes、provider registry、9 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；193 个单元测试、11/11 固定离线 benchmark 和离线 CLI smoke 均通过。S2/S3/S7 尚待接入 production runner/checkpoint flow。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -648,7 +649,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.2 Extract Independent Stages
 
-当前状态：S4 career discovery、S5 job-board discovery 和 S6 opening match 已拆成独立 stage，并由 `PipelineStageRunner` 通过版本化 context 执行；`JobSourceAgent.discover()` 保留为兼容 facade。S2/S3/S7 仍待后续 Pipeline 工作线迁移。
+当前状态：S2 website、S3 hiring identity、S4 career、S5 job-board、S6 opening 和 S7 validation 都已有独立 stage class。S4-S6 已由 `PipelineStageRunner` 执行；`JobSourceAgent.discover()` 保留兼容 facade。S2/S3/S7 的 production runner/checkpoint 接入留给后续 Pipeline 工作线。
 
 目标：
 
@@ -661,12 +662,12 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 122 个测试和固定 benchmark 结果一致。
+- 重构后 193 个测试和固定 benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
 
-当前状态：已完成可并行扩展的第一版。Greenhouse 已迁移为原生 structured API adapter；provider module 通过导出 `ADAPTER` 自动注册，其他 provider 暂时保留 detection-only compatibility adapter 和 legacy parser path。
+当前状态：已完成可并行扩展的第一版。Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors 和 Workable 已迁移为原生 adapter；provider module 通过导出 `ADAPTER` 自动注册。Google Careers、Meta Careers、Rippling 和 generic fallback 暂时保留 compatibility path。
 
 目标：
 
@@ -700,7 +701,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过。Contracts 已合并；Greenhouse 代表性 adapter 已迁移；native adapter 无中央注册热点；全量测试、benchmark 和 CLI smoke 均通过；架构文档与目录边界已同步。
+当前状态（2026-07-12）：已通过并完成真实并行验证。两轮共十条独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch 变化；主线 architecture validator、193 个测试、11/11 benchmark 和 CLI smoke 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -1028,4 +1029,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和多个 ATS 的 structured extraction 已完成第一版；SOLID 并行开发门槛也已达到。S4-S6 已成为独立 stage，Greenhouse 已迁移到自动发现的 provider adapter，CLI/live runner 使用统一 composition root。下一步可以并行推进 provider 迁移、S2/S3/S7 stage 化、resolver hardening、fetch reliability 和 benchmark 扩展。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S2-S7 都有独立 stage class，9 个主要 ATS 已迁移到自动发现的原生 adapter，CLI/live runner 使用统一 composition root。两轮并行开发通过 193 个测试和 11/11 benchmark 验证；下一步重点是接入 S2/S3/S7 checkpoint runner、迁移 Rippling，以及继续做 live hardening 和 benchmark 扩展。

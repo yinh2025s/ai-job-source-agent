@@ -16,11 +16,16 @@
 - 增加 provider registry，并将 Greenhouse structured API 迁移为首个原生 provider adapter。
 - 原生 provider adapter 改为包内自动发现，新增 ATS 不再需要修改中央 registry。
 - 增加 composition root，集中构造 fetch wrappers、provider registry 和 agent，并让 CLI/live runner 使用统一依赖组合。
+- 增加独立 S2 website、S3 hiring identity 和 S7 result validation stages；招聘主体和 career root 通过声明式 context 输出传递。
+- 将 Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors 和 Workable 迁移为自动发现的原生 adapter。
+- 增加跨 Fetcher/Retry/Snapshot/SmartRender 实现的 FetchClient contract suite。
+- 增加 `scripts/validate_architecture.py`，自动验证原生 adapter contract、唯一性和 registry 接管状态。
 
 ### Changed
 
 - 将 SOLID 架构拆分设为继续扩展 ATS provider 之前的前置阶段。
 - 明确 stage、provider、fetcher、orchestration 和 reporting 的依赖方向与并行开发边界。
+- 第一轮和第二轮 provider/stage 并行开发通过统一集成门禁；一个 Workable 脏 URL 问题由跨工作线全量测试发现并修复。
 
 ## [0.1.0] - 2026-07-12
 
