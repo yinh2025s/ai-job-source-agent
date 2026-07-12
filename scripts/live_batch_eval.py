@@ -83,6 +83,15 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--baseline-summary", help="Optional prior summary JSON used for regression deltas.")
     parser.add_argument("--workers", type=int, default=1, help="Number of companies to process concurrently.")
     parser.add_argument(
+        "--resume-from-stage",
+        choices=[
+            STAGE_CAREER_DISCOVERY,
+            STAGE_JOB_BOARD_DISCOVERY,
+            STAGE_OPENING_MATCH,
+        ],
+        help="Reuse upstream evidence from replay input and resume from this downstream stage.",
+    )
+    parser.add_argument(
         "--require-all-expectations",
         action="store_true",
         help="Fail expectation checks for companies that are not present in a partial live run.",
@@ -224,26 +233,33 @@ def record_checkpoint(
 
 def run_company(company: CompanyInput, args: argparse.Namespace):
     started = time.monotonic()
-    try:
-        prepared_company = run_with_process_budget(
-            prepare_company,
-            (company, args),
-            timeout=min(args.website_time_budget, args.company_time_budget),
-        )
-    except ProcessBudgetExceeded:
-        return failure_result(
-            company,
-            error="company_time_budget_exhausted",
-            detail=f"Website/identity resolution exceeded its {min(args.website_time_budget, args.company_time_budget):g}-second stage budget.",
-        )
-    except RemoteProcessError as exc:
-        return failure_result(company, error="batch_worker_failed", detail=str(exc))
+    if resume_uses_replay_upstream(args):
+        prepared_company = prepare_replay_company_for_resume(company, args)
+    else:
+        try:
+            prepared_company = run_with_process_budget(
+                prepare_company,
+                (company, args),
+                timeout=min(args.website_time_budget, args.company_time_budget),
+            )
+        except ProcessBudgetExceeded:
+            return failure_result(
+                company,
+                error="company_time_budget_exhausted",
+                detail=f"Website/identity resolution exceeded its {min(args.website_time_budget, args.company_time_budget):g}-second stage budget.",
+            )
+        except RemoteProcessError as exc:
+            return failure_result(company, error="batch_worker_failed", detail=str(exc))
 
     if not prepared_company.company_website_url:
         return failure_result(
             prepared_company,
             error="website_not_resolved",
-            detail="Website resolver did not produce a verified official company domain.",
+            detail=(
+                f"--resume-from-stage {args.resume_from_stage} requires replay input with company_website_url."
+                if resume_uses_replay_upstream(args)
+                else "Website resolver did not produce a verified official company domain."
+            ),
         )
 
     remaining = args.company_time_budget - (time.monotonic() - started)
@@ -267,6 +283,40 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         )
     except RemoteProcessError as exc:
         return failure_result(prepared_company, error="batch_worker_failed", detail=str(exc))
+
+
+def resume_uses_replay_upstream(args: argparse.Namespace) -> bool:
+    return getattr(args, "resume_from_stage", None) in {
+        STAGE_CAREER_DISCOVERY,
+        STAGE_JOB_BOARD_DISCOVERY,
+        STAGE_OPENING_MATCH,
+    }
+
+
+def prepare_replay_company_for_resume(company: CompanyInput, args: argparse.Namespace) -> CompanyInput:
+    if company.company_website_url:
+        company.company_website_url = normalize_url(company.company_website_url)
+    if company.career_root_url:
+        company.career_root_url = normalize_url(company.career_root_url)
+    company.source_trace.setdefault("resume", {})
+    company.source_trace["resume"].update(
+        {
+            "resume_from_stage": args.resume_from_stage,
+            "used_replay_upstream": True,
+            "skipped_stages": [
+                STAGE_WEBSITE_RESOLUTION,
+                STAGE_HIRING_IDENTITY_RESOLUTION,
+            ],
+        }
+    )
+    company.source_trace.setdefault("stage_metrics", {})
+    company.source_trace["website_resolution"] = {
+        "selected": {
+            "url": company.company_website_url,
+            "reason": f"reused from replay input for --resume-from-stage {args.resume_from_stage}",
+        }
+    }
+    return company
 
 
 def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyInput:

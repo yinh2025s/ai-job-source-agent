@@ -5,7 +5,15 @@ from types import SimpleNamespace
 
 from job_source_agent.models import CompanyInput, DiscoveryResult
 from job_source_agent.web import Fetcher
-from scripts.live_batch_eval import build_summary, load_batch_companies, prepare_company, record_checkpoint
+from scripts.live_batch_eval import (
+    build_summary,
+    load_batch_companies,
+    prepare_replay_company_for_resume,
+    prepare_company,
+    record_checkpoint,
+    resume_uses_replay_upstream,
+    run_company,
+)
 
 
 class LiveBatchEvalTests(unittest.TestCase):
@@ -153,6 +161,37 @@ class LiveBatchEvalTests(unittest.TestCase):
             self.assertTrue(output_path.exists())
             self.assertTrue(trace_path.exists())
             self.assertTrue(summary_path.exists())
+
+    def test_resume_from_stage_reuses_replay_upstream_evidence(self):
+        company = CompanyInput(
+            company_name="PostHog",
+            company_website_url="posthog.com",
+            career_root_url="https://posthog.com/careers/jobs",
+            source="replay_input",
+        )
+        args = SimpleNamespace(resume_from_stage="opening_match")
+
+        prepared = prepare_replay_company_for_resume(company, args)
+
+        self.assertTrue(resume_uses_replay_upstream(args))
+        self.assertEqual(prepared.company_website_url, "https://posthog.com")
+        self.assertEqual(prepared.source_trace["resume"]["skipped_stages"], [
+            "website_resolution",
+            "hiring_identity_resolution",
+        ])
+
+    def test_resume_from_stage_requires_replay_website(self):
+        company = CompanyInput(company_name="Missing Website", source="replay_input")
+        args = SimpleNamespace(
+            resume_from_stage="opening_match",
+            company_time_budget=1,
+            website_time_budget=1,
+        )
+
+        result = run_company(company, args)
+
+        self.assertEqual(result.error_code, "WEBSITE_NOT_RESOLVED")
+        self.assertIn("requires replay input", result.trace["batch_error_detail"])
 
 
 if __name__ == "__main__":

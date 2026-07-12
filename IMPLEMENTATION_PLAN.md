@@ -276,7 +276,7 @@
 
 当前测试数量：
 
-- 103 unit tests passing
+- 105 unit tests passing
 
 ## 当前主要短板
 
@@ -722,7 +722,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 4.1 阶段级 Checkpoint 和离线重放
 
-当前状态（2026-07-12）：已完成 replay-level checkpoint metadata。`scripts/export_replay_input.py` 导出的每条 replay record 会写入 checkpoint schema version、result schema version、adapter version 和 stable input fingerprint；`scripts/validate_replay_input.py` 可以在复用旧 replay 前验证这些元数据是否仍兼容当前代码；现有 input loader 会忽略这些额外字段，因此向后兼容。真正的 stage-level resume/rerun CLI 尚未完成。
+当前状态（2026-07-12）：已完成 replay-level checkpoint metadata。`scripts/export_replay_input.py` 导出的每条 replay record 会写入 checkpoint schema version、result schema version、adapter version 和 stable input fingerprint；`scripts/validate_replay_input.py` 可以在复用旧 replay 前验证这些元数据是否仍兼容当前代码；`live_batch_eval.py --resume-from-stage career_discovery|job_board_discovery|opening_match` 可以复用 replay input 中的 verified website/career root 并跳过 S2/S3 官网解析。现有 input loader 会忽略这些额外字段，因此向后兼容。真正的任意 stage-level checkpoint store 和 `--rerun-stage` 仍未完成。
 
 目标：
 

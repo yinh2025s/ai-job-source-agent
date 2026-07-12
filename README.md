@@ -282,6 +282,17 @@ python3 scripts/validate_replay_input.py \
   --summary-output /tmp/live-fixed-opening-misses-validation.json
 ```
 
+Then resume from known-good upstream evidence:
+
+```bash
+python3 scripts/live_batch_eval.py \
+  --input /tmp/live-fixed-opening-misses.json \
+  --resume-from-stage opening_match \
+  --output /tmp/live-fixed-rerun-results.json \
+  --trace-output /tmp/live-fixed-rerun-trace.json \
+  --summary-output /tmp/live-fixed-rerun-summary.json
+```
+
 To capture sanitized page snapshots while running a live batch, add `--snapshot-dir`:
 
 ```bash
