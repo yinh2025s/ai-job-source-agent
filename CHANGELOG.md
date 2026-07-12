@@ -11,6 +11,7 @@
 ### Added
 
 - 增加正式的开发治理、架构边界和 ADR 记录机制。
+- 增加版本化 stage context/execution、最小 fetch client、provider adapter 和 checkpoint store contracts。
 
 ### Changed
 
@@ -38,4 +39,3 @@
 - Provider 识别、请求构造和响应解析仍集中在 `opening_matcher.py` 的条件分支中。
 - 任意 stage checkpoint store 和 `--rerun-stage` 尚未完成。
 - Live 成功率仍受未知 ATS、JavaScript 页面、防爬和网络质量影响。
-
