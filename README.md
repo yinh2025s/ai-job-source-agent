@@ -238,6 +238,8 @@ python3 scripts/live_batch_eval.py \
   --career-search-timeout 7 \
   --company-time-budget 45 \
   --website-time-budget 10 \
+  --fetch-retries 1 \
+  --retry-base-delay 0.25 \
   --skip-sitemap \
   --output /tmp/live-fixed-results.json \
   --trace-output /tmp/live-fixed-trace.json \
@@ -270,6 +272,8 @@ python3 scripts/live_batch_eval.py \
 ```
 
 Snapshots are written under `/tmp/job-source-snapshots/sites` using the same layout as offline fixtures, plus `/tmp/job-source-snapshots/snapshots.jsonl` metadata. Sensitive query values and common token-like values are redacted before writing.
+
+`--fetch-retries` retries only retryable fetch failures such as timeouts, DNS failures, rate limits, and server errors. Non-retryable external blockers such as HTTP 403, login walls, bot protection, and parser/title-match failures are not retried.
 
 ## Optional Saved LinkedIn HTML Input
 

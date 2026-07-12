@@ -89,6 +89,9 @@ class SnapshottingFetcher:
         page.source = f"{page.source}|snapshot:{record.path}"
         return page
 
+    def __getattr__(self, name: str):
+        return getattr(self.fetcher, name)
+
 
 def snapshot_path_for_url(fixtures_dir: str | Path, url: str) -> Path:
     parsed = urlparse(url)

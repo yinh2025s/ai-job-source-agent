@@ -31,6 +31,7 @@ from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.process_budget import ProcessBudgetExceeded, RemoteProcessError, run_with_process_budget
 from job_source_agent.reasons import canonical_reason_code, make_stage_result
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
+from job_source_agent.retrying_fetcher import RetryingFetcher
 from job_source_agent.snapshot import SnapshottingFetcher
 from job_source_agent.web import Fetcher, normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
@@ -45,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--linkedin-pages", type=int, default=3)
     parser.add_argument("--fetch-timeout", type=float, default=3)
+    parser.add_argument("--fetch-retries", type=int, default=0, help="Retries for retryable fetch failures.")
+    parser.add_argument("--retry-base-delay", type=float, default=0.25, help="Initial delay between fetch retries.")
     parser.add_argument("--career-search-timeout", type=float, default=6)
     parser.add_argument("--max-career-search-queries", type=int, default=5)
     parser.add_argument("--verify-limit", type=int, default=3)
@@ -250,12 +253,15 @@ def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyI
     company.source_trace["stage_metrics"]["website_resolution_duration_ms"] = round(
         (time.perf_counter() - website_started) * 1000
     )
+    retry_events = getattr(fetcher, "retry_events", None)
+    if retry_events:
+        company.source_trace["retry_events"] = retry_events
     return company
 
 
 def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -> DiscoveryResult:
     fetcher = build_company_fetcher(args)
-    return JobSourceAgent(
+    result = JobSourceAgent(
         fetcher,
         max_candidates=args.max_career_candidates,
         max_job_pages=args.max_job_pages,
@@ -265,6 +271,10 @@ def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -
         enable_sitemap_discovery=not args.skip_sitemap,
         career_search_timeout=args.career_search_timeout,
     ).discover(company)
+    retry_events = getattr(fetcher, "retry_events", None)
+    if retry_events:
+        result.trace["retry_events"] = retry_events
+    return result
 
 
 def build_company_fetcher(args: argparse.Namespace):
@@ -272,6 +282,13 @@ def build_company_fetcher(args: argparse.Namespace):
         fetcher = SmartRenderedFetcher(timeout=args.fetch_timeout, render_budget=args.render_budget)
     else:
         fetcher = Fetcher(timeout=args.fetch_timeout)
+    fetch_retries = int(getattr(args, "fetch_retries", 0) or 0)
+    if fetch_retries > 0:
+        fetcher = RetryingFetcher(
+            fetcher,
+            max_retries=fetch_retries,
+            base_delay=float(getattr(args, "retry_base_delay", 0.25) or 0),
+        )
     snapshot_dir = getattr(args, "snapshot_dir", None)
     if snapshot_dir:
         return SnapshottingFetcher(fetcher, snapshot_dir)

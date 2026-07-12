@@ -227,6 +227,7 @@
 - 输出 `summary.json`，包含 funnel rates、provider distribution、failure stages
 - 支持从 prior results/trace 导出可复跑 input，并按 stage、stage status、reason code、provider 过滤
 - 支持 `--snapshot-dir` 将 live fetch 的页面保存为脱敏、fixture-compatible snapshots，并写入 `snapshots.jsonl` metadata
+- 支持 `--fetch-retries` / `--retry-base-delay`，只重试标准 reason code 中 `retryable=true` 的 fetch failures，并在 trace 中记录 retry events
 - 支持 fast mode：
   - `--skip-sitemap`
   - `--fetch-timeout`
@@ -728,6 +729,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - checkpoint 损坏不会导致错误成功，系统会安全地重新执行
 
 #### 4.2 Retry Policy
+
+当前状态（2026-07-12）：已完成第一版 fetch-level retry wrapper。`RetryingFetcher` 会根据 `classify_fetch_error -> reason_spec.retryable` 判断是否重试；timeout、DNS、rate limit、server error 等可重试，HTTP 403、login/bot protection、parser/title mismatch 等不会重试。live batch runner 已接入 `--fetch-retries` 和 `--retry-base-delay`，retry events 会进入 `source_trace` 或 result trace。
 
 目标：
 
