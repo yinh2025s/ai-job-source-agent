@@ -61,6 +61,7 @@ class ContractTests(unittest.TestCase):
 
         class FakeProvider:
             name = "fake"
+            supports_listing = True
 
             def recognizes(self, url):
                 return "fake.example" in url
@@ -89,4 +90,3 @@ class ContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

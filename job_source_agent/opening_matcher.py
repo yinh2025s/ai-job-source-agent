@@ -6,8 +6,9 @@ from dataclasses import dataclass
 from html import unescape
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
+from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
 from .scoring import is_likely_job_detail, score_job_link
-from .web import FetchError, Fetcher, RawLink, domain_of, extract_links, safe_normalize_url
+from .web import FetchError, Fetcher, RawLink, extract_links, safe_normalize_url
 
 
 STOPWORDS = {
@@ -44,8 +45,9 @@ class ProviderApiRequest:
 
 
 class JobOpeningMatcher:
-    def __init__(self, fetcher: Fetcher) -> None:
+    def __init__(self, fetcher: Fetcher, provider_registry: ProviderRegistry | None = None) -> None:
         self.fetcher = fetcher
+        self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
 
     def match(
         self,
@@ -57,7 +59,7 @@ class JobOpeningMatcher:
             "job_list_url": job_list_url,
             "target_title": target_title,
             "target_location": target_location,
-            "provider": detect_provider(job_list_url),
+            "provider": self.provider_registry.detect(job_list_url),
             "searched_urls": [],
             "candidates": [],
         }
@@ -136,7 +138,62 @@ class JobOpeningMatcher:
         return None, trace
 
     def _match_provider_api(self, job_list_url: str, target_title: str) -> tuple[OpeningMatch | None, dict]:
-        provider = detect_provider(job_list_url)
+        provider = self.provider_registry.detect(job_list_url)
+        adapter = self.provider_registry.adapter_for(job_list_url)
+        if adapter:
+            board = adapter.identify_board(job_list_url)
+            if board:
+                try:
+                    adapter_result = adapter.list_jobs(
+                        self.fetcher,
+                        board,
+                        JobQuery(title=target_title),
+                    )
+                except FetchError as exc:
+                    if adapter.supports_listing:
+                        return None, {
+                            "provider": provider,
+                            "adapter": adapter.name,
+                            "api_urls": [],
+                            "candidates": [],
+                            "errors": [{"url": job_list_url, "error": str(exc)}],
+                        }
+                else:
+                    if adapter_result.reason_code != "PROVIDER_VARIANT_UNSUPPORTED":
+                        trace = {
+                            "provider": provider,
+                            "adapter": adapter.name,
+                            "api_urls": list(adapter_result.trace.get("api_urls", [])),
+                            "candidates": [],
+                            "adapter_trace": adapter_result.trace,
+                        }
+                        scored = []
+                        for candidate in adapter_result.candidates:
+                            title_score, title_reasons = score_title_match(candidate.title, target_title)
+                            if title_score < 45:
+                                continue
+                            scored.append(
+                                OpeningMatch(
+                                    url=candidate.url,
+                                    title=candidate.title,
+                                    score=title_score + 100,
+                                    provider=candidate.provider,
+                                    reasons=["provider adapter result"] + title_reasons,
+                                    job_list_page_url=job_list_url,
+                                )
+                            )
+                        scored.sort(key=lambda candidate: candidate.score, reverse=True)
+                        trace["candidates"] = [
+                            {
+                                "url": candidate.url,
+                                "title": candidate.title,
+                                "score": candidate.score,
+                                "reasons": candidate.reasons,
+                            }
+                            for candidate in scored[:8]
+                        ]
+                        return (scored[0] if scored else None), trace
+
         api_requests = build_provider_api_requests(job_list_url, target_title)
         trace = {"provider": provider, "api_urls": [request.url for request in api_requests], "candidates": []}
         for api_request in api_requests:
@@ -179,32 +236,7 @@ class JobOpeningMatcher:
 
 
 def detect_provider(url: str) -> str:
-    host = domain_of(url)
-    if "google.com" in host:
-        return "google_careers"
-    if "metacareers.com" in host:
-        return "meta_careers"
-    if "greenhouse.io" in host:
-        return "greenhouse"
-    if "lever.co" in host:
-        return "lever"
-    if "ashbyhq.com" in host:
-        return "ashby"
-    if "workable.com" in host:
-        return "workable"
-    if "smartrecruiters.com" in host:
-        return "smartrecruiters"
-    if "icims.com" in host:
-        return "icims"
-    if "workdayjobs.com" in host or "myworkdayjobs.com" in host:
-        return "workday"
-    if "successfactors.com" in host or "sapsf.com" in host:
-        return "successfactors"
-    if "bamboohr.com" in host:
-        return "bamboohr"
-    if "rippling.com" in host:
-        return "rippling"
-    return "generic"
+    return DEFAULT_PROVIDER_REGISTRY.detect(url)
 
 
 def build_provider_search_urls(job_list_url: str, target_title: str) -> list[str]:

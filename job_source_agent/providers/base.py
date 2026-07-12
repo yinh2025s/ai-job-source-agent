@@ -41,6 +41,7 @@ class AdapterResult:
 @runtime_checkable
 class ProviderAdapter(Protocol):
     name: str
+    supports_listing: bool
 
     def recognizes(self, url: str) -> bool:
         ...
@@ -55,4 +56,3 @@ class ProviderAdapter(Protocol):
         query: JobQuery,
     ) -> AdapterResult:
         ...
-
