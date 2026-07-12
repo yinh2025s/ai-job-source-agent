@@ -87,6 +87,45 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(comparison["pipeline_status_delta"]["success"], 3)
         self.assertEqual(comparison["stage_success_delta"]["opening_match"], 3)
 
+    def test_summary_tracks_checkpoint_activity_from_result_trace(self):
+        results = [
+            {
+                "trace": {
+                    "checkpoint_events": [
+                        {"stage": "website_resolution", "action": "restore"},
+                        {"stage": "career_discovery", "action": "save"},
+                        {"stage": "career_discovery", "action": "save"},
+                    ]
+                }
+            },
+            {
+                "trace": {
+                    "checkpoint_events": [
+                        {"stage": "career_discovery", "action": "invalidate_from"},
+                        {"stage": "", "action": "save"},
+                        "invalid",
+                    ]
+                }
+            },
+        ]
+
+        summary = summarize_results(results)
+
+        self.assertEqual(
+            summary["checkpoint_action_counts"],
+            {"restore": 1, "save": 3, "invalidate_from": 1},
+        )
+        self.assertEqual(
+            summary["checkpoint_stage_counts"],
+            {"website_resolution": 1, "career_discovery": 3},
+        )
+
+    def test_summary_checkpoint_activity_is_backward_compatible_without_trace(self):
+        summary = summarize_results([{}, {"trace": None}, {"trace": {}}])
+
+        self.assertEqual(summary["checkpoint_action_counts"], {})
+        self.assertEqual(summary["checkpoint_stage_counts"], {})
+
 
 if __name__ == "__main__":
     unittest.main()

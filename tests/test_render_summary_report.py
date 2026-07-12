@@ -64,6 +64,8 @@ SUMMARY = {
         "greenhouse": {},
     },
     "reason_code_counts": {"OPENING_NOT_FOUND": 1},
+    "checkpoint_action_counts": {"save": 3, "restore": 1, "invalidate_from": 1},
+    "checkpoint_stage_counts": {"career_discovery": 3, "website_resolution": 2},
     "expectation_checks": {"total": 2, "passed": 2, "failed": 0},
     "company_stage_matrix": [
         {
@@ -116,6 +118,10 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("| lever | FETCH_FAILED | 2 |", report)
         self.assertLess(report.index("| lever | FETCH_FAILED | 2 |"), report.index("| lever | OPENING_NOT_FOUND | 1 |"))
         self.assertIn("| B | lever | partial | OPENING_NOT_FOUND", report)
+        self.assertIn("## Checkpoint Activity", report)
+        self.assertIn("| Action | save | 3 |", report)
+        self.assertIn("| Stage | S4 career_discovery | 3 |", report)
+        self.assertLess(report.index("| Action | save | 3 |"), report.index("| Action | invalidate_from | 1 |"))
         self.assertIn("## Expectations", report)
 
     def test_provider_reliability_sections_handle_missing_data(self):
@@ -125,6 +131,8 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("| none | - | - | - | - | - | - | - |", report)
         self.assertIn("## Provider Reason Codes", report)
         self.assertIn("| none | none | 0 |", report)
+        self.assertIn("## Checkpoint Activity", report)
+        self.assertEqual(report.count("| none | none | 0 |"), 2)
 
     def test_cli_writes_report_file(self):
         with tempfile.TemporaryDirectory() as directory:

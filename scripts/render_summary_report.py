@@ -61,6 +61,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines.extend(_provider_stage_reliability(summary))
     lines.extend(_provider_reason_codes(summary))
     lines.extend(_simple_count_table("Reason Codes", summary.get("reason_code_counts", {}), "Reason"))
+    lines.extend(_checkpoint_activity(summary))
     lines.extend(_expectations(summary))
     lines.extend(_company_matrix(summary, max_rows=max_matrix_rows))
     return "\n".join(lines).rstrip() + "\n"
@@ -209,6 +210,26 @@ def _provider_reason_codes(summary: dict) -> list[str]:
             lines.append(f"| {_escape(provider)} | {_escape(reason)} | {count} |")
             has_reasons = True
     if not has_reasons:
+        lines.append("| none | none | 0 |")
+    lines.append("")
+    return lines
+
+
+def _checkpoint_activity(summary: dict) -> list[str]:
+    action_counts = summary.get("checkpoint_action_counts") or {}
+    stage_counts = summary.get("checkpoint_stage_counts") or {}
+    lines = [
+        "## Checkpoint Activity",
+        "",
+        "| Dimension | Value | Count |",
+        "| --- | --- | ---: |",
+    ]
+    for action, count in sorted(action_counts.items(), key=lambda item: (-int(item[1]), str(item[0]))):
+        lines.append(f"| Action | {_escape(action)} | {count} |")
+    for stage, count in sorted(stage_counts.items(), key=lambda item: (-int(item[1]), str(item[0]))):
+        label = f"{STAGE_LABELS.get(str(stage), str(stage))} {stage}"
+        lines.append(f"| Stage | {_escape(label)} | {count} |")
+    if not action_counts and not stage_counts:
         lines.append("| none | none | 0 |")
     lines.append("")
     return lines

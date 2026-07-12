@@ -22,6 +22,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
     reason_code_counts = _reason_code_counts(results)
     provider_reason_code_counts = _provider_reason_code_counts(results)
     stage_duration_ms = _stage_duration_ms(results)
+    checkpoint_action_counts, checkpoint_stage_counts = _checkpoint_activity_counts(results)
 
     summary = {
         "total": total,
@@ -47,6 +48,8 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
         "reason_code_counts": reason_code_counts,
         "provider_reason_code_counts": provider_reason_code_counts,
         "stage_duration_ms": stage_duration_ms,
+        "checkpoint_action_counts": checkpoint_action_counts,
+        "checkpoint_stage_counts": checkpoint_stage_counts,
         "company_stage_matrix": _company_stage_matrix(results),
     }
     if elapsed_sec is not None:
@@ -156,6 +159,28 @@ def _provider_reason_code_counts(results: list[dict]) -> dict[str, dict[str, int
             if reason_code:
                 provider_counts[str(reason_code)] += 1
     return {provider: dict(reason_counts) for provider, reason_counts in counts.items()}
+
+
+def _checkpoint_activity_counts(results: list[dict]) -> tuple[dict[str, int], dict[str, int]]:
+    action_counts: Counter[str] = Counter()
+    stage_counts: Counter[str] = Counter()
+    for result in results:
+        trace = result.get("trace")
+        if not isinstance(trace, dict):
+            continue
+        events = trace.get("checkpoint_events")
+        if not isinstance(events, list):
+            continue
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            action = event.get("action")
+            stage = event.get("stage")
+            if isinstance(action, str) and action:
+                action_counts[action] += 1
+            if isinstance(stage, str) and stage:
+                stage_counts[stage] += 1
+    return dict(action_counts), dict(stage_counts)
 
 
 def _company_stage_matrix(results: list[dict]) -> list[dict]:
