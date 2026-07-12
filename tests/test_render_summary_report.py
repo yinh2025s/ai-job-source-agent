@@ -24,6 +24,15 @@ SUMMARY = {
         "opening_match": {"success": 1, "partial": 1},
         "result_validation": {"success": 2},
     },
+    "stage_duration_ms": {
+        "linkedin_discovery": {"count": 2, "p50": 0, "p95": 0},
+        "website_resolution": {"count": 2, "p50": 10, "p95": 20},
+        "hiring_identity_resolution": {"count": 2, "p50": 1, "p95": 2},
+        "career_discovery": {"count": 2, "p50": 30, "p95": 40},
+        "job_board_discovery": {"count": 2, "p50": 50, "p95": 60},
+        "opening_match": {"count": 2, "p50": 70, "p95": 80},
+        "result_validation": {"count": 2, "p50": 0, "p95": 0},
+    },
     "provider_counts": {"greenhouse": 1, "lever": 1},
     "reason_code_counts": {"OPENING_NOT_FOUND": 1},
     "expectation_checks": {"total": 2, "passed": 2, "failed": 0},
@@ -64,6 +73,8 @@ class RenderSummaryReportTests(unittest.TestCase):
 
         self.assertIn("# Demo Report", report)
         self.assertIn("## Stage Funnel", report)
+        self.assertIn("## Stage Durations", report)
+        self.assertIn("| S6 opening_match | 2 | 70 | 80 |", report)
         self.assertIn("| opening | 50.0% |", report)
         self.assertIn("| B | lever | partial | OPENING_NOT_FOUND", report)
         self.assertIn("## Expectations", report)

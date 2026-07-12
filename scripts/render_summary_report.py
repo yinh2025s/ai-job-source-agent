@@ -53,6 +53,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines.extend(_overview(summary))
     lines.extend(_rates(summary))
     lines.extend(_stage_funnel(summary))
+    lines.extend(_stage_durations(summary))
     lines.extend(_simple_count_table("Provider Distribution", summary.get("provider_counts", {}), "Provider"))
     lines.extend(_simple_count_table("Reason Codes", summary.get("reason_code_counts", {}), "Reason"))
     lines.extend(_expectations(summary))
@@ -104,6 +105,30 @@ def _stage_funnel(summary: dict) -> list[str]:
                 not_run=counts.get("not_run", 0),
                 not_applicable=counts.get("not_applicable", 0),
                 unsupported=counts.get("unsupported", 0),
+            )
+        )
+    lines.append("")
+    return lines
+
+
+def _stage_durations(summary: dict) -> list[str]:
+    durations = summary.get("stage_duration_ms") or {}
+    if not durations:
+        return []
+    lines = [
+        "## Stage Durations",
+        "",
+        "| Stage | Count | P50 ms | P95 ms |",
+        "| --- | ---: | ---: | ---: |",
+    ]
+    for stage in PIPELINE_STAGES:
+        values = durations.get(stage, {})
+        lines.append(
+            "| {stage} | {count} | {p50} | {p95} |".format(
+                stage=f"{STAGE_LABELS.get(stage, stage)} {stage}",
+                count=values.get("count", 0),
+                p50=_number_or_dash(values.get("p50")),
+                p95=_number_or_dash(values.get("p95")),
             )
         )
     lines.append("")
@@ -168,6 +193,10 @@ def _percent(value) -> str:
 
 def _escape(value: str) -> str:
     return str(value).replace("|", "\\|")
+
+
+def _number_or_dash(value) -> str:
+    return "-" if value is None else str(value)
 
 
 if __name__ == "__main__":
