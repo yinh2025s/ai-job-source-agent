@@ -49,8 +49,8 @@ class CareerDiscoveryStage:
 
         started = time.perf_counter()
         try:
-            if context.company.career_root_url:
-                career_url = normalize_url(context.company.career_root_url)
+            if context.career_root_url:
+                career_url = normalize_url(context.career_root_url)
                 trace = {
                     "homepage_url": context.company_website_url,
                     "selected": {

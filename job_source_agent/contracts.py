@@ -29,6 +29,8 @@ class PipelineContext:
 
     company: CompanyInput
     company_website_url: str = ""
+    hiring_entity_name: str | None = None
+    career_root_url: str | None = None
     career_page_url: str | None = None
     job_list_page_url: str | None = None
     open_position_url: str | None = None
@@ -42,6 +44,8 @@ class PipelineContext:
         return cls(
             company=company,
             company_website_url=company.company_website_url,
+            hiring_entity_name=company.hiring_entity_name,
+            career_root_url=company.career_root_url,
             trace={"source": company.source, "stages": {}},
         )
 
@@ -88,9 +92,10 @@ class CheckpointStore(Protocol):
 
 _CONTEXT_UPDATE_FIELDS = {
     "company_website_url",
+    "hiring_entity_name",
+    "career_root_url",
     "career_page_url",
     "job_list_page_url",
     "open_position_url",
     "provider",
 }
-
