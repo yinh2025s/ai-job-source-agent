@@ -98,6 +98,9 @@
 - JS-heavy 固定 cohort 从单一 Workable 扩展为 5 家、4 个 provider、4 类技术栈：Plum、Workable、Apple Jobs、Intuitive Apps 和 BlueFit；脱敏真实 static/browser capture 的确定性回放为 5/5，并将 provider/technology diversity 纳入门禁。
 - 跨 provider 12 秒 Playwright live gate 保持诚实非零：连续运行分别为 3/5 和 4/5 career/job evidence，均 5/5 触发 browser 且不超预算，暴露 DOMContentLoaded/异步内容的时间敏感性。
 - Meta Careers 原生迁移调查确认默认静态响应只提供 Comet/Relay shell，列表依赖动态内部 GraphQL；匿名 browser 可见 numeric canonical job detail，但在形成稳定 rendered contract 前继续保留 compatibility path。
+- Browser navigation 在 `DOMContentLoaded` timeout 后会无额外等待地检查当前 DOM：仅当存在可用 job/career link，或至少 120 字符且包含招聘语义时保留；空 root/noscript shell 继续抛原始 timeout，`networkidle` 仍只使用剩余预算。
+- JS-heavy evaluator 改为 saved/live 共用严格 evidence gate：要求成功 render event、结构化 heading/nav 文本、可选 URL、最小正文长度、无 loading/错误状态，并输出 visible length、matched evidence、error class 和逐例 pass；旧宽松 5/5 被校正为 Plum/Workable/Apple 3/5，Intuitive Apps 卡在 loading、BlueFit 仅有筛选 UI。
+- Browser/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-12.15`。
 
 ## [0.1.0] - 2026-07-12
 
