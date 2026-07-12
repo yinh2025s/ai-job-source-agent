@@ -33,13 +33,14 @@ def run_with_process_budget(
         try:
             status, payload = receiver.recv()
         except EOFError as exc:
+            process.join(timeout=1)
             raise RemoteProcessError(f"worker exited without a result (exit code {process.exitcode})") from exc
     finally:
         receiver.close()
+        process.join(timeout=2)
+        if process.is_alive():
+            _stop_process(process)
 
-    process.join(timeout=2)
-    if process.is_alive():
-        _stop_process(process)
     if status == "error":
         raise RemoteProcessError(str(payload))
     return payload

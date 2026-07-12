@@ -76,6 +76,8 @@
 - Live batch 的 later-stage resume 会验证完整 checkpoint chain：S5 可恢复 S1-S4，S6 可恢复 S1-S5；链不完整时基于 replay 官网证据回退到 S4，否则返回结构化失败。
 - Rippling adapter 合并真实 Next.js `__NEXT_DATA__` 与 anchors，保留 location/department/language，支持 `es-419` locale，并区分空 board、损坏 state 和 JS shell；BambooHR 在主 location 为空时使用真实 `atsLocation` fallback；`ADAPTER_VERSION` 提升到 `2026-07-12.10`。
 - 固定 live benchmark 新增 AllVoices、Terradot、RevOptimal、Spangle AI、Soundstripe、beehiiv、Signal 1 和 SAI360；Rippling、BambooHR 均达到 5 家 exact-opening 覆盖，集合扩展到 46 家。
+- Process budget 在 worker 无结果崩溃、timeout、忽略 `SIGTERM` 和并发运行时统一正常 join 或强制 kill/reap，避免残留子进程；真实 `SIGTERM`/`SIGKILL` 测试已证明 S4/S5 落盘后可从 S5/S6 恢复且 checkpoint 无损坏。
+- Smart browser trigger 增加真实 Workable `#app` shell，过滤 locale/self-link 和静态资源误报；浏览器以 DOMContentLoaded 为硬边界，并仅用剩余预算等待 networkidle，避免长轮询页面丢弃已可用 DOM。
 
 ## [0.1.0] - 2026-07-12
 

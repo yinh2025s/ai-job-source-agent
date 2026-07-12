@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 import re
+from time import monotonic
+from urllib.parse import parse_qs, urlsplit
 
 from .web import FetchError, Fetcher, Page, extract_links, normalize_url
 
@@ -25,6 +27,7 @@ class RenderedFetcher(Fetcher):
         normalized = normalize_url(url)
         try:
             from playwright.sync_api import Error as PlaywrightError
+            from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
             from playwright.sync_api import sync_playwright
         except ImportError as exc:
             raise FetchError(
@@ -43,7 +46,12 @@ class RenderedFetcher(Fetcher):
                             "Chrome/125.0 Safari/537.36"
                         )
                     )
-                    page.goto(normalized, wait_until="networkidle", timeout=int(self.timeout * 1000))
+                    _navigate_with_settle(
+                        page,
+                        normalized,
+                        timeout_seconds=self.timeout,
+                        timeout_error_type=PlaywrightTimeoutError,
+                    )
                     html = page.content()
                     final_url = page.url
                     artifacts = {}
@@ -173,6 +181,8 @@ class SmartRenderedFetcher(Fetcher):
 
 
 JS_SHELL_MARKERS = (
+    'id="app"',
+    "id='app'",
     'id="root"',
     "id='root'",
     'id="__next"',
@@ -221,6 +231,16 @@ def _is_usable_job_link(url: str, text: str, source_url: str) -> bool:
             return False
     except (TypeError, ValueError):
         return False
+    parsed = urlsplit(url)
+    source = urlsplit(source_url)
+    path = parsed.path.rstrip("/") or "/"
+    source_path = source.path.rstrip("/") or "/"
+    if parsed.netloc.lower() == source.netloc.lower() and path == source_path:
+        query_keys = {key.casefold() for key in parse_qs(parsed.query, keep_blank_values=True)}
+        if not query_keys or query_keys <= {"lang", "lng", "locale"}:
+            return False
+    if re.search(r"\.(?:avif|css|gif|ico|jpe?g|js|json|map|png|svg|txt|webp|xml)$", path, re.I):
+        return False
     lower_url = url.lower()
     if any(marker in lower_url for marker in JOB_URL_MARKERS):
         return True
@@ -261,6 +281,30 @@ def _launch_browser(playwright, playwright_error_type):
             return playwright.chromium.launch(channel="chrome", headless=True)
         except playwright_error_type as chrome_exc:
             raise playwright_error_type(f"{exc}; local Chrome fallback failed: {chrome_exc}") from chrome_exc
+
+
+def _navigate_with_settle(
+    page,
+    url: str,
+    *,
+    timeout_seconds: float,
+    timeout_error_type,
+    clock=monotonic,
+) -> None:
+    """Require DOM readiness, then spend only remaining budget on network idle."""
+
+    timeout_ms = max(1, int(timeout_seconds * 1000))
+    deadline = clock() + timeout_seconds
+    page.goto(url, wait_until="domcontentloaded", timeout=timeout_ms)
+    remaining_ms = int((deadline - clock()) * 1000)
+    if remaining_ms <= 0:
+        return
+    try:
+        page.wait_for_load_state("networkidle", timeout=remaining_ms)
+    except timeout_error_type:
+        # Analytics, long polling, and streaming requests can keep a useful job
+        # page permanently non-idle. DOM readiness remains the hard boundary.
+        return
 
 
 def _local_chrome_available() -> bool:

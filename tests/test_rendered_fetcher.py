@@ -1,7 +1,9 @@
 import unittest
+from pathlib import Path
 
 import job_source_agent.rendered_fetcher as rendered_fetcher
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
+from job_source_agent.rendered_fetcher import _navigate_with_settle
 from job_source_agent.web import FetchError, Page
 
 
@@ -28,6 +30,8 @@ class FakeSmartRenderedFetcher(SmartRenderedFetcher):
 
 
 class SmartRenderedFetcherTests(unittest.TestCase):
+    fixtures = Path(__file__).parent / "fixtures" / "rendered_fetcher"
+
     def test_static_html_is_used_when_page_has_content(self):
         static_page = Page(
             url="https://example.com",
@@ -65,6 +69,51 @@ class SmartRenderedFetcherTests(unittest.TestCase):
         self.assertEqual(page.source, "browser_after_static_shell")
         self.assertEqual(fetcher.render_attempts, 1)
         self.assertEqual(fetcher.render_events[0]["reason"], "static_no_usable_job_links")
+
+    def test_workable_shell_assets_and_locale_variants_do_not_suppress_render(self):
+        url = "https://apply.workable.com/example/"
+        static_page = Page(
+            url=url,
+            html=(self.fixtures / "workable_static_shell.html").read_text(),
+            final_url=url,
+            source="live",
+        )
+        rendered_page = Page(
+            url=url,
+            html=(self.fixtures / "rendered_job_page.html").read_text(),
+            final_url=url,
+            source="browser",
+        )
+        fetcher = FakeSmartRenderedFetcher(
+            static_page=static_page,
+            rendered_page=rendered_page,
+            render_budget=1,
+        )
+
+        page = fetcher._fetch_live(url)
+
+        self.assertEqual(page.source, "browser_after_static_shell")
+        self.assertIn("Software Engineer", page.html)
+        self.assertEqual(fetcher.render_events[0]["reason"], "static_no_usable_job_links")
+
+    def test_same_path_job_identifier_query_remains_a_usable_link(self):
+        url = "https://example.com/careers"
+        static_page = Page(
+            url=url,
+            html='<a href="?jobId=123">Software Engineer job</a><div id="app"></div>',
+            final_url=url,
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(
+            static_page=static_page,
+            rendered_page=static_page,
+            render_budget=1,
+        )
+
+        page = fetcher._fetch_live(url)
+
+        self.assertEqual(page.source, "live")
+        self.assertEqual(fetcher.render_attempts, 0)
 
     def test_usable_career_link_keeps_static_page(self):
         static_page = Page(
@@ -237,6 +286,60 @@ class SmartRenderedFetcherTests(unittest.TestCase):
                 rendered_fetcher._launch_browser(playwright, FakePlaywrightError)
         finally:
             rendered_fetcher._local_chrome_available = original_local_chrome_available
+
+    def test_navigation_accepts_useful_dom_when_network_never_becomes_idle(self):
+        class NavigationTimeout(Exception):
+            pass
+
+        class FakePage:
+            def __init__(self):
+                self.calls = []
+
+            def goto(self, url, **kwargs):
+                self.calls.append(("goto", url, kwargs))
+
+            def wait_for_load_state(self, state, **kwargs):
+                self.calls.append(("wait", state, kwargs))
+                raise NavigationTimeout("analytics connection remains open")
+
+        times = iter((10.0, 10.4))
+        page = FakePage()
+
+        _navigate_with_settle(
+            page,
+            "https://example.com/jobs",
+            timeout_seconds=2,
+            timeout_error_type=NavigationTimeout,
+            clock=lambda: next(times),
+        )
+
+        self.assertEqual(page.calls[0][2], {"wait_until": "domcontentloaded", "timeout": 2000})
+        self.assertEqual(page.calls[1][0:2], ("wait", "networkidle"))
+        self.assertLessEqual(page.calls[1][2]["timeout"], 1600)
+
+    def test_navigation_does_not_exceed_budget_after_dom_ready(self):
+        class FakePage:
+            def __init__(self):
+                self.calls = []
+
+            def goto(self, url, **kwargs):
+                self.calls.append(("goto", url, kwargs))
+
+            def wait_for_load_state(self, state, **kwargs):
+                self.calls.append(("wait", state, kwargs))
+
+        times = iter((20.0, 22.1))
+        page = FakePage()
+
+        _navigate_with_settle(
+            page,
+            "https://example.com/jobs",
+            timeout_seconds=2,
+            timeout_error_type=TimeoutError,
+            clock=lambda: next(times),
+        )
+
+        self.assertEqual([call[0] for call in page.calls], ["goto"])
 
 
 if __name__ == "__main__":
