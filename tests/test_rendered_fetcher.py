@@ -31,13 +31,69 @@ class SmartRenderedFetcherTests(unittest.TestCase):
     def test_static_html_is_used_when_page_has_content(self):
         static_page = Page(
             url="https://example.com",
-            html="<html><body><p>We are hiring for open roles across engineering and product.</p></body></html>",
+            html="<html><body><p>Our product helps teams collaborate across engineering and design.</p></body></html>",
             final_url="https://example.com",
             source="live",
         )
         fetcher = FakeSmartRenderedFetcher(static_page=static_page, render_budget=1)
 
         page = fetcher._fetch_live("https://example.com")
+
+        self.assertEqual(page.source, "live")
+        self.assertEqual(fetcher.render_attempts, 0)
+
+    def test_nonempty_jobs_shell_without_usable_links_uses_browser(self):
+        static_page = Page(
+            url="https://example.com/careers",
+            html=(
+                '<html><body><div id="root">'
+                "Explore our culture, benefits, values, offices, and open opportunities. "
+                "We are hiring people who want to build thoughtful products with our team."
+                "</div><script src=\"/assets/app.js\"></script></body></html>"
+            ),
+            final_url="https://example.com/careers",
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(
+            static_page=static_page,
+            render_budget=1,
+            min_visible_text_chars=20,
+        )
+
+        page = fetcher._fetch_live("https://example.com/careers")
+
+        self.assertEqual(page.source, "browser_after_static_shell")
+        self.assertEqual(fetcher.render_attempts, 1)
+        self.assertEqual(fetcher.render_events[0]["reason"], "static_no_usable_job_links")
+
+    def test_usable_career_link_keeps_static_page(self):
+        static_page = Page(
+            url="https://example.com",
+            html=(
+                '<html><body><div id="root">We are hiring across our global teams.</div>'
+                '<a href="/careers/open-roles">View open roles</a>'
+                '<script src="/app.js"></script></body></html>'
+            ),
+            final_url="https://example.com",
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(static_page=static_page, render_budget=1)
+
+        page = fetcher._fetch_live("https://example.com")
+
+        self.assertEqual(page.source, "live")
+        self.assertEqual(fetcher.render_attempts, 0)
+
+    def test_structured_jobs_payload_does_not_trigger_browser(self):
+        static_page = Page(
+            url="https://example.com/api/jobs",
+            html='{"jobs":[{"title":"Software Engineer","id":"123"}]}',
+            final_url="https://example.com/api/jobs",
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(static_page=static_page, render_budget=1)
+
+        page = fetcher._fetch_live("https://example.com/api/jobs")
 
         self.assertEqual(page.source, "live")
         self.assertEqual(fetcher.render_attempts, 0)
@@ -99,6 +155,45 @@ class SmartRenderedFetcherTests(unittest.TestCase):
 
         with self.assertRaises(FetchError):
             fetcher._fetch_live("https://example.com")
+
+    def test_exhausted_budget_returns_static_page_and_records_skip(self):
+        static_page = Page(
+            url="https://example.com/jobs",
+            html='<html><body><div id="root">Open jobs load here.</div></body></html>',
+            final_url="https://example.com/jobs",
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(static_page=static_page, render_budget=0)
+
+        page = fetcher._fetch_live("https://example.com/jobs")
+
+        self.assertIs(page, static_page)
+        self.assertEqual(fetcher.render_attempts, 0)
+        self.assertEqual(fetcher.render_events[0]["reason"], "static_no_usable_job_links")
+        self.assertEqual(fetcher.render_events[0]["outcome"], "skipped_budget")
+
+    def test_render_budget_is_shared_across_requests(self):
+        static_page = Page(
+            url="https://example.com/jobs",
+            html=(
+                '<html><body><div id="root">Open jobs load here.</div>'
+                '<a href="#">Jobs</a></body></html>'
+            ),
+            final_url="https://example.com/jobs",
+            source="live",
+        )
+        fetcher = FakeSmartRenderedFetcher(static_page=static_page, render_budget=1)
+
+        first_page = fetcher._fetch_live("https://example.com/jobs")
+        second_page = fetcher._fetch_live("https://example.com/jobs")
+
+        self.assertEqual(first_page.source, "browser_after_static_shell")
+        self.assertIs(second_page, static_page)
+        self.assertEqual(fetcher.render_attempts, 1)
+        self.assertEqual(
+            [event["outcome"] for event in fetcher.render_events],
+            ["success", "skipped_budget"],
+        )
 
     def test_launch_browser_falls_back_to_local_chrome(self):
         class FakePlaywrightError(Exception):

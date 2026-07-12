@@ -95,16 +95,26 @@ class SmartRenderedFetcher(Fetcher):
             self._record_render_event(url, "static_error", "success", source=rendered.source, error=str(exc))
             return rendered
 
-        if not self._should_render(static_page) or not self._can_render():
+        render_reason = self._render_reason(static_page)
+        if not render_reason:
+            return static_page
+
+        if not self._can_render():
+            self._record_render_event(
+                url,
+                render_reason,
+                "skipped_budget",
+                source=static_page.source,
+            )
             return static_page
 
         try:
-            rendered = self._render_live(url, reason="static_shell")
+            rendered = self._render_live(url, reason=render_reason)
             rendered.source = _source_with_artifacts("browser_after_static_shell", rendered)
-            self._record_render_event(url, "static_shell", "success", source=rendered.source)
+            self._record_render_event(url, render_reason, "success", source=rendered.source)
             return rendered
         except FetchError as exc:
-            self._record_render_event(url, "static_shell", "failed", source=static_page.source, error=str(exc))
+            self._record_render_event(url, render_reason, "failed", source=static_page.source, error=str(exc))
             return static_page
 
     def _static_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
@@ -137,16 +147,29 @@ class SmartRenderedFetcher(Fetcher):
         return self.render_attempts < self.render_budget
 
     def _should_render(self, page: Page) -> bool:
+        return self._render_reason(page) is not None
+
+    def _render_reason(self, page: Page) -> str | None:
         html = page.html[:250000]
         lower_html = html.lower()
         visible_text = _visible_text(html)
+        lower_text = visible_text.lower()
         if any(marker in visible_text.lower() for marker in ("enable javascript", "please enable js")):
-            return True
-        if len(visible_text) >= self.min_visible_text_chars:
-            return False
-        if len(extract_links(page)) >= 3:
-            return False
-        return any(marker in lower_html for marker in JS_SHELL_MARKERS)
+            return "javascript_required"
+        if _looks_like_structured_payload(html):
+            return None
+
+        links = extract_links(page)
+        source_url = page.final_url or page.url
+        if any(_is_usable_job_link(link.url, link.text, source_url) for link in links):
+            return None
+
+        has_shell_marker = any(marker in lower_html for marker in JS_SHELL_MARKERS)
+        if has_shell_marker and _has_job_context(page.final_url or page.url, lower_text):
+            return "static_no_usable_job_links"
+        if has_shell_marker and len(visible_text) < self.min_visible_text_chars:
+            return "static_shell"
+        return None
 
 
 JS_SHELL_MARKERS = (
@@ -161,6 +184,65 @@ JS_SHELL_MARKERS = (
     "webpack",
     "vite",
 )
+
+JOB_URL_MARKERS = (
+    "/career",
+    "/job",
+    "/opening",
+    "/position",
+    "/vacanc",
+    "greenhouse.io",
+    "lever.co",
+    "myworkdayjobs.com",
+    "smartrecruiters.com",
+    "ashbyhq.com",
+    "bamboohr.com",
+    "icims.com",
+    "successfactors.com",
+    "sapsf.com",
+    "workable.com",
+)
+
+JOB_TEXT_MARKERS = (
+    "career",
+    "job",
+    "open role",
+    "open position",
+    "join our team",
+    "vacanc",
+    "we are hiring",
+    "we're hiring",
+)
+
+
+def _is_usable_job_link(url: str, text: str, source_url: str) -> bool:
+    try:
+        if normalize_url(url) == normalize_url(source_url):
+            return False
+    except (TypeError, ValueError):
+        return False
+    lower_url = url.lower()
+    if any(marker in lower_url for marker in JOB_URL_MARKERS):
+        return True
+    if not any(marker in text.lower() for marker in JOB_TEXT_MARKERS):
+        return False
+    return True
+
+
+def _has_job_context(url: str, visible_text: str) -> bool:
+    candidate = f"{url} {visible_text}".lower()
+    return any(marker in candidate for marker in JOB_URL_MARKERS + JOB_TEXT_MARKERS)
+
+
+def _looks_like_structured_payload(html: str) -> bool:
+    stripped = html.lstrip()
+    if not stripped.startswith(("{", "[")):
+        return False
+    lower = stripped[:2000].lower()
+    return any(
+        marker in lower
+        for marker in ('"jobs"', '"jobpostings"', '"postings"', '"results"', '"items"')
+    )
 
 
 def _visible_text(html: str) -> str:
