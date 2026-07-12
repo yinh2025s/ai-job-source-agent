@@ -65,6 +65,8 @@
 - Workday CXS 请求增加同源 `Origin`/`Referer`、tenant/redirect/detail URL 隔离，并将不兼容的 `limit=50` 改为 20 条有界分页。
 - Greenhouse custom frontend 加入后将 `ADAPTER_VERSION` 提升到 `2026-07-12.5`；Brex live expectation 提升为必须精确 opening。
 - SAP Career Site v1 加入后将 `ADAPTER_VERSION` 提升到 `2026-07-12.6`；DeLaval/SuccessFactors 加入固定 live benchmark 并要求精确 opening。
+- iCIMS adapter 增加同 tenant keyword iframe search 和传统 hosted HTML job-link 解析，拒绝跨 tenant/非数字 ID/非详情路径；`ADAPTER_VERSION` 提升到 `2026-07-12.7`。
+- 固定离线 benchmark 增加 traditional iCIMS HTML fixture，扩展到 13/13 exact opening；固定 live benchmark 增加 Prime Healthcare、Peraton 和 Chenega，扩展到 30/30 job list、28/30 exact opening 和 30/30 expectations。
 
 ## [0.1.0] - 2026-07-12
 

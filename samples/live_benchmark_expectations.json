@@ -160,5 +160,23 @@
     "expected_minimum_stage": "opening_match",
     "require_exact_opening": true,
     "allow_job_board_fallback": false
+  },
+  "Prime Healthcare": {
+    "expected_provider": "icims",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Peraton": {
+    "expected_provider": "icims",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
+  "Chenega": {
+    "expected_provider": "icims",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
   }
 }

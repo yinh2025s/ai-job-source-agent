@@ -184,5 +184,26 @@
     "company_website_url": "https://www.autodesk.com",
     "career_root_url": "https://autodesk.wd1.myworkdayjobs.com/Ext",
     "job_title": "Media & Entertainment Technical Enablement Specialist"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Prime Healthcare",
+    "company_website_url": "https://www.primehealthcare.com",
+    "career_root_url": "https://careers-primehealthcare.icims.com/jobs/search",
+    "job_title": "Acute Care Registered Nurse (RN) Opportunities | Multiple Departments"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Peraton",
+    "company_website_url": "https://www.peraton.com",
+    "career_root_url": "https://careers-peraton.icims.com/jobs/search",
+    "job_title": "Product Manager (Director)"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Chenega",
+    "company_website_url": "https://www.chenega.com",
+    "career_root_url": "https://careers-chenega.icims.com/jobs/search",
+    "job_title": "Video Teleconference Technician"
   }
 ]

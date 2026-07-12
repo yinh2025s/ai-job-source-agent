@@ -42,6 +42,12 @@
     "job_title": "Data Analyst"
   },
   {
+    "company_name": "Acme iCIMS Traditional",
+    "company_website_url": "https://careers-acme.icims.com",
+    "career_root_url": "https://careers-acme.icims.com/jobs/search-traditional",
+    "job_title": "Data Analyst"
+  },
+  {
     "company_name": "Acme SuccessFactors",
     "company_website_url": "https://acme.successfactors.com",
     "career_root_url": "https://acme.successfactors.com/career-json",

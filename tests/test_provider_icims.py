@@ -204,7 +204,11 @@ class ICIMSAdapterTests(unittest.TestCase):
 
         result = self.adapter.list_jobs(fetcher, board, JobQuery(title="Data Analyst"))
 
-        self.assertEqual(fetcher.requested_urls, [board.url])
+        self.assertEqual(len(fetcher.requested_urls), 1)
+        search_params = parse_qs(urlparse(fetcher.requested_urls[0]).query)
+        self.assertEqual(search_params["ss"], ["1"])
+        self.assertEqual(search_params["searchKeyword"], ["Data Analyst"])
+        self.assertEqual(search_params["in_iframe"], ["1"])
         self.assertEqual(len(result.candidates), 1)
         self.assertEqual(result.candidates[0].title, "Data Analyst")
         self.assertEqual(
@@ -215,6 +219,36 @@ class ICIMSAdapterTests(unittest.TestCase):
         self.assertIsNone(result.reason_code)
         self.assertEqual(result.trace["structured_script_count"], 1)
         self.assertEqual(result.trace["candidate_count"], 1)
+
+    def test_lists_traditional_hosted_search_html_links_with_keyword_iframe(self):
+        fetcher = StubFetcher("""
+            <div class="iCIMS_JobListingRow">
+              <a href="/jobs/168488/product-manager-%28director%29/job?in_iframe=1"
+                 title="168488 - Product Manager (Director)">Open role</a>
+            </div>
+            <a href="https://careers-other.icims.com/jobs/999/external/job"
+               title="999 - External Role">External</a>
+            <a href="/jobs/not-an-id/not-a-job/job" title="Bad Role">Bad</a>
+        """)
+        board = self.adapter.identify_board("https://careers-acme.icims.com/jobs/search")
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Product Manager (Director)"),
+        )
+
+        params = parse_qs(urlparse(fetcher.requested_urls[0]).query)
+        self.assertEqual(params["searchKeyword"], ["Product Manager (Director)"])
+        self.assertEqual(params["in_iframe"], ["1"])
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(result.candidates[0].title, "Product Manager (Director)")
+        self.assertEqual(
+            result.candidates[0].url,
+            "https://careers-acme.icims.com/jobs/168488/product-manager-%28director%29/job",
+        )
+        self.assertEqual(result.candidates[0].raw["source"], "html_link")
+        self.assertEqual(result.trace["html_link_count"], 3)
 
     def test_lists_embedded_jobs_and_builds_missing_detail_urls(self):
         fetcher = StubFetcher("""

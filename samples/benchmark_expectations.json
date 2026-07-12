@@ -41,6 +41,12 @@
     "require_exact_opening": true,
     "allow_job_board_fallback": false
   },
+  "Acme iCIMS Traditional": {
+    "expected_provider": "icims",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
+  },
   "Acme SuccessFactors": {
     "expected_provider": "successfactors",
     "expected_minimum_stage": "opening_match",

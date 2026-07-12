@@ -213,11 +213,11 @@ Expected summary:
 
 ```text
 benchmark summary:
-  total: 11
-  success: 11
-  with_job_list: 11
-  with_opening: 11
-  expectations: 12/12 passed
+  total: 13
+  success: 13
+  with_job_list: 13
+  with_opening: 13
+  expectations: 13/13 passed
 ```
 
 The companion [benchmark expectations](samples/benchmark_expectations.json) declares the provider, minimum successful stage, and whether an exact opening is required for each fixture. The evaluator exits nonzero if a declared expectation regresses.
@@ -273,7 +273,7 @@ Latest live checks on July 11, 2026:
 - Fixed live benchmark: 6 named companies, 6/6 official websites, 6/6 official job-list pages, 1/6 exact opening, and 6/6 expectation checks passed. Providers covered in that small set are Greenhouse, Lever, Ashby, PostHog's first-party careers page, and Brex's first-party careers page.
 - July 12 rerun after the stage-runner migration: 6/6 official websites, 6/6 job-list pages, 5/6 exact openings, and 6/6 expectation checks. Provider attribution now follows stage evidence, so Greenhouse roles with an external CareerPuck apply URL remain classified as Greenhouse.
 - Expanded July 12 fixed live benchmark: 9/9 official websites, 9/9 job-list pages, 7/9 exact openings, and 9/9 expectation checks in 17.6 seconds. The added samples cover SanDisk/SmartRecruiters, ONEOK/Workday, and Carv/Rippling.
-- Follow-up expansion: 27/27 official websites, 27/27 job-list pages, 25/27 exact openings, and 27/27 expectation checks in 45.1 seconds. Greenhouse, Ashby, Lever, and Workday now each have five fixed live companies; DeLaval adds SAP SuccessFactors Career Site v1 coverage alongside customer-owned iCIMS and first-party Greenhouse.
+- Follow-up expansion: 30/30 official websites, 30/30 job-list pages, 28/30 exact openings, and 30/30 expectation checks in 47.6 seconds. Greenhouse, Ashby, Lever, and Workday each have five fixed live companies; iCIMS/SuccessFactors also has five combined samples spanning Jibe, traditional hosted HTML, and SAP Career Site v1.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
 

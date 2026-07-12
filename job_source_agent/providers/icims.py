@@ -101,9 +101,11 @@ class ICIMSAdapter:
         page_urls: list[str] = []
         page_errors: list[dict[str, str]] = []
         rejected_pagination_urls: list[str] = []
-        pending = [board.url]
-        queued = {board.url}
+        initial_url = _hosted_search_url(board.url, query)
+        pending = [initial_url]
+        queued = {initial_url}
         response_source: str | None = None
+        html_link_count = 0
 
         while pending and len(page_urls) < _MAX_PAGES:
             requested_url = pending.pop(0)
@@ -128,6 +130,12 @@ class ICIMSAdapter:
             except (TypeError, ValueError) as error:
                 page_errors.append({"url": final_url, "error": str(error)})
                 continue
+
+            html_link_count += len(scripts.job_links)
+            for raw_url, raw_title in scripts.job_links:
+                candidate = _candidate_from_html_link(raw_url, raw_title, final_url, board)
+                if candidate is not None:
+                    candidates.append(candidate)
 
             discovered_urls = list(scripts.pagination_hrefs)
             for script_type, content in scripts.scripts:
@@ -169,6 +177,7 @@ class ICIMSAdapter:
                 "board_urls": page_urls or [board.url],
                 "response_source": response_source,
                 "structured_script_count": structured_script_count,
+                "html_link_count": html_link_count,
                 "candidate_count": len(candidates),
                 "page_count": len(page_urls),
                 "page_errors": page_errors,
@@ -261,14 +270,22 @@ class _ScriptParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.scripts: list[tuple[str, str]] = []
         self.pagination_hrefs: list[str] = []
+        self.job_links: list[tuple[str, str]] = []
         self._script_type: str | None = None
         self._content: list[str] = []
+        self._job_href: str | None = None
+        self._job_title: str = ""
+        self._job_text: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag_name = tag.lower()
         attributes = {key.lower(): (value or "") for key, value in attrs}
         if tag_name == "a":
             href = attributes.get("href", "")
+            if href and "/jobs/" in href.casefold():
+                self._job_href = href
+                self._job_title = attributes.get("title", "")
+                self._job_text = []
             rel = attributes.get("rel", "").casefold().split()
             classes = attributes.get("class", "").casefold().split()
             if href and (
@@ -286,10 +303,18 @@ class _ScriptParser(HTMLParser):
             self._content = []
 
     def handle_data(self, data: str) -> None:
+        if self._job_href is not None:
+            self._job_text.append(data)
         if self._script_type is not None:
             self._content.append(data)
 
     def handle_endtag(self, tag: str) -> None:
+        if tag.lower() == "a" and self._job_href is not None:
+            title = self._job_title or " ".join("".join(self._job_text).split())
+            self.job_links.append((self._job_href, title))
+            self._job_href = None
+            self._job_title = ""
+            self._job_text = []
         if tag.lower() != "script" or self._script_type is None:
             return
         self.scripts.append((self._script_type, "".join(self._content)))
@@ -359,6 +384,42 @@ def _walk_pagination_values(value: Any) -> Iterator[str]:
     elif isinstance(value, list):
         for item in value:
             yield from _walk_pagination_values(item)
+
+
+def _hosted_search_url(board_url: str, query: JobQuery) -> str:
+    if not query.title:
+        return board_url
+    parsed = urlparse(board_url)
+    params = dict(parse_qsl(parsed.query, keep_blank_values=True))
+    params.update({
+        "ss": "1",
+        "searchKeyword": query.title,
+        "in_iframe": "1",
+    })
+    return urlunparse(parsed._replace(query=urlencode(params), fragment=""))
+
+
+def _candidate_from_html_link(
+    raw_url: str,
+    raw_title: str,
+    page_url: str,
+    board: JobBoard,
+) -> JobCandidate | None:
+    detail_url = safe_normalize_url(raw_url, page_url)
+    if not detail_url or not _is_icims_detail_url(detail_url, board.identifier):
+        return None
+    title = re.sub(r"^\s*\d+\s+-\s+", "", raw_title or "").strip()
+    if not title:
+        return None
+    parsed = urlparse(detail_url)
+    canonical_url = urlunparse(parsed._replace(query="", fragment=""))
+    parts = [part for part in parsed.path.split("/") if part]
+    return JobCandidate(
+        title=title,
+        url=canonical_url,
+        provider="icims",
+        raw={"id": parts[1], "source": "html_link"},
+    )
 
 
 def _candidate_from_record(
