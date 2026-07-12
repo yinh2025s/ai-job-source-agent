@@ -50,6 +50,8 @@ class ExportReplayInputTests(unittest.TestCase):
         self.assertEqual(exported[0]["career_root_url"], "https://jobs.lever.co/example-robotics")
         self.assertEqual(exported[0]["source"], "replay_input")
         self.assertEqual(exported[0]["source_trace"]["replay"]["provider"], "lever")
+        self.assertEqual(exported[0]["checkpoint"]["checkpoint_schema_version"], "1.0")
+        self.assertRegex(exported[0]["checkpoint"]["input_fingerprint"], r"^[0-9a-f]{64}$")
 
     def test_missing_website_is_skipped_unless_requested(self):
         records = [
@@ -110,6 +112,7 @@ class ExportReplayInputTests(unittest.TestCase):
         self.assertEqual(companies[0].company_name, "PostHog")
         self.assertEqual(companies[0].career_root_url, "https://posthog.com/careers/jobs")
         self.assertEqual(companies[0].job_title, "AI Engineer")
+        self.assertEqual(companies[0].source, "replay_input")
 
     def test_cli_writes_replay_file(self):
         records = [

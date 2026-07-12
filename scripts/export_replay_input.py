@@ -8,6 +8,7 @@ from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from job_source_agent.checkpoint import checkpoint_metadata
 from job_source_agent.models import PIPELINE_STAGES
 from job_source_agent.opening_matcher import detect_provider
 
@@ -23,6 +24,7 @@ REPLAY_FIELDS = (
     "job_location",
     "source",
     "source_trace",
+    "checkpoint",
 )
 
 
@@ -124,6 +126,7 @@ def _to_replay_record(record: dict, source_path: str) -> dict:
             }
         },
     }
+    replay_record["checkpoint"] = checkpoint_metadata(replay_record)
     return {key: value for key, value in replay_record.items() if key in REPLAY_FIELDS and value is not None}
 
 

@@ -272,7 +272,7 @@ python3 scripts/export_replay_input.py \
   --reason-code OPENING_NOT_FOUND
 ```
 
-The exported records preserve the verified website, career root, LinkedIn title, and replay metadata, so the next run can start from known-good upstream evidence instead of rediscovering everything.
+The exported records preserve the verified website, career root, LinkedIn title, and replay metadata, so the next run can start from known-good upstream evidence instead of rediscovering everything. Each replay record also includes checkpoint metadata with schema versions, adapter version, and a stable input fingerprint for later resume/cache compatibility checks.
 
 To capture sanitized page snapshots while running a live batch, add `--snapshot-dir`:
 

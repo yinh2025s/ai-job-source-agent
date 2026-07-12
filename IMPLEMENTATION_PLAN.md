@@ -274,7 +274,7 @@
 
 当前测试数量：
 
-- 95 unit tests passing
+- 100 unit tests passing
 
 ## 当前主要短板
 
@@ -412,9 +412,9 @@
 
 ### 8. Checkpoint 已公司级落盘，Replay/Snapshot 已完成第一版
 
-当前 batch checkpoint 能避免整个批次结果丢失；`live_batch_eval.py` 还把 S2/S3 和 S4-S6 分成两个 killable checkpoint，因此官网解析成功后，career discovery timeout 会保留已验证官网和 identity evidence。`scripts/export_replay_input.py` 可以把 prior results/trace 按 stage、stage status、reason code、provider 过滤成新的 input，保留 verified website、career root、LinkedIn title 和 replay metadata。`--snapshot-dir` 可以把 live fetch 的页面保存成脱敏、fixture-compatible snapshots，后续可用 `Fetcher(fixtures_dir=.../sites, offline=True)` 读回。
+当前 batch checkpoint 能避免整个批次结果丢失；`live_batch_eval.py` 还把 S2/S3 和 S4-S6 分成两个 killable checkpoint，因此官网解析成功后，career discovery timeout 会保留已验证官网和 identity evidence。`scripts/export_replay_input.py` 可以把 prior results/trace 按 stage、stage status、reason code、provider 过滤成新的 input，保留 verified website、career root、LinkedIn title 和 replay metadata；每条 replay record 已包含 `checkpoint_schema_version`、`result_schema_version`、`adapter_version` 和稳定 input fingerprint。`--snapshot-dir` 可以把 live fetch 的页面保存成脱敏、fixture-compatible snapshots，后续可用 `Fetcher(fixtures_dir=.../sites, offline=True)` 读回。
 
-真正的阶段级 resume 仍待补：snapshot 已经能保存 provider HTML/JSON，但 CLI 还没有 `--resume-from-stage` / `--rerun-stage`，也没有按 adapter version 自动判断哪些 checkpoint 可复用。
+真正的阶段级 resume 仍待补：snapshot 已经能保存 provider HTML/JSON，replay input 已有兼容性元数据，但 CLI 还没有 `--resume-from-stage` / `--rerun-stage`，也没有真正按 stage checkpoint 复用中间结果。
 
 后续需要保存关键中间产物：
 
@@ -427,7 +427,7 @@
 - job candidates 和 title-match 分数
 - 最终选择及验证证据
 
-checkpoint 必须带 `schema_version`、输入指纹和代码/adapter 版本。只有输入和相关版本兼容时才能复用，避免错误地使用过期结果。
+checkpoint 必须带 `schema_version`、输入指纹和代码/adapter 版本。Replay input 已完成第一版元数据；后续阶段级 checkpoint 也必须遵循同样兼容性规则。只有输入和相关版本兼容时才能复用，避免错误地使用过期结果。
 
 阶段级重跑至少支持：
 
@@ -719,6 +719,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 ### Phase 4: Stage Checkpoint, Retry And Safer Batch Runner
 
 #### 4.1 阶段级 Checkpoint 和离线重放
+
+当前状态（2026-07-12）：已完成 replay-level checkpoint metadata。`scripts/export_replay_input.py` 导出的每条 replay record 会写入 checkpoint schema version、result schema version、adapter version 和 stable input fingerprint；现有 input loader 会忽略这些额外字段，因此向后兼容。真正的 stage-level resume/rerun CLI 尚未完成。
 
 目标：
 
