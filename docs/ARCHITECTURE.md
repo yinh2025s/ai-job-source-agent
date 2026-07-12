@@ -132,7 +132,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 - Filesystem stage checkpoint store 已支持原子保存、兼容性校验、安全 cache miss 和从指定 stage 向下失效。
 - Production CLI 和 live batch 均由 `PipelineApplication` 和通用 runner/store 执行；live batch 保留两段 process hard budget。
 - Stage store 通过 fingerprint 级进程锁和原子替换保证并发安全；checkpoint trace 明确记录 save、restore、miss 和 invalidate。
-- Sanitized live snapshots 可通过 `scripts/replay_snapshots.py` 验证并转换成 deterministic fixture tree。
+- Sanitized live snapshots 使用跨进程发布锁和内容寻址的不可变 page/artifact blobs；canonical fixture view 保持 Fetcher 兼容。`scripts/replay_snapshots.py` 会验证 blob 与最终 canonical view，并把重复 URL 的最后一个完整版本转换成 deterministic fixture tree。
 - `scripts/replay_failure_bundle.py` 将结果筛选、snapshot replay 和离线 `PipelineApplication` 串成自包含失败复现 bundle；reporting 可汇总 checkpoint action/stage activity。
 
 当前结构已经达到 provider/resolver/fetch/evaluation 并行开发门槛；剩余债务按 ownership workstream 继续收缩。

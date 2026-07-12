@@ -357,7 +357,7 @@ python3 -m job_source_agent \
   --trace-output /tmp/replay-trace.json
 ```
 
-Replay conversion verifies metadata, hashes, byte counts, URL sanitization and path containment before copying files. It rejects missing artifacts, symlink/path escapes and conflicting fixture content.
+Replay conversion verifies metadata, hashes, byte counts, URL sanitization and path containment before copying files. Snapshot bodies and browser artifacts are also stored as immutable content-addressed blobs, so repeated requests that share a fixture path cannot invalidate earlier manifest hashes. Replay selects the last complete version for each fixture path, reports identical duplicates and superseded versions separately, and rejects missing artifacts, symlink/path escapes or a canonical view that does not match the selected blob.
 
 Build and execute a focused offline bundle directly from failed results and their snapshots:
 

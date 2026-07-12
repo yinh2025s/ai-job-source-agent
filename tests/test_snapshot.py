@@ -1,6 +1,7 @@
 import json
 import tempfile
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from job_source_agent.snapshot import (
@@ -88,6 +89,31 @@ class SnapshotTests(unittest.TestCase):
         path = snapshot_artifact_path_for_url("/tmp/artifacts", "https://example.com/jobs?token=x", "screenshot_png")
 
         self.assertEqual(path.name, "screenshot_png.png")
+
+    def test_multiple_store_instances_serialize_shared_index_writes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+
+            def write_snapshot(index: int):
+                return SnapshotStore(root).write_page(
+                    Page(
+                        url=f"https://jobs.example.com/{index}",
+                        final_url=f"https://jobs.example.com/{index}",
+                        html=f"<html>{index}</html>",
+                        source="live",
+                    )
+                )
+
+            with ThreadPoolExecutor(max_workers=8) as executor:
+                records = list(executor.map(write_snapshot, range(24)))
+            metadata = [
+                json.loads(line)
+                for line in (root / "snapshots.jsonl").read_text(encoding="utf-8").splitlines()
+            ]
+
+        self.assertEqual(len(records), 24)
+        self.assertEqual(len(metadata), 24)
+        self.assertEqual(len({record["blob_path"] for record in metadata}), 24)
 
 
 if __name__ == "__main__":

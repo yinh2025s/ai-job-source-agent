@@ -12,7 +12,9 @@ from urllib.parse import urlparse
 from .snapshot import (
     sanitize_snapshot_body,
     sanitize_url,
+    snapshot_artifact_blob_path,
     snapshot_artifact_path_for_url,
+    snapshot_blob_path,
     snapshot_path_for_url,
 )
 
@@ -55,38 +57,57 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         raise SnapshotReplayError("Replay output must not be the snapshot directory or one of its children")
 
     records = _read_records(index_path)
-    entries_by_path: dict[str, dict[str, Any]] = {}
-    artifact_entries: dict[str, dict[str, Any]] = {}
+    selected_by_path: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     duplicate_count = 0
+    superseded_count = 0
 
     for line_number, record in records:
         entry = _validate_record(source_root, record, line_number)
-        existing = entries_by_path.get(entry["fixture_path"])
-        if existing:
+        artifacts = _validate_artifacts(source_root, record, line_number)
+        selected = selected_by_path.get(entry["fixture_path"])
+        if selected:
+            existing = selected[0]
             if existing["sha256"] != entry["sha256"]:
-                raise SnapshotReplayError(
-                    f"Line {line_number}: conflicting snapshots target {entry['fixture_path']}"
-                )
-            duplicate_count += 1
-            existing["request_urls"] = sorted(set(existing["request_urls"] + entry["request_urls"]))
-            existing["page_urls"] = sorted(set(existing["page_urls"] + entry["page_urls"]))
-        else:
-            entries_by_path[entry["fixture_path"]] = entry
+                superseded_count += 1
+            else:
+                duplicate_count += 1
+            entry["request_urls"] = sorted(set(existing["request_urls"] + entry["request_urls"]))
+            entry["page_urls"] = sorted(set(existing["page_urls"] + entry["page_urls"]))
+        selected_by_path[entry["fixture_path"]] = (entry, artifacts)
 
-        for artifact in _validate_artifacts(source_root, record, line_number):
+    fixture_entries_internal = sorted(
+        (selected[0] for selected in selected_by_path.values()),
+        key=lambda item: (item["fixture_path"], item["final_url"]),
+    )
+    artifact_entries: dict[str, dict[str, Any]] = {}
+    for _, selected_artifacts in selected_by_path.values():
+        for artifact in selected_artifacts:
             existing_artifact = artifact_entries.get(artifact["replay_path"])
             if existing_artifact and existing_artifact["sha256"] != artifact["sha256"]:
                 raise SnapshotReplayError(
-                    f"Line {line_number}: conflicting artifacts target {artifact['replay_path']}"
+                    f"Conflicting selected artifacts target {artifact['replay_path']}"
                 )
             artifact_entries[artifact["replay_path"]] = artifact
 
-    fixture_entries = sorted(entries_by_path.values(), key=lambda item: (item["fixture_path"], item["final_url"]))
     artifacts = sorted(artifact_entries.values(), key=lambda item: item["replay_path"])
-    _materialize(destination_root, source_root, fixture_entries, artifacts)
+    _validate_selected_canonical_views(fixture_entries_internal, artifacts)
+    _materialize(destination_root, fixture_entries_internal, artifacts)
+
+    fixture_entries = [
+        {
+            key: value
+            for key, value in entry.items()
+            if key not in {"source_path", "canonical_path"}
+        }
+        for entry in fixture_entries_internal
+    ]
 
     public_artifacts = [
-        {key: value for key, value in artifact.items() if key != "source_path"}
+        {
+            key: value
+            for key, value in artifact.items()
+            if key not in {"source_path", "canonical_path"}
+        }
         for artifact in artifacts
     ]
     manifest = {
@@ -101,6 +122,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         "fixture_count": len(fixture_entries),
         "artifact_count": len(artifacts),
         "duplicate_records": duplicate_count,
+        "superseded_records": superseded_count,
         "status": "success",
     }
     manifest_path = destination_root / "replay-manifest.json"
@@ -143,10 +165,19 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
         raise SnapshotReplayError(f"Line {line_number}: final_url and sanitized_url must match")
 
     relative_path = _validated_relative_path(record["path"], "path", line_number, "sites")
-    source_path = _resolve_member(source_root, relative_path, line_number)
+    canonical_path = _resolve_member(source_root, relative_path, line_number)
     expected_path = snapshot_path_for_url(source_root / "sites", urls["sanitized_url"])
-    if source_path != expected_path.resolve():
+    if canonical_path != expected_path.resolve():
         raise SnapshotReplayError(f"Line {line_number}: path does not match sanitized_url")
+    blob_path_value = record.get("blob_path")
+    if blob_path_value is not None:
+        blob_path = _validated_relative_path(blob_path_value, "blob_path", line_number, "blobs")
+        source_path = _resolve_member(source_root, blob_path, line_number)
+        expected_blob_path = snapshot_blob_path(source_root, str(record["sha256"])).resolve()
+        if source_path != expected_blob_path:
+            raise SnapshotReplayError(f"Line {line_number}: blob_path does not match sha256")
+    else:
+        source_path = canonical_path
     body = _read_regular_file(source_path, line_number, "snapshot")
     try:
         text = body.decode("utf-8")
@@ -174,6 +205,8 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
         "final_url": urls["final_url"],
         "sha256": digest,
         "byte_count": len(body),
+        "source_path": source_path,
+        "canonical_path": canonical_path,
     }
 
 
@@ -183,6 +216,9 @@ def _validate_artifacts(
     line_number: int,
 ) -> list[dict[str, Any]]:
     artifacts = record["artifact_paths"]
+    artifact_blobs = record.get("artifact_blob_paths", {})
+    if not isinstance(artifact_blobs, dict):
+        raise SnapshotReplayError(f"Line {line_number}: artifact_blob_paths must be an object")
     validated = []
     if any(not isinstance(name, str) for name in artifacts):
         raise SnapshotReplayError(f"Line {line_number}: artifact names must be strings")
@@ -191,20 +227,39 @@ def _validate_artifacts(
         if not isinstance(name, str) or not name or Path(name).name != name:
             raise SnapshotReplayError(f"Line {line_number}: invalid artifact name")
         relative_path = _validated_relative_path(path_value, f"artifact_paths.{name}", line_number, "artifacts")
-        source_path = _resolve_member(source_root, relative_path, line_number)
+        canonical_path = _resolve_member(source_root, relative_path, line_number)
         expected_path = snapshot_artifact_path_for_url(
             source_root / "artifacts", record["sanitized_url"], name
         ).resolve()
-        if source_path != expected_path:
+        if canonical_path != expected_path:
             raise SnapshotReplayError(f"Line {line_number}: artifact path does not match metadata for {name}")
+        blob_path_value = artifact_blobs.get(name)
+        if blob_path_value is not None:
+            blob_path = _validated_relative_path(
+                blob_path_value,
+                f"artifact_blob_paths.{name}",
+                line_number,
+                "blobs",
+            )
+            source_path = _resolve_member(source_root, blob_path, line_number)
+        else:
+            source_path = canonical_path
         content = _read_regular_file(source_path, line_number, f"artifact {name}")
+        digest = hashlib.sha256(content).hexdigest()
+        if blob_path_value is not None:
+            expected_blob_path = snapshot_artifact_blob_path(source_root, digest, name).resolve()
+            if source_path != expected_blob_path:
+                raise SnapshotReplayError(
+                    f"Line {line_number}: artifact blob path does not match content for {name}"
+                )
         validated.append(
             {
                 "name": name,
                 "replay_path": relative_path.as_posix(),
-                "sha256": hashlib.sha256(content).hexdigest(),
+                "sha256": digest,
                 "byte_count": len(content),
                 "source_path": source_path,
+                "canonical_path": canonical_path,
             }
         )
     return validated
@@ -248,13 +303,12 @@ def _read_regular_file(path: Path, line_number: int, label: str) -> bytes:
 
 def _materialize(
     destination_root: Path,
-    source_root: Path,
     entries: list[dict[str, Any]],
     artifacts: list[dict[str, Any]],
 ) -> None:
     destination_root.mkdir(parents=True, exist_ok=True)
     for entry in entries:
-        source = source_root / entry["fixture_path"]
+        source = entry["source_path"]
         destination = destination_root / entry["fixture_path"]
         _copy_verified(destination_root, source, destination, entry["sha256"])
     for artifact in artifacts:
@@ -264,6 +318,26 @@ def _materialize(
             destination_root / artifact["replay_path"],
             artifact["sha256"],
         )
+
+
+def _validate_selected_canonical_views(
+    entries: list[dict[str, Any]],
+    artifacts: list[dict[str, Any]],
+) -> None:
+    for entry in entries:
+        body = _read_regular_file(entry["canonical_path"], 0, "selected snapshot")
+        try:
+            text = body.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise SnapshotReplayError("Selected snapshot body is not UTF-8") from exc
+        if sanitize_snapshot_body(text) != text:
+            raise SnapshotReplayError("Selected snapshot body is not fully sanitized")
+        if hashlib.sha256(body).hexdigest() != entry["sha256"]:
+            raise SnapshotReplayError("Selected snapshot body does not match its immutable blob")
+    for artifact in artifacts:
+        content = _read_regular_file(artifact["canonical_path"], 0, "artifact")
+        if hashlib.sha256(content).hexdigest() != artifact["sha256"]:
+            raise SnapshotReplayError("Selected artifact does not match its immutable blob")
 
 
 def _copy_verified(root: Path, source: Path, destination: Path, expected_sha256: str) -> None:

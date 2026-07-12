@@ -59,7 +59,46 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(first.manifest, second.manifest)
         self.assertEqual(first.summary, second.summary)
         self.assertEqual(first.summary["duplicate_records"], 1)
+        self.assertEqual(first.summary["superseded_records"], 0)
         self.assertEqual(first.summary["fixture_count"], 1)
+
+    def test_changed_snapshot_supersedes_prior_body_and_artifact(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            store = SnapshotStore(snapshots)
+            first = store.write_page(
+                Page(
+                    url="https://jobs.example.com/search",
+                    final_url="https://jobs.example.com/search",
+                    html="<html>first</html>",
+                    source="live",
+                    artifacts={"screenshot_png": b"first-image"},
+                )
+            )
+            second = store.write_page(
+                Page(
+                    url="https://jobs.example.com/search?q=data",
+                    final_url="https://jobs.example.com/search?q=data",
+                    html="<html>second</html>",
+                    source="live",
+                    artifacts={"screenshot_png": b"second-image"},
+                )
+            )
+
+            result = replay_snapshots(snapshots, root / "replay")
+            page = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True).fetch(
+                "https://jobs.example.com/search"
+            )
+            replay_artifact = (
+                root / "replay" / result.manifest["artifacts"][0]["replay_path"]
+            ).read_bytes()
+
+        self.assertNotEqual(first.blob_path, second.blob_path)
+        self.assertEqual(page.html, "<html>second</html>")
+        self.assertEqual(replay_artifact, b"second-image")
+        self.assertEqual(result.summary["duplicate_records"], 0)
+        self.assertEqual(result.summary["superseded_records"], 1)
 
     def test_rejects_directory_traversal_in_snapshot_path(self):
         with tempfile.TemporaryDirectory() as directory:
