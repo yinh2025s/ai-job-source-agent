@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -51,6 +52,20 @@ class LiveBatchEvalTests(unittest.TestCase):
         companies = load_batch_companies(args, Fetcher(offline=True))
 
         self.assertEqual([company.company_name for company in companies], ["Anthropic", "PostHog"])
+
+    def test_fixed_live_expectations_cover_every_input_company(self):
+        companies = json.loads(
+            Path("samples/live_benchmark_companies.json").read_text(encoding="utf-8")
+        )
+        expectations = json.loads(
+            Path("samples/live_benchmark_expectations.json").read_text(encoding="utf-8")
+        )
+
+        self.assertEqual(
+            {company["company_name"] for company in companies},
+            set(expectations),
+        )
+        self.assertEqual(len(companies), 9)
 
     def test_prepare_company_preserves_provided_website(self):
         company = CompanyInput(

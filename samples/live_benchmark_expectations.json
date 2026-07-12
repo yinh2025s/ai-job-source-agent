@@ -34,5 +34,23 @@
     "expected_minimum_stage": "job_board_discovery",
     "require_exact_opening": false,
     "allow_job_board_fallback": true
+  },
+  "SanDisk": {
+    "expected_provider": "smartrecruiters",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  },
+  "ONEOK": {
+    "expected_provider": "workday",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
+  },
+  "Carv": {
+    "expected_provider": "rippling",
+    "expected_minimum_stage": "job_board_discovery",
+    "require_exact_opening": false,
+    "allow_job_board_fallback": true
   }
 }

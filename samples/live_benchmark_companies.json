@@ -37,5 +37,26 @@
     "company_website_url": "https://www.notion.com",
     "linkedin_company_url": "https://www.linkedin.com/company/notionhq",
     "job_title": "Product Manager"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "SanDisk",
+    "company_website_url": "https://www.sandisk.com",
+    "career_root_url": "https://jobs.smartrecruiters.com/Sandisk",
+    "job_title": "Data Analyst"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "ONEOK",
+    "company_website_url": "https://www.oneok.com",
+    "career_root_url": "https://oneok.wd1.myworkdayjobs.com/oneok",
+    "job_title": "Projects Scheduler"
+  },
+  {
+    "linkedin_job_url": "fixed-live-benchmark",
+    "company_name": "Carv",
+    "company_website_url": "https://getcarv.com",
+    "career_root_url": "https://ats.rippling.com/carv-careers/jobs",
+    "job_title": "Growth Product Manager"
   }
 ]
