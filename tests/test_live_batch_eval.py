@@ -13,10 +13,32 @@ from scripts.live_batch_eval import (
     record_checkpoint,
     resume_uses_replay_upstream,
     run_company,
+    run_pipeline_phase,
 )
 
 
 class LiveBatchEvalTests(unittest.TestCase):
+    def pipeline_args(self, directory):
+        return SimpleNamespace(
+            checkpoint_dir=str(Path(directory) / "checkpoints"),
+            fixtures_dir="samples/sites",
+            offline=True,
+            fetch_timeout=0.1,
+            render_js=False,
+            render_budget=0,
+            render_screenshot=False,
+            fetch_retries=0,
+            retry_base_delay=0.01,
+            snapshot_dir=None,
+            max_career_candidates=12,
+            max_job_pages=8,
+            max_career_fetches=12,
+            max_career_search_queries=5,
+            max_ats_board_fetches=5,
+            skip_sitemap=False,
+            career_search_timeout=None,
+        )
+
     def test_input_mode_loads_fixed_companies_without_linkedin_search(self):
         args = SimpleNamespace(
             input="samples/live_benchmark_companies.json",
@@ -192,6 +214,38 @@ class LiveBatchEvalTests(unittest.TestCase):
 
         self.assertEqual(result.error_code, "WEBSITE_NOT_RESOLVED")
         self.assertIn("requires replay input", result.trace["batch_error_detail"])
+
+    def test_two_pipeline_phases_restore_s1_to_s3_checkpoint_updates(self):
+        company = CompanyInput(
+            company_name="Aurora Data",
+            company_website_url="https://aurora-data.example",
+            job_title="AI Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            upstream = run_pipeline_phase(
+                company,
+                args,
+                None,
+                "hiring_identity_resolution",
+                None,
+            )
+            downstream = run_pipeline_phase(
+                company,
+                args,
+                "career_discovery",
+                None,
+                None,
+            )
+
+        self.assertEqual(upstream.company_website_url, "https://aurora-data.example")
+        self.assertIsNone(upstream.career_page_url)
+        self.assertEqual(downstream.status, "success")
+        self.assertIn("d9d64766", downstream.open_position_url)
+        self.assertEqual(
+            downstream.stage_status("website_resolution"),
+            "success",
+        )
 
 
 if __name__ == "__main__":

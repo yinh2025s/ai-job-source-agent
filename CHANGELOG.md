@@ -24,6 +24,7 @@
 - 增加通用 `ApplicationRunner`，支持按 S1-S7 顺序执行、`start_at`/`stop_after` 和复用上游 stage result。
 - 增加原子写入的 filesystem stage checkpoint store，使用 schema、adapter version 和 input fingerprint 验证兼容性并支持下游失效。
 - Production CLI 改由 `PipelineApplication` 执行完整 S1-S7，并增加 `--checkpoint-dir`、`--resume-from-stage`、`--rerun-stage` 和 `--stop-after-stage`。
+- Live batch 改为两段 process-budget 包裹同一 `PipelineApplication`：S1-S3 完成后逐 stage 落盘，S4-S7 从 checkpoint 恢复；增加 live `--checkpoint-dir`、`--rerun-stage` 和 deterministic offline batch 参数。
 - Markdown summary report 增加 `provider x stage x status` 和 `provider x reason_code` 可靠性表。
 
 ### Changed

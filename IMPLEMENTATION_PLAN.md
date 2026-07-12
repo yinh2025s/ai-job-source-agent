@@ -278,7 +278,7 @@
 
 当前测试数量：
 
-- 232 unit tests passing
+- 233 unit tests passing
 
 ## 当前主要短板
 
@@ -288,8 +288,8 @@
 
 - S2-S7 已有独立 stage，通用 `ApplicationRunner` 支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
 - 10 个 provider 已迁移为原生 adapter，包括 Rippling；Google Careers、Meta Careers 和 generic fallback 仍走 compatibility path。
-- `live_batch_eval.py` 已使用 composition root，但调度、预算和 checkpoint 仍在同一 runner script 中。
-- Fetcher 已有显式 protocol 和跨实现 contract suite；filesystem stage store 已完成并接入 production CLI，live batch 尚待切换到同一 application service。
+- `live_batch_eval.py` 保留公司级并发、process budget 和输出职责，七关业务执行已委托统一 `PipelineApplication`。
+- Fetcher 已有显式 protocol 和跨实现 contract suite；filesystem stage store 已接入 production CLI 和 live batch。
 - 原生 adapter 已支持包内自动发现；新 provider 不再需要修改中央 registry。
 
 Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resolver、Fetch 和 Evaluation 工作线并行，同时继续收缩 legacy compatibility path。
@@ -624,7 +624,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；232 个单元测试、11/11 固定离线 benchmark 和离线 CLI smoke 均通过。Production CLI 已完成接线，live batch 尚待切换。
+当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、filesystem stage checkpoint store、provider registry、10 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；233 个单元测试、11/11 固定离线 benchmark 和两阶段 batch smoke 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -662,7 +662,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 232 个测试和固定 benchmark 结果一致。
+- 重构后 233 个测试和固定 benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
@@ -701,7 +701,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；主线 architecture validator、232 个测试、11/11 benchmark 和 CLI smoke 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
+当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；主线 architecture validator、233 个测试、11/11 benchmark 和两阶段 batch smoke 全部通过。跨工作线测试发现并修复了 Workable 非法端口 URL 回归。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -856,7 +856,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 5.1 阶段级 Checkpoint 和离线重放
 
-当前状态（2026-07-12）：已完成 replay-level checkpoint metadata、通用 filesystem stage checkpoint store 和 production CLI 接线。Store 对每个 stage 原子保存 `StageExecution`，通过 schema version、adapter version 和 input fingerprint 校验兼容性，损坏文件按安全 cache miss 处理，并可从指定 stage 向下失效。CLI 已暴露 `--checkpoint-dir`、`--resume-from-stage`、`--rerun-stage` 和 `--stop-after-stage`。现有 `live_batch_eval.py --resume-from-stage career_discovery|job_board_discovery|opening_match` 继续兼容 replay input；剩余工作是统一 live batch 并完成跨进程 snapshot replay。
+当前状态（2026-07-12）：已完成 replay-level metadata、filesystem stage checkpoint store、production CLI 和 live batch 接线。Store 对每个 stage 原子保存 `StageExecution`，通过 schema version、adapter version 和 input fingerprint 校验兼容性，损坏文件按安全 cache miss 处理，并可从指定 stage 向下失效。CLI 已暴露 `--checkpoint-dir`、`--resume-from-stage`、`--rerun-stage` 和 `--stop-after-stage`；live batch 以 S1-S3/S4-S7 两段 process budget 运行同一 application service，并支持 `--checkpoint-dir`、`--rerun-stage`。剩余工作是 snapshot 跨进程离线 replay 和更多 crash/并发恢复验证。
 
 目标：
 
@@ -1032,4 +1032,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner 和 filesystem stage store 已接管 production CLI。多轮并行开发通过 232 个测试和 11/11 benchmark 验证；下一步重点是统一 live batch orchestration，并继续做 live hardening 和 benchmark 扩展。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，10 个主要 ATS（含 Rippling）已迁移到自动发现的原生 adapter，通用 ApplicationRunner 和 filesystem stage store 已接管 production CLI 与 live batch。多轮并行开发通过 233 个测试和 11/11 benchmark 验证；下一步重点是 live hardening、snapshot replay 和 benchmark 扩展。

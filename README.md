@@ -253,6 +253,7 @@ python3 scripts/live_batch_eval.py \
   --max-job-pages 2 \
   --company-time-budget 45 \
   --website-time-budget 20 \
+  --checkpoint-dir /tmp/product10-stage-checkpoints \
   --render-js \
   --render-budget 2 \
   --skip-sitemap \
@@ -260,6 +261,8 @@ python3 scripts/live_batch_eval.py \
   --trace-output /tmp/product10-fast-trace.json \
   --summary-output /tmp/product10-fast-summary.json
 ```
+
+The live runner executes S1-S3 and S4-S7 in separate killable processes while both phases use the same `PipelineApplication` and filesystem stage store. Add `--rerun-stage opening_match` to invalidate and recompute that stage for every company without repeating compatible upstream work. `--fixtures-dir ... --offline` runs the same two-phase path deterministically.
 
 If the optional browser dependency is not installed, omit `--render-js` and `--render-budget`.
 

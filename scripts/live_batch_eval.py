@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.company_identity import CompanyIdentityResolver
-from job_source_agent.composition import AgentConfig, FetcherConfig, build_agent, build_fetcher
+from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
 from job_source_agent.contracts import FetchClient
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
 from job_source_agent.linkedin import load_company_inputs
@@ -26,6 +26,7 @@ from job_source_agent.models import (
     STAGE_OPENING_MATCH,
     STAGE_RESULT_VALIDATION,
     STAGE_WEBSITE_RESOLUTION,
+    PIPELINE_STAGES,
     CompanyInput,
     DiscoveryResult,
     dataclass_to_dict,
@@ -45,6 +46,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--linkedin-pages", type=int, default=3)
     parser.add_argument("--fetch-timeout", type=float, default=3)
+    parser.add_argument("--fixtures-dir", help="Optional fixture directory for deterministic batch checks.")
+    parser.add_argument("--offline", action="store_true", help="Disable live network access.")
     parser.add_argument("--fetch-retries", type=int, default=0, help="Retries for retryable fetch failures.")
     parser.add_argument("--retry-base-delay", type=float, default=0.25, help="Initial delay between fetch retries.")
     parser.add_argument("--career-search-timeout", type=float, default=6)
@@ -80,14 +83,20 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--snapshot-dir", help="Optional directory for sanitized page snapshots.")
     parser.add_argument("--baseline-summary", help="Optional prior summary JSON used for regression deltas.")
     parser.add_argument("--workers", type=int, default=1, help="Number of companies to process concurrently.")
-    parser.add_argument(
+    stage_group = parser.add_mutually_exclusive_group()
+    stage_group.add_argument(
         "--resume-from-stage",
-        choices=[
-            STAGE_CAREER_DISCOVERY,
-            STAGE_JOB_BOARD_DISCOVERY,
-            STAGE_OPENING_MATCH,
-        ],
-        help="Reuse upstream evidence from replay input and resume from this downstream stage.",
+        choices=PIPELINE_STAGES[1:-1],
+        help="Reuse compatible stage checkpoints or replay evidence and continue from this stage.",
+    )
+    stage_group.add_argument(
+        "--rerun-stage",
+        choices=PIPELINE_STAGES[1:-1],
+        help="Invalidate this stage and downstream checkpoints, then recompute them.",
+    )
+    parser.add_argument(
+        "--checkpoint-dir",
+        help="Stage checkpoint directory; defaults beside the result output.",
     )
     parser.add_argument(
         "--require-all-expectations",
@@ -99,6 +108,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    if not args.checkpoint_dir:
+        args.checkpoint_dir = str(Path(args.output).with_suffix(".checkpoints"))
     linkedin_fetcher = build_fetcher(FetcherConfig(timeout=max(args.fetch_timeout, 6)))
     companies = load_batch_companies(args, linkedin_fetcher)
 
@@ -232,12 +243,18 @@ def record_checkpoint(
 def run_company(company: CompanyInput, args: argparse.Namespace):
     started = time.monotonic()
     if resume_uses_replay_upstream(args):
-        prepared_company = prepare_replay_company_for_resume(company, args)
+        prepare_replay_company_for_resume(company, args)
     else:
         try:
-            prepared_company = run_with_process_budget(
-                prepare_company,
-                (company, args),
+            upstream_result = run_with_process_budget(
+                run_pipeline_phase,
+                (
+                    company,
+                    args,
+                    None,
+                    STAGE_HIRING_IDENTITY_RESOLUTION,
+                    _upstream_rerun_stage(args),
+                ),
                 timeout=min(args.website_time_budget, args.company_time_budget),
             )
         except ProcessBudgetExceeded:
@@ -248,39 +265,74 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             )
         except RemoteProcessError as exc:
             return failure_result(company, error="batch_worker_failed", detail=str(exc))
+        if not upstream_result.company_website_url:
+            return upstream_result
 
-    if not prepared_company.company_website_url:
+    if (
+        resume_uses_replay_upstream(args)
+        and not company.company_website_url
+        and not getattr(args, "checkpoint_dir", None)
+    ):
         return failure_result(
-            prepared_company,
+            company,
             error="website_not_resolved",
-            detail=(
-                f"--resume-from-stage {args.resume_from_stage} requires replay input with company_website_url."
-                if resume_uses_replay_upstream(args)
-                else "Website resolver did not produce a verified official company domain."
-            ),
+            detail=f"--resume-from-stage {args.resume_from_stage} requires replay input with company_website_url or compatible stage checkpoints.",
         )
 
     remaining = args.company_time_budget - (time.monotonic() - started)
     if remaining <= 0:
         return failure_result(
-            prepared_company,
+            company,
             error="company_time_budget_exhausted",
             detail=f"Exceeded the {args.company_time_budget:g}-second company budget after website resolution.",
         )
     try:
         return run_with_process_budget(
-            discover_prepared_company,
-            (prepared_company, args),
+            run_pipeline_phase,
+            (
+                company,
+                args,
+                _downstream_start_stage(args),
+                None,
+                _downstream_rerun_stage(args),
+            ),
             timeout=remaining,
         )
     except ProcessBudgetExceeded:
         return failure_result(
-            prepared_company,
+            company,
             error="company_time_budget_exhausted",
             detail=f"Career discovery exceeded the remaining {remaining:.1f}-second company budget.",
         )
     except RemoteProcessError as exc:
-        return failure_result(prepared_company, error="batch_worker_failed", detail=str(exc))
+        return failure_result(company, error="batch_worker_failed", detail=str(exc))
+
+
+def _upstream_rerun_stage(args: argparse.Namespace) -> str | None:
+    rerun_stage = getattr(args, "rerun_stage", None)
+    if rerun_stage in {
+        STAGE_WEBSITE_RESOLUTION,
+        STAGE_HIRING_IDENTITY_RESOLUTION,
+    }:
+        return rerun_stage
+    return None
+
+
+def _downstream_start_stage(args: argparse.Namespace) -> str:
+    # Replay records carry S2/S3 evidence, not complete S4/S5 StageExecutions.
+    # Rebuild the downstream chain so a requested later stage has valid inputs.
+    return STAGE_CAREER_DISCOVERY
+
+
+def _downstream_rerun_stage(args: argparse.Namespace) -> str | None:
+    rerun_stage = getattr(args, "rerun_stage", None)
+    if rerun_stage in {
+        STAGE_CAREER_DISCOVERY,
+        STAGE_JOB_BOARD_DISCOVERY,
+        STAGE_OPENING_MATCH,
+    }:
+        return rerun_stage
+    return None
 
 
 def resume_uses_replay_upstream(args: argparse.Namespace) -> bool:
@@ -369,9 +421,18 @@ def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyI
 
 
 def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -> DiscoveryResult:
-    fetcher = build_company_fetcher(args)
-    result = build_agent(
-        fetcher,
+    return run_pipeline_phase(company, args, STAGE_CAREER_DISCOVERY, None, None)
+
+
+def run_pipeline_phase(
+    company: CompanyInput,
+    args: argparse.Namespace,
+    start_at: str | None,
+    stop_after: str | None,
+    rerun_from: str | None,
+) -> DiscoveryResult:
+    application = build_application(
+        _company_fetcher_config(args),
         AgentConfig(
             max_candidates=args.max_career_candidates,
             max_job_pages=args.max_job_pages,
@@ -381,7 +442,15 @@ def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -
             enable_sitemap_discovery=not args.skip_sitemap,
             career_search_timeout=args.career_search_timeout,
         ),
-    ).discover(company)
+        checkpoint_dir=_checkpoint_dir(args),
+    )
+    result = application.pipeline.discover(
+        company,
+        start_at=start_at,
+        stop_after=stop_after,
+        rerun_from=rerun_from,
+    )
+    fetcher = application.fetcher
     retry_events = getattr(fetcher, "retry_events", None)
     if retry_events:
         result.trace["retry_events"] = retry_events
@@ -392,17 +461,29 @@ def discover_prepared_company(company: CompanyInput, args: argparse.Namespace) -
 
 
 def build_company_fetcher(args: argparse.Namespace):
-    return build_fetcher(
-        FetcherConfig(
-            timeout=args.fetch_timeout,
-            render_mode="smart" if args.render_js else "none",
-            render_budget=args.render_budget,
-            capture_screenshot=bool(getattr(args, "render_screenshot", False)),
-            retries=int(getattr(args, "fetch_retries", 0) or 0),
-            retry_base_delay=float(getattr(args, "retry_base_delay", 0.25) or 0),
-            snapshot_dir=getattr(args, "snapshot_dir", None),
-        )
+    return build_fetcher(_company_fetcher_config(args))
+
+
+def _company_fetcher_config(args: argparse.Namespace) -> FetcherConfig:
+    return FetcherConfig(
+        fixtures_dir=getattr(args, "fixtures_dir", None),
+        offline=bool(getattr(args, "offline", False)),
+        timeout=args.fetch_timeout,
+        render_mode="smart" if args.render_js else "none",
+        render_budget=args.render_budget,
+        capture_screenshot=bool(getattr(args, "render_screenshot", False)),
+        retries=int(getattr(args, "fetch_retries", 0) or 0),
+        retry_base_delay=float(getattr(args, "retry_base_delay", 0.25) or 0),
+        snapshot_dir=getattr(args, "snapshot_dir", None),
     )
+
+
+def _checkpoint_dir(args: argparse.Namespace) -> str:
+    configured = getattr(args, "checkpoint_dir", None)
+    if configured:
+        return str(configured)
+    output = getattr(args, "output", "/tmp/live-batch-results.json")
+    return str(Path(output).with_suffix(".checkpoints"))
 
 
 def failure_result(company: CompanyInput, error: str, detail: str | None = None) -> DiscoveryResult:
