@@ -52,7 +52,7 @@ def main(argv: list[str] | None = None) -> None:
     print(f"bundle: {Path(args.output_dir).resolve()}", flush=True)
 
 
-def replay_failure_bundle(args: argparse.Namespace) -> dict:
+def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False) -> dict:
     results_path = Path(args.results).resolve()
     output_root = Path(args.output_dir).resolve()
     records = json.loads(results_path.read_text(encoding="utf-8"))
@@ -71,6 +71,10 @@ def replay_failure_bundle(args: argparse.Namespace) -> dict:
     )
     replay_records = export_replay_records(records, export_args)
     if not replay_records:
+        if allow_empty:
+            manifest = _empty_bundle_manifest(args)
+            _write_json_atomic(output_root / "bundle-manifest.json", manifest)
+            return manifest
         raise FailureReplayError("No replayable records matched the requested filters")
 
     fixture_result = replay_snapshots(args.snapshot_dir, output_root / "offline")
@@ -90,6 +94,7 @@ def replay_failure_bundle(args: argparse.Namespace) -> dict:
     _write_json_atomic(output_root / "replay-trace.json", trace_records)
     _write_json_atomic(output_root / "replay-summary.json", summary)
     manifest = {
+        "status": "success",
         "bundle_schema_version": BUNDLE_SCHEMA_VERSION,
         "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
         "result_schema_version": RESULT_SCHEMA_VERSION,
@@ -116,6 +121,28 @@ def replay_failure_bundle(args: argparse.Namespace) -> dict:
     }
     _write_json_atomic(output_root / "bundle-manifest.json", manifest)
     return manifest
+
+
+def _empty_bundle_manifest(args: argparse.Namespace) -> dict:
+    return {
+        "status": "skipped",
+        "reason": "no_replayable_failure_records",
+        "bundle_schema_version": BUNDLE_SCHEMA_VERSION,
+        "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
+        "result_schema_version": RESULT_SCHEMA_VERSION,
+        "adapter_version": ADAPTER_VERSION,
+        "paths": {},
+        "filters": {
+            "pipeline_status": args.pipeline_status or [],
+            "stage": args.stage,
+            "stage_status": args.stage_status or [],
+            "reason_code": args.reason_code or [],
+            "provider": args.provider or [],
+            "limit": args.limit,
+        },
+        "snapshot_summary": None,
+        "summary": {"total": 0},
+    }
 
 
 def _write_json_atomic(path: Path, payload) -> None:

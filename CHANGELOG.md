@@ -50,6 +50,7 @@
 - Evaluation summary 和 Markdown report 增加 checkpoint action/stage activity 统计。
 - Live batch 的持续与最终 summary 改为聚合独立 trace records，修复 `results.json` 保持精简时 checkpoint save/restore activity 被错误报告为空的问题。
 - Snapshot 正文和 browser artifact 改为内容寻址的不可变 blob，并用跨进程锁串行发布 canonical fixture 与 manifest；replay 对重复 URL 采用最后一个完整版本并报告 superseded records，修复 Workday POST 分页和 query 变体覆盖旧文件后导致的 hash mismatch。
+- Live batch 增加 `--failure-bundle-dir` 和 `--failure-bundle-limit`，在运行结束后自动把 partial/failed/unsupported trace 与 snapshot 转换为离线 replay bundle；全绿或没有可重放记录时生成明确的 skipped manifest。
 - Provider attribution 优先使用 opening/job-board stage evidence，避免 Greenhouse 返回外部 apply host 时被错误归类；replay export 使用同一归属规则。
 - 固定 live benchmark 从 6 家扩展到 9 家，新增 SanDisk/SmartRecruiters、ONEOK/Workday 和 Carv/Rippling 覆盖。
 - 固定 live benchmark 继续扩展到 11 家，新增 Plum/Workable 和 ReachMobi/BambooHR 覆盖。

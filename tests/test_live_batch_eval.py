@@ -5,8 +5,10 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from job_source_agent.models import CompanyInput, DiscoveryResult
-from job_source_agent.web import Fetcher
+from job_source_agent.snapshot import SnapshotStore
+from job_source_agent.web import Fetcher, Page
 from scripts.live_batch_eval import (
+    build_automatic_failure_bundle,
     build_summary,
     load_batch_companies,
     prepare_replay_company_for_resume,
@@ -15,6 +17,7 @@ from scripts.live_batch_eval import (
     resume_uses_replay_upstream,
     run_company,
     run_pipeline_phase,
+    validate_artifact_args,
 )
 
 
@@ -238,6 +241,102 @@ class LiveBatchEvalTests(unittest.TestCase):
 
         self.assertEqual(summary["checkpoint_action_counts"], {"restore": 1})
         self.assertEqual(summary["checkpoint_stage_counts"], {"opening_match": 1})
+
+    def test_failure_bundle_configuration_requires_snapshots_and_positive_limit(self):
+        with self.assertRaisesRegex(SystemExit, "requires --snapshot-dir"):
+            validate_artifact_args(
+                SimpleNamespace(
+                    failure_bundle_dir="bundle",
+                    snapshot_dir=None,
+                    failure_bundle_limit=20,
+                )
+            )
+        with self.assertRaisesRegex(SystemExit, "greater than zero"):
+            validate_artifact_args(
+                SimpleNamespace(
+                    failure_bundle_dir=None,
+                    snapshot_dir=None,
+                    failure_bundle_limit=0,
+                )
+            )
+
+    def test_automatic_failure_bundle_replays_partial_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            board_url = "https://jobs.example.test/jobs"
+            SnapshotStore(root / "snapshots").write_page(
+                Page(
+                    url=board_url,
+                    final_url=board_url,
+                    html='<html><a href="/jobs/123-data-analyst">Data Analyst</a></html>',
+                    source="live",
+                ),
+                request_url=board_url,
+            )
+            trace_path = root / "trace.json"
+            trace_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "company_name": "Example Data",
+                            "company_website_url": "https://example.test",
+                            "career_root_url": board_url,
+                            "linkedin_job_title": "Data Analyst",
+                            "pipeline_status": "partial",
+                            "stages": [
+                                {
+                                    "stage": "opening_match",
+                                    "status": "partial",
+                                    "reason_code": "OPENING_NOT_FOUND",
+                                }
+                            ],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                failure_bundle_dir=str(root / "bundle"),
+                failure_bundle_limit=20,
+                snapshot_dir=str(root / "snapshots"),
+            )
+
+            manifest = build_automatic_failure_bundle(args, trace_path)
+            replay_results = json.loads(
+                (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(manifest["status"], "success")
+        self.assertEqual(manifest["summary"]["total"], 1)
+        self.assertIn("123-data-analyst", replay_results[0]["open_position_url"])
+
+    def test_automatic_failure_bundle_records_skipped_when_batch_is_green(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            trace_path = root / "trace.json"
+            trace_path.write_text(
+                json.dumps(
+                    [
+                        {
+                            "company_name": "Healthy",
+                            "company_website_url": "https://healthy.example",
+                            "pipeline_status": "success",
+                            "stages": [],
+                        }
+                    ]
+                ),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                failure_bundle_dir=str(root / "bundle"),
+                failure_bundle_limit=20,
+                snapshot_dir=str(root / "snapshots"),
+            )
+
+            manifest = build_automatic_failure_bundle(args, trace_path)
+
+        self.assertEqual(manifest["status"], "skipped")
+        self.assertEqual(manifest["summary"]["total"], 0)
 
     def test_resume_from_stage_reuses_replay_upstream_evidence(self):
         company = CompanyInput(

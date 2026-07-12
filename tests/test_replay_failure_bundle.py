@@ -69,6 +69,7 @@ class FailureReplayBundleTests(unittest.TestCase):
             )
 
         self.assertEqual(manifest["summary"]["total"], 1)
+        self.assertEqual(manifest["status"], "success")
         self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["save"], 7)
         self.assertEqual(replay_results[0]["open_position_url"], "https://jobs.example.test/jobs/123-data-analyst")
         self.assertNotIn(str(root), json.dumps(manifest))
@@ -83,6 +84,22 @@ class FailureReplayBundleTests(unittest.TestCase):
                 replay_failure_bundle(
                     self._args(root, reason_code=["NETWORK_TIMEOUT"])
                 )
+
+    def test_allow_empty_writes_skipped_manifest_without_requiring_snapshots(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+            args = self._args(root, reason_code=["NETWORK_TIMEOUT"])
+
+            manifest = replay_failure_bundle(args, allow_empty=True)
+            written = json.loads(
+                (root / "bundle" / "bundle-manifest.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(manifest, written)
+        self.assertEqual(manifest["status"], "skipped")
+        self.assertEqual(manifest["reason"], "no_replayable_failure_records")
+        self.assertEqual(manifest["summary"], {"total": 0})
 
 
 if __name__ == "__main__":

@@ -35,6 +35,7 @@ from job_source_agent.process_budget import ProcessBudgetExceeded, RemoteProcess
 from job_source_agent.reasons import canonical_reason_code, make_stage_result
 from job_source_agent.web import normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
+from scripts.replay_failure_bundle import replay_failure_bundle
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -81,6 +82,16 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trace-output", default="/tmp/live-batch-trace.json")
     parser.add_argument("--summary-output", default="/tmp/live-batch-summary.json")
     parser.add_argument("--snapshot-dir", help="Optional directory for sanitized page snapshots.")
+    parser.add_argument(
+        "--failure-bundle-dir",
+        help="Build an offline replay bundle for partial/failed/unsupported results after the batch.",
+    )
+    parser.add_argument(
+        "--failure-bundle-limit",
+        type=int,
+        default=20,
+        help="Maximum failure records included in the automatic replay bundle.",
+    )
     parser.add_argument("--baseline-summary", help="Optional prior summary JSON used for regression deltas.")
     parser.add_argument("--workers", type=int, default=1, help="Number of companies to process concurrently.")
     stage_group = parser.add_mutually_exclusive_group()
@@ -108,6 +119,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main() -> None:
     args = build_parser().parse_args()
+    validate_artifact_args(args)
     if not args.checkpoint_dir:
         args.checkpoint_dir = str(Path(args.output).with_suffix(".checkpoints"))
     linkedin_fetcher = build_fetcher(FetcherConfig(timeout=max(args.fetch_timeout, 6)))
@@ -168,6 +180,14 @@ def main() -> None:
     if args.baseline_summary:
         baseline_summary = json.loads(Path(args.baseline_summary).read_text(encoding="utf-8"))
         summary["regression"] = compare_summaries(summary, baseline_summary)
+    bundle_manifest = build_automatic_failure_bundle(args, trace_path)
+    if bundle_manifest is not None:
+        summary["failure_bundle"] = {
+            "status": bundle_manifest["status"],
+            "reason": bundle_manifest.get("reason"),
+            "selected": int(bundle_manifest.get("summary", {}).get("total", 0)),
+            "manifest": str(Path(args.failure_bundle_dir) / "bundle-manifest.json"),
+        }
     summary_path.write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print_summary(summary)
     print(f"results: {output_path}", flush=True)
@@ -176,6 +196,32 @@ def main() -> None:
     expectation_checks = summary.get("expectation_checks", {})
     if expectation_checks.get("failed"):
         raise SystemExit("Live expectations failed; see the summary JSON for details.")
+
+
+def validate_artifact_args(args: argparse.Namespace) -> None:
+    if getattr(args, "failure_bundle_dir", None) and not getattr(args, "snapshot_dir", None):
+        raise SystemExit("--failure-bundle-dir requires --snapshot-dir.")
+    if int(getattr(args, "failure_bundle_limit", 20)) <= 0:
+        raise SystemExit("--failure-bundle-limit must be greater than zero.")
+
+
+def build_automatic_failure_bundle(args: argparse.Namespace, trace_path: Path) -> dict | None:
+    output_dir = getattr(args, "failure_bundle_dir", None)
+    if not output_dir:
+        return None
+    replay_args = argparse.Namespace(
+        results=str(trace_path),
+        snapshot_dir=str(args.snapshot_dir),
+        output_dir=str(output_dir),
+        pipeline_status=["partial", "failed", "unsupported"],
+        stage=None,
+        stage_status=None,
+        reason_code=None,
+        provider=None,
+        limit=int(args.failure_bundle_limit),
+        include_missing_website=True,
+    )
+    return replay_failure_bundle(replay_args, allow_empty=True)
 
 
 def load_batch_companies(args: argparse.Namespace, linkedin_fetcher: FetchClient) -> list[CompanyInput]:

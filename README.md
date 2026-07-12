@@ -296,6 +296,8 @@ python3 scripts/live_batch_eval.py \
   --summary-output /tmp/live-fixed-summary.json
 ```
 
+Add `--snapshot-dir /tmp/job-source-snapshots --failure-bundle-dir /tmp/job-source-failures` to make the batch automatically select up to 20 partial, failed, or unsupported records and execute them as an offline replay bundle. Use `--failure-bundle-limit N` to change that bound. The final summary links the bundle manifest; a fully green run writes a `status: skipped` manifest instead of treating the absence of failures as an error.
+
 To turn a prior run into a focused replay input, export the subset you want to investigate:
 
 ```bash
