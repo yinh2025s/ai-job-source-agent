@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import re
 
 from .web import FetchError, Fetcher, Page, extract_links, normalize_url
@@ -33,21 +34,23 @@ class RenderedFetcher(Fetcher):
 
         try:
             with sync_playwright() as playwright:
-                browser = playwright.chromium.launch(headless=True)
-                page = browser.new_page(
-                    user_agent=(
-                        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/125.0 Safari/537.36"
+                browser = _launch_browser(playwright, PlaywrightError)
+                try:
+                    page = browser.new_page(
+                        user_agent=(
+                            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                            "AppleWebKit/537.36 (KHTML, like Gecko) "
+                            "Chrome/125.0 Safari/537.36"
+                        )
                     )
-                )
-                page.goto(normalized, wait_until="networkidle", timeout=int(self.timeout * 1000))
-                html = page.content()
-                final_url = page.url
-                artifacts = {}
-                if self.capture_screenshot:
-                    artifacts["screenshot_png"] = page.screenshot(full_page=True)
-                browser.close()
+                    page.goto(normalized, wait_until="networkidle", timeout=int(self.timeout * 1000))
+                    html = page.content()
+                    final_url = page.url
+                    artifacts = {}
+                    if self.capture_screenshot:
+                        artifacts["screenshot_png"] = page.screenshot(full_page=True)
+                finally:
+                    browser.close()
         except PlaywrightError as exc:
             raise FetchError(str(exc)) from exc
 
@@ -164,6 +167,29 @@ def _visible_text(html: str) -> str:
     text = re.sub(r"<(script|style)\b[^>]*>.*?</\1>", " ", html, flags=re.I | re.S)
     text = re.sub(r"<[^>]+>", " ", text)
     return " ".join(text.split())
+
+
+def _launch_browser(playwright, playwright_error_type):
+    try:
+        return playwright.chromium.launch(headless=True)
+    except playwright_error_type as exc:
+        if not _local_chrome_available():
+            raise
+        try:
+            return playwright.chromium.launch(channel="chrome", headless=True)
+        except playwright_error_type as chrome_exc:
+            raise playwright_error_type(f"{exc}; local Chrome fallback failed: {chrome_exc}") from chrome_exc
+
+
+def _local_chrome_available() -> bool:
+    return any(
+        Path(path).exists()
+        for path in (
+            "/Applications/Google Chrome.app",
+            "/Applications/Chromium.app",
+            "/Applications/Microsoft Edge.app",
+        )
+    )
 
 
 def _source_with_artifacts(source: str, page: Page) -> str:

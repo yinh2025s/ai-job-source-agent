@@ -1,5 +1,6 @@
 import unittest
 
+import job_source_agent.rendered_fetcher as rendered_fetcher
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
 from job_source_agent.web import FetchError, Page
 
@@ -98,6 +99,49 @@ class SmartRenderedFetcherTests(unittest.TestCase):
 
         with self.assertRaises(FetchError):
             fetcher._fetch_live("https://example.com")
+
+    def test_launch_browser_falls_back_to_local_chrome(self):
+        class FakePlaywrightError(Exception):
+            pass
+
+        class FakeChromium:
+            def __init__(self):
+                self.calls = []
+
+            def launch(self, **kwargs):
+                self.calls.append(kwargs)
+                if "channel" not in kwargs:
+                    raise FakePlaywrightError("managed browser missing")
+                return "local chrome"
+
+        chromium = FakeChromium()
+        playwright = type("FakePlaywright", (), {"chromium": chromium})()
+        original_local_chrome_available = rendered_fetcher._local_chrome_available
+        try:
+            rendered_fetcher._local_chrome_available = lambda: True
+            browser = rendered_fetcher._launch_browser(playwright, FakePlaywrightError)
+        finally:
+            rendered_fetcher._local_chrome_available = original_local_chrome_available
+
+        self.assertEqual(browser, "local chrome")
+        self.assertEqual(chromium.calls[1]["channel"], "chrome")
+
+    def test_launch_browser_reraises_when_no_local_chrome_exists(self):
+        class FakePlaywrightError(Exception):
+            pass
+
+        class FakeChromium:
+            def launch(self, **kwargs):
+                raise FakePlaywrightError("managed browser missing")
+
+        playwright = type("FakePlaywright", (), {"chromium": FakeChromium()})()
+        original_local_chrome_available = rendered_fetcher._local_chrome_available
+        try:
+            rendered_fetcher._local_chrome_available = lambda: False
+            with self.assertRaises(FakePlaywrightError):
+                rendered_fetcher._launch_browser(playwright, FakePlaywrightError)
+        finally:
+            rendered_fetcher._local_chrome_available = original_local_chrome_available
 
 
 if __name__ == "__main__":

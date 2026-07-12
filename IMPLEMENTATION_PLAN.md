@@ -300,6 +300,8 @@
 - trace 中可看到 browser source
 - live batch trace 中会记录 render events
 - `--render-screenshot` 可为 Playwright-rendered page 保存截图 artifact；配合 `--snapshot-dir` 写入 `snapshots.jsonl` metadata
+- Playwright-managed Chromium 不可用时，可 fallback 到本机 Google Chrome channel
+- 2026-07-12 smoke: local Chrome fallback rendered a real URL and wrote screenshot artifact metadata; PostHog fixed live batch with render/screenshot/snapshot flags passed 1/1
 
 仍需补：
 
@@ -700,7 +702,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 已实现 `SmartRenderedFetcher`
 - CLI 支持 `--render-js` smart fallback、`--render-budget`、`--render-js-always` 和 `--render-screenshot`
 - live batch runner 支持 `--render-js`、per-company `--render-budget`、render events trace 和截图 artifact snapshot
-- 单测覆盖静态优先、JS shell fallback、静态失败 fallback、budget guard、artifact source trace 和 snapshot artifact metadata
+- Playwright-managed Chromium 缺失时可 fallback 到本机 Google Chrome channel
+- 单测覆盖静态优先、JS shell fallback、静态失败 fallback、budget guard、local Chrome fallback、artifact source trace 和 snapshot artifact metadata
 
 目标：
 

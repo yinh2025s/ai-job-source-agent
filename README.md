@@ -108,6 +108,8 @@ pip install -e ".[browser]"
 playwright install chromium
 ```
 
+If the Playwright-managed Chromium download is unavailable, the renderer will try the local Chrome channel when Google Chrome is installed on the machine.
+
 Then run with smart browser fallback. Static HTML is tried first; Playwright is used only when the page looks like a JavaScript shell or the static request fails:
 
 ```bash
