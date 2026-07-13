@@ -109,10 +109,15 @@
 - Live batch 在 S4-S7 timeout 或 worker failure 时保留已完成的 S1-S3 stage results、官网、招聘主体、career root 和 trace，不再把下游预算耗尽误报为官网解析失败。
 - S2 resolver/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.16`；409 个测试、13/13 provider、6/6 resolver 和 51/51 fixed live expectations 均通过。
 - S5 hidden ATS discovery 增加有界 iframe/data-attribute/escaped URL/redirect evidence，识别 Oracle 和 Eightfold listing root；BFS 只遍历同站点或已知 ATS，拒绝 credentials、非标准端口、资源 URL、登录/profile 路径和循环。
-- Oracle Candidate Experience 登录链接会规范化为 tenant site root；通用 `search-results` route 进入 listing traversal。真实 replay 将 Uber 修正为 Oracle site root，并将 Snowflake 修正为 Phenom search-results root。
+- Oracle Candidate Experience login/profile 路径不会再被提升为公开 listing root；通用 `search-results` route 进入 listing traversal，真实 replay 将 Snowflake 修正为 Phenom search-results root。Uber 继续保留 first-party public list，不把 candidate-account tenant 误报为职位列表。
 - S6 新增独立 listing extraction：关联父卡片中的 heading/paragraph title 与 “See role” 链接，并安全解码纯 JSON 与多段 JavaScript assignment state；所有候选统一通过 same-origin/known-ATS detail URL 校验。
 - Plaid 父卡片与 Snowflake Phenom/Ashby 真实 replay 从 0/2 提升到 2/2 exact opening；S5/S6 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.17`。
 - 本轮通过 426 个测试、13/13 provider、6/6 resolver 和 clean 51-company fixed live：51/51 expectations、51/51 job list、50/51 exact opening。
+- Replay career root 现在按 provenance 处理：direct input/identity rule 保持兼容信任，历史 replay root 必须重新验证强就业语义、job-detail evidence 或 provider evidence；拒绝 Reddit/Twitch channel 和 Zillow consumer 页面等仅靠 `/careers` path 的假根节点。
+- S5 generic root 增加有界 ATS-only search，每个 provider query 获得独立 RSS 机会；候选必须由原生 adapter 返回非空列表，speculative tenant 还必须通过目标标题严格门禁，修复同名 Glean SmartRecruiters 假阳性。
+- Link extraction 增加 form action、Greenhouse embed canonicalization 和 JS template assignment 解析；provider config 优先占用候选预算，真实 Glean 页面可稳定提取 `gleanwork`，Twitch embed 可直接提升为 Greenhouse board。
+- Glean、Reddit、Zillow、Twitch 均分别通过 focused exact-opening live；Plaid、Snowflake 保持 exact。Uber Seattle 与 Starbucks Nashville 标题未在当前官方 inventory 中确认，继续报告 partial。
+- S4/S5 provenance、search 与 tenant verification 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.18`；440 个测试、13/13 provider、6/6 resolver 和 clean 51/51 fixed live expectations 通过。
 
 ## [0.1.0] - 2026-07-12
 
