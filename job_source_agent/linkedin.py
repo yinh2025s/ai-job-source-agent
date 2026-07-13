@@ -20,8 +20,18 @@ def load_company_inputs(path: str | Path) -> list[CompanyInput]:
     crawler/API adapter that emits the same records.
     """
     records = json.loads(Path(path).read_text(encoding="utf-8"))
+    return company_inputs_from_records(records)
+
+
+def company_inputs_from_records(records: list[dict]) -> list[CompanyInput]:
+    """Normalize records emitted by file, browser, or crawler adapters."""
+
+    if not isinstance(records, list):
+        raise ValueError("LinkedIn extractor input must be a JSON array.")
     inputs: list[CompanyInput] = []
     for record in records:
+        if not isinstance(record, dict):
+            raise ValueError("Each LinkedIn extractor record must be an object.")
         company = CompanyInput(**_normalize_input_record(record))
         if company.linkedin_html_path:
             html_data = parse_linkedin_html(Path(company.linkedin_html_path))
@@ -31,9 +41,17 @@ def load_company_inputs(path: str | Path) -> list[CompanyInput]:
             company.external_apply_url = company.external_apply_url or html_data.get("external_apply_url")
         if not company.company_name:
             company.company_name = infer_company_name_from_url(company.company_website_url)
-        if not company.company_website_url and not company.linkedin_company_url:
+        if not any(
+            (
+                company.company_website_url,
+                company.linkedin_company_url,
+                company.linkedin_job_url,
+                company.external_apply_url,
+            )
+        ):
             raise ValueError(
-                "company_website_url or linkedin_company_url is required unless linkedin_html_path contains a discoverable website URL"
+                "Each record requires a website, LinkedIn URL, External Apply URL, or "
+                "linkedin_html_path evidence."
             )
         inputs.append(company)
     return inputs

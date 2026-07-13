@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Job Source Agent</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <p class="eyebrow">LinkedIn pipeline</p>
+        <h1>Job Source Agent</h1>
+      </div>
+      <span id="bridgeState" class="state" data-state="idle">Offline</span>
+    </header>
+
+    <main>
+      <section class="toolbar" aria-label="Job controls">
+        <button id="scanButton" type="button">Scan page</button>
+        <button id="runButton" class="primary" type="button" disabled>Run discovery</button>
+      </section>
+
+      <section class="scan-summary" aria-live="polite">
+        <strong id="recordCount">0</strong>
+        <span>jobs ready</span>
+        <span id="applyCount" class="muted">0 Apply URLs</span>
+      </section>
+
+      <section id="runPanel" class="run-panel" hidden>
+        <div class="run-heading">
+          <h2 id="runStatus">Queued</h2>
+          <button id="refreshButton" class="quiet" type="button">Refresh</button>
+        </div>
+        <div class="metrics">
+          <div>
+            <span>Job lists</span>
+            <strong id="jobListRate">--</strong>
+          </div>
+          <div>
+            <span>Exact openings</span>
+            <strong id="openingRate">--</strong>
+          </div>
+        </div>
+        <ol id="results" class="results"></ol>
+      </section>
+
+      <p id="message" class="message" role="status"></p>
+
+      <details>
+        <summary>Connection</summary>
+        <label>
+          Bridge URL
+          <input id="bridgeUrl" type="url" value="http://127.0.0.1:8765" spellcheck="false">
+        </label>
+        <label>
+          Token
+          <input id="bridgeToken" type="password" autocomplete="off" spellcheck="false">
+        </label>
+        <button id="saveButton" class="quiet" type="button">Save connection</button>
+      </details>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

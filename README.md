@@ -164,6 +164,22 @@ Example input for the fallback:
 }
 ```
 
+### Local Chrome Extension
+
+Start the loopback bridge from the repository root. Set an explicit token for a stable local setup:
+
+```bash
+JOB_SOURCE_BRIDGE_TOKEN="replace-with-a-local-secret" \
+  python3.12 -m scripts.extension_bridge \
+  --port 8765 \
+  --workers 2 \
+  --fetch-timeout 8
+```
+
+In `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the repository's `extension/` directory. Open the extension's **Connection** section, keep `http://127.0.0.1:8765`, enter the same token, and save. On a LinkedIn Jobs detail or search-results page, **Scan page** collects up to 30 visible records; **Run discovery** submits an asynchronous run and reports verified job-list and exact-opening rates. Results, trace, and summary files are stored under `~/.ai-job-source-agent/runs/<run-id>/`.
+
+The extension never reads cookies or sends LinkedIn page data to a remote service. The bridge binds only to a loopback host, requires the bearer token, accepts Chrome-extension origins, limits request size and record count, and delegates all network/provider decisions to the Python application. DOM-visible External Apply links are optional evidence; missing links remain empty.
+
 For checkpointed LinkedIn batches, `scripts/live_batch_eval.py` freezes the discovered companies, ordering, and target titles in a versioned `linkedin-discovery.json` manifest inside the batch checkpoint directory. A resumed command reuses that cohort instead of rerunning a changing public search. `--no-resume` explicitly refreshes both the cohort and company executions; `--linkedin-manifest` can place the manifest at a chosen path. The summary records whether the cohort was `saved`, `restored`, or `refreshed`.
 
 For JavaScript-heavy or bot-protected pages, install the optional browser module:
@@ -352,6 +368,7 @@ Latest live checks on July 12, 2026:
 - July 13 ambiguous-brand resolver replay: for a short company name, an exact LinkedIn company-slug/domain-label match with a verified homepage is now a strong identity anchor only when the slug adds real disambiguating text. This keeps ordinary exact-brand and regional scoring unchanged while preventing a speculative short domain from beating the LinkedIn-linked organization. Finch now resolves from the wrong `finch.com` marketing company to `finchlegal.com`, follows its official careers page to Ashby, and matches the exact Machine Learning Engineer opening. The eight-record live capture materializes as seven fixtures and replays the full chain offline in 0.2 seconds. The `.34` gates pass 539 tests, 20/20 provider cases, 6/6 resolver cases, and the 18-adapter architecture validator.
 - July 13 abbreviated-brand and hidden-provider replay: S2 rejects Salesforce Experience Cloud and link-shortener hosts as company homepages both before and after redirects. Multiword brands can generate a constrained initials-plus-final-token abbreviation, and that candidate is accepted only when the verified homepage title repeats the same abbreviation; LinkedIn `-ai`, `-app`, and `-tech` slug suffixes can expose the underlying candidate. S5 now promotes an unlabelled ATS detail URL embedded in an official first-party careers payload to its native canonical board before generic detail handling. Standard Template Labs moves from a false `l.ink` homepage to `stlabs.com`, its official careers page, the `st-labs` Ashby board, and the exact AI Engineer opening. Five live records materialize as three fixtures and replay exact offline in 0.3 seconds. The `.35` gates pass 543 tests, 20/20 provider cases, 6/6 resolver cases, and the 18-adapter architecture validator.
 - July 13 External Apply fallback: a trusted browser or saved-page extractor can pass LinkedIn's off-site Apply target through `external_apply_url`. S5 accepts it only when the provider registry can derive a supported native board, and S6 still verifies the public inventory and title. ModMed succeeds even though website resolution produces no result: the Workday `ModMed12` board resolves the exact Machine Learning Engineer `R4352` opening in 11.4 seconds live, and the five-record sanitized snapshot reproduces it in 0.2 seconds offline. The `.36` gates pass 550 tests, 20/20 provider cases, 6/6 resolver cases, and the 18-adapter architecture validator.
+- July 13 local extension bridge: the Manifest V3 popup scans up to 30 visible LinkedIn Jobs records and submits them to a token-protected loopback run manager. A real HTTP smoke returned health `200`, submission `202`, then persisted a completed 1/1 job-list and 1/1 exact-opening fixture run. The release gates pass 556 tests, 20/20 provider cases, 6/6 resolver cases, and the 18-adapter architecture validator. Installation and one authenticated LinkedIn DOM scan remain the explicit manual browser acceptance step.
 - Fixed JS-heavy browser cohort: five companies across five providers and five technologies (Plum, Meta, Apple Jobs, Spotify, and IIC Lakshya). The strict saved/live evidence gate requires a successful render event, structured selector evidence, optional expected URL, sufficient visible text, no loading state, and no final classified error. Saved replay and the 15-second live gate both pass 5/5 within the shared render budget; Meta exercises static HTTP 400 to browser fallback, and Meta, Apple, and IIC require exact job URLs.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.

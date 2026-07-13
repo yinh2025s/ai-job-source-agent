@@ -39,6 +39,7 @@
 - 增加 GitHub Actions：push/PR 在 CPython 3.10-3.13 运行测试并在 3.12 重跑全部 offline gates；51-company live gate 仅手动触发，始终上传 results/trace/summary artifacts。
 - Live LinkedIn batch 增加独立版本、查询参数绑定、公司列表 hash、文件锁和原子发布的 discovery manifest；恢复默认复用同一 cohort，`--no-resume` 显式刷新，summary 记录 manifest action/path。
 - 增加受 provider registry 约束的 `external_apply_url` 输入：浏览器插件、认证页面快照或直接输入可在官网缺失时进入 S5；只有受支持的原生 ATS board 才会继续到 S6 库存和标题验证。字段已进入 result、trace、checkpoint fingerprint 和 replay export。
+- 增加可本地加载的 Chrome Manifest V3 扩展和 token-protected loopback bridge：扫描当前 LinkedIn Jobs 详情/列表最多 30 条可见记录，异步复用 `PipelineApplication`，在 popup 显示 job-list/exact-opening 成功率，并将 results/trace/summary 持久化到本地 run 目录。
 - SuccessFactors adapter 支持 `*.jobs.hr.cloud.sap` 新 Career Site：解析页面 CSRF/locale，调用同源 recruiting v1 API 并还原 canonical job URL。
 - 增加 opening availability diagnostics：聚合 `verified_inventory_no_match`、`verified_inventory_empty`、`discovery_incomplete` 和显式 `source_posting_closed`，并写入 S6 evidence、summary 与 Markdown report。
 - RippleHire 作为第 14 个原生 provider 自动接入：支持稳定 board 规范化、匿名 cookie session、公开 XML inventory、单关键词 query translation、50 条有界分页、exact-title early stop、同 tenant redirect/API 校验和 detail URL 重建。

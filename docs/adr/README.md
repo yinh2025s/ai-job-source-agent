@@ -13,4 +13,4 @@ NNNN-short-decision-title.md
 当前记录：
 
 - [ADR-0001: Separate Stage Execution And Provider Adapters](0001-separate-stage-and-provider-boundaries.md)
-
+- [ADR-0002: Keep Browser Extension As An Evidence Adapter](0002-browser-extension-evidence-bridge.md)
