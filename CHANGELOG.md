@@ -108,6 +108,11 @@
 - Website resolver 拒绝 parked-domain marketplace redirect；单词品牌的产品扩展域名需要 LinkedIn 精确域名或 canonical 组织证据，修复 `Paramount -> paramountplus.com` 假阳性。
 - Live batch 在 S4-S7 timeout 或 worker failure 时保留已完成的 S1-S3 stage results、官网、招聘主体、career root 和 trace，不再把下游预算耗尽误报为官网解析失败。
 - S2 resolver/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.16`；409 个测试、13/13 provider、6/6 resolver 和 51/51 fixed live expectations 均通过。
+- S5 hidden ATS discovery 增加有界 iframe/data-attribute/escaped URL/redirect evidence，识别 Oracle 和 Eightfold listing root；BFS 只遍历同站点或已知 ATS，拒绝 credentials、非标准端口、资源 URL、登录/profile 路径和循环。
+- Oracle Candidate Experience 登录链接会规范化为 tenant site root；通用 `search-results` route 进入 listing traversal。真实 replay 将 Uber 修正为 Oracle site root，并将 Snowflake 修正为 Phenom search-results root。
+- S6 新增独立 listing extraction：关联父卡片中的 heading/paragraph title 与 “See role” 链接，并安全解码纯 JSON 与多段 JavaScript assignment state；所有候选统一通过 same-origin/known-ATS detail URL 校验。
+- Plaid 父卡片与 Snowflake Phenom/Ashby 真实 replay 从 0/2 提升到 2/2 exact opening；S5/S6 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.17`。
+- 本轮通过 426 个测试、13/13 provider、6/6 resolver 和 clean 51-company fixed live：51/51 expectations、51/51 job list、50/51 exact opening。
 
 ## [0.1.0] - 2026-07-12
 
