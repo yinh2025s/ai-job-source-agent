@@ -459,6 +459,7 @@ def _atomic_write_json(path: Path, payload) -> None:
 
 def run_company(company: CompanyInput, args: argparse.Namespace):
     started = time.monotonic()
+    upstream_result: DiscoveryResult | None = None
     if resume_uses_replay_upstream(args):
         prepare_replay_company_for_resume(company, args)
     else:
@@ -505,6 +506,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             company,
             error="company_time_budget_exhausted",
             detail=f"Exceeded the {args.company_time_budget:g}-second company budget after website resolution.",
+            completed_result=upstream_result,
         )
     try:
         downstream_deadline = time.monotonic() + remaining
@@ -525,9 +527,15 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             company,
             error="company_time_budget_exhausted",
             detail=f"Career discovery exceeded the remaining {remaining:.1f}-second company budget.",
+            completed_result=upstream_result,
         )
     except RemoteProcessError as exc:
-        return failure_result(company, error="batch_worker_failed", detail=str(exc))
+        return failure_result(
+            company,
+            error="batch_worker_failed",
+            detail=str(exc),
+            completed_result=upstream_result,
+        )
 
 
 def _upstream_rerun_stage(args: argparse.Namespace) -> str | None:
@@ -768,12 +776,36 @@ def _batch_checkpoint_dir(args: argparse.Namespace) -> str:
     return str(Path(output).with_suffix(".batch-completions"))
 
 
-def failure_result(company: CompanyInput, error: str, detail: str | None = None) -> DiscoveryResult:
+def failure_result(
+    company: CompanyInput,
+    error: str,
+    detail: str | None = None,
+    completed_result: DiscoveryResult | None = None,
+) -> DiscoveryResult:
     error_code = canonical_reason_code(error)
     stage_metrics = company.source_trace.get("stage_metrics", {})
     has_linkedin_input = bool(company.linkedin_job_url or company.linkedin_company_url)
-    website_resolved = bool(company.company_website_url) and error_code != "WEBSITE_NOT_RESOLVED"
-    stages = [
+    website_url = (
+        completed_result.company_website_url
+        if completed_result is not None
+        else company.company_website_url
+    ) or ""
+    website_resolved = bool(website_url) and error_code != "WEBSITE_NOT_RESOLVED"
+    completed_prefix = (
+        [
+            stage
+            for stage in completed_result.stage_results
+            if stage.stage
+            in {
+                STAGE_LINKEDIN_DISCOVERY,
+                STAGE_WEBSITE_RESOLUTION,
+                STAGE_HIRING_IDENTITY_RESOLUTION,
+            }
+        ]
+        if completed_result is not None and website_resolved
+        else []
+    )
+    stages = completed_prefix or [
         make_stage_result(
             STAGE_LINKEDIN_DISCOVERY,
             "success" if has_linkedin_input else "not_applicable",
@@ -788,7 +820,7 @@ def failure_result(company: CompanyInput, error: str, detail: str | None = None)
             input_count=1,
             output_count=1 if website_resolved else 0,
             evidence=(
-                [{"field": "company_website_url", "url": company.company_website_url}]
+                [{"field": "company_website_url", "url": website_url}]
                 if website_resolved
                 else []
             ),
@@ -830,7 +862,17 @@ def failure_result(company: CompanyInput, error: str, detail: str | None = None)
     )
     return DiscoveryResult(
         company_name=company.company_name,
-        company_website_url=company.company_website_url or "",
+        company_website_url=website_url,
+        hiring_entity_name=(
+            completed_result.hiring_entity_name
+            if completed_result is not None
+            else company.hiring_entity_name
+        ),
+        career_root_url=(
+            completed_result.career_root_url
+            if completed_result is not None
+            else company.career_root_url
+        ),
         linkedin_job_url=company.linkedin_job_url,
         linkedin_company_url=company.linkedin_company_url,
         linkedin_job_title=company.job_title,
@@ -841,8 +883,17 @@ def failure_result(company: CompanyInput, error: str, detail: str | None = None)
         pipeline_status="failed",
         stage_results=stages,
         trace={
+            **(completed_result.trace if completed_result is not None else {}),
             "source": company.source,
-            "source_trace": company.source_trace,
+            "source_trace": {
+                **(
+                    completed_result.trace.get("source_trace", {})
+                    if completed_result is not None
+                    and isinstance(completed_result.trace.get("source_trace"), dict)
+                    else {}
+                ),
+                **company.source_trace,
+            },
             "batch_error": error,
             "batch_error_detail": detail,
         },

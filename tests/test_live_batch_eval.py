@@ -4,13 +4,14 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from job_source_agent.models import CompanyInput, DiscoveryResult
+from job_source_agent.models import CompanyInput, DiscoveryResult, StageResult
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.web import Fetcher, Page
 from scripts.live_batch_eval import (
     build_automatic_failure_bundle,
     build_summary,
+    failure_result,
     _load_completed_companies,
     _downstream_start_stage,
     _ordered_records,
@@ -46,6 +47,63 @@ class LiveBatchEvalTests(unittest.TestCase):
             max_ats_board_fetches=5,
             skip_sitemap=False,
             career_search_timeout=None,
+        )
+
+    def test_downstream_failure_preserves_completed_upstream_evidence(self):
+        company = CompanyInput(
+            company_name="Hadrian",
+            linkedin_company_url="https://www.linkedin.com/company/hadrianautomation",
+            job_title="Frontend Software Engineer",
+            source_trace={"input_marker": "kept"},
+        )
+        upstream = DiscoveryResult(
+            company_name="Hadrian",
+            company_website_url="https://www.hadrian.co/",
+            hiring_entity_name="Hadrian Automation",
+            career_root_url="https://www.hadrian.co/careers",
+            stage_results=[
+                StageResult(stage="linkedin_discovery", status="success"),
+                StageResult(
+                    stage="website_resolution",
+                    status="success",
+                    duration_ms=321,
+                    evidence=[
+                        {"field": "company_website_url", "url": "https://www.hadrian.co/"}
+                    ],
+                ),
+                StageResult(
+                    stage="hiring_identity_resolution",
+                    status="success",
+                    duration_ms=7,
+                ),
+            ],
+            trace={
+                "stages": {"website_resolution": {"selected": "https://www.hadrian.co/"}},
+                "source_trace": {"upstream_marker": "kept"},
+            },
+        )
+
+        result = failure_result(
+            company,
+            error="company_time_budget_exhausted",
+            detail="Career discovery exceeded its budget.",
+            completed_result=upstream,
+        )
+
+        self.assertEqual(result.company_website_url, "https://www.hadrian.co/")
+        self.assertEqual(result.hiring_entity_name, "Hadrian Automation")
+        self.assertEqual(result.career_root_url, "https://www.hadrian.co/careers")
+        self.assertEqual(result.stage_status("website_resolution"), "success")
+        self.assertEqual(result.stage_status("hiring_identity_resolution"), "success")
+        self.assertEqual(result.stage_status("career_discovery"), "failed")
+        self.assertEqual(result.stage_results[1].duration_ms, 321)
+        self.assertEqual(
+            result.trace["stages"]["website_resolution"]["selected"],
+            "https://www.hadrian.co/",
+        )
+        self.assertEqual(
+            result.trace["source_trace"],
+            {"upstream_marker": "kept", "input_marker": "kept"},
         )
 
     def test_input_mode_loads_fixed_companies_without_linkedin_search(self):
