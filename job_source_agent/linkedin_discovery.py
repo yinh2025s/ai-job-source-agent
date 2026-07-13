@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from html.parser import HTMLParser
+from typing import Any
 from urllib.parse import urlencode, urlparse, urlunparse
 
 from .models import CompanyInput
@@ -21,6 +22,7 @@ class LinkedInJobPosting:
     linkedin_company_url: str
     location: str = ""
     external_apply_url: str = ""
+    source_trace: dict[str, Any] | None = None
 
 
 class LinkedInJobsDiscoverer:
@@ -65,6 +67,13 @@ def linkedin_postings_to_company_inputs(postings: list[LinkedInJobPosting]) -> l
         if not company_key or company_key in seen_companies:
             continue
         seen_companies.add(company_key)
+        source_trace = dict(posting.source_trace or {})
+        source_trace["linkedin_posting"] = {
+            "availability": "listed",
+            "apply_mode": "unknown",
+            "evidence_source": "public_search_card",
+            "job_url": posting.linkedin_job_url,
+        }
         companies.append(
             CompanyInput(
                 linkedin_job_url=posting.linkedin_job_url,
@@ -74,6 +83,7 @@ def linkedin_postings_to_company_inputs(postings: list[LinkedInJobPosting]) -> l
                 job_title=posting.job_title,
                 job_location=posting.location,
                 source="linkedin_public_jobs",
+                source_trace=source_trace,
             )
         )
     return companies

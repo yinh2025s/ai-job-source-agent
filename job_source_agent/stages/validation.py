@@ -6,11 +6,9 @@ from typing import Protocol
 
 from ..contracts import PipelineContext, StageExecution
 from ..models import (
-    STAGE_CAREER_DISCOVERY,
-    STAGE_JOB_BOARD_DISCOVERY,
-    STAGE_OPENING_MATCH,
     STAGE_RESULT_VALIDATION,
 )
+from ..pipeline_status import derive_pipeline_status
 from ..reasons import make_stage_result
 
 
@@ -37,7 +35,7 @@ class ResultValidationStage:
     def run(self, context: PipelineContext) -> StageExecution:
         started = time.perf_counter()
         issues = self.service.validate(context)
-        pipeline_status = _pipeline_status(context)
+        pipeline_status = derive_pipeline_status(context.stage_results)
         if issues:
             detail = " ".join(issues)
             return StageExecution(
@@ -64,19 +62,6 @@ class ResultValidationStage:
             ),
             trace={"pipeline_status": pipeline_status, "issues": []},
         )
-
-
-def _pipeline_status(context: PipelineContext) -> str:
-    statuses = {result.stage: result.status for result in context.stage_results}
-    if statuses.get(STAGE_OPENING_MATCH) == "success":
-        return "success"
-    if statuses.get(STAGE_JOB_BOARD_DISCOVERY) == "success":
-        return "partial" if statuses.get(STAGE_OPENING_MATCH) == "partial" else "success"
-    if statuses.get(STAGE_CAREER_DISCOVERY) == "success":
-        return "partial"
-    if "unsupported" in statuses.values():
-        return "unsupported"
-    return "failed"
 
 
 def _elapsed_ms(started: float) -> int:

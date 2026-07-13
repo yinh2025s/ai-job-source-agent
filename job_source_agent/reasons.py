@@ -40,6 +40,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "LOCATION_MISMATCH": ReasonSpec(False, "matcher"),
     "NO_PUBLIC_OPENINGS": ReasonSpec(False, "matcher"),
     "OPENING_CLOSED": ReasonSpec(False, "matcher"),
+    "LINKEDIN_NATIVE_ONLY": ReasonSpec(False, "external"),
     "COMPANY_TIME_BUDGET_EXHAUSTED": ReasonSpec(True, "budget"),
     "FETCH_BUDGET_EXHAUSTED": ReasonSpec(True, "budget"),
     "RESULT_VALIDATION_FAILED": ReasonSpec(False, "parser"),

@@ -10,7 +10,10 @@ from job_source_agent.models import (
     STAGE_HIRING_IDENTITY_RESOLUTION,
     STAGE_WEBSITE_RESOLUTION,
     CompanyInput,
+    StageResult,
 )
+from job_source_agent.contracts import PipelineContext
+from job_source_agent.pipeline_application import discovery_result_from_context
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -96,6 +99,53 @@ class PipelineApplicationTests(unittest.TestCase):
             {"stage": STAGE_WEBSITE_RESOLUTION, "action": "restore"},
             resumed.trace["checkpoint_events"],
         )
+
+    def test_linkedin_native_only_is_partial_in_both_result_statuses(self):
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_job_url="https://www.linkedin.com/jobs/view/123",
+            )
+        )
+        context.stage_results.extend(
+            [
+                StageResult(
+                    stage="career_discovery",
+                    status="failed",
+                    reason_code="CAREER_PAGE_NOT_FOUND",
+                ),
+                StageResult(
+                    stage="job_board_discovery",
+                    status="partial",
+                    reason_code="LINKEDIN_NATIVE_ONLY",
+                    detail="LinkedIn-native apply remains available.",
+                ),
+                StageResult(stage="opening_match", status="not_run"),
+            ]
+        )
+
+        result = discovery_result_from_context(context)
+
+        self.assertEqual(result.pipeline_status, "partial")
+        self.assertEqual(result.status, "partial")
+        self.assertEqual(result.error_code, "LINKEDIN_NATIVE_ONLY")
+        self.assertEqual(result.error, "linkedin_native_only")
+
+    def test_unsupported_terminal_reason_is_preserved(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.stage_results.append(
+            StageResult(
+                stage="job_board_discovery",
+                status="unsupported",
+                reason_code="PROVIDER_UNSUPPORTED",
+            )
+        )
+
+        result = discovery_result_from_context(context)
+
+        self.assertEqual(result.pipeline_status, "unsupported")
+        self.assertEqual(result.status, "failed")
+        self.assertEqual(result.error_code, "PROVIDER_UNSUPPORTED")
 
 
 if __name__ == "__main__":

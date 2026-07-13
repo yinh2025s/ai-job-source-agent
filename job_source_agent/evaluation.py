@@ -23,6 +23,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
     provider_reason_code_counts = _provider_reason_code_counts(results)
     stage_duration_ms = _stage_duration_ms(results)
     checkpoint_action_counts, checkpoint_stage_counts = _checkpoint_activity_counts(results)
+    source_posting_disposition_counts = _source_posting_disposition_counts(results)
     availability_diagnostic_counts = _availability_diagnostic_counts(results)
 
     summary = {
@@ -51,6 +52,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
         "stage_duration_ms": stage_duration_ms,
         "checkpoint_action_counts": checkpoint_action_counts,
         "checkpoint_stage_counts": checkpoint_stage_counts,
+        "source_posting_disposition_counts": source_posting_disposition_counts,
         "availability_diagnostic_counts": availability_diagnostic_counts,
         "company_stage_matrix": _company_stage_matrix(results),
     }
@@ -202,6 +204,23 @@ def _availability_diagnostic_counts(results: list[dict]) -> dict[str, int]:
             continue
         for item in evidence:
             if not isinstance(item, dict) or item.get("type") != "availability_diagnostic":
+                continue
+            disposition = item.get("disposition")
+            if isinstance(disposition, str) and disposition:
+                counts[disposition] += 1
+                break
+    return dict(counts)
+
+
+def _source_posting_disposition_counts(results: list[dict]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for result in results:
+        job_board_stage = _stage_by_name(result).get("job_board_discovery", {})
+        evidence = job_board_stage.get("evidence")
+        if not isinstance(evidence, list):
+            continue
+        for item in evidence:
+            if not isinstance(item, dict) or item.get("type") != "source_posting_availability":
                 continue
             disposition = item.get("disposition")
             if isinstance(disposition, str) and disposition:

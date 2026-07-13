@@ -17,6 +17,11 @@
   const visibleMatches = (root, selector) => (
     Array.from(root.querySelectorAll(selector)).filter(isVisible)
   );
+  const isEnabled = (node) => (
+    !node.disabled
+    && !node.hasAttribute?.("disabled")
+    && (node.getAttribute?.("aria-disabled") || "").trim().toLowerCase() !== "true"
+  );
   const firstText = (root, selectors) => {
     for (const selector of selectors) {
       for (const node of visibleMatches(root, selector)) {
@@ -53,6 +58,7 @@
   };
   const externalApplyUrl = (root) => {
     for (const anchor of visibleMatches(root, "a[href]")) {
+      if (!isEnabled(anchor)) continue;
       const label = `${text(anchor)} ${anchor.getAttribute("aria-label") || ""}`.toLowerCase();
       if (!label.includes("apply")) continue;
       try {
@@ -67,6 +73,46 @@
     }
     return "";
   };
+  const hasNativeApply = (root) => visibleMatches(root, [
+    "button.jobs-apply-button",
+    "button[data-control-name='jobdetails_topcard_inapply']",
+    "button[data-live-test-job-apply-button]",
+    "button[aria-label*='Easy Apply']"
+  ].join(", ")).some((button) => {
+    if (!isEnabled(button)) return false;
+    const label = `${text(button)} ${button.getAttribute("aria-label") || ""}`.toLowerCase();
+    return label.includes("apply");
+  });
+  const hasClosedBanner = (root) => visibleMatches(root, [
+    ".jobs-details-top-card__apply-error",
+    ".jobs-unified-top-card__closed-job",
+    "[data-job-closed='true']"
+  ].join(", ")).some((banner) => {
+    if ((banner.getAttribute("data-job-closed") || "").trim().toLowerCase() === "true") {
+      return true;
+    }
+    return /(?:no longer accepting applications|job (?:is )?(?:no longer available|unavailable)|job has expired|applications? (?:are|is) closed|position has been filled)/i.test(text(banner));
+  });
+
+  const linkedinPostingEvidence = (root, jobUrl, externalUrl) => {
+    let availability = "unknown";
+    let applyMode = "unknown";
+    if (hasClosedBanner(root)) {
+      availability = "closed";
+    } else if (externalUrl) {
+      availability = "active";
+      applyMode = "external";
+    } else if (hasNativeApply(root)) {
+      availability = "active";
+      applyMode = "linkedin_native";
+    }
+    return {
+      availability,
+      apply_mode: applyMode,
+      evidence_source: "authenticated_detail_dom",
+      job_url: jobUrl
+    };
+  };
 
   const detailRecord = () => {
     const root = visibleMatches(
@@ -75,6 +121,7 @@
     )[0] || document;
     const jobUrl = canonicalJobUrl(location.href)
       || canonicalJobUrl(firstHref(root, ["a[href*='/jobs/view/']"]));
+    const externalUrl = externalApplyUrl(root);
     const linkedinCompanyUrl = canonicalCompanyUrl(firstHref(root, [
       ".job-details-jobs-unified-top-card__company-name a[href*='/company/']",
       ".jobs-unified-top-card__company-name a[href*='/company/']",
@@ -82,7 +129,7 @@
     ]));
     return {
       linkedin_job_url: jobUrl,
-      external_apply_url: externalApplyUrl(root) || null,
+      external_apply_url: externalUrl || null,
       linkedin_company_url: linkedinCompanyUrl || null,
       company_name: firstText(root, [
         ".job-details-jobs-unified-top-card__company-name",
@@ -100,7 +147,10 @@
         ".jobs-unified-top-card__bullet",
         ".job-details-jobs-unified-top-card__tertiary-description-container"
       ]),
-      source: "linkedin_browser_extension"
+      source: "linkedin_browser_extension",
+      source_trace: {
+        linkedin_posting: linkedinPostingEvidence(root, jobUrl, externalUrl)
+      }
     };
   };
 

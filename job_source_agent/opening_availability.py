@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .source_posting import explicit_closed_source_status
+
 
 @dataclass(frozen=True)
 class OpeningAvailabilityDiagnostic:
@@ -19,7 +21,7 @@ def diagnose_opening_availability(
 ) -> OpeningAvailabilityDiagnostic:
     """Classify an opening miss without treating missing search results as proof of expiry."""
 
-    source_status = _explicit_source_posting_status(source_trace or {})
+    source_status = explicit_closed_source_status(source_trace or {})
     inventory = trace.get("provider_api", {}).get("inventory")
     if source_status in {"closed", "expired", "unavailable"}:
         return OpeningAvailabilityDiagnostic(
@@ -69,18 +71,6 @@ def diagnose_opening_availability(
         detail="No exact opening was verified, and the available evidence cannot establish that the posting is closed.",
         evidence={"provider_error_count": len(errors) if isinstance(errors, list) else 0},
     )
-
-
-def _explicit_source_posting_status(source_trace: dict[str, Any]) -> str | None:
-    values = [source_trace.get("posting_status")]
-    for container_name in ("linkedin_posting", "source_posting"):
-        container = source_trace.get(container_name)
-        if isinstance(container, dict):
-            values.extend((container.get("status"), container.get("availability")))
-    for value in values:
-        if isinstance(value, str) and value.strip().lower() in {"closed", "expired", "unavailable"}:
-            return value.strip().lower()
-    return None
 
 
 def _nonnegative_int(value: Any) -> int | None:

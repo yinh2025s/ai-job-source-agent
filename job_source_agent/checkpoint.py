@@ -5,10 +5,11 @@ import json
 from typing import Any
 
 from .models import RESULT_SCHEMA_VERSION
+from .source_posting import source_posting_fingerprint_payload
 
 
 CHECKPOINT_SCHEMA_VERSION = "1.0"
-ADAPTER_VERSION = "2026-07-13.43"
+ADAPTER_VERSION = "2026-07-13.44"
 
 FINGERPRINT_FIELDS = (
     "company_name",
@@ -29,6 +30,9 @@ def input_fingerprint(record: dict[str, Any]) -> str:
         for field in FINGERPRINT_FIELDS
         if record.get(field) not in (None, "")
     }
+    source_posting = source_posting_fingerprint_payload(record.get("source_trace"))
+    if source_posting:
+        payload["source_posting"] = source_posting
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
 

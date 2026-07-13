@@ -13,6 +13,7 @@ from .models import (
     CompanyInput,
     DiscoveryResult,
 )
+from .pipeline_status import derive_pipeline_status
 
 
 class PipelineApplication:
@@ -72,7 +73,8 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
         },
     )
 
-    first_failed_stage = None
+    first_terminal_stage = None
+    source_terminal_stage = None
     for stage_result in result.stage_results:
         stage_trace = context.trace.get("stages", {}).get(stage_result.stage, {})
         if stage_result.stage in {
@@ -83,17 +85,27 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
             result.trace["steps"].append(
                 {"name": _legacy_step_name(stage_result.stage), **stage_trace}
             )
-        if stage_result.status == "failed" and first_failed_stage is None:
-            first_failed_stage = stage_result
+        if (
+            stage_result.status in {"failed", "unsupported"}
+            and stage_result.reason_code
+            and first_terminal_stage is None
+        ):
+            first_terminal_stage = stage_result
 
-    if not context.job_list_page_url and first_failed_stage is not None:
-        result.error_code = first_failed_stage.reason_code
-        result.error = _legacy_error(first_failed_stage.stage, first_failed_stage.reason_code)
-        result.trace["failure_detail"] = first_failed_stage.detail
+        if stage_result.reason_code == "LINKEDIN_NATIVE_ONLY":
+            source_terminal_stage = stage_result
+
+    terminal_stage = source_terminal_stage or first_terminal_stage
+    if not context.job_list_page_url and terminal_stage is not None:
+        result.error_code = terminal_stage.reason_code
+        result.error = _legacy_error(terminal_stage.stage, terminal_stage.reason_code)
+        result.trace["failure_detail"] = terminal_stage.detail
 
     result.pipeline_status = _pipeline_status(context)
     if result.job_list_page_url:
         result.status = "success"
+    elif result.pipeline_status == "partial":
+        result.status = "partial"
     elif result.career_page_url:
         result.status = "partial"
     else:
@@ -105,16 +117,7 @@ def _pipeline_status(context: PipelineContext) -> str:
     validation_trace = context.trace.get("stages", {}).get(STAGE_RESULT_VALIDATION, {})
     if validation_trace.get("pipeline_status"):
         return str(validation_trace["pipeline_status"])
-    statuses = {result.stage: result.status for result in context.stage_results}
-    if statuses.get(STAGE_OPENING_MATCH) == "success":
-        return "success"
-    if statuses.get(STAGE_JOB_BOARD_DISCOVERY) == "success":
-        return "partial" if statuses.get(STAGE_OPENING_MATCH) == "partial" else "success"
-    if statuses.get(STAGE_CAREER_DISCOVERY) == "success":
-        return "partial"
-    if "unsupported" in statuses.values():
-        return "unsupported"
-    return "failed"
+    return derive_pipeline_status(context.stage_results)
 
 
 def _legacy_step_name(stage: str) -> str:

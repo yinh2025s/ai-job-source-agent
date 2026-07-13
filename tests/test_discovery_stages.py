@@ -2,7 +2,7 @@ import unittest
 
 from job_source_agent.contracts import PipelineContext
 from job_source_agent.errors import DiscoveryError
-from job_source_agent.models import CompanyInput
+from job_source_agent.models import CompanyInput, StageResult
 from job_source_agent.stages import (
     CareerDiscoveryStage,
     JobBoardDiscoveryStage,
@@ -175,6 +175,147 @@ class DiscoveryStageTests(unittest.TestCase):
 
         self.assertEqual([result.status for result in context.stage_results], ["failed", "not_run", "not_run"])
         self.assertEqual(context.stage_results[0].reason_code, "CAREER_PAGE_NOT_FOUND")
+
+    def test_deterministic_career_miss_reports_linkedin_native_only(self):
+        job_url = "https://www.linkedin.com/jobs/view/123"
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_job_url=job_url,
+                source_trace={
+                    "linkedin_posting": {
+                        "availability": "active",
+                        "apply_mode": "linkedin_native",
+                        "evidence_source": "authenticated_detail_dom",
+                        "job_url": job_url,
+                    }
+                },
+            )
+        )
+        context.stage_results.append(
+            StageResult(
+                stage="career_discovery",
+                status="failed",
+                reason_code="CAREER_PAGE_NOT_FOUND",
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(FakeDiscoveryService()).run(context)
+
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(execution.result.reason_code, "LINKEDIN_NATIVE_ONLY")
+        self.assertEqual(execution.updates, {})
+        self.assertEqual(execution.result.evidence[0]["source_posting_url"], job_url)
+
+    def test_retryable_career_failure_is_not_hidden_by_native_source(self):
+        job_url = "https://www.linkedin.com/jobs/view/123"
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_job_url=job_url,
+                source_trace={
+                    "linkedin_posting": {
+                        "availability": "active",
+                        "apply_mode": "linkedin_native",
+                        "evidence_source": "authenticated_detail_dom",
+                        "job_url": job_url,
+                    }
+                },
+            )
+        )
+        context.stage_results.append(
+            StageResult(
+                stage="career_discovery",
+                status="failed",
+                reason_code="NETWORK_TIMEOUT",
+                retryable=True,
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(FakeDiscoveryService()).run(context)
+
+        self.assertEqual(execution.result.status, "not_run")
+
+    def test_deterministic_job_board_miss_reports_linkedin_native_only(self):
+        class MissingBoardService(FakeDiscoveryService):
+            def find_job_board(self, career_page_url, company_name=None):
+                raise DiscoveryError("job_board_not_found", "missing", trace={"searched": True})
+
+        job_url = "https://www.linkedin.com/jobs/view/123"
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_job_url=job_url,
+                source_trace={
+                    "linkedin_posting": {
+                        "availability": "active",
+                        "apply_mode": "linkedin_native",
+                        "evidence_source": "authenticated_detail_dom",
+                        "job_url": job_url,
+                    }
+                },
+            )
+        )
+        context.career_page_url = "https://acme.example/careers"
+
+        execution = JobBoardDiscoveryStage(MissingBoardService()).run(context)
+
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(execution.result.reason_code, "LINKEDIN_NATIVE_ONLY")
+
+    def test_verified_board_wins_over_native_source_evidence(self):
+        job_url = "https://www.linkedin.com/jobs/view/123"
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_job_url=job_url,
+                source_trace={
+                    "linkedin_posting": {
+                        "availability": "active",
+                        "apply_mode": "linkedin_native",
+                        "evidence_source": "authenticated_detail_dom",
+                        "job_url": job_url,
+                    }
+                },
+            )
+        )
+        context.career_page_url = "https://acme.example/careers"
+
+        execution = JobBoardDiscoveryStage(FakeDiscoveryService()).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertIn("job_list_page_url", execution.updates)
+
+    def test_incomplete_job_board_trace_is_not_hidden_by_native_source(self):
+        class IncompleteBoardService(FakeDiscoveryService):
+            def find_job_board(self, career_page_url, company_name=None):
+                raise DiscoveryError(
+                    "job_board_not_found",
+                    "incomplete",
+                    trace={"candidate_fetch_errors": [{"error": "request timed out"}]},
+                )
+
+        job_url = "https://www.linkedin.com/jobs/view/123"
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_job_url=job_url,
+                source_trace={
+                    "linkedin_posting": {
+                        "availability": "active",
+                        "apply_mode": "linkedin_native",
+                        "evidence_source": "authenticated_detail_dom",
+                        "job_url": job_url,
+                    }
+                },
+            )
+        )
+        context.career_page_url = "https://acme.example/careers"
+
+        execution = JobBoardDiscoveryStage(IncompleteBoardService()).run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(execution.result.reason_code, "JOB_BOARD_NOT_FOUND")
 
 
 if __name__ == "__main__":

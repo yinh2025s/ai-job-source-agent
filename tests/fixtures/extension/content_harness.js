@@ -2,12 +2,15 @@ const fs = require("node:fs");
 const vm = require("node:vm");
 
 class FakeElement {
-  constructor({ text = "", href = "", attrs = {}, style = {}, hidden = false, parent = null } = {}) {
+  constructor({
+    text = "", href = "", attrs = {}, style = {}, hidden = false, disabled = false, parent = null,
+  } = {}) {
     this.textContent = text;
     this.href = href;
     this.attrs = attrs;
     this.style = { display: "block", visibility: "visible", ...style };
     this.hidden = hidden;
+    this.disabled = disabled;
     this.parentElement = parent;
     this.matchesBySelector = new Map();
   }
@@ -40,6 +43,17 @@ const CARD_SELECTOR = (
 const DETAIL_SELECTOR = (
   ".jobs-search__job-details--container, .job-view-layout, .jobs-details, main"
 );
+const NATIVE_APPLY_SELECTOR = [
+  "button.jobs-apply-button",
+  "button[data-control-name='jobdetails_topcard_inapply']",
+  "button[data-live-test-job-apply-button]",
+  "button[aria-label*='Easy Apply']",
+].join(", ");
+const CLOSED_BANNER_SELECTOR = [
+  ".jobs-details-top-card__apply-error",
+  ".jobs-unified-top-card__closed-job",
+  "[data-job-closed='true']",
+].join(", ");
 
 function leaf(properties, parent) {
   return new FakeElement({ ...properties, parent });
@@ -160,10 +174,70 @@ function detailScenario() {
   return { document, href: "https://www.linkedin.com/jobs/view/staff-ai-engineer-777/" };
 }
 
+function evidenceScenario(kind) {
+  const document = new FakeElement();
+  const root = new FakeElement();
+  const company = leaf({ text: "Evidence Systems" }, root);
+  const companyLink = leaf({
+    text: "Evidence Systems",
+    href: "https://www.linkedin.com/company/evidence-systems/",
+  }, root);
+  const title = leaf({ text: "Principal Evidence Engineer" }, root);
+  const location = leaf({ text: "Remote" }, root);
+
+  root.setMatches(".job-details-jobs-unified-top-card__company-name", [company]);
+  root.setMatches(
+    ".job-details-jobs-unified-top-card__company-name a[href*='/company/']",
+    [companyLink],
+  );
+  root.setMatches(".job-details-jobs-unified-top-card__job-title h1", [title]);
+  root.setMatches(
+    ".job-details-jobs-unified-top-card__primary-description-container .tvm__text",
+    [location],
+  );
+
+  if (kind === "native") {
+    root.setMatches(NATIVE_APPLY_SELECTOR, [leaf({
+      text: "Easy Apply",
+      attrs: { "aria-label": "Easy Apply to Evidence Systems" },
+    }, root)]);
+  } else if (kind === "external") {
+    root.setMatches("a[href]", [leaf({
+      text: "Apply on company website",
+      href: "https://careers.evidence.example/jobs/808",
+    }, root)]);
+  } else if (kind === "closed") {
+    root.setMatches(CLOSED_BANNER_SELECTOR, [leaf({
+      text: "This job is no longer accepting applications",
+    }, root)]);
+  } else if (kind === "hidden_disabled") {
+    const hiddenParent = new FakeElement({ style: { display: "none" }, parent: root });
+    root.setMatches(NATIVE_APPLY_SELECTOR, [
+      leaf({ text: "Easy Apply" }, hiddenParent),
+      leaf({ text: "Easy Apply", attrs: { "aria-disabled": "true" } }, root),
+      leaf({ text: "Easy Apply", disabled: true }, root),
+    ]);
+    root.setMatches("a[href]", [leaf({
+      text: "Apply on company website",
+      href: "https://careers.evidence.example/jobs/808",
+      attrs: { disabled: "" },
+    }, root)]);
+  }
+
+  document.setMatches(CARD_SELECTOR, []);
+  document.setMatches(DETAIL_SELECTOR, [root]);
+  return { document, href: "https://www.linkedin.com/jobs/view/evidence-engineer-808/?trk=test" };
+}
+
 const scenarios = {
   hidden_cards: hiddenCardsScenario,
   selector_fallback: selectorFallbackScenario,
   visible_detail: detailScenario,
+  evidence_native: () => evidenceScenario("native"),
+  evidence_external: () => evidenceScenario("external"),
+  evidence_closed: () => evidenceScenario("closed"),
+  evidence_missing: () => evidenceScenario("missing"),
+  evidence_hidden_disabled: () => evidenceScenario("hidden_disabled"),
 };
 
 const contentPath = process.argv[2];

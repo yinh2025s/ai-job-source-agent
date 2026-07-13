@@ -44,6 +44,60 @@ class CheckpointTests(unittest.TestCase):
         self.assertEqual(metadata["result_schema_version"], RESULT_SCHEMA_VERSION)
         self.assertRegex(metadata["input_fingerprint"], r"^[0-9a-f]{64}$")
 
+    def test_source_posting_semantics_affect_fingerprint(self):
+        base = {
+            "company_name": "Example Robotics",
+            "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
+            "source_trace": {
+                "linkedin_posting": {
+                    "availability": "active",
+                    "apply_mode": "linkedin_native",
+                    "evidence_source": "authenticated_detail_dom",
+                    "job_url": "https://www.linkedin.com/jobs/view/123",
+                    "observed_at": "2026-07-13T00:00:00Z",
+                }
+            },
+        }
+
+        changed = {
+            **base,
+            "source_trace": {
+                "linkedin_posting": {
+                    **base["source_trace"]["linkedin_posting"],
+                    "apply_mode": "external",
+                }
+            },
+        }
+        self.assertNotEqual(input_fingerprint(base), input_fingerprint(changed))
+
+    def test_volatile_or_unrelated_source_trace_does_not_affect_fingerprint(self):
+        base = {
+            "company_name": "Example Robotics",
+            "source_trace": {
+                "linkedin_posting": {
+                    "availability": "listed",
+                    "apply_mode": "unknown",
+                    "evidence_source": "public_search_card",
+                    "job_url": "https://www.linkedin.com/jobs/view/123",
+                    "observed_at": "2026-07-13T00:00:00Z",
+                },
+                "metrics": {"attempt": 1},
+            },
+        }
+        changed = {
+            **base,
+            "source_trace": {
+                **base["source_trace"],
+                "linkedin_posting": {
+                    **base["source_trace"]["linkedin_posting"],
+                    "observed_at": "2026-07-14T00:00:00Z",
+                },
+                "metrics": {"attempt": 99},
+            },
+        }
+
+        self.assertEqual(input_fingerprint(base), input_fingerprint(changed))
+
 
 if __name__ == "__main__":
     unittest.main()

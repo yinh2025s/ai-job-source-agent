@@ -10,6 +10,8 @@
 
 ### Added
 
+- 增加 ADR-0004 source-posting availability contract：public LinkedIn search card 只能输出 `listed + unknown`，认证详情 DOM 仅在 visible/enabled Apply 或明确 closed banner 时输出 apply/availability evidence；S5 用 typed `source_posting_availability` evidence 和独立 evaluation counter 记录该来源状态，不把 LinkedIn URL 当作官网 job list/opening。
+
 - 增加 ADR-0003 LinkedIn official-website evidence cache：以规范化 company name 与 LinkedIn company URL 的组合身份为 key，默认 TTL 30 天；只保存公开公司级官网 URL 和观测时间，不保存个人资料、职位 HTML、cookie、token、header、browser storage 或认证 LinkedIn payload。CLI 支持 `--linkedin-evidence-cache` 显式路径，checkpoint 默认使用 `<checkpoint_dir>/linkedin-website-evidence.json`，extension output 目录复用稳定文件。
 
 - 增加根目录 `AGENTS.md`，将默认并行 fan-out、独立 worktree/ownership、临时 artifact 隔离、局部测试与主线统一 gate、串行 live/登录态资源及 failure-cluster 节奏固化为长期协作规范。
@@ -56,6 +58,8 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- S5 在完整、确定性的 career/job-board miss 后，可将 URL 与当前 record 匹配的 `active + linkedin_native + authenticated_detail_dom` 归类为 `partial / LINKEDIN_NATIVE_ONLY`；verified board、supported External Apply、network/provider/parser/budget incomplete evidence 均保持优先。S6 不运行且不生成任何官网 URL，S7 与 legacy/top-level status 统一为 partial；未知 External Apply provider 的 unsupported reason 现在也会稳定进入顶层 `error_code`。Checkpoint fingerprint 只纳入 source posting 的 availability/apply mode/provenance/job URL，忽略 `observed_at` 与无关 metrics，`ADAPTER_VERSION` 提升到 `2026-07-13.44`。统一门禁为 640 tests、21/21 provider、6/6 resolver 和 architecture validation 19 adapters / 0 issues；完整 30-company live 未在本轮重复运行，unpacked 扩展已安装但真实登录态 Scan/Run 仍待验收。
 
 - S2 先读取 live LinkedIn company-page evidence，当前响应没有严格名称匹配的官方官网时才回退 cache，并在 trace 中区分 `live`/`cache`；LinkedIn company URL 保留 bounded trailing-slash retry。Cache 的 schema mismatch、corrupt/malformed payload、future/nonfinite timestamp 和过期记录均安全 miss，读与 read-modify-write 使用进程锁，写入使用同目录临时文件、`fsync` 和 atomic replace。Cached URL 仍需通过 redirect、parking、region 与 brand identity 校验，不能单独产生 career/job-list/opening 成功。缓存契约进入 checkpoint/CLI/extension 后将 `ADAPTER_VERSION` 提升到 `2026-07-13.43`；最终离线门禁为 616 tests、21/21 provider、6/6 resolver 和 architecture validation 19 adapters / 0 issues。相同 hash 的冻结 30-company clean run 为 29/30 官网、23/30 career、23/30 verified job list、18/30 exact opening，相比 v32 分别提升 2、6、9、7 家；新 cache 只写入 4 条 live evidence、未读取 seeded cache。认证 Chrome 的 `Load unpacked` 与一次真实 LinkedIn DOM scan 仍待人工验收；最终 release 指标是陌生冻结样本结果，不是 cache hit 数。
 

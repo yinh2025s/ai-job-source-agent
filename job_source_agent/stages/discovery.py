@@ -9,6 +9,7 @@ from ..models import STAGE_CAREER_DISCOVERY, STAGE_JOB_BOARD_DISCOVERY, STAGE_OP
 from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
 from ..reasons import canonical_reason_code, classify_fetch_error, make_stage_result
+from ..source_posting import trusted_linkedin_native_posting
 from ..web import FetchError, normalize_url
 
 
@@ -127,6 +128,13 @@ class JobBoardDiscoveryStage:
         if not context.career_page_url:
             if context.company.external_apply_url:
                 return self._from_external_apply(context)
+            if self._career_path_is_definitively_missing(context):
+                native_execution = self._from_linkedin_native_source(
+                    context,
+                    fallback_trace={"career_path": "definitively_missing"},
+                )
+                if native_execution is not None:
+                    return native_execution
             return StageExecution(
                 make_stage_result(
                     self.name,
@@ -157,9 +165,20 @@ class JobBoardDiscoveryStage:
                         "career_job_board_trace": exc.trace,
                     },
                 )
+            reason_code = canonical_reason_code(exc.code)
+            if reason_code == "JOB_BOARD_NOT_FOUND" and not _trace_has_discovery_errors(exc.trace):
+                native_execution = self._from_linkedin_native_source(
+                    context,
+                    fallback_trace={
+                        "career_job_board_error": str(exc),
+                        "career_job_board_trace": exc.trace,
+                    },
+                )
+                if native_execution is not None:
+                    return native_execution
             return _failed_execution(
                 self.name,
-                canonical_reason_code(exc.code),
+                reason_code,
                 started,
                 str(exc),
                 trace=exc.trace,
@@ -180,6 +199,57 @@ class JobBoardDiscoveryStage:
             updates={"job_list_page_url": job_list_url, "provider": provider},
             trace=trace,
         )
+
+    def _from_linkedin_native_source(
+        self,
+        context: PipelineContext,
+        *,
+        fallback_trace: dict | None = None,
+    ) -> StageExecution | None:
+        posting = trusted_linkedin_native_posting(
+            context.company.source_trace,
+            expected_job_url=context.company.linkedin_job_url or None,
+        )
+        if posting is None:
+            return None
+
+        evidence = {
+            "type": "source_posting_availability",
+            "disposition": "linkedin_native_only",
+            "availability": posting.availability,
+            "apply_mode": posting.apply_mode,
+            "evidence_source": posting.evidence_source,
+            "source_posting_url": posting.job_url,
+        }
+        return StageExecution(
+            result=make_stage_result(
+                self.name,
+                "partial",
+                reason_code="LINKEDIN_NATIVE_ONLY",
+                input_count=1,
+                evidence=[evidence],
+                detail=(
+                    "The source posting is active and uses LinkedIn-native apply, while no "
+                    "public company job board was verified."
+                ),
+            ),
+            trace={
+                "method": "source_posting_availability",
+                **evidence,
+                **(fallback_trace or {}),
+            },
+        )
+
+    @staticmethod
+    def _career_path_is_definitively_missing(context: PipelineContext) -> bool:
+        for result in reversed(context.stage_results):
+            if result.stage == STAGE_CAREER_DISCOVERY:
+                return (
+                    result.status == "failed"
+                    and result.reason_code == "CAREER_PAGE_NOT_FOUND"
+                    and not result.retryable
+                )
+        return False
 
     def _from_external_apply(
         self,
@@ -372,6 +442,21 @@ def _failed_execution(
         ),
         trace=trace or {"error": detail},
     )
+
+
+def _trace_has_discovery_errors(value: object, key: str = "") -> bool:
+    """Keep source-channel classification from hiding incomplete network/provider work."""
+
+    normalized_key = key.lower()
+    if normalized_key.endswith("_error") and value not in (None, "", [], {}):
+        return True
+    if normalized_key.endswith("_errors") and value not in (None, "", [], {}):
+        return True
+    if isinstance(value, dict):
+        return any(_trace_has_discovery_errors(item, str(name)) for name, item in value.items())
+    if isinstance(value, list):
+        return any(_trace_has_discovery_errors(item) for item in value)
+    return False
 
 
 def _elapsed_ms(started: float) -> int:

@@ -174,6 +174,58 @@ class EvaluationTests(unittest.TestCase):
             {"verified_inventory_no_match": 1, "discovery_incomplete": 1},
         )
 
+    def test_summary_groups_s5_source_posting_disposition_without_changing_s6_counts(self):
+        results = [
+            {
+                "company_name": "LinkedIn Native Co",
+                "status": "partial",
+                "pipeline_status": "partial",
+                "stages": [
+                    {
+                        "stage": "job_board_discovery",
+                        "status": "partial",
+                        "reason_code": "LINKEDIN_NATIVE_ONLY",
+                        "evidence": [
+                            {
+                                "type": "source_posting_availability",
+                                "disposition": "linkedin_native_only",
+                                "availability": "active",
+                                "apply_mode": "linkedin_native",
+                                "evidence_source": "authenticated_detail_dom",
+                                "source_posting_url": "https://www.linkedin.com/jobs/view/123",
+                            }
+                        ],
+                    },
+                    {
+                        "stage": "opening_match",
+                        "status": "partial",
+                        "reason_code": "OPENING_NOT_FOUND",
+                        "evidence": [
+                            {
+                                "type": "availability_diagnostic",
+                                "disposition": "discovery_incomplete",
+                            }
+                        ],
+                    },
+                ],
+            }
+        ]
+
+        summary = summarize_results(results)
+
+        self.assertEqual(
+            summary["source_posting_disposition_counts"],
+            {"linkedin_native_only": 1},
+        )
+        self.assertEqual(
+            summary["availability_diagnostic_counts"],
+            {"discovery_incomplete": 1},
+        )
+        self.assertEqual(
+            summary["company_stage_matrix"][0]["reason_code"],
+            "LINKEDIN_NATIVE_ONLY",
+        )
+
     def test_stage_provider_takes_precedence_over_external_apply_url_host(self):
         result = {
             "open_position_url": "https://app.careerpuck.com/job-board/lyft/job/123",

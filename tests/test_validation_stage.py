@@ -39,6 +39,24 @@ class ValidationStageTests(unittest.TestCase):
         self.assertEqual(execution.result.reason_code, "RESULT_VALIDATION_FAILED")
         self.assertEqual(execution.result.detail, "Duplicate stage results were produced.")
 
+    def test_linkedin_native_only_is_a_partial_pipeline(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.stage_results.extend(
+            [
+                StageResult(stage="career_discovery", status="failed"),
+                StageResult(
+                    stage="job_board_discovery",
+                    status="partial",
+                    reason_code="LINKEDIN_NATIVE_ONLY",
+                ),
+                StageResult(stage="opening_match", status="not_run"),
+            ]
+        )
+
+        execution = ResultValidationStage().run(context)
+
+        self.assertEqual(execution.trace["pipeline_status"], "partial")
+
     def test_s7_accepts_injected_validation_service(self):
         class RejectingValidator:
             def validate(self, context):

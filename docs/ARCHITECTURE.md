@@ -54,9 +54,15 @@ S5 不把 generic career landing page 自动视作 job list。成功必须来自
 
 ## Browser Extension Boundary
 
-`extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL 和可选 External Apply URL。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证岗位。
+`extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。
 
 `scripts/extension_bridge.py` 只绑定 loopback，使用 bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
+
+## Source Posting Availability
+
+ADR-0004 定义 `source_trace.linkedin_posting` 的生产和消费边界。公开 LinkedIn search card 只产生 `listed + unknown + public_search_card`，缺少站外链接不能推导 native apply。认证详情 DOM 只有在 Apply 控件明确、可见且 enabled 时才产生 active apply-mode；source job URL 必须规范化并与当前 record 匹配。
+
+S5 只在官网/ATS 路径确定性失败且 trace 不含 fetch/provider/parser error 时消费 `active + linkedin_native`，返回 `partial / LINKEDIN_NATIVE_ONLY` 和 typed evidence。已验证 board、受支持 External Apply、retryable failure 与 incomplete discovery 均优先；该终态不写 career/job-list/opening URL，S6 保持 `not_run`，S7 与 legacy/top-level 状态统一为 partial。Evaluation 将 source disposition 与 S6 official-inventory availability 分开统计。
 
 ## LinkedIn Website Evidence Cache
 
@@ -162,7 +168,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 - Bounded BFS 可穿过 career root 下最多两层的 staff、business-services、professional、student/lateral audience taxonomy；只有官网明确使用 job-opportunity 语义并指向同 registrable domain 的 jobs/careers 子域时，才允许在 portal 被 challenge 阻挡时保留官方 job-list root。
 - First-party provider configuration 在 bounded link extraction 内派生 board；当前 Greenhouse template API 和带 embed 指纹的 Lever `accountName` 配置会优先于普通页面链接，最终仍由原生 adapter 验证 tenant 和目标标题。
 - Filesystem stage checkpoint store 已支持原子保存、兼容性校验、安全 cache miss 和从指定 stage 向下失效。
-- LinkedIn website evidence store 已按 ADR-0003 支持 30 天 TTL、schema/corruption/nonfinite 安全 miss、进程锁和 atomic replace；composition root 为 CLI checkpoint 与 extension output 注入稳定路径。`.43` 门禁为 616 tests、21/21 provider、6/6 resolver 和 architecture validation 19 adapters / 0 issues；相同冻结 30-company clean run 为 29/30 官网、23/30 verified job list、18/30 exact opening，未读取 seeded cache。Content script 通过 DOM visibility contract 排除隐藏记录但保留 offscreen cards，loopback handler 有真实 HTTP contract tests；人工登录态 Chrome 验收仍未完成。
+- LinkedIn website evidence store 已按 ADR-0003 支持 30 天 TTL、schema/corruption/nonfinite 安全 miss、进程锁和 atomic replace；composition root 为 CLI checkpoint 与 extension output 注入稳定路径。ADR-0004 进一步把 authenticated detail DOM 的 explicit apply mode 与 public search 的 unknown evidence 分离，S5 可输出不伪造官网 URL 的 `LINKEDIN_NATIVE_ONLY` partial terminal。`.44` 门禁为 640 tests、21/21 provider、6/6 resolver 和 architecture validation 19 adapters / 0 issues；`.43` 相同冻结 30-company clean run 保持 29/30 官网、23/30 verified job list、18/30 exact opening，未读取 seeded cache，本轮尚未重跑完整 cohort。Content script 通过 DOM visibility contract 排除隐藏记录但保留 offscreen cards，loopback handler 有真实 HTTP contract tests；unpacked 扩展已安装，真实登录态 scan/result 核验仍待完成。
 - Production CLI 和 live batch 均由 `PipelineApplication` 和通用 runner/store 执行；live batch 保留两段 process hard budget。
 - Stage store 通过 fingerprint 级进程锁和原子替换保证并发安全；checkpoint trace 明确记录 save、restore、miss 和 invalidate。
 - Sanitized live snapshots 使用跨进程发布锁和内容寻址的不可变 page/artifact blobs；canonical fixture view 保持 Fetcher 兼容。`scripts/replay_snapshots.py` 会验证 blob 与最终 canonical view，并把重复 URL 的最后一个完整版本转换成 deterministic fixture tree。
