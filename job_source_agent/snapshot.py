@@ -34,6 +34,7 @@ SENSITIVE_QUERY_KEYS = {
 }
 
 SENSITIVE_BODY_FIELDS = SENSITIVE_QUERY_KEYS | {
+    "_csrf",
     "authToken",
     "protectedSessionJWT",
     "sessionCSRFToken",
@@ -213,6 +214,18 @@ def sanitize_snapshot_body(body: str) -> str:
         redacted = re.sub(
             rf"(?i)(<input\b[^>]*\bvalue\s*=\s*[\"'])[^\"']*([\"'][^>]*"
             rf"(?:id|name)\s*=\s*[\"']{re.escape(key)}[\"'])",
+            rf"\1[REDACTED]\2",
+            redacted,
+        )
+        redacted = re.sub(
+            rf"(?i)(<meta\b[^>]*(?:id|name|property)\s*=\s*[\"']{re.escape(key)}[\"'][^>]*"
+            rf"\bcontent\s*=\s*[\"'])[^\"']*([\"'])",
+            rf"\1[REDACTED]\2",
+            redacted,
+        )
+        redacted = re.sub(
+            rf"(?i)(<meta\b[^>]*\bcontent\s*=\s*[\"'])[^\"']*([\"'][^>]*"
+            rf"(?:id|name|property)\s*=\s*[\"']{re.escape(key)}[\"'])",
             rf"\1[REDACTED]\2",
             redacted,
         )

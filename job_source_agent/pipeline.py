@@ -621,6 +621,19 @@ class JobSourceAgent:
                 trace["job_list_page_url"] = canonical_board_url
             elif self._is_provider_job_board_url(actual_page_url):
                 trace["job_list_page_url"] = actual_page_url
+            elif not self._same_site_host(
+                urlparse(actual_page_url).hostname or "",
+                urlparse(career_page_url).hostname or "",
+            ):
+                trace["pages_visited"].append(
+                    {
+                        "url": actual_page_url,
+                        "source": page.source,
+                        "top_candidates": [],
+                        "rejected_cross_site_page": True,
+                    }
+                )
+                continue
             scored = sorted(
                 [score_job_link(link, actual_page_url) for link in extract_links(page)],
                 key=lambda candidate: candidate.score,
@@ -696,7 +709,7 @@ class JobSourceAgent:
                             career_page_url,
                         )
                     )
-                    and self._is_safe_traversal_target(candidate.url, actual_page_url)
+                    and self._is_safe_traversal_target(candidate, actual_page_url)
                     and candidate.url.rstrip("/") not in visited
                 ):
                     queue.append(candidate.url)
@@ -771,7 +784,8 @@ class JobSourceAgent:
             shared += 1
         return shared
 
-    def _is_safe_traversal_target(self, url: str, source_url: str) -> bool:
+    def _is_safe_traversal_target(self, candidate: LinkCandidate, source_url: str) -> bool:
+        url = candidate.url
         if is_resource_url(url):
             return False
         parsed_target = urlparse(url)
@@ -790,6 +804,18 @@ class JobSourceAgent:
             self._is_provider_job_board_url(url)
             or is_ats_url(url)
             or self._same_site_host(target_host, source_host)
+            or self._is_explicit_cross_site_job_portal(candidate)
+        )
+
+    def _is_explicit_cross_site_job_portal(self, candidate: LinkCandidate) -> bool:
+        parsed = urlparse(candidate.url)
+        path_parts = [part.casefold() for part in parsed.path.split("/") if part]
+        return (
+            parsed.scheme == "https"
+            and bool(path_parts)
+            and path_parts[-1] in {"careers", "jobs", "openings", "positions", "search-results"}
+            and "explicit job-list command" in candidate.reasons
+            and is_likely_job_listing_page(candidate)
         )
 
     def _same_site_host(self, first: str, second: str) -> bool:

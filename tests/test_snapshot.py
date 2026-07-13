@@ -50,6 +50,18 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("second-routing-token", sanitized)
         self.assertEqual(sanitized.count("[REDACTED]"), 2)
 
+    def test_sanitize_snapshot_body_redacts_meta_csrf_in_any_order(self):
+        body = (
+            '<meta name="_csrf" content="eightfold-csrf-token">'
+            '<meta content="second-csrf-token" property="token">'
+        )
+
+        sanitized = sanitize_snapshot_body(body)
+
+        self.assertNotIn("eightfold-csrf-token", sanitized)
+        self.assertNotIn("second-csrf-token", sanitized)
+        self.assertEqual(sanitized.count("[REDACTED]"), 2)
+
     def test_snapshot_store_writes_fixture_compatible_page(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SnapshotStore(directory)

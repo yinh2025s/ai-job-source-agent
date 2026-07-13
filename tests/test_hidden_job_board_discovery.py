@@ -1,4 +1,5 @@
 import unittest
+import html
 import json
 from pathlib import Path
 
@@ -194,6 +195,38 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         with self.assertRaises(DiscoveryError):
             JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
         self.assertEqual(fetcher.requested, [career])
+
+    def test_probes_explicit_cross_site_roles_link_but_requires_provider_page_evidence(self):
+        career = "https://jobs.example.com"
+        board = "https://explore.jobs.example.net/careers"
+        state = html.escape(json.dumps({
+            "domain": "example.com",
+            "positions": [],
+            "count": 0,
+            "isPcsEnabled": True,
+        }))
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<a href="{board}">View Roles</a>'),
+            board: Page(url=board, html=f'<code id="smartApplyData">{state}</code>'),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(trace["provider"], "eightfold")
+        self.assertEqual(trace["provider_detection"]["method"], "page_evidence")
+
+    def test_rejects_explicit_cross_site_roles_link_without_provider_evidence(self):
+        career = "https://jobs.example.com"
+        external = "https://careers.unrelated.example.net/careers"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<a href="{external}">View Roles</a>'),
+            external: Page(url=external, html="<html>Unverified external page</html>"),
+        })
+
+        with self.assertRaises(DiscoveryError):
+            JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+        self.assertEqual(fetcher.requested, [career, external])
 
     def test_listing_traversal_prefers_route_that_preserves_locale_prefix(self):
         career = "https://careers.example.com/world/en"

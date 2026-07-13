@@ -100,5 +100,11 @@
     "company_website_url": "https://jobs.example.com/careersection/ex/jobsearch.ftl",
     "career_root_url": "https://jobs.example.com/careersection/ex/jobsearch.ftl",
     "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Eightfold",
+    "company_website_url": "https://acme.eightfold.ai/careers",
+    "career_root_url": "https://acme.eightfold.ai/careers",
+    "job_title": "Data Analyst"
   }
 ]

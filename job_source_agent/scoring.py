@@ -225,6 +225,22 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
         score += 50
         reasons.append("job-listing route name")
 
+    if any(
+        phrase in " ".join(text.split())
+        for phrase in (
+            "browse jobs",
+            "browse roles",
+            "open positions",
+            "open roles",
+            "search jobs",
+            "search roles",
+            "view jobs",
+            "view roles",
+        )
+    ):
+        score += 30
+        reasons.append("explicit job-list command")
+
     for keyword, weight in JOB_TITLE_KEYWORDS.items():
         if keyword in haystack:
             score += weight

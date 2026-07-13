@@ -641,7 +641,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-13）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、13 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；15/15 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-13）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、16 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；18/18 provider benchmark、6/6 resolver benchmark 和 51-company fixed live job-list gate 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -718,7 +718,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-13）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近主线交付 provenance-aware career-root validation、ATS-only search、provider-config priority、strict speculative-tenant title gate、bounded traversal、page-aware Phenom 和 Paycom public-session adapter。主线 architecture validator、15/15 provider benchmark、6/6 resolver benchmark、51/51 fixed live expectations 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
+当前状态（2026-07-13）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近主线交付 provenance-aware career-root validation、ATS-only search、provider-config priority、strict speculative-tenant title gate、bounded traversal，以及 Phenom、Paycom、RippleHire、Taleo、Eightfold adapter。主线 architecture validator、18/18 provider benchmark、6/6 resolver benchmark、51/51 fixed live job-list gate 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -977,6 +977,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - `.26` 新一轮 LinkedIn `AI Engineer` live batch 得到 25 家去重公司：21 website、17 career、11 verified job list、9 exact opening。6 个 S5 miss 不再属于单一通用 traversal cluster：Mphasis 暴露 RippleHire、Kforce 暴露 Taleo、Netflix 指向自有 `explore.jobs.netflix.net` portal，Nuro/Melotech 属于 hidden first-party data，Nashville 只有通用申请页。下一 provider contract 优先级改为先比较 Taleo 与 RippleHire 的可复用覆盖和公开接口，再决定实现顺序；Netflix 与两个 hidden-data 样本分别调查，不用单一样本规则污染通用 BFS。
 - RippleHire 已作为第 14 个原生 adapter 接入。Fetcher 现在为每个 worker thread 保持仅驻内存的匿名 cookie session；adapter 规范化稳定 board、校验同 tenant redirect/API、解析公开 portal routing token、使用单关键词 translation 和 50 条有界分页，并且不在 trace 中记录 token。Mphasis focused live 从 `JOB_BOARD_NOT_FOUND` 提升到官方 RippleHire job list；公开库存返回 91 个过滤候选但不含当前 LinkedIn 标题，因此诚实保持 `OPENING_NOT_FOUND`。Snapshot hidden-input 脱敏和 redirect request alias 已补齐，12-record live capture 可在 0.2 秒离线重放同一结果。`ADAPTER_VERSION` 提升到 `2026-07-13.27`；487 个测试、16/16 provider、6/6 resolver、14-adapter architecture gate 和 clean 51/51 fixed live expectations 通过，fixed live 为 51/51 job list、50/51 exact opening，4 workers 用时 97.5 秒。下一 provider workstream 是 Taleo/Kforce contract。
 - Taleo 已作为第 15 个原生 adapter 接入：支持 custom-domain `/careersection/{code}` board、FacetedSearch shell 指纹、`portalNo/urlCode/lang/src` 配置校验、匿名 REST keyword/location inventory、响应 pageSize 驱动的最多 5 页分页、exact-title early stop 和同 tenant numeric detail URL。Kforce 从 first-party Careers at Kforce 页面自动导航到 Taleo；当前 `AI Engineer` 过滤库存为 0，因此从 `JOB_BOARD_NOT_FOUND` 提升到 verified job list 并诚实保持 `OPENING_NOT_FOUND`。`sessionCSRFToken` 已加入 snapshot 脱敏，8-record capture 的未脱敏字段为 0，并可在 0.3 秒离线重放。Ashby API 失败时不再用空 embedded container 误报 `NO_PUBLIC_OPENINGS`，而是返回 retryable incomplete。`ADAPTER_VERSION` 提升到 `2026-07-13.28`；495 tests、17/17 provider、6/6 resolver、15-adapter architecture gate 通过。两次 clean no-resume fixed live 均为 51/51 job list；轮换 timeout 造成 49/51、48/51 exact，Peraton 及 Harvey/Datadog 随后分别 focused 1/1、2/2 exact recovery，严格 expectations 不下调。下一 failure-cluster workstream 转向 Netflix-owned portal 与 Nuro/Melotech hidden first-party data 的收益比较。
+- Eightfold 已作为第 16 个原生 adapter 接入：hosted 与 customer-owned `/careers` 由 URL 或 `smartApplyData` 强页面证据识别，支持 title/location-filtered SSR 首屏、公开 jobs v2 API 有界分页、exact-title early stop、hosted slug 到已验证 customer domain 的映射及 tenant/redirect/detail URL 校验。S5 明确 job-list command 可跨 registrable domain 做有界探测，但只有原生 provider evidence 能确认跨站页面，普通外站 `/careers` 继续拒绝。Netflix focused live 从 `JOB_BOARD_NOT_FOUND` 提升为 exact AI Platform opening；meta `_csrf` snapshot 脱敏已补齐，旧不完整 capture 被 validator 拒绝，新 8-record capture 可在 0.2 秒离线重放。`ADAPTER_VERSION` 提升到 `2026-07-13.29`；506 tests、18/18 provider、6/6 resolver 和 16-adapter architecture gate 通过。Clean 51-company live 为 51/51 job list、48/51 exact、50/51 expectations；Ardent Health 的唯一严格失败是 iCIMS timeout，focused rerun 立即 exact recovery。下一 failure-cluster workstream 是 Nuro/Melotech hidden first-party data。
 
 目标：
 
@@ -1080,7 +1081,7 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - LinkedIn discovery 已经接入
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
-- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 13 个原生 adapter
+- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 16 个原生 adapter
 - Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR 已接 structured API
 - iCIMS、SuccessFactors、Workable、Rippling 已加入原生 structured page / embedded JSON / verified-link extraction，但还需要更多真实站点 live hardening
 - browser fallback 已经从全量渲染升级为 smart fallback + render budget
@@ -1088,4 +1089,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，13 个主要 provider（含 Rippling、Google Careers、Phenom 和 Paycom）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。固定 provider benchmark 为 15/15 exact opening，resolver benchmark 为 6/6；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation；5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，16 个主要 provider（含 Google Careers、Phenom、Paycom、RippleHire、Taleo 和 Eightfold）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。固定 provider benchmark 为 18/18 exact opening，resolver benchmark 为 6/6；最新固定 live benchmark 为 51/51 官网和 career/job list，`.29` clean run 为 48/51 exact、50/51 expectation，唯一严格 timeout 随后 focused exact recovery；5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。
