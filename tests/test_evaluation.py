@@ -244,6 +244,134 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertEqual(summary["provider_counts"], {"greenhouse": 1})
 
+    def test_summary_builds_stable_actionable_failure_clusters(self):
+        results = [
+            {
+                "company_name": "Zulu Co",
+                "career_page_url": "https://example.com/careers",
+                "stages": [
+                    {
+                        "stage": "opening_match",
+                        "status": "partial",
+                        "reason_code": "OPENING_NOT_FOUND",
+                        "retryable": False,
+                        "evidence": [
+                            {
+                                "type": "availability_diagnostic",
+                                "disposition": "verified_inventory_no_match",
+                            }
+                        ],
+                    },
+                    {
+                        "stage": "result_validation",
+                        "status": "success",
+                        "reason_code": "IGNORED_SUCCESS_REASON",
+                    },
+                ],
+            },
+            {
+                "company_name": "alpha Co",
+                "job_list_page_url": "https://jobs.ashbyhq.com/alpha",
+                "trace": {
+                    "stages": {
+                        "opening_match": {
+                            "availability_diagnostic": {
+                                "disposition": "discovery_incomplete",
+                            }
+                        }
+                    }
+                },
+                "stages": [
+                    {
+                        "stage": "opening_match",
+                        "status": "failed",
+                        "reason_code": "OPENING_NOT_FOUND",
+                        "retryable": True,
+                        "evidence": "malformed",
+                    }
+                ],
+            },
+            {
+                "company_name": "No Context Co",
+                "stages": [
+                    {
+                        "stage": "career_discovery",
+                        "status": "unsupported",
+                        "reason_code": "CAREER_VARIANT_UNSUPPORTED",
+                    },
+                    {
+                        "stage": "website_resolution",
+                        "status": "failed",
+                    },
+                ],
+            },
+        ]
+
+        expected = [
+            {
+                "stage": "career_discovery",
+                "provider": "unknown",
+                "reason_code": "CAREER_VARIANT_UNSUPPORTED",
+                "company_count": 1,
+                "retryable_count": 0,
+                "company_names": ["No Context Co"],
+                "inventory_disposition_counts": {},
+            },
+            {
+                "stage": "opening_match",
+                "provider": "ashby",
+                "reason_code": "OPENING_NOT_FOUND",
+                "company_count": 1,
+                "retryable_count": 1,
+                "company_names": ["alpha Co"],
+                "inventory_disposition_counts": {"discovery_incomplete": 1},
+            },
+            {
+                "stage": "opening_match",
+                "provider": "generic",
+                "reason_code": "OPENING_NOT_FOUND",
+                "company_count": 1,
+                "retryable_count": 0,
+                "company_names": ["Zulu Co"],
+                "inventory_disposition_counts": {"verified_inventory_no_match": 1},
+            },
+        ]
+
+        self.assertEqual(summarize_results(results)["failure_clusters"], expected)
+        self.assertEqual(
+            summarize_results(list(reversed(results)))["failure_clusters"],
+            expected,
+        )
+
+    def test_failure_cluster_company_names_are_unique_sorted_and_bounded(self):
+        results = []
+        for index in reversed(range(25)):
+            results.append(
+                {
+                    "company_name": f"Company {index:02d}",
+                    "stages": [
+                        {
+                            "stage": "job_board_discovery",
+                            "status": "failed",
+                            "reason_code": "PROVIDER_FETCH_FAILED",
+                            "provider": "workday",
+                            "retryable": index % 2 == 0,
+                        }
+                    ],
+                }
+            )
+        results.append(results[0])
+
+        cluster = summarize_results(results)["failure_clusters"][0]
+
+        self.assertEqual(cluster["company_count"], 25)
+        self.assertEqual(cluster["retryable_count"], 13)
+        self.assertEqual(len(cluster["company_names"]), 20)
+        self.assertEqual(
+            cluster["company_names"],
+            [f"Company {index:02d}" for index in range(20)],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

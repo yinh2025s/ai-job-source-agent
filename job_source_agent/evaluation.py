@@ -8,6 +8,10 @@ from .models import PIPELINE_STAGES
 from .opening_matcher import detect_provider
 
 
+FAILURE_CLUSTER_COMPANY_LIMIT = 20
+_FAILURE_STATUSES = {"failed", "partial", "unsupported"}
+
+
 def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> dict:
     total = len(results)
     status_counts = Counter(str(result.get("status") or "unknown") for result in results)
@@ -25,6 +29,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
     checkpoint_action_counts, checkpoint_stage_counts = _checkpoint_activity_counts(results)
     source_posting_disposition_counts = _source_posting_disposition_counts(results)
     availability_diagnostic_counts = _availability_diagnostic_counts(results)
+    failure_clusters = _failure_clusters(results)
 
     summary = {
         "total": total,
@@ -54,6 +59,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
         "checkpoint_stage_counts": checkpoint_stage_counts,
         "source_posting_disposition_counts": source_posting_disposition_counts,
         "availability_diagnostic_counts": availability_diagnostic_counts,
+        "failure_clusters": failure_clusters,
         "company_stage_matrix": _company_stage_matrix(results),
     }
     if elapsed_sec is not None:
@@ -101,7 +107,13 @@ def result_provider(result: dict) -> str:
         provider = stage_by_name.get(stage_name, {}).get("provider")
         if isinstance(provider, str) and provider:
             return provider
-    for field in ("open_position_url", "job_list_page_url", "career_page_url", "career_root_url"):
+    for field in (
+        "open_position_url",
+        "job_list_page_url",
+        "career_page_url",
+        "career_root_url",
+        "company_website_url",
+    ):
         url = result.get(field)
         if isinstance(url, str) and url:
             provider = detect_provider(url)
@@ -171,6 +183,104 @@ def _provider_reason_code_counts(results: list[dict]) -> dict[str, dict[str, int
             if reason_code:
                 provider_counts[str(reason_code)] += 1
     return {provider: dict(reason_counts) for provider, reason_counts in counts.items()}
+
+
+def _failure_clusters(results: list[dict]) -> list[dict]:
+    clusters: dict[tuple[str, str, str], dict[str, dict]] = {}
+    for result in results:
+        company_name = str(result.get("company_name") or "Unknown Company")
+        for stage_name, stage in _stage_by_name(result).items():
+            reason_code = stage.get("reason_code")
+            if stage.get("status") not in _FAILURE_STATUSES or not reason_code:
+                continue
+
+            key = (stage_name, _failure_cluster_provider(result, stage), str(reason_code))
+            companies = clusters.setdefault(key, {})
+            company = companies.setdefault(
+                company_name,
+                {"retryable": False, "inventory_dispositions": set()},
+            )
+            company["retryable"] = company["retryable"] or stage.get("retryable") is True
+            if stage_name == "opening_match":
+                disposition = _opening_inventory_disposition(result, stage)
+                if disposition:
+                    company["inventory_dispositions"].add(disposition)
+
+    stage_order = {stage: index for index, stage in enumerate(PIPELINE_STAGES)}
+    ordered_clusters = []
+    for (stage, provider, reason_code), companies in clusters.items():
+        disposition_counts: Counter[str] = Counter()
+        for company in companies.values():
+            for disposition in company["inventory_dispositions"]:
+                disposition_counts[disposition] += 1
+        ordered_names = sorted(companies, key=lambda name: (name.casefold(), name))
+        ordered_clusters.append(
+            {
+                "stage": stage,
+                "provider": provider,
+                "reason_code": reason_code,
+                "company_count": len(companies),
+                "retryable_count": sum(
+                    1 for company in companies.values() if company["retryable"]
+                ),
+                "company_names": ordered_names[:FAILURE_CLUSTER_COMPANY_LIMIT],
+                "inventory_disposition_counts": dict(sorted(disposition_counts.items())),
+            }
+        )
+    return sorted(
+        ordered_clusters,
+        key=lambda cluster: (
+            stage_order.get(cluster["stage"], len(stage_order)),
+            cluster["stage"],
+            cluster["provider"],
+            cluster["reason_code"],
+        ),
+    )
+
+
+def _failure_cluster_provider(result: dict, stage: dict) -> str:
+    provider = stage.get("provider")
+    if isinstance(provider, str) and provider.strip():
+        return provider.strip()
+
+    saw_generic_url = False
+    for field in ("open_position_url", "job_list_page_url", "career_page_url", "career_root_url"):
+        url = result.get(field)
+        if not isinstance(url, str) or not url:
+            continue
+        detected = detect_provider(url)
+        if detected != "generic":
+            return detected
+        saw_generic_url = True
+    return "generic" if saw_generic_url else "unknown"
+
+
+def _opening_inventory_disposition(result: dict, opening_stage: dict) -> str | None:
+    evidence = opening_stage.get("evidence")
+    if isinstance(evidence, list):
+        for item in evidence:
+            if not isinstance(item, dict) or item.get("type") != "availability_diagnostic":
+                continue
+            disposition = item.get("disposition")
+            if isinstance(disposition, str) and disposition:
+                return disposition
+
+    trace = result.get("trace")
+    if not isinstance(trace, dict):
+        return None
+    stages = trace.get("stages")
+    opening_trace = stages.get("opening_match") if isinstance(stages, dict) else None
+    candidates = [opening_trace, trace]
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        diagnostic = candidate.get("availability_diagnostic")
+        if not isinstance(diagnostic, dict):
+            continue
+        disposition = diagnostic.get("disposition")
+        if isinstance(disposition, str) and disposition:
+            return disposition
+    return None
 
 
 def _checkpoint_activity_counts(results: list[dict]) -> tuple[dict[str, int], dict[str, int]]:
