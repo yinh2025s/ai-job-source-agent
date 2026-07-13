@@ -7,6 +7,7 @@ from html import unescape
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
 from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
+from .listing_extraction import extract_listing_candidates, validate_output_url
 from .scoring import is_likely_job_detail, score_job_link
 from .web import FetchError, Fetcher, RawLink, extract_links, safe_normalize_url
 
@@ -92,12 +93,16 @@ class JobOpeningMatcher:
             candidates = []
             links = extract_links(page) + structured_job_links(page.html, page_url)
             for link in dedupe_raw_links(links):
+                validated_url = validate_output_url(link.url, page_url)
+                if not validated_url:
+                    continue
+                link = RawLink(validated_url, link.text, link.source_url, link.origin)
                 scored = score_job_link(link, page_url)
                 title_score, title_reasons = score_title_match(link.text, target_title)
                 if title_score < 45:
                     continue
                 total_score = scored.score + title_score
-                reasons = scored.reasons + title_reasons
+                reasons = scored.reasons + title_reasons + [f"listing origin: {link.origin}"]
                 if not is_likely_job_detail(scored) and title_score < 60:
                     continue
                 if total_score < 70:
@@ -414,6 +419,7 @@ def structured_job_links(html: str, source_url: str) -> list[RawLink]:
             continue
         for title, url in _walk_structured_job_records(data, source_url):
             links.append(RawLink(url=url, text=title, source_url=source_url))
+    links.extend(candidate.as_raw_link() for candidate in extract_listing_candidates(html, source_url))
     return dedupe_raw_links(links)
 
 

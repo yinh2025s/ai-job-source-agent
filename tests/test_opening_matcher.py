@@ -10,6 +10,10 @@ from job_source_agent.opening_matcher import (
     score_title_match,
     structured_job_links,
 )
+from job_source_agent.listing_extraction import (
+    extract_listing_candidates,
+    validate_output_url,
+)
 from job_source_agent.web import Fetcher, Page
 
 
@@ -232,6 +236,121 @@ class OpeningMatcherTests(unittest.TestCase):
                 self.assertIsNotNone(match)
                 self.assertIn(expected_url_part, match.url)
                 self.assertEqual(trace["provider"], detect_provider(url))
+
+    def test_parent_card_associates_action_link_with_title_and_ranks_exact_match(self):
+        matcher = JobOpeningMatcher(Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True))
+
+        match, trace = matcher.match(
+            "https://exploratory.example/careers",
+            "Product Manager, Ads",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.title, "Product Manager, Ads")
+        self.assertEqual(match.url, "https://exploratory.example/careers/product-manager-ads-4815")
+        self.assertEqual(trace["selected"]["score"], match.score)
+
+    def test_generic_cards_cover_same_origin_and_external_ats_details(self):
+        matcher = JobOpeningMatcher(Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True))
+        cases = {
+            "Senior Software Engineer, Video": "/en/careers/8142331/senior-software-engineer-video/",
+            "Applied Scientist, Recommendations": "/jobs/2981774/applied-scientist-recommendations",
+            "Data Platform Engineer": "https://jobs.ashbyhq.com/snowflake/8c54a6d7",
+            "Machine Learning Engineer": "/jobs/991/machine-learning-engineer",
+        }
+
+        for title, expected in cases.items():
+            with self.subTest(title=title):
+                match, _ = matcher.match("https://exploratory.example/careers", title)
+                self.assertIsNotNone(match)
+                self.assertIn(expected, match.url)
+
+    def test_extractor_dedupes_html_and_assignment_state(self):
+        html = (ROOT / "samples" / "sites" / "exploratory.example" / "careers" / "index.html").read_text()
+
+        candidates = extract_listing_candidates(html, "https://exploratory.example/careers")
+        product = [item for item in candidates if item.title == "Product Manager, Ads"]
+
+        self.assertEqual(len(product), 1)
+        self.assertTrue(any(item.title == "Machine Learning Engineer" for item in candidates))
+
+    def test_output_url_validation_rejects_unsafe_external_and_false_positive_urls(self):
+        source = "https://exploratory.example/careers"
+        rejected = (
+            "javascript:alert(1)",
+            "https://evil.example/jobs/security-engineer",
+            "https://user:secret@jobs.ashbyhq.com/snowflake/8c54a6d7",
+            "https://jobs.ashbyhq.com:8443/snowflake/8c54a6d7",
+            "/careers/benefits",
+            "/careers",
+            "https://www.linkedin.com/jobs/view/123",
+        )
+
+        for url in rejected:
+            with self.subTest(url=url):
+                self.assertIsNone(validate_output_url(url, source))
+        self.assertEqual(
+            validate_output_url("https://jobs.ashbyhq.com/snowflake/8c54a6d7", source),
+            "https://jobs.ashbyhq.com/snowflake/8c54a6d7",
+        )
+
+    def test_nested_cards_do_not_broadcast_child_title_to_parent_links(self):
+        html = """
+            <section class="job-card">
+              <h2>Engineering roles</h2>
+              <a href="/careers">All roles</a>
+              <article class="job-card">
+                <h3>Staff Platform Engineer</h3>
+                <a href="/jobs/123/staff-platform-engineer">See role</a>
+              </article>
+            </section>
+        """
+
+        candidates = extract_listing_candidates(html, "https://exploratory.example/careers")
+
+        self.assertEqual(
+            [(candidate.title, candidate.url) for candidate in candidates],
+            [("Staff Platform Engineer", "https://exploratory.example/jobs/123/staff-platform-engineer")],
+        )
+
+    def test_structured_state_requires_job_container_or_explicit_job_schema(self):
+        html = """
+            <script>
+              window.__STATE__ = {"navigation":{"name":"Security","url":"/jobs/123/security"}};
+            </script>
+        """
+
+        self.assertEqual(
+            extract_listing_candidates(html, "https://exploratory.example/careers"),
+            [],
+        )
+
+    def test_paragraph_title_and_dotted_assignment_state_are_extracted(self):
+        html = """
+            <ul>
+              <li class="opening-item">
+                <p>New York Office</p>
+                <p>Software Engineer, Full Stack</p>
+                <a href="/careers/openings/software-engineer-full-stack">See role</a>
+              </li>
+            </ul>
+            <script>
+              var phApp = {"page":"search-results"};
+              phApp.ddo = {"jobs":[{"title":"Software Engineer - Backend","applyUrl":"https://jobs.ashbyhq.com/acme/abc-123"}]};
+              phApp.session = {"page":"search-results"};
+            </script>
+        """
+
+        candidates = extract_listing_candidates(html, "https://careers.example.com/search-results")
+
+        self.assertIn(
+            ("Software Engineer, Full Stack", "https://careers.example.com/careers/openings/software-engineer-full-stack"),
+            [(candidate.title, candidate.url) for candidate in candidates],
+        )
+        self.assertIn(
+            ("Software Engineer - Backend", "https://jobs.ashbyhq.com/acme/abc-123"),
+            [(candidate.title, candidate.url) for candidate in candidates],
+        )
 
 
 if __name__ == "__main__":
