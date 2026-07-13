@@ -18,6 +18,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "DNS_FAILED": ReasonSpec(True, "network"),
     "CONNECTION_FAILED": ReasonSpec(True, "network"),
     "FETCH_FAILED": ReasonSpec(True, "network"),
+    "OFFLINE_FIXTURE_MISSING": ReasonSpec(False, "replay"),
     "HTTP_NOT_FOUND": ReasonSpec(False, "external"),
     "HTTP_FORBIDDEN": ReasonSpec(False, "external"),
     "RATE_LIMITED": ReasonSpec(True, "external"),
@@ -74,6 +75,8 @@ def canonical_reason_code(value: str | None) -> str:
 
 def classify_fetch_error(detail: str) -> str:
     text = detail.lower()
+    if "no fixture found for" in text:
+        return "OFFLINE_FIXTURE_MISSING"
     if any(marker in text for marker in ("timed out", "timeout", "time out")):
         return "NETWORK_TIMEOUT"
     if any(

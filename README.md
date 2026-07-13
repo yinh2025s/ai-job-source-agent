@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-14.48`. The frozen 30-company live gate reached 30/30 verified websites, 29/30 career pages, 27/30 verified job lists, and 22/30 exact openings, improving by +0/+2/+1/+2 over the preceding frozen run; failures fell by two, successes rose by two, and all eight failure bundles completed successfully. Meta Careers is now the 20th native adapter and can verify a concrete opening from visible-page positive evidence, but it always reports `inventory_complete=false`: anonymous live hydration remains unstable, so the exact result is an offline fixture/benchmark guarantee, not a claim of stable live coverage or authoritative no-match. The S6 provider contract now carries `inventory_scope`/`inventory_complete` and receives `target_location`; all ten bounded-pagination adapters mark interrupted, capped, contradictory-total, and exact-early-stop inventories incomplete, while location only breaks title ties. Rendered fetching preserves DOM settle budget after `networkidle` timeout and recognizes common native ATS detail paths; generic career search falls through to DuckDuckGo when Bing RSS returns only invalid results, and S2 prefers LinkedIn authoritative `sameAs`/cache evidence when several fast domains for the same brand are already verified or the company name contains an identity separator that a domain drops. Offline validation passes 702 tests on CPython 3.12, 22/22 provider cases, 6/6 resolver cases, and architecture validation with 20 adapters / 0 issues. Authenticated LinkedIn Scan/Run acceptance remains deferred; CEIPAL remains unsupported because its public endpoint is bot-blocked.
+Current adapter iteration: `2026-07-14.49`. The registry auto-discovers 23 adapter modules: 21 provide native inventory or constrained positive evidence, while CEIPAL and Talemetry are detection-only and never invent candidates or no-match. Sitecore/Next now reads tenant-bound first-party JobSearch inventory and constructs safe `jobId` URLs; Akkodis live completed all 85 title-filtered records and correctly reported no exact `Artificial Intelligence Engineer` opening. Typed provider failures now preserve replay, 403, bot, timeout, and unsupported causes, HTML comments cannot activate retired provider configuration, and native provider title selection rejects generic one-token false positives. A bounded per-company GET cache lets adjacent stages reuse successful public pages without caching POST, header-bearing, failed, credentialed, or cross-process requests. Offline validation passes 749 tests on CPython 3.12, 23/23 provider cases, 6/6 resolver cases, and architecture validation with 23 adapters / 0 issues. The same frozen 30-company live cohort reached 30/30 verified websites, 28/30 career pages, 26/30 verified job lists, and 20/30 exact openings; the apparent v48 decreases are current evidence drift: Direct Supply's former public career/Workday route was unavailable, and Finch's former exact Machine Learning Engineer listing is no longer in its current 15-job Ashby inventory. All ten failure bundles completed successfully. Authenticated LinkedIn extension Scan/Run acceptance remains deferred.
 
 ## What It Returns
 
@@ -179,6 +179,8 @@ JOB_SOURCE_BRIDGE_TOKEN="replace-with-a-local-secret" \
 ```
 
 In `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the repository's `extension/` directory. Open the extension's **Connection** section, keep `http://127.0.0.1:8765`, enter the same token, and save. On a LinkedIn Jobs detail or search-results page, **Scan page** collects up to 30 visible records; **Run discovery** submits an asynchronous run and reports verified job-list and exact-opening rates. Results, trace, and summary files are stored under `~/.ai-job-source-agent/runs/<run-id>/`.
+
+The unpacked extension is installed, but authenticated LinkedIn **Scan page** / **Run discovery** acceptance remains deferred. Automated DOM and loopback bridge tests do not replace that one real logged-in Chrome acceptance run.
 
 The extension never reads cookies or sends LinkedIn page data to a remote service. The bridge binds only to a loopback host, requires the bearer token, accepts Chrome-extension origins, limits request size and record count, and delegates all network/provider decisions to the Python application. DOM-visible External Apply links are optional evidence; missing links remain empty.
 
@@ -556,10 +558,12 @@ Career page finder
         |
         v
 Job-list/opening finder
-  - auto-discovered native adapters for Greenhouse, Lever, SmartRecruiters, Workday, Ashby, BambooHR, iCIMS, SuccessFactors, Workable, Rippling, and Google Careers
+  - 23 auto-discovered adapter modules: 21 provide native inventory or constrained positive evidence, while CEIPAL and Talemetry are detection-only
   - Workday CXS jobs API adapter with title search payloads
   - structured JSON-LD / embedded JSON extraction for iCIMS, SuccessFactors, and Workable-style pages
-  - native server-rendered search for Google Careers and provider-aware compatibility search for Meta Careers
+  - native server-rendered search for Google Careers and positive-evidence-only parsing for Meta Careers
+  - Sitecore/Next tenant configuration from first-party `__NEXT_DATA__`, same-origin summarized-jobs POST pagination, and safe `jobId` URL reconstruction
+  - CEIPAL/Talemetry tenant detection that preserves typed incomplete failures without inventing candidates or empty inventory
   - provider adapters for Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, and SuccessFactors-style systems
   - target-title matching from LinkedIn job cards
   - job-detail path scoring
@@ -580,6 +584,7 @@ results.json + trace.json
 - Official website resolution first verifies high-confidence domain candidates, then falls back to LinkedIn page signals and search. This keeps obvious domains such as `lyft.com` and `brex.com` fast while still rejecting unverified guesses.
 - LinkedIn company slugs can break domain ties, for example `tesseralabsai` favoring `tesseralabs.ai` over `tesseralabs.com`.
 - Derived ATS boards must be verified by a provider API response or concrete job-detail evidence before they can count as successful.
+- Detection-only adapters may bind a verified tenant, but they cannot emit candidates, complete inventory, or authoritative no-match until a successful public inventory schema is frozen and tested.
 - Career-page discovery uses deterministic scoring before any expensive browser/LLM-style behavior.
 - Career-page discovery combines homepage links, common path probes, brand-specific join paths, and sitemap URLs.
 - When direct navigation fails, career-page discovery can fall back to search results while preserving full career/job paths.
@@ -589,11 +594,15 @@ results.json + trace.json
 - Rippling uses a native structured-page adapter that merges verified same-tenant anchors with Next.js job state while preserving location and department metadata.
 - Provider-specific matchers build provider-appropriate search URLs and preserve stable job-board fallbacks when a concrete title match is not available.
 - Concrete opening selection is gated by the LinkedIn target title to avoid false-positive job URLs.
+- Native provider results use a stricter final-title threshold so a generic shared token such as `Engineer` cannot verify a more specific target title.
+- Embedded-link extraction strips HTML comments before decoding escaped URLs or provider configuration, so retired integrations cannot become active ATS evidence.
+- A per-company bounded LRU cache reuses only successful GET pages with no request body or headers across adjacent stages; POSTs, header-bearing requests, failures, credentials, and cross-process state are never cached.
 - Error and 404 pages are rejected even if their URL or HTML contains career-like keywords.
 - The agent distinguishes listing pages, such as `/careers/jobs`, from concrete job-detail URLs.
 - Social/job aggregator links, static assets, and ATS embeds are filtered out as false positives.
 - Every decision is traceable through scored candidates and reasons.
 - Failures are structured with standard reason codes, for example `CAREER_PAGE_NOT_FOUND`, `OPENING_NOT_FOUND`, `HTTP_FORBIDDEN`, or `COMPANY_TIME_BUDGET_EXHAUSTED`.
+- Missing offline replay evidence is `OFFLINE_FIXTURE_MISSING`: non-retryable, owned by `replay`, and never downgraded to a network failure or opening miss.
 - The live batch runner uses per-company checkpoints and process-level deadlines so one blocked website does not lose previous results.
 
 ## Tests

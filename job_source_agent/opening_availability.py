@@ -3,7 +3,31 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .reasons import REASON_SPECS, classify_fetch_error
 from .source_posting import explicit_closed_source_status
+
+
+_INCOMPLETE_REASON_PRIORITY = {
+    "CAPTCHA_REQUIRED": 100,
+    "OFFLINE_FIXTURE_MISSING": 98,
+    "LOGIN_REQUIRED": 95,
+    "BOT_PROTECTION": 90,
+    "HTTP_FORBIDDEN": 85,
+    "RATE_LIMITED": 80,
+    "COMPANY_TIME_BUDGET_EXHAUSTED": 75,
+    "FETCH_BUDGET_EXHAUSTED": 74,
+    "NETWORK_TIMEOUT": 70,
+    "DNS_FAILED": 65,
+    "CONNECTION_FAILED": 60,
+    "SERVER_ERROR": 55,
+    "PARSING_FAILED": 50,
+    "INVALID_STRUCTURED_DATA": 49,
+    "PROVIDER_VARIANT_UNSUPPORTED": 45,
+    "PROVIDER_UNSUPPORTED": 44,
+    "PROVIDER_UNKNOWN": 43,
+    "PROVIDER_FETCH_FAILED": 40,
+    "FETCH_FAILED": 35,
+}
 
 
 @dataclass(frozen=True)
@@ -32,15 +56,18 @@ def diagnose_opening_availability(
         )
 
     provider_errors = _provider_errors(trace)
-    if provider_errors:
+    provider_failure_reason = _provider_failure_reason(trace, provider_errors)
+    if provider_errors or provider_failure_reason:
+        reason_code = provider_failure_reason or "OPENING_NOT_FOUND"
         return OpeningAvailabilityDiagnostic(
             disposition="discovery_incomplete",
             confidence="low",
-            reason_code="OPENING_NOT_FOUND",
+            reason_code=reason_code,
             detail="No exact opening was verified, and provider errors prevented a conclusive availability check.",
             evidence={
                 "provider_error_count": len(provider_errors),
                 "provider_errors": provider_errors,
+                "provider_failure_reason": provider_failure_reason,
             },
         )
 
@@ -116,6 +143,33 @@ def _provider_errors(trace: dict[str, Any]) -> list[dict[str, Any]]:
                 provenance,
             )
     return aggregated
+
+
+def _provider_failure_reason(
+    trace: dict[str, Any],
+    provider_errors: list[dict[str, Any]],
+) -> str | None:
+    candidates: list[str] = []
+    provider_api = trace.get("provider_api")
+    if isinstance(provider_api, dict):
+        inventory = provider_api.get("inventory")
+        if isinstance(inventory, dict):
+            reason_code = inventory.get("reason_code")
+            if (
+                isinstance(reason_code, str)
+                and reason_code in REASON_SPECS
+                and reason_code in _INCOMPLETE_REASON_PRIORITY
+            ):
+                candidates.append(reason_code)
+
+    for record in provider_errors:
+        detail = record.get("error")
+        if isinstance(detail, str) and detail.strip():
+            candidates.append(classify_fetch_error(detail))
+
+    if not candidates:
+        return None
+    return max(candidates, key=lambda code: _INCOMPLETE_REASON_PRIORITY.get(code, 0))
 
 
 def _add_provider_error(

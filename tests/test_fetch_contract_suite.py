@@ -3,6 +3,7 @@ import unittest
 from pathlib import Path
 
 from job_source_agent.contracts import FetchClient
+from job_source_agent.page_cache import PageCacheFetcher
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
 from job_source_agent.retrying_fetcher import RetryingFetcher
 from job_source_agent.snapshot import SnapshottingFetcher
@@ -87,6 +88,7 @@ class FetchClientContractSuite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             clients = [
                 RecordingLiveFetcher(),
+                PageCacheFetcher(RecordingFetcher()),
                 RetryingFetcher(RecordingFetcher(), max_retries=0, base_delay=0),
                 SnapshottingFetcher(RecordingFetcher(), directory),
                 RecordingSmartFetcher(),
@@ -97,13 +99,14 @@ class FetchClientContractSuite(unittest.TestCase):
                     self.assertIsInstance(client, FetchClient)
 
     def test_successful_clients_preserve_page_semantics(self):
-        expected_pages = [contract_page() for _ in range(4)]
+        expected_pages = [contract_page() for _ in range(5)]
         with tempfile.TemporaryDirectory() as directory:
             clients = [
                 RecordingLiveFetcher(expected_pages[0]),
-                RetryingFetcher(RecordingFetcher(expected_pages[1]), max_retries=0, base_delay=0),
-                SnapshottingFetcher(RecordingFetcher(expected_pages[2]), directory),
-                RecordingSmartFetcher(expected_pages[3]),
+                PageCacheFetcher(RecordingFetcher(expected_pages[1])),
+                RetryingFetcher(RecordingFetcher(expected_pages[2]), max_retries=0, base_delay=0),
+                SnapshottingFetcher(RecordingFetcher(expected_pages[3]), directory),
+                RecordingSmartFetcher(expected_pages[4]),
             ]
 
             for client, expected in zip(clients, expected_pages):
@@ -114,11 +117,13 @@ class FetchClientContractSuite(unittest.TestCase):
 
             self.assertEqual(expected_pages[0].source, "fake")
             self.assertEqual(expected_pages[1].source, "fake")
-            self.assertRegex(expected_pages[2].source, r"^fake\|snapshot:sites/")
-            self.assertEqual(expected_pages[3].source, "fake")
+            self.assertEqual(expected_pages[2].source, "fake")
+            self.assertRegex(expected_pages[3].source, r"^fake\|snapshot:sites/")
+            self.assertEqual(expected_pages[4].source, "fake")
 
     def test_request_data_and_headers_are_forwarded_where_supported(self):
         live = RecordingLiveFetcher()
+        cache_base = RecordingFetcher()
         retry_base = RecordingFetcher()
         snapshot_base = RecordingFetcher()
         smart = RecordingSmartFetcher()
@@ -126,6 +131,7 @@ class FetchClientContractSuite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             clients = [
                 live,
+                PageCacheFetcher(cache_base),
                 RetryingFetcher(retry_base, max_retries=0, base_delay=0),
                 SnapshottingFetcher(snapshot_base, directory),
                 smart,
@@ -136,6 +142,7 @@ class FetchClientContractSuite(unittest.TestCase):
 
         expected_call = (REQUEST_URL, REQUEST_DATA, REQUEST_HEADERS)
         self.assertEqual(live.calls, [expected_call])
+        self.assertEqual(cache_base.calls, [expected_call])
         self.assertEqual(retry_base.calls, [expected_call])
         self.assertEqual(snapshot_base.calls, [expected_call])
         self.assertEqual(smart.static_calls, [expected_call])
@@ -145,6 +152,7 @@ class FetchClientContractSuite(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             factories = [
                 lambda error: RecordingLiveFetcher(error=error),
+                lambda error: PageCacheFetcher(RecordingFetcher(error=error)),
                 lambda error: RetryingFetcher(
                     RecordingFetcher(error=error), max_retries=0, base_delay=0
                 ),
@@ -207,6 +215,7 @@ class FetchClientContractSuite(unittest.TestCase):
         base = RecordingFetcher()
         with tempfile.TemporaryDirectory() as directory:
             wrappers = [
+                PageCacheFetcher(base),
                 RetryingFetcher(base, max_retries=0, base_delay=0),
                 SnapshottingFetcher(base, directory),
             ]

@@ -195,7 +195,7 @@
 | Provider | 当前状态 | 说明 |
 | --- | --- | --- |
 | Google Careers | Native SSR adapter | 自动发现；使用公开 title search 页面并验证 canonical detail URL 与数字 job ID |
-| Meta Careers | Compatibility adapter | 可生成 title query URL；静态页面是 Comet/Relay shell，稳定匿名 listing contract 尚未建立 |
+| Meta Careers | Native positive-evidence adapter | 自动发现；只消费 visible-page 具体岗位证据，固定 `inventory_complete=false`，不支持 no-match |
 | Lever | Native API adapter | 自动发现；使用 `api.lever.co/v0/postings/{company}` |
 | Greenhouse | Native API/page adapter | 自动发现 hosted board；使用 Boards API；first-party frontend 可从 `__NEXT_DATA__` 完整 Greenhouse schema 识别并读取同源岗位 |
 | SmartRecruiters | Native API adapter | 自动发现；使用 `api.smartrecruiters.com/v1/companies/{company}/postings` |
@@ -207,6 +207,9 @@
 | Phenom | Native page-aware SSR adapter | 通过 customer-owned 页面 `phApp`/`refNum` 指纹识别；读取 eager refine state，支持 keyword pagination 和同源 detail URL 重建 |
 | Rippling | Structured HTML adapter | 支持公开 board anchors、Next.js job state、metadata enrichment 和 title matching |
 | BambooHR | Native listing API adapter | 自动发现；使用公开 `/careers/list` JSON 返回职位并还原详情 URL，支持 `atsLocation` fallback |
+| Sitecore/Next JobSearch | Native page-aware API adapter | 从 first-party `__NEXT_DATA__` 绑定 tenant；同源 POST 分页并重建安全 `jobId` URL |
+| CEIPAL | Detection-only page-aware adapter | 强 widget 指纹与 tenant 绑定；bot/未知 schema 保持 typed incomplete，不构造岗位 |
+| Talemetry Career Sites | Detection-only page-aware adapter | 强 Career Sites 指纹与 tenant 绑定；403/Cloudflare/未知 schema 保持 typed incomplete |
 
 已验证的离线 fixtures：
 
@@ -302,7 +305,7 @@
 当前已完成第一轮 SOLID 拆分，但仍有兼容层需要逐步迁移：
 
 - S2-S7 已有独立 stage，通用 `ApplicationRunner` 支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- 13 个 provider 已迁移为原生 adapter，包括 Rippling、Google Careers、Phenom 和 Paycom；Meta Careers 和 generic fallback 仍走 compatibility path。
+- 23 个 provider module 已自动发现；其中 21 个提供原生 inventory 或受约束 positive evidence，CEIPAL/Talemetry 只提供 detection-only typed incomplete semantics；generic fallback 继续作为兼容路径。
 - `live_batch_eval.py` 保留公司级并发、process budget 和输出职责，七关业务执行已委托统一 `PipelineApplication`。
 - Fetcher 已有显式 protocol 和跨实现 contract suite；filesystem stage store 已接入 production CLI 和 live batch。
 - 原生 adapter 已支持包内自动发现；新 provider 不再需要修改中央 registry。
@@ -320,6 +323,7 @@ Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resol
 - Workable public jobs cursor API 已完成 5 个真实 tenant smoke；后续继续扩展固定 live 样本和未知 payload 变体
 - Ashby embedded fallback 已完成，后续做真实 board live hardening
 - Rippling Next.js structured state 已完成 5 个真实 tenant 覆盖；后续继续跟踪未知 locale/state 变体
+- CEIPAL/Talemetry 需要在冻结并验证成功 public inventory schema 后才能从 detection-only 升级；bot block、Cloudflare challenge 或未知 JSON 不能解释为空库存
 
 ### 3. Browser Rendering Needs Live Hardening
 
@@ -686,7 +690,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.3 Introduce Provider Adapter Registry
 
-当前状态：已完成可并行扩展的第一版。Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors、Workable、Rippling、Google Careers 和 Phenom 已迁移为原生 adapter；provider module 通过导出 `ADAPTER` 自动注册。Phenom 使用 page-evidence extension 识别 customer-owned tenant。Meta Careers 和 generic fallback 暂时保留 compatibility path。
+当前状态：已完成可并行扩展的第一版。23 个 provider module 通过导出 `ADAPTER` 自动注册；21 个提供 native inventory 或受约束 positive evidence，CEIPAL/Talemetry 使用 page-evidence extension 仅提供 detection-only typed incomplete contract。Generic fallback 暂时保留 compatibility path。
 
 已完成目标：
 
@@ -1002,6 +1006,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - 冻结 30-company `.45` gate 完成：同一 manifest 从 `.43` 的 29/23/23/18 提升到 30 website、27 career、26 verified job list、21 exact opening，VELOX、Quest Global、Starbridge 恢复 exact，Centraprise 恢复 verified no-match；Eightpoint、Aventis Solutions、M|R Walls 仍按真实无公开入口或未披露客户分类。`.46` failure-cluster 以通用 contract 修复 Akkodis：sitemap cap 改按实际读取计数并优先 job/目标地区 index，语言 locale 与地区分离，同站 HTTP evidence 升级为 HTTPS，`job-results` 作为 first-party listing route 且 page-aware provider 优先，结构化岗位卡片与普通 careers taxonomy 分离。Render capability 缺失只探测一次并静态降级，availability 聚合所有 provider/generic error provenance。Akkodis focused live 稳定输出美国 `en-us/careers/job-results`，S5 不再跨区覆盖，S6 网络不足保持 `discovery_incomplete`。`ADAPTER_VERSION` 提升到 `2026-07-13.46`；661 tests、21/21 provider、6/6 resolver、19-adapter architecture gate 全绿。下一轮继续按冻结 cohort 的 remaining `CAREER_PAGE_NOT_FOUND`/`OPENING_NOT_FOUND` cluster 排序；真实登录态插件验收继续 deferred，不阻塞 provider/pipeline 工作。
 - `.47` S4/S6/replay/evaluation reliability workstream 完成：generic matcher 复用已抓 landing page，识别同主机 HTTPS GET 搜索表单并在猜测 query 前提交，拒绝跨站、POST、credentials、非标准端口和敏感 action；native `PROVIDER_VARIANT_UNSUPPORTED` 保留 typed adapter/inventory trace。S4 verification order 优先明确 homepage navigation，generated paths 不再耗尽强证据预算；跨站 redirect 只有原生 URL/page provider evidence 才能入选，Quest Global 从 TimesJobs 假阳性恢复 Phenom exact，GPTZero 恢复 Ashby verified no-match。Failure replay 使用 source-posting allowlist 合并 `linkedin_posting` 与显式 closed evidence，checkpoint fingerprint 在合并后计算，认证 payload 不进入 bundle。Live summary、fixed benchmark、history 和直接 baseline 全部绑定实际 company/expectations cohort，`no_compatible_baseline` 可安全输出。冻结 30-company S4+ 回归为 30/27/26/20；整批超时的 Deloitte 与 Direct Supply 随后最终代码串行 2/2 exact recovery，Kirkland portal HTTP 403 保持可解释 partial。`ADAPTER_VERSION` 提升到 `2026-07-14.47`；680 tests、21/21 provider、6/6 resolver、19-adapter architecture gate 全绿。插件真实登录态验收继续 deferred；下一轮按冻结陌生 cohort 的 remaining failure cluster 排序，并优先处理可复用的 generic/Meta/CEIPAL 能力，不增加公司特例。
 - `.48` inventory-completeness/Meta/resolver-fetch reliability workstream 完成：S6 provider contract 新增 `inventory_scope`/`inventory_complete`，并将 `target_location` 传给 adapter；不完整库存的 miss 不再升级为权威 no-match。10 个有界分页 adapter 对中途错误、未覆盖 total、cap、重复 cursor 与 exact 提前停止显式返回 incomplete；location 只用于同标题 tie-break。Meta Careers 作为第 20 个原生 adapter，仅以 visible-page positive evidence 验证具体岗位并固定 `inventory_complete=false`；离线 fixture/provider benchmark 可 exact，匿名 live hydration 仍不稳定，不声称 live stable。Rendered fetcher 为 DOM settle 保留预算，`networkidle` timeout 后继续等待强 detail links，并识别 Lever/Ashby/Workable/SmartRecruiters detail path；generic career search 在 Bing RSS 原始结果全部无效时继续 DDG；S2 在多个同品牌 fast domain 均已验证，或公司名包含域名会丢失的 identity separator 时，优先 LinkedIn authoritative `sameAs`/cache。`ADAPTER_VERSION` 提升到 `2026-07-14.48`；CPython 3.12 全量 702 tests、22/22 provider、6/6 resolver、20-adapter architecture gate / 0 issues。冻结 30-company live 为 30/30 website、29/30 career、27/30 verified job list、22/30 exact，较上一 frozen run 为 +0/+2/+1/+2，failed -2、success +2，8 个 failure bundle 全部成功。真实登录态 LinkedIn Scan/Run 继续 deferred；CEIPAL bot blocked，保持无 adapter。
+- `.49` provider-detection/Sitecore/typed-failure workstream 完成：新增 Sitecore/Next native inventory adapter，以及 CEIPAL/Talemetry detection-only adapters；HTML comment 不再激活 retired integration，`OFFLINE_FIXTURE_MISSING` 归 replay 且不可重试，provider/opening diagnostics 保留最具体 typed failure。Sitecore/Next 严格绑定 first-party tenant/config、同源 endpoint、分页 total/range、重复 ID 与 record identity，并规范化公开字段的无害空白；原生 provider 最终标题门槛拒绝 `Engineer` 对具体 AI title 的假阳性。Composition root 增加只缓存成功无 header/body GET 的 per-company bounded LRU。`ADAPTER_VERSION` 提升到 `2026-07-14.49`；CPython 3.12 为 749 tests、23/23 provider、6/6 resolver、23-adapter architecture gate / 0 issues。相同 frozen-30 live 为 30 website、28 career、26 job list、20 exact，10 个 failure bundle成功；Direct Supply 旧入口当前不可达，Finch 旧 exact 岗位已从当前 inventory 下线。Akkodis 可读 official job list 和全部 85 条 filtered inventory并正确 no-match；真实登录态 extension Scan/Run 继续 deferred。
 - 最小浏览器扩展采集层完成：`extension/` 提供 Manifest V3 content script 和 popup，从当前 LinkedIn Jobs 详情/列表读取最多 30 条可见 evidence，展示 Apply URL 数量并异步报告 job-list/exact-opening rate；不读取 cookie、不模拟点击、不猜 redirect。`ExtensionRunManager` 和 loopback-only HTTP bridge 复用统一 input normalization 与 `PipelineApplication`，使用 bearer token、Chrome-extension Origin gate、256 KiB request limit 和本地原子 artifacts；长任务在 popup 关闭后继续。真实 HTTP smoke 为 health 200、submit 202、最终 1/1 job list + 1/1 exact opening，results/trace/summary 均落盘。ADR-0002 固化 evidence-adapter 边界；556 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。Chrome `Load unpacked` 与一次登录态 LinkedIn DOM scan 保留为需用户明确执行的手工验收；完成后回到固定 cohort 下一 failure cluster。
 
 目标：
@@ -1106,7 +1111,7 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - LinkedIn discovery 已经接入
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
-- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 20 个原生 adapter
+- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 23 个 module；21 个提供 inventory/positive evidence，2 个为 detection-only
 - Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR 已接 structured API
 - iCIMS、SuccessFactors、Workable、Rippling 已加入原生 structured page / embedded JSON / verified-link extraction，但还需要更多真实站点 live hardening
 - browser fallback 已经从全量渲染升级为 smart fallback + render budget
@@ -1114,4 +1119,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，20 个主要 provider（含 Google Careers、Phenom、Paycom、RippleHire、Taleo、Eightfold、JazzHR、Avature、Breezy 和 Meta Careers）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。Manifest V3 本地扩展可从登录态 LinkedIn Jobs 页面采集可见 evidence，经 token-protected loopback bridge 复用同一 pipeline；受信任 browser detail DOM 可显式区分 native/external apply，public search 仍保持 unknown，`LINKEDIN_NATIVE_ONLY` 只作为不制造官网 URL 的 partial source terminal。严格名称匹配的公开 LinkedIn 官网 evidence 可在 30 天 TTL 内按规范化 company + LinkedIn company URL 复用；resolver 始终 live first，多个已验证同品牌 fast domain 并存或公司名包含域名会丢失的 identity separator 时优先 LinkedIn authoritative `sameAs`/cache，所有缓存仍需通过统一官网校验且不含个人、认证或浏览器会话数据。S4 优先验证首页证据，sitemap 按实际读取文件执行有界 job/目标地区调度，language locale 与 region 分离；Bing RSS 原始结果全部无效时 generic career search 继续 DDG。S5 在 page-aware provider 优先的前提下复用已验证 first-party listing route。S6 通过 `inventory_scope`/`inventory_complete` 区分 positive evidence 与可支持 no-match 的完整库存，10 个有界分页 provider 对 cap/error/未覆盖 total 明确保持 incomplete，并向 provider 传递 `target_location`；location 只用于同标题 tie-break。Meta 只允许 visible-page positive evidence，离线 exact 不代表匿名 live hydration 稳定。固定 provider benchmark 为 22/22 exact opening，resolver benchmark 为 6/6；CPython 3.12 下 `.48` 通过 702 tests 与 architecture validation 20 adapters / 0 issues。冻结 30-company live 为 30/30 官网、29/30 career、27/30 verified job list、22/30 exact opening，较上一 frozen run 为 +0/+2/+1/+2，failed -2、success +2，8 个 failure bundle 全部成功。Unpacked 扩展已安装，真实登录态 LinkedIn Scan/Run 验收继续 deferred。最终 release 指标是陌生冻结样本结果，不是 cache hit、并行任务数或已知 focused 样本；CEIPAL 因 bot block 保持无 adapter，generic fallback 仍是 compatibility path。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 均有独立 stage class，23 个 provider module 自动发现；其中 21 个提供 native inventory 或受约束 positive evidence，CEIPAL/Talemetry 仅提供 detection-only typed incomplete semantics。Sitecore/Next 已能从 first-party 配置读取官方库存并重建安全 job URL；S6 以 inventory completeness 和严格标题门槛阻止 incomplete miss 与泛化单词假阳性。Replay 缺 fixture、403、bot、timeout 和 unsupported variant 都保留 typed owner/retry semantics；相邻 stage 仅复用成功无 header/body 的 bounded GET cache。固定 provider benchmark 为 23/23 exact，resolver 为 6/6；CPython 3.12 下 `.49` 通过 749 tests 与 architecture validation 23 adapters / 0 issues。相同 frozen-30 live 为 30/30 官网、28/30 career、26/30 verified job list、20/30 exact；Direct Supply 旧入口当前不可达，Finch 旧 exact listing 已从当前 inventory 下线，10 个 failure bundle 全部成功。Unpacked extension 已安装，真实登录态 LinkedIn Scan/Run 验收继续 deferred。最终 release 指标仍是陌生冻结样本上的 URL 正确性和成功率，而不是 cache hit、并行任务数或已知 focused 样本。

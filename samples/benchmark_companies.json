@@ -131,5 +131,12 @@
     "career_root_url": "https://www.metacareers.com/jobsearch/",
     "job_title": "Product Manager",
     "job_location": "Remote, US"
+  },
+  {
+    "company_name": "Acme Sitecore Next",
+    "company_website_url": "https://sitecore-jobs.example",
+    "career_root_url": "https://sitecore-jobs.example/en-us/careers/job-results",
+    "job_title": "Data Analyst",
+    "job_location": "Austin, Texas"
   }
 ]

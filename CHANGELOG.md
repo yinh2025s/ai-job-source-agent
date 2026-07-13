@@ -10,6 +10,10 @@
 
 ### Added
 
+- 新增 page-aware `SitecoreNextJobsAdapter`：从 first-party `__NEXT_DATA__` 绑定 Sitecore `JobSearch` tenant 配置，只向同源 `/api/data/jobs/summarized` 发起有界 POST 分页，校验 total/range、重复 job ID、语言/国家/品牌身份，并从安全 `jobId` 构造官网具体岗位 URL。固定 provider benchmark 增加该端到端 exact-opening 样本。
+
+- 新增 CEIPAL widget 与 Talemetry Career Sites 的 detection-only adapter。两者只在强页面指纹成立时绑定 first-party tenant，并始终以 `inventory_scope=unknown`、`inventory_complete=false` 保留 bot、403、离线 fixture 缺失或未知 schema；在冻结并验证成功 inventory contract 前不构造 candidate，也不支持权威 no-match。
+
 - 新增第 20 个原生 provider `MetaCareersAdapter`：仅消费 visible-page positive evidence，可验证页面中明确出现的具体岗位；结果始终标记 `inventory_complete=false`，因此不能据此宣布 no-match。匿名 live hydration 仍不稳定，当前 exact 保证仅来自离线 fixture/provider benchmark，不声称 live stable。
 
 - 增加 ADR-0004 source-posting availability contract：public LinkedIn search card 只能输出 `listed + unknown`，认证详情 DOM 仅在 visible/enabled Apply 或明确 closed banner 时输出 apply/availability evidence；S5 用 typed `source_posting_availability` evidence 和独立 evaluation counter 记录该来源状态，不把 LinkedIn URL 当作官网 job list/opening。
@@ -60,6 +64,16 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- Embedded URL/provider-config 抽取会先剥离 HTML comments，避免停用或注释掉的旧 ATS 集成成为活动证据。新增 `OFFLINE_FIXTURE_MISSING`，将缺失 replay fixture 明确标为 non-retryable、owner `replay` 的 incomplete outcome，不再误报网络故障或 `OPENING_NOT_FOUND`。
+
+- 原生 provider 的最终 opening 选择使用更严格的标题门槛；共享单词 `Engineer` 不再足以命中 `Artificial Intelligence Engineer`。Sitecore/Next 对公开 record 中无害的首尾/重复空白做规范化，但仍拒绝非法 job ID、跨租户记录、重复岗位和矛盾分页。
+
+- `ADAPTER_VERSION` 提升到 `2026-07-14.49`，使新增 page-aware detection、provider inventory 和失败分类不会复用 `.48` 的 S5/S6 或 company completion checkpoint。真实登录态 LinkedIn extension Scan/Run 验收本轮继续 deferred。
+
+- Composition root 增加每公司进程内的 64-entry LRU page cache，只复用成功且无 request body/header 的 GET 页面，使相邻 stage 可以共享同一公开 landing-page evidence；POST、带 header 请求、失败响应、认证数据和跨进程状态均不缓存。
+
+- `.49` 最终门禁：CPython 3.12 下 749 tests、23/23 provider benchmark、6/6 resolver benchmark、23-adapter architecture validation / 0 issues。相同 frozen-30 manifest 的 live 结果为 30 website、28 career、26 verified job list、20 exact，10 个 failure bundle 全部成功；相对 `.48` 的下降来自当前外部证据变化，Direct Supply 旧 career/Workday 路径不可达，Finch 旧 exact listing 已不在当前 15 条 Ashby inventory 中。Akkodis 在同一 frozen input 上恢复 official job list，完整读取 85 条 title-filtered inventory 后正确输出 verified no-match。
 
 - S6 provider contract 新增 `inventory_scope`/`inventory_complete` 并向 adapter 传递 `target_location`，不完整库存即使未命中也不会被解释为权威 no-match。10 个有界分页 adapter 对中途错误、未覆盖 total、cap、重复 cursor 和 exact 提前停止显式返回 incomplete；location 只作为同标题 tie-break，不会因地点缺失拒绝岗位。Rendered fetcher 在 `networkidle` timeout 后继续使用保留的 DOM settle budget 等待强 detail links，并识别 Lever、Ashby、Workable、SmartRecruiters detail path；generic career search 在 Bing RSS 有原始结果但全部无效时继续 DuckDuckGo fallback；S2 面对多个已验证的同品牌 fast domain，或公司名包含域名会丢失的 identity separator 时，优先 LinkedIn authoritative `sameAs`/cache evidence。`ADAPTER_VERSION` 提升到 `2026-07-14.48`；CPython 3.12 全量门禁为 702 tests、22/22 provider、6/6 resolver 和 architecture validation 20 adapters / 0 issues。冻结 30-company live 为 30/30 website、29/30 career、27/30 verified job list、22/30 exact opening，较上一 frozen run 为 +0/+2/+1/+2，failed -2、success +2，8 个 failure bundle 全部成功。真实登录态 LinkedIn Scan/Run 继续 deferred；CEIPAL 因 bot block 保持无 adapter。
 

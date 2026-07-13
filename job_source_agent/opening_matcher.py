@@ -30,6 +30,7 @@ STOPWORDS = {
 }
 
 MIN_TITLE_MATCH_SCORE = 45
+MIN_PROVIDER_TITLE_MATCH_SCORE = 65
 SEARCH_FIELD_NAMES = {"q", "query", "keyword", "keywords", "search", "searchkeyword"}
 MAX_DISCOVERED_SEARCH_FORMS = 4
 SENSITIVE_FORM_QUERY_NAMES = {
@@ -298,7 +299,7 @@ class JobOpeningMatcher:
                         scored = []
                         for candidate in adapter_result.candidates:
                             title_score, title_reasons = score_title_match(candidate.title, target_title)
-                            if title_score < MIN_TITLE_MATCH_SCORE:
+                            if title_score < MIN_PROVIDER_TITLE_MATCH_SCORE:
                                 continue
                             location_score, location_reasons = score_location_match(
                                 candidate.location,
@@ -336,6 +337,14 @@ class JobOpeningMatcher:
 
         api_requests = build_provider_api_requests(job_list_url, target_title)
         trace = {"provider": provider, "api_urls": [request.url for request in api_requests], "candidates": []}
+        if page_detection and page_detection.get("error"):
+            trace["errors"] = [
+                {
+                    "url": job_list_url,
+                    "error": page_detection["error"],
+                    "phase": "page_evidence",
+                }
+            ]
         successful_api_fetches = 0
         inventory_candidate_count = 0
         strongest_title_score = 0

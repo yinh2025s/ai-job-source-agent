@@ -63,11 +63,100 @@ class OpeningAvailabilityTests(unittest.TestCase):
         )
 
         self.assertEqual(diagnostic.disposition, "discovery_incomplete")
-        self.assertEqual(diagnostic.reason_code, "OPENING_NOT_FOUND")
+        self.assertEqual(diagnostic.reason_code, "NETWORK_TIMEOUT")
         self.assertEqual(diagnostic.evidence["provider_error_count"], 1)
+        self.assertEqual(
+            diagnostic.evidence["provider_failure_reason"],
+            "NETWORK_TIMEOUT",
+        )
         self.assertEqual(
             diagnostic.evidence["provider_errors"],
             [{"error": "timeout", "provenance": ["provider_api"]}],
+        )
+
+    def test_http_forbidden_is_not_reported_as_an_opening_miss(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "errors": [
+                        {
+                            "url": "https://jobs.example.test/",
+                            "error": "HTTP Error 403: Forbidden",
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "discovery_incomplete")
+        self.assertEqual(diagnostic.reason_code, "HTTP_FORBIDDEN")
+        self.assertEqual(
+            diagnostic.evidence["provider_failure_reason"],
+            "HTTP_FORBIDDEN",
+        )
+
+    def test_missing_replay_fixture_is_not_reported_as_a_network_failure(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "errors": [
+                        {
+                            "url": "https://jobs.example.test/search/jobs.json",
+                            "error": (
+                                "No fixture found for "
+                                "https://jobs.example.test/search/jobs.json"
+                            ),
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "discovery_incomplete")
+        self.assertEqual(diagnostic.reason_code, "OFFLINE_FIXTURE_MISSING")
+        self.assertEqual(
+            diagnostic.evidence["provider_failure_reason"],
+            "OFFLINE_FIXTURE_MISSING",
+        )
+
+    def test_adapter_reason_is_preserved_without_an_error_string(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "inventory": {
+                        "source": "native_adapter",
+                        "status": "incomplete",
+                        "complete": False,
+                        "reason_code": "BOT_PROTECTION",
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "discovery_incomplete")
+        self.assertEqual(diagnostic.reason_code, "BOT_PROTECTION")
+        self.assertEqual(diagnostic.evidence["provider_error_count"], 0)
+        self.assertEqual(
+            diagnostic.evidence["provider_failure_reason"],
+            "BOT_PROTECTION",
+        )
+
+    def test_specific_adapter_reason_beats_generic_fetch_error(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "errors": [{"error": "request failed"}],
+                    "inventory": {
+                        "status": "incomplete",
+                        "reason_code": "PROVIDER_VARIANT_UNSUPPORTED",
+                    },
+                }
+            }
+        )
+
+        self.assertEqual(
+            diagnostic.reason_code,
+            "PROVIDER_VARIANT_UNSUPPORTED",
         )
 
     def test_generic_search_errors_are_counted_with_provenance(self):

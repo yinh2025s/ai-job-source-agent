@@ -63,11 +63,11 @@ class StageResultTests(unittest.TestCase):
         self.assertEqual(stages[STAGE_OPENING_MATCH].owner, "matcher")
         self.assertEqual(
             stages[STAGE_OPENING_MATCH].evidence[0]["disposition"],
-            "discovery_incomplete",
+            "verified_inventory_no_match",
         )
         self.assertEqual(
             stages[STAGE_OPENING_MATCH].evidence[0]["confidence"],
-            "low",
+            "medium",
         )
 
     def test_career_discovery_failure_marks_later_stages_not_run(self):
@@ -97,6 +97,10 @@ class StageResultTests(unittest.TestCase):
         self.assertEqual(classify_fetch_error("HTTP status 599"), "SERVER_ERROR")
         self.assertEqual(classify_fetch_error("Temporary failure in name resolution"), "DNS_FAILED")
         self.assertEqual(classify_fetch_error("parser mismatch"), "PARSING_FAILED")
+        self.assertEqual(
+            classify_fetch_error("No fixture found for https://jobs.example.test/search"),
+            "OFFLINE_FIXTURE_MISSING",
+        )
 
     def test_provider_fetch_failures_keep_retry_and_owner_semantics(self):
         result = make_stage_result(
@@ -109,6 +113,18 @@ class StageResultTests(unittest.TestCase):
         self.assertEqual(result.reason_code, "PROVIDER_FETCH_FAILED")
         self.assertTrue(result.retryable)
         self.assertEqual(result.owner, "network")
+
+    def test_missing_offline_fixture_is_owned_by_replay_and_not_retryable(self):
+        result = make_stage_result(
+            STAGE_OPENING_MATCH,
+            "partial",
+            reason_code="OFFLINE_FIXTURE_MISSING",
+            provider="talemetry",
+        )
+
+        self.assertEqual(result.reason_code, "OFFLINE_FIXTURE_MISSING")
+        self.assertFalse(result.retryable)
+        self.assertEqual(result.owner, "replay")
 
 
 if __name__ == "__main__":

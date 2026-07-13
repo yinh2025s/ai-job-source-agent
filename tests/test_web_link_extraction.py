@@ -23,6 +23,37 @@ class LinkExtractionTests(unittest.TestCase):
         self.assertIn("oraclecloud.com/hcmUI/CandidateExperience", by_origin["embedded_url"])
         self.assertEqual(by_origin["redirect_final_url"], "https://example.com/jobs")
 
+    def test_ignores_commented_legacy_links_and_provider_configuration(self):
+        page = Page(
+            url="https://example.com/careers",
+            html=r'''
+                <!-- <iframe src="https://legacy.example.com/jobs"></iframe> -->
+                <!-- https://jobs.legacy.example.com/archive -->
+                <!--
+                  <script>
+                    const company = "retired-greenhouse";
+                    fetch(`https://boards-api.greenhouse.io/v1/boards/${company}/jobs`);
+                  </script>
+                  <div id="lever-jobs-container"></div>
+                  <script>
+                    window.leverJobsOptions = { accountName: 'retired-lever' };
+                  </script>
+                -->
+                <script>
+                  {"url":"https:\/\/active.example.com\/jobs"}
+                </script>
+            ''',
+        )
+
+        links = extract_links(page)
+        urls = [link.url for link in links]
+
+        self.assertNotIn("https://legacy.example.com/jobs", urls)
+        self.assertNotIn("https://jobs.legacy.example.com/archive", urls)
+        self.assertNotIn("https://job-boards.greenhouse.io/retired-greenhouse", urls)
+        self.assertNotIn("https://jobs.lever.co/retired-lever", urls)
+        self.assertIn("https://active.example.com/jobs", urls)
+
     def test_embedded_extraction_is_bounded(self):
         html = " ".join(f"https://jobs.example.com/jobs/{index}" for index in range(MAX_EXTRACTED_LINKS + 50))
         self.assertLessEqual(len(extract_links(Page(url="https://example.com", html=html))), MAX_EXTRACTED_LINKS)

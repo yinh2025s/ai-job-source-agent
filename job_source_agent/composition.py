@@ -7,6 +7,7 @@ from .application_runner import ApplicationRunner
 from .company_identity import CompanyIdentityResolver
 from .contracts import FetchClient
 from .identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
+from .page_cache import PageCacheFetcher
 from .pipeline import JobSourceAgent
 from .pipeline_application import PipelineApplication
 from .posting_identity import LinkedInPostingIdentityProbe
@@ -96,7 +97,7 @@ def build_fetcher(config: FetcherConfig) -> FetchClient:
         )
     if config.snapshot_dir:
         fetcher = SnapshottingFetcher(fetcher, config.snapshot_dir)
-    return fetcher
+    return PageCacheFetcher(fetcher)
 
 
 def build_agent(

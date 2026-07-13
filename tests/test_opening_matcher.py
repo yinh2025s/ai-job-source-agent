@@ -15,7 +15,7 @@ from job_source_agent.listing_extraction import (
     extract_listing_candidates,
     validate_output_url,
 )
-from job_source_agent.web import Fetcher, Page
+from job_source_agent.web import FetchError, Fetcher, Page
 from job_source_agent.providers.base import AdapterResult, JobBoard, JobCandidate
 from job_source_agent.providers.registry import ProviderRegistry
 
@@ -188,6 +188,28 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertEqual(fetcher.calls, [board_url, search_url])
         self.assertEqual(trace["search_plan"][1]["source"], "declared_get_form")
 
+    def test_generic_landing_fetch_failure_is_preserved_for_availability_diagnostics(self):
+        board_url = "https://staff.example.com/"
+
+        class ForbiddenFetcher:
+            def fetch(self, url, data=None, headers=None):
+                raise FetchError("HTTP Error 403: Forbidden")
+
+        match, trace = JobOpeningMatcher(ForbiddenFetcher()).match(
+            board_url,
+            "AI Engineer II",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["provider_api"]["errors"][0],
+            {
+                "url": board_url,
+                "error": "HTTP Error 403: Forbidden",
+                "phase": "page_evidence",
+            },
+        )
+
     def test_declared_search_forms_reject_post_cross_site_and_sensitive_actions(self):
         page = Page(
             url="https://jobs.example.com/careers",
@@ -338,6 +360,49 @@ class OpeningMatcherTests(unittest.TestCase):
             "incomplete",
         )
         self.assertFalse(missing_trace["provider_api"]["inventory"]["complete"])
+
+    def test_native_adapter_rejects_generic_role_token_as_exact_opening(self):
+        class BroadSearchAdapter:
+            name = "broad_search_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Engineer",
+                            url="https://jobs.example.com/1",
+                            provider=self.name,
+                        )
+                    ],
+                    inventory_scope="title_filtered",
+                    inventory_complete=True,
+                )
+
+        matcher = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([BroadSearchAdapter()]),
+        )
+
+        match, trace = matcher.match(
+            "https://jobs.example.com",
+            "Artificial Intelligence Engineer",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(trace["provider_api"]["inventory"]["status"], "verified")
+        self.assertEqual(
+            trace["provider_api"]["inventory"]["strongest_title_score"],
+            53,
+        )
 
     def test_native_adapter_uses_location_to_break_exact_title_tie(self):
         class LocationAdapter:

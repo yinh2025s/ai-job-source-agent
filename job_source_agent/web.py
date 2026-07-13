@@ -222,6 +222,7 @@ def extract_links(page: Page) -> list[RawLink]:
 
     # Script and JSON payloads commonly slash- or unicode-escape ATS URLs.
     embedded = page.html[:MAX_EMBEDDED_SCAN_CHARS]
+    embedded = re.sub(r"<!--.*?-->", "", embedded, flags=re.S)
     embedded = re.sub(r"\\u00(?:2f|2F)", "/", embedded)
     embedded = embedded.replace(r"\/", "/")
     embedded = unescape(embedded)
