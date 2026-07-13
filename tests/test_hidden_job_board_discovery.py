@@ -156,6 +156,45 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(trace["provider"], "paycom")
         self.assertEqual(fetcher.requested, [career, legacy])
 
+    def test_traverses_staff_category_and_accepts_explicit_first_party_jobs_portal(self):
+        career = "https://www.example.com/careers"
+        students = "https://www.example.com/careers/united-states/law-students"
+        staff = "https://www.example.com/careers/united-states/staff"
+        portal = "https://staffjobsus.example.com/"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<a href="{students}">Law Students</a>'
+                    f'<a href="{staff}">Staff</a>'
+                ),
+            ),
+            staff: Page(
+                url=staff,
+                html=f'<a href="{portal}">Explore U.S. Staff Job Opportunities</a>',
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, portal)
+        self.assertEqual(trace["selected_page_source"], "first_party_portal_link")
+        self.assertEqual(fetcher.requested, [career, staff])
+
+    def test_does_not_accept_unrelated_external_job_opportunities_link(self):
+        career = "https://www.example.com/careers"
+        external = "https://jobs.unrelated.example.net/"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<a href="{external}">Explore Job Opportunities</a>',
+            ),
+        })
+
+        with self.assertRaises(DiscoveryError):
+            JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+        self.assertEqual(fetcher.requested, [career])
+
     def test_listing_traversal_prefers_route_that_preserves_locale_prefix(self):
         career = "https://careers.example.com/world/en"
         alias = "https://careers.example.com/world/search-results"

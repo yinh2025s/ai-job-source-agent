@@ -135,6 +135,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 - `live_batch_eval.py` 只负责公司级并发、两段 process hard budget 和输出；实际 S1-S7 执行委托 `PipelineApplication`，S1-S3 与 S4-S7 通过 filesystem stage checkpoint 衔接。每段先向 fetch wrapper 注入略早于 outer budget 的 soft deadline，逐请求压缩 socket timeout，并为结构化收尾和 checkpoint 发布预留最多 1 秒；process kill 只作不合作底层调用的最后保险。
 - Fetch wrappers 已满足显式 `FetchClient` protocol 和跨实现 contract suite；deadline wrapper 在零重试时仍生效，并在每次初始/重试请求前执行预算门禁；browser live variants 仍需持续验证。
 - S5 first-party traversal 使用有界 BFS；同分 listing route 优先保留 source locale prefix，redirect 到已访问 canonical page 不消耗有效 page budget。Known-ATS embed 和 registry-backed board 只负责进入 adapter boundary，最终 board root 仍由 adapter 识别和规范化。
+- Bounded BFS 可穿过 career root 下最多两层的 staff、business-services、professional、student/lateral audience taxonomy；只有官网明确使用 job-opportunity 语义并指向同 registrable domain 的 jobs/careers 子域时，才允许在 portal 被 challenge 阻挡时保留官方 job-list root。
 - First-party provider configuration 在 bounded link extraction 内派生 board；当前 Greenhouse template API 和带 embed 指纹的 Lever `accountName` 配置会优先于普通页面链接，最终仍由原生 adapter 验证 tenant 和目标标题。
 - Filesystem stage checkpoint store 已支持原子保存、兼容性校验、安全 cache miss 和从指定 stage 向下失效。
 - Production CLI 和 live batch 均由 `PipelineApplication` 和通用 runner/store 执行；live batch 保留两段 process hard budget。

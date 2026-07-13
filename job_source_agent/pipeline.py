@@ -643,10 +643,29 @@ class JobSourceAgent:
             )
             trace["candidates"].extend(dataclass_to_dict(deduped[:5]))
 
+            official_portal = next(
+                (
+                    candidate
+                    for candidate in deduped
+                    if self._is_first_party_job_portal(candidate, actual_page_url)
+                ),
+                None,
+            )
+            if official_portal is not None:
+                trace["selected"] = dataclass_to_dict(official_portal)
+                trace["selected_page_source"] = "first_party_portal_link"
+                trace["job_list_page_url"] = official_portal.url
+                return None, official_portal.url, trace
+
             traversal_candidates = sorted(
                 deduped[: self.max_candidates],
                 key=lambda candidate: (
                     candidate.score,
+                    self._career_category_priority(
+                        candidate,
+                        actual_page_url,
+                        career_page_url,
+                    ),
                     self._shared_path_prefix(candidate.url, actual_page_url),
                 ),
                 reverse=True,
@@ -670,6 +689,11 @@ class JobSourceAgent:
                     (
                         is_likely_job_listing_page(candidate)
                         or self._looks_like_generic_job_list_route(candidate.url)
+                        or self._career_category_priority(
+                            candidate,
+                            actual_page_url,
+                            career_page_url,
+                        )
                     )
                     and self._is_safe_traversal_target(candidate.url, actual_page_url)
                     and candidate.url.rstrip("/") not in visited
@@ -677,6 +701,64 @@ class JobSourceAgent:
                     queue.append(candidate.url)
 
         return None, trace["job_list_page_url"], trace
+
+    def _career_category_priority(
+        self,
+        candidate: LinkCandidate,
+        source_url: str,
+        career_root_url: str,
+    ) -> int:
+        target = urlparse(candidate.url)
+        source = urlparse(source_url)
+        root = urlparse(career_root_url)
+        if target.hostname != source.hostname or source.hostname != root.hostname:
+            return 0
+        target_parts = [part.casefold() for part in target.path.split("/") if part]
+        root_parts = [part.casefold() for part in root.path.split("/") if part]
+        if (
+            not root_parts
+            or target_parts[: len(root_parts)] != root_parts
+            or len(target_parts) <= len(root_parts)
+            or len(target_parts) > len(root_parts) + 2
+        ):
+            return 0
+        label = " ".join(
+            (candidate.text + " " + target_parts[-1].replace("-", " "))
+            .casefold()
+            .split()
+        )
+        if any(marker in label for marker in ("staff", "business services", "professionals")):
+            return 3
+        if any(marker in label for marker in ("lateral", "student", "graduate", "clerk", "attorney")):
+            return 2
+        return 0
+
+    def _is_first_party_job_portal(
+        self,
+        candidate: LinkCandidate,
+        source_url: str,
+    ) -> bool:
+        target = urlparse(candidate.url)
+        source = urlparse(source_url)
+        if not target.hostname or not source.hostname or target.hostname == source.hostname:
+            return False
+        if self._registrable_site(target.hostname) != self._registrable_site(source.hostname):
+            return False
+        target_label = target.hostname.split(".", 1)[0].casefold()
+        text = " ".join(candidate.text.casefold().split())
+        return (
+            any(marker in target_label for marker in ("jobs", "careers"))
+            and any(
+                phrase in text
+                for phrase in (
+                    "job opportunities",
+                    "open positions",
+                    "search jobs",
+                    "staff careers",
+                    "view jobs",
+                )
+            )
+        )
 
     def _shared_path_prefix(self, target_url: str, source_url: str) -> int:
         target_parts = [part.casefold() for part in urlparse(target_url).path.split("/") if part]
