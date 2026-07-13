@@ -10,6 +10,8 @@
 
 ### Added
 
+- 增加独立 `LinkedInPostingIdentityProbe`：只对名称具有投资/招聘中介特征的发布者执行有界公开职位详情探测，解析 `JobPosting` JSON-LD，并以重复提及、至少两类雇主上下文及 benefits/anti-fraud 自有上下文确认 alternate employer；普通发布者不增加详情请求，单次技术名词提及、解析失败和网络失败不会改变招聘主体。
+
 - 增加正式的开发治理、架构边界和 ADR 记录机制。
 - 增加版本化 stage context/execution、最小 fetch client、provider adapter 和 checkpoint store contracts。
 - 增加可独立运行的 S4 career、S5 job board、S6 opening stages 和顺序 stage runner。
@@ -46,6 +48,8 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- S3 hiring-identity contract 现在可消费 `alternate_employer` 与 `agency_unresolved` posting evidence。Stage 2 Capital 的公开职位正文以 12 次 ModMed 提及和 4 类雇主上下文确认实际雇主，随后复用 ModMed 官方 Workday `ModMed12` 并 exact 命中 Machine Learning Engineer `R4352`；Aventis Solutions 命中“partner/on behalf”代理声明但客户未披露，因此仅输出 `publisher_role=recruiting_agency`，不猜客户、不改官网。29-record capture 物化为 28 fixtures，并在 0.3 秒离线复现一条 exact 与一条结构化失败。S3/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.41`；576 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。
 
 - S2 在复核历史官网时会优先解析公开 LinkedIn 公司页 JSON-LD 中、公司名严格匹配的 `Organization.sameAs`，将其作为强官方官网候选并保留原有 homepage/redirect 验证；任意外链、名称不匹配的组织和普通直接输入不获得该权重。Eightpoint 从同名旧 `eightpoint.com` 迁到 `eightpoint.io/careers`，当前无可验证 job list；M|R Walls 从 `mrwalls.com` 迁到 `mrwalls.io`，当前无公开 career 入口。27-record live capture 物化为 24 fixtures，并在 0.2 秒离线复现相同 partial/failed 状态。S2/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.40`；568 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。
 

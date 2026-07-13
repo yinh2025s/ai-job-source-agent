@@ -8,6 +8,7 @@ from .company_identity import CompanyIdentityResolver
 from .contracts import FetchClient
 from .pipeline import JobSourceAgent
 from .pipeline_application import PipelineApplication
+from .posting_identity import LinkedInPostingIdentityProbe
 from .providers import ProviderRegistry, build_default_provider_registry
 from .rendered_fetcher import RenderedFetcher, SmartRenderedFetcher
 from .retrying_fetcher import RetryingFetcher
@@ -125,13 +126,17 @@ def build_application(
     registry = provider_registry or build_default_provider_registry()
     fetcher = build_fetcher(fetcher_config)
     agent = build_agent(fetcher, agent_config, registry)
+    website_resolver = CompanyWebsiteResolver(fetcher, overrides_path=website_overrides)
     runner = ApplicationRunner(
         (
             InputDiscoveryStage(),
-            WebsiteResolutionStage(
-                CompanyWebsiteResolver(fetcher, overrides_path=website_overrides)
+            WebsiteResolutionStage(website_resolver),
+            HiringIdentityResolutionStage(
+                CompanyIdentityResolver(
+                    posting_probe=LinkedInPostingIdentityProbe(fetcher),
+                    website_resolver=website_resolver,
+                )
             ),
-            HiringIdentityResolutionStage(CompanyIdentityResolver()),
             CareerDiscoveryStage(agent),
             JobBoardDiscoveryStage(agent, registry),
             OpeningMatchStage(agent, registry),

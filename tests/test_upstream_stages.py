@@ -34,13 +34,21 @@ class FakeIdentity:
 
 
 class FakeIdentityResolver:
-    def __init__(self, identity=None):
+    def __init__(self, identity=None, trace=None):
         self.identity = identity
+        self.trace = trace or {"method": "fake-identity"}
         self.calls = []
 
-    def resolve(self, company_name, website_url=None, linkedin_company_url=None):
+    def resolve(
+        self,
+        company_name,
+        website_url=None,
+        linkedin_company_url=None,
+        linkedin_job_url=None,
+        job_location=None,
+    ):
         self.calls.append((company_name, website_url, linkedin_company_url))
-        return self.identity, {"method": "fake-identity"}
+        return self.identity, self.trace
 
 
 class UpstreamStageTests(unittest.TestCase):
@@ -163,6 +171,33 @@ class UpstreamStageTests(unittest.TestCase):
 
         self.assertEqual(execution.result.status, "success")
         self.assertIn("input company remains", execution.result.detail)
+
+    def test_s3_records_undisclosed_agency_without_selecting_client(self):
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Aventis Solutions",
+                company_website_url="https://aventissolutions.example",
+                linkedin_job_url="https://www.linkedin.com/jobs/view/job-456",
+            )
+        )
+        resolver = FakeIdentityResolver(
+            trace={
+                "posting_identity": {
+                    "classification": "agency_unresolved",
+                    "employer_name": None,
+                }
+            }
+        )
+
+        execution = HiringIdentityResolutionStage(resolver).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.updates, {})
+        self.assertIn(
+            {"field": "publisher_role", "value": "recruiting_agency"},
+            execution.result.evidence,
+        )
+        self.assertIn("undisclosed client", execution.result.detail)
 
 
 if __name__ == "__main__":

@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-13.40`. Historical website revalidation now treats a company-name-matched LinkedIn JSON-LD `Organization.sameAs` value as strong identity evidence while retaining normal homepage verification. Eightpoint and M|R Walls migrate from stale same-brand `.com` domains to their declared `.io` sites; their downstream no-list/no-career states remain explicit rather than being promoted to false job successes.
+Current adapter iteration: `2026-07-13.41`. S3 can now distinguish a LinkedIn publisher from the actual employer using a bounded posting-identity probe for investment/recruiting intermediaries. Stage 2 Capital resolves to ModMed and its exact Workday opening; Aventis Solutions is recorded as an agency for an undisclosed client and remains unresolved instead of being attributed to a guessed company.
 
 ## What It Returns
 

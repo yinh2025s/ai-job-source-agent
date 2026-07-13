@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Protocol
 
+from .posting_identity import PostingIdentityEvidence
 from .web import domain_of, normalize_url
 
 
@@ -176,15 +178,52 @@ BRAND_HIRING_RULES = {
         official_website_url="https://www.lyft.com/",
         reasons=["Lyft routes careers traffic to a Greenhouse job board"],
     ),
+    "modmed": CompanyIdentity(
+        brand_name="ModMed",
+        hiring_entity_name="ModMed",
+        career_root_url="https://modmed.wd501.myworkdayjobs.com/ModMed12",
+        official_website_url="https://www.modmed.com/",
+        reasons=["ModMed publishes roles through its ModMed12 Workday career site"],
+    ),
 }
 
 
+class WebsiteResolver(Protocol):
+    def resolve(
+        self,
+        company_name: str,
+        linkedin_company_url: str | None = None,
+        job_location: str | None = None,
+        preferred_url: str | None = None,
+    ) -> tuple[str | None, dict]:
+        ...
+
+
+class PostingIdentityProbe(Protocol):
+    def probe(
+        self,
+        publisher_name: str,
+        linkedin_job_url: str | None,
+    ) -> PostingIdentityEvidence:
+        ...
+
+
 class CompanyIdentityResolver:
+    def __init__(
+        self,
+        posting_probe: PostingIdentityProbe | None = None,
+        website_resolver: WebsiteResolver | None = None,
+    ) -> None:
+        self.posting_probe = posting_probe
+        self.website_resolver = website_resolver
+
     def resolve(
         self,
         company_name: str,
         website_url: str | None = None,
         linkedin_company_url: str | None = None,
+        linkedin_job_url: str | None = None,
+        job_location: str | None = None,
     ) -> tuple[CompanyIdentity | None, dict]:
         key = _normalize_company_key(company_name)
         website_domain = domain_of(normalize_url(website_url)) if website_url else ""
@@ -208,7 +247,61 @@ class CompanyIdentityResolver:
                 }
                 return identity, trace
 
-        return None, trace
+        if self.posting_probe is None:
+            return None, trace
+
+        posting_evidence = self.posting_probe.probe(company_name, linkedin_job_url)
+        trace["posting_identity"] = posting_evidence.trace()
+        if (
+            posting_evidence.classification != "alternate_employer"
+            or not posting_evidence.employer_name
+        ):
+            return None, trace
+
+        employer_name = posting_evidence.employer_name
+        employer_key = _normalize_company_key(employer_name)
+        for rule_key, identity in BRAND_HIRING_RULES.items():
+            if self._matches_rule(rule_key, employer_key, "", ""):
+                trace["matched_rule"] = rule_key
+                trace["selected"] = {
+                    "brand_name": identity.brand_name,
+                    "hiring_entity_name": identity.hiring_entity_name,
+                    "career_root_url": identity.career_root_url,
+                    "official_website_url": identity.official_website_url,
+                    "reasons": [
+                        *(identity.reasons or []),
+                        "LinkedIn job description verified a different hiring entity",
+                    ],
+                }
+                return identity, trace
+
+        if self.website_resolver is None:
+            trace["alternate_employer_resolution"] = {
+                "status": "unresolved",
+                "reason": "website resolver was not configured",
+            }
+            return None, trace
+        employer_website, website_trace = self.website_resolver.resolve(
+            employer_name,
+            job_location=job_location,
+        )
+        trace["alternate_employer_resolution"] = website_trace
+        if not employer_website:
+            return None, trace
+        identity = CompanyIdentity(
+            brand_name=employer_name,
+            hiring_entity_name=employer_name,
+            official_website_url=employer_website,
+            reasons=["LinkedIn job description verified a different hiring entity"],
+        )
+        trace["selected"] = {
+            "brand_name": identity.brand_name,
+            "hiring_entity_name": identity.hiring_entity_name,
+            "career_root_url": None,
+            "official_website_url": identity.official_website_url,
+            "reasons": identity.reasons,
+        }
+        return identity, trace
 
     def _matches_rule(self, rule_key: str, company_key: str, website_domain: str, linkedin_key: str) -> bool:
         if rule_key == company_key or rule_key in company_key.split():

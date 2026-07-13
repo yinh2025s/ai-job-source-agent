@@ -1,6 +1,15 @@
 import unittest
 
 from job_source_agent.company_identity import CompanyIdentityResolver
+from job_source_agent.posting_identity import PostingIdentityEvidence
+
+
+class _PostingProbe:
+    def __init__(self, evidence):
+        self.evidence = evidence
+
+    def probe(self, company_name, linkedin_job_url):
+        return self.evidence
 
 
 class CompanyIdentityTests(unittest.TestCase):
@@ -52,6 +61,49 @@ class CompanyIdentityTests(unittest.TestCase):
         )
 
         self.assertIsNone(identity)
+
+    def test_verified_alternate_employer_uses_known_identity_rule(self):
+        resolver = CompanyIdentityResolver(
+            posting_probe=_PostingProbe(
+                PostingIdentityEvidence(
+                    "alternate_employer",
+                    employer_name="ModMed",
+                    employer_mentions=12,
+                    employer_contexts=4,
+                )
+            )
+        )
+
+        identity, trace = resolver.resolve(
+            "Stage 2 Capital",
+            "https://stage2.capital",
+            linkedin_job_url="https://www.linkedin.com/jobs/view/job-123",
+        )
+
+        self.assertIsNotNone(identity)
+        self.assertEqual(identity.hiring_entity_name, "ModMed")
+        self.assertEqual(
+            identity.career_root_url,
+            "https://modmed.wd501.myworkdayjobs.com/ModMed12",
+        )
+        self.assertEqual(trace["matched_rule"], "modmed")
+
+    def test_undisclosed_agency_client_does_not_select_identity(self):
+        resolver = CompanyIdentityResolver(
+            posting_probe=_PostingProbe(PostingIdentityEvidence("agency_unresolved"))
+        )
+
+        identity, trace = resolver.resolve(
+            "Aventis Solutions",
+            "https://aventissolutions.com",
+            linkedin_job_url="https://www.linkedin.com/jobs/view/job-456",
+        )
+
+        self.assertIsNone(identity)
+        self.assertEqual(
+            trace["posting_identity"]["classification"],
+            "agency_unresolved",
+        )
 
 
 if __name__ == "__main__":

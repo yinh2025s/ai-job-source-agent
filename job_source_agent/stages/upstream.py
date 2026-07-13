@@ -37,6 +37,8 @@ class HiringIdentityResolutionService(Protocol):
         company_name: str,
         website_url: str | None = None,
         linkedin_company_url: str | None = None,
+        linkedin_job_url: str | None = None,
+        job_location: str | None = None,
     ) -> tuple[HiringIdentity | None, dict]:
         ...
 
@@ -170,6 +172,8 @@ class HiringIdentityResolutionStage:
                 context.company.company_name,
                 context.company_website_url,
                 context.company.linkedin_company_url,
+                context.company.linkedin_job_url,
+                context.company.job_location,
             )
         except FetchError as exc:
             return _identity_failed_execution(
@@ -212,6 +216,15 @@ class HiringIdentityResolutionStage:
                     )
                 detail = "An explicit hiring identity or career root was resolved."
             else:
+                posting_identity = trace.get("posting_identity", {})
+                if posting_identity.get("classification") == "agency_unresolved":
+                    evidence.append(
+                        {"field": "publisher_role", "value": "recruiting_agency"}
+                    )
+                    detail = (
+                        "Publisher is recruiting for an undisclosed client; "
+                        "no alternate hiring entity was selected."
+                    )
                 if context.company.hiring_entity_name:
                     evidence.append(
                         {
