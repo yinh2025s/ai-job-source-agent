@@ -660,6 +660,31 @@ class JobSourceAgent:
             )
             trace["candidates"].extend(dataclass_to_dict(deduped[:5]))
 
+            linked_provider_board = next(
+                (
+                    (adapter, board, candidate)
+                    for candidate in deduped
+                    if url_adapter is None or url_board is None
+                    if not candidate.text
+                    and is_likely_job_detail(candidate)
+                    if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
+                    and adapter.supports_listing
+                    and (board := adapter.identify_board(candidate.url)) is not None
+                ),
+                None,
+            )
+            if linked_provider_board is not None:
+                adapter, board, candidate = linked_provider_board
+                trace["selected"] = dataclass_to_dict(candidate)
+                trace["provider"] = adapter.name
+                trace["provider_detection"] = {
+                    "method": "linked_url_evidence",
+                    "provider": adapter.name,
+                    "url": board.url,
+                }
+                trace["job_list_page_url"] = board.url
+                return None, board.url, trace
+
             official_portal = next(
                 (
                     candidate
@@ -689,6 +714,12 @@ class JobSourceAgent:
             )
             for candidate in traversal_candidates:
                 if candidate.score < 55:
+                    continue
+                if (
+                    (url_adapter is None or url_board is None)
+                    and not candidate.text
+                    and self._has_listing_provider_adapter(candidate.url)
+                ):
                     continue
                 if not is_likely_job_detail(candidate):
                     continue

@@ -59,6 +59,9 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertTrue(is_blocked_domain("https://static.licdn.com"))
         self.assertTrue(is_blocked_domain("https://dms.licdn.com"))
         self.assertTrue(is_blocked_domain("https://challenges.cloudflare.com"))
+        self.assertTrue(is_blocked_domain("https://modmed.my.site.com"))
+        self.assertTrue(is_blocked_domain("https://standardtemplatelabs-com.l.ink"))
+        self.assertTrue(is_blocked_domain("https://bit.ly/example"))
 
     def test_linkedin_slug_can_hint_domain_tld(self):
         resolver = CompanyWebsiteResolver(Fetcher(offline=True))
@@ -85,6 +88,41 @@ class WebsiteResolverTests(unittest.TestCase):
         candidates = resolver._linkedin_slug_domain_candidates("https://www.linkedin.com/company/brexhq")
 
         self.assertIn("https://brex.com", candidates)
+
+    def test_linkedin_slug_candidates_strip_product_suffix_for_abbreviated_brand(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+
+        candidates = resolver._linkedin_slug_domain_candidates(
+            "https://www.linkedin.com/company/stlabs-ai"
+        )
+
+        self.assertIn("https://stlabs.com", candidates)
+
+    def test_verified_multiword_abbreviation_domain_is_selected(self):
+        class AbbreviationFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "stlabs.com":
+                    return Page(
+                        url=url,
+                        final_url="https://stlabs.com/",
+                        html="<html><head><title>STLabs | Intelligent Service Management</title></head></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(AbbreviationFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "Standard Template Labs",
+            "https://www.linkedin.com/company/stlabs-ai",
+            "New York, NY",
+        )
+
+        self.assertEqual(website_url, "https://stlabs.com/")
+        self.assertIn("company abbreviation in domain", trace["selected"]["reasons"])
+        self.assertIn(
+            "homepage title confirms company abbreviation",
+            trace["selected"]["reasons"],
+        )
 
     def test_exact_linkedin_slug_domain_wins_for_ambiguous_brand(self):
         class FinchFetcher(Fetcher):
@@ -624,6 +662,26 @@ class WebsiteResolverTests(unittest.TestCase):
         )
 
         self.assertIn("parked domain rejected", candidate.reasons)
+        self.assertNotIn("homepage verified", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_redirect_to_hosted_non_company_destination_is_never_selected(self):
+        class HostedRedirectFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://standardtemplatelabs-com.l.ink/",
+                    html="<html><head><title>Standard Template Labs</title></head></html>",
+                )
+
+        resolver = CompanyWebsiteResolver(HostedRedirectFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://standardtemplatelabs.com",
+            "Standard Template Labs",
+            verify=True,
+        )
+
+        self.assertIn("hosted non-company destination rejected", candidate.reasons)
         self.assertNotIn("homepage verified", candidate.reasons)
         self.assertIsNone(resolver._select_verified_candidate([candidate]))
 

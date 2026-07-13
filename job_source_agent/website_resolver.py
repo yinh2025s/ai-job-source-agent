@@ -44,6 +44,9 @@ BLOCKED_DOMAINS = {
     "schemas.live.com",
     "storage.live.com",
     "challenges.cloudflare.com",
+    "bit.ly",
+    "l.ink",
+    "my.site.com",
 }
 
 BLOCKED_DOMAIN_PARTS = (
@@ -62,6 +65,12 @@ PARKED_DOMAIN_HOSTS = {
     "godaddy.com",
     "hugedomains.com",
     "sedo.com",
+}
+
+HOSTED_NON_COMPANY_DOMAINS = {
+    "bit.ly",
+    "l.ink",
+    "my.site.com",
 }
 
 PARKED_DOMAIN_TEXT_MARKERS = (
@@ -334,6 +343,9 @@ class CompanyWebsiteResolver:
         bases = [compact]
         if dashed != compact:
             bases.append(dashed)
+        abbreviation = _company_abbreviation(tokens)
+        if abbreviation:
+            bases.append(abbreviation)
         urls: list[str] = []
         for base in bases:
             for tld in tlds[:4]:
@@ -354,7 +366,8 @@ class CompanyWebsiteResolver:
         base = re.sub(r"-(inc|llc|ltd|corp|corporation|company|co)$", "", slug)
         base = re.sub(r"(inc|llc|ltd|corp|corporation|company|co|hq)$", "", base)
         compact = base.replace("-", "")
-        candidates = [base, compact]
+        product_suffix_base = re.sub(r"-(ai|app|tech)$", "", base)
+        candidates = [base, compact, product_suffix_base]
         return [
             f"https://{candidate}.{tld}"
             for candidate in dict.fromkeys(candidates)
@@ -430,6 +443,10 @@ class CompanyWebsiteResolver:
                 score += 35
                 reasons.append(f"company token '{token}' in domain")
 
+        if _domain_matches_company_abbreviation(domain, company_tokens):
+            score += 45
+            reasons.append("company abbreviation in domain")
+
         if domain.endswith((".com", ".ai", ".io", ".co", ".org")):
             score += 10
             reasons.append("credible company TLD")
@@ -471,6 +488,10 @@ class CompanyWebsiteResolver:
             return WebsiteCandidate(url, score, reasons)
 
         resolved_url = page.final_url or page.url
+        if _is_hosted_non_company_destination(resolved_url):
+            score -= 200
+            reasons.append("hosted non-company destination rejected")
+            return WebsiteCandidate(resolved_url, score, reasons)
         if _is_parked_domain_page(page.html, resolved_url):
             score -= 200
             reasons.append("parked domain rejected")
@@ -500,8 +521,18 @@ class CompanyWebsiteResolver:
         if _text_confirms_company_identity(homepage_title, company_tokens):
             score += 25
             reasons.append("homepage title confirms company identity")
-        token_in_homepage = False
-        evidenced_tokens: set[str] = set()
+        abbreviation_confirms_identity = (
+            _domain_matches_company_abbreviation(domain_of(resolved_url), company_tokens)
+            and _contains_identity_token(
+                homepage_title,
+                _company_abbreviation(company_tokens) or "",
+            )
+        )
+        if abbreviation_confirms_identity:
+            score += 25
+            reasons.append("homepage title confirms company abbreviation")
+        token_in_homepage = abbreviation_confirms_identity
+        evidenced_tokens: set[str] = set(company_tokens) if abbreviation_confirms_identity else set()
         for token in company_tokens:
             if token in domain:
                 evidenced_tokens.add(token)
@@ -709,6 +740,21 @@ class _CanonicalLinkParser(HTMLParser):
 
 def _is_ambiguous_company_name(company_tokens: list[str]) -> bool:
     return len(company_tokens) == 1 and len(company_tokens[0]) <= 5
+
+
+def _company_abbreviation(company_tokens: list[str]) -> str | None:
+    if len(company_tokens) < 3 or not all(company_tokens):
+        return None
+    abbreviation = "".join(token[0] for token in company_tokens[:-1]) + company_tokens[-1]
+    return abbreviation if len(abbreviation) >= 4 else None
+
+
+def _domain_matches_company_abbreviation(domain: str, company_tokens: list[str]) -> bool:
+    abbreviation = _company_abbreviation(company_tokens)
+    if not abbreviation:
+        return False
+    label = domain.split(".")[-2] if "." in domain else domain
+    return re.sub(r"[^a-z0-9]", "", label.casefold()) == abbreviation
 
 
 def _contains_identity_token(text: str, token: str) -> bool:
@@ -1081,6 +1127,14 @@ def is_blocked_domain(url: str) -> bool:
     if any(domain == blocked or domain.endswith("." + blocked) for blocked in BLOCKED_DOMAINS):
         return True
     return any(part in domain for part in BLOCKED_DOMAIN_PARTS)
+
+
+def _is_hosted_non_company_destination(url: str) -> bool:
+    domain = domain_of(url)
+    return any(
+        domain == hosted or domain.endswith("." + hosted)
+        for hosted in HOSTED_NON_COMPANY_DOMAINS
+    )
 
 
 def dedupe_urls(urls: list[str]) -> list[str]:

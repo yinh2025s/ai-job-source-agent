@@ -135,6 +135,21 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
 
         self.assertEqual(job_list, "https://jobs.ashbyhq.com/Acme")
 
+    def test_hidden_known_ats_detail_is_promoted_before_generic_detail_acceptance(self):
+        career = "https://example.com/careers"
+        detail = "https://jobs.ashbyhq.com/acme/06d5624e-d35c-41b1-a091-edfc79c10dba"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<script>"{detail}"</script>'),
+            detail: Page(url=detail, html="<html>Ashby posting</html>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, "https://jobs.ashbyhq.com/acme")
+        self.assertEqual(trace["provider"], "ashby")
+        self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
+        self.assertEqual(fetcher.requested, [career])
+
     def test_follows_registry_backed_paycom_board_outside_static_ats_domains(self):
         career = "https://example.com/careers"
         client_key = "AA674B442E9B6A1284BD7F78CB0C3E73"
