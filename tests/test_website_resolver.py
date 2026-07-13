@@ -1,8 +1,13 @@
 import unittest
 import time
 
-from job_source_agent.web import FetchError, Fetcher, Page
-from job_source_agent.website_resolver import CompanyWebsiteResolver, clean_search_url, is_blocked_domain
+from job_source_agent.web import FetchError, Fetcher, Page, domain_of
+from job_source_agent.website_resolver import (
+    CompanyWebsiteResolver,
+    clean_search_url,
+    is_blocked_domain,
+    tokenize_company_name,
+)
 
 
 class WebsiteResolverTests(unittest.TestCase):
@@ -361,6 +366,166 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertEqual(candidate.url, "https://deepmind.google")
         self.assertNotIn("homepage canonical URL", candidate.reasons)
+
+    def test_search_evidence_gets_verification_slot_ahead_of_higher_scoring_guesses(self):
+        class SonyFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.homepage_calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                if "format=rss" in url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<rss><channel>"
+                            "<item><title>Sony Corporation | Official Website</title>"
+                            "<description>Official parent company website for Sony.</description>"
+                            "<link>https://www.sony.com/</link></item>"
+                            "<item>"
+                            "<title>Sony Interactive Entertainment | Official Website</title>"
+                            "<description>PlayStation is the official home of Sony Interactive Entertainment.</description>"
+                            "<link>https://www.playstation.com/</link>"
+                            "</item></channel></rss>"
+                        ),
+                    )
+                self.homepage_calls.append(url)
+                if url.rstrip("/") == "https://www.playstation.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.playstation.com/",
+                        html=(
+                            "<html><head><title>Sony Interactive Entertainment | PlayStation</title></head>"
+                            "<body>Sony Interactive Entertainment official products and careers</body></html>"
+                        ),
+                    )
+                raise FetchError("speculative domain does not exist")
+
+        fetcher = SonyFetcher()
+        resolver = CompanyWebsiteResolver(fetcher, verify_limit=3)
+
+        website_url, trace = resolver.resolve("Sony Interactive Entertainment")
+
+        self.assertEqual(website_url, "https://www.playstation.com/")
+        self.assertIn("https://www.playstation.com", fetcher.homepage_calls)
+        self.assertIn("candidate source: search_evidence", trace["selected"]["reasons"])
+
+    def test_financing_batch_qualifier_is_removed_but_brand_parenthetical_is_preserved(self):
+        self.assertEqual(tokenize_company_name("Multifactor (YC F25)"), ["multifactor"])
+        self.assertEqual(tokenize_company_name("Multifactor (Seed Funded)"), ["multifactor"])
+        self.assertEqual(tokenize_company_name("Acme (North America)"), ["acme", "north", "america"])
+
+    def test_multifactor_yc_qualifier_does_not_pollute_guessed_domains(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+
+        candidates = resolver._guess_domain_candidates("Multifactor (YC F25)")
+
+        self.assertIn("https://multifactor.com", candidates)
+        self.assertFalse(any("yc" in candidate or "f25" in candidate for candidate in candidates))
+
+    def test_search_evidence_survives_speculative_budget_for_explore30_company_shapes(self):
+        cases = (
+            ("Hadrian Automation, Inc.", "hadrian.co"),
+            ("Paramount Global", "paramount.com"),
+            ("DocuSign Agreement Cloud", "docusign.com"),
+        )
+
+        for company_name, official_domain in cases:
+            with self.subTest(company_name=company_name):
+                class EvidenceFetcher(Fetcher):
+                    def fetch(self, url, data=None, headers=None):
+                        if "linkedin.com" in url:
+                            raise FetchError("LinkedIn unavailable")
+                        if "format=rss" in url:
+                            return Page(
+                                url=url,
+                                final_url=url,
+                                html=(
+                                    "<rss><channel><item>"
+                                    f"<title>{company_name} Official Website</title>"
+                                    f"<description>Official homepage for {company_name}</description>"
+                                    f"<link>https://{official_domain}/</link>"
+                                    "</item></channel></rss>"
+                                ),
+                            )
+                        if domain_of(url) == official_domain:
+                            return Page(
+                                url=url,
+                                final_url=f"https://{official_domain}/",
+                                html=f"<html><head><title>{company_name}</title></head><body>{company_name}</body></html>",
+                            )
+                        raise FetchError("speculative domain does not exist")
+
+                resolver = CompanyWebsiteResolver(EvidenceFetcher(offline=True), verify_limit=3)
+
+                website_url, trace = resolver.resolve(company_name)
+
+                self.assertEqual(domain_of(website_url or ""), official_domain)
+                self.assertIn("candidate source: search_evidence", trace["selected"]["reasons"])
+
+    def test_parked_domain_marketplace_redirect_is_never_selected(self):
+        class ParkedDomainFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://domains.atom.com/lpd/name/Paramount.co",
+                    html=(
+                        "<html><head><title>Paramount.co is for sale</title></head>"
+                        "<body>Buy this domain on our domain marketplace.</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ParkedDomainFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://paramount.co",
+            "Paramount",
+            verify=True,
+        )
+
+        self.assertIn("parked domain rejected", candidate.reasons)
+        self.assertNotIn("homepage verified", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_single_token_product_brand_domain_needs_organizational_evidence(self):
+        class ProductDomainFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://www.paramountplus.com/intl/",
+                    html=(
+                        "<html><head><title>Paramount+ United States</title></head>"
+                        "<body>Stream Paramount movies and shows.</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ProductDomainFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://www.paramountplus.com/intl/",
+            "Paramount",
+            verify=True,
+            search_evidence=None,
+        )
+
+        self.assertIn("single-token brand extension domain", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_common_organizational_prefix_is_not_treated_as_product_extension(self):
+        class CompanyFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://getacme.com/",
+                    html="<html><head><title>Acme | Official Website</title></head><body>Acme</body></html>",
+                )
+
+        resolver = CompanyWebsiteResolver(CompanyFetcher(offline=True))
+        candidate = resolver._score_candidate("https://getacme.com", "Acme", verify=True)
+
+        self.assertNotIn("single-token brand extension domain", candidate.reasons)
+        self.assertIsNotNone(resolver._select_verified_candidate([candidate]))
 
 
 if __name__ == "__main__":

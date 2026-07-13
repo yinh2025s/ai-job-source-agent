@@ -55,6 +55,23 @@ BLOCKED_DOMAIN_PARTS = (
     "smartrecruiters.com",
 )
 
+PARKED_DOMAIN_HOSTS = {
+    "afternic.com",
+    "atom.com",
+    "dan.com",
+    "godaddy.com",
+    "hugedomains.com",
+    "sedo.com",
+}
+
+PARKED_DOMAIN_TEXT_MARKERS = (
+    "buy this domain",
+    "domain is for sale",
+    "domain marketplace",
+    "make an offer on this domain",
+    "purchase this domain",
+)
+
 
 @dataclass
 class WebsiteCandidate:
@@ -95,10 +112,15 @@ class CompanyWebsiteResolver:
         fast_candidates = dedupe_urls(
             self._linkedin_slug_domain_candidates(linkedin_company_url) + guessed_candidates[:6]
         )
+        fast_sources = _candidate_source_map(
+            ("linkedin_slug", self._linkedin_slug_domain_candidates(linkedin_company_url)),
+            ("speculative_guess", guessed_candidates[:6]),
+        )
         fast_scored = self._rank_and_verify_candidates(
             fast_candidates,
             company_name,
             linkedin_company_url,
+            candidate_sources=fast_sources,
         )
         trace["candidates"].extend(
             {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
@@ -118,11 +140,17 @@ class CompanyWebsiteResolver:
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
         all_candidates = dedupe_urls(linkedin_candidates[:5] + search_candidates[:5] + guessed_candidates[:6])
+        candidate_sources = _candidate_source_map(
+            ("linkedin_evidence", linkedin_candidates[:5]),
+            ("search_evidence", search_candidates[:5]),
+            ("speculative_guess", guessed_candidates[:6]),
+        )
         scored = self._rank_and_verify_candidates(
             all_candidates,
             company_name,
             linkedin_company_url,
             search_evidence=evidence_by_domain,
+            candidate_sources=candidate_sources,
         )
         seen_domains = {domain_of(str(item.get("url") or "")) for item in trace["candidates"]}
         trace["candidates"].extend(
@@ -148,8 +176,10 @@ class CompanyWebsiteResolver:
         company_name: str,
         linkedin_company_url: str | None,
         search_evidence: dict[str, SearchEvidence] | None = None,
+        candidate_sources: dict[str, set[str]] | None = None,
     ) -> list[WebsiteCandidate]:
         search_evidence = search_evidence or {}
+        candidate_sources = candidate_sources or {}
         base_scored = [
             self._score_candidate(
                 candidate,
@@ -160,27 +190,42 @@ class CompanyWebsiteResolver:
             )
             for candidate in candidates
         ]
+        for candidate in base_scored:
+            candidate.reasons.extend(
+                f"candidate source: {source}"
+                for source in sorted(candidate_sources.get(domain_of(candidate.url), set()))
+            )
         base_scored.sort(key=lambda candidate: candidate.score, reverse=True)
 
         verify_count = min(self.verify_limit, len(base_scored))
-        to_verify = base_scored[:verify_count]
+        to_verify = _allocate_verification_slots(
+            base_scored,
+            verify_count,
+            candidate_sources,
+        )
         if to_verify:
             with ThreadPoolExecutor(max_workers=verify_count, thread_name_prefix="website-verify") as executor:
                 verified = list(
                     executor.map(
-                        lambda candidate: self._score_candidate(
-                            candidate.url,
-                            company_name,
-                            linkedin_company_url=linkedin_company_url,
-                            verify=True,
-                            search_evidence=search_evidence.get(domain_of(candidate.url)),
+                        lambda candidate: _append_candidate_sources(
+                            self._score_candidate(
+                                candidate.url,
+                                company_name,
+                                linkedin_company_url=linkedin_company_url,
+                                verify=True,
+                                search_evidence=search_evidence.get(domain_of(candidate.url)),
+                            ),
+                            candidate_sources.get(domain_of(candidate.url), set()),
                         ),
                         to_verify,
                     )
                 )
         else:
             verified = []
-        refined = verified + base_scored[verify_count:]
+        verified_domains = {domain_of(candidate.url) for candidate in to_verify}
+        refined = verified + [
+            candidate for candidate in base_scored if domain_of(candidate.url) not in verified_domains
+        ]
         return sorted(refined, key=lambda candidate: candidate.score, reverse=True)
 
     def _search_candidates(self, company_name: str) -> list[str]:
@@ -281,6 +326,14 @@ class CompanyWebsiteResolver:
                 continue
             if "homepage verified" not in candidate.reasons:
                 continue
+            if "single-token brand extension domain" in candidate.reasons and not any(
+                reason in candidate.reasons
+                for reason in (
+                    "LinkedIn slug confirms domain",
+                    "homepage canonical confirms company identity",
+                )
+            ):
+                continue
             if "ambiguous company name" in candidate.reasons and not any(
                 reason in candidate.reasons
                 for reason in (
@@ -315,6 +368,9 @@ class CompanyWebsiteResolver:
         ambiguous_name = _is_ambiguous_company_name(company_tokens)
         if ambiguous_name:
             reasons.append("ambiguous company name")
+        if _is_single_token_brand_extension_domain(domain, company_tokens):
+            score -= 25
+            reasons.append("single-token brand extension domain")
 
         for token in company_tokens:
             if token and token in domain:
@@ -358,6 +414,10 @@ class CompanyWebsiteResolver:
             return WebsiteCandidate(url, score, reasons)
 
         resolved_url = page.final_url or page.url
+        if _is_parked_domain_page(page.html, resolved_url):
+            score -= 200
+            reasons.append("parked domain rejected")
+            return WebsiteCandidate(resolved_url, score, reasons)
         reasons.append("homepage verified")
         canonical_url = _canonical_company_url(page.html, resolved_url, company_tokens)
         if canonical_url:
@@ -617,6 +677,26 @@ def _domain_confirms_company_identity(domain: str, company_tokens: list[str]) ->
     return label in {compact_name, dashed_name}
 
 
+def _is_single_token_brand_extension_domain(domain: str, company_tokens: list[str]) -> bool:
+    if len(company_tokens) != 1:
+        return False
+    label = domain.split(".")[-2] if "." in domain else domain
+    token = company_tokens[0]
+    if label == token or token not in label:
+        return False
+    if label in {
+        f"get{token}",
+        f"go{token}",
+        f"join{token}",
+        f"try{token}",
+        f"use{token}",
+        f"{token}corp",
+        f"{token}hq",
+    }:
+        return False
+    return True
+
+
 def _linkedin_slug_confirms_domain(
     domain: str,
     company_tokens: list[str],
@@ -669,12 +749,117 @@ def normalize_company_key(company_name: str) -> str:
 
 
 def tokenize_company_name(company_name: str) -> list[str]:
+    company_name = _strip_non_brand_qualifiers(company_name)
     cleaned = re.sub(r"\b(inc|llc|ltd|corp|corporation|co|company|technologies|technology)\b", "", company_name, flags=re.I)
     return [
         token.lower()
         for token in re.findall(r"[A-Za-z0-9]+", cleaned)
         if token
     ]
+
+
+def _strip_non_brand_qualifiers(company_name: str) -> str:
+    def replace_parenthetical(match: re.Match[str]) -> str:
+        content = " ".join(match.group(1).split())
+        normalized = content.casefold()
+        is_funding_or_batch = any(
+            re.search(pattern, normalized, flags=re.I)
+            for pattern in (
+                r"\b(?:yc|y\s+combinator)\b",
+                r"\b(?:pre[- ]?seed|seed|series\s+[a-z]|funded|funding|venture[- ]?backed)\b",
+                r"\b[wsf]\d{2}\b",
+            )
+        )
+        is_legal_only = re.fullmatch(
+            r"(?:incorporated|inc\.?|llc|ltd\.?|limited|corp\.?|corporation|plc)",
+            normalized,
+        ) is not None
+        return " " if is_funding_or_batch or is_legal_only else match.group(0)
+
+    return re.sub(r"\(([^()]*)\)", replace_parenthetical, company_name)
+
+
+def _is_parked_domain_page(html: str, resolved_url: str) -> bool:
+    host = domain_of(resolved_url)
+    if any(host == parked or host.endswith(f".{parked}") for parked in PARKED_DOMAIN_HOSTS):
+        return True
+    visible_head = re.sub(r"<[^>]+>", " ", (html or "")[:20000], flags=re.S)
+    normalized = " ".join(html_unescape(visible_head).casefold().split())
+    return any(marker in normalized for marker in PARKED_DOMAIN_TEXT_MARKERS)
+
+
+def _candidate_source_map(*groups: tuple[str, list[str]]) -> dict[str, set[str]]:
+    sources: dict[str, set[str]] = {}
+    for source, urls in groups:
+        for url in urls:
+            domain = domain_of(url)
+            if domain:
+                sources.setdefault(domain, set()).add(source)
+    return sources
+
+
+def _append_candidate_sources(
+    candidate: WebsiteCandidate,
+    sources: set[str],
+) -> WebsiteCandidate:
+    candidate.reasons.extend(
+        reason
+        for source in sorted(sources)
+        if (reason := f"candidate source: {source}") not in candidate.reasons
+    )
+    return candidate
+
+
+def _allocate_verification_slots(
+    scored: list[WebsiteCandidate],
+    verify_count: int,
+    candidate_sources: dict[str, set[str]],
+) -> list[WebsiteCandidate]:
+    if verify_count <= 0:
+        return []
+
+    selected: list[WebsiteCandidate] = []
+    selected_domains: set[str] = set()
+    # Direct page evidence is scarcer than generated guesses. Give each source
+    # one opportunity before filling the remaining bounded slots by score.
+    for source in ("linkedin_evidence", "search_evidence", "linkedin_slug"):
+        candidate = next(
+            (
+                item
+                for item in scored
+                if domain_of(item.url) not in selected_domains
+                and source in candidate_sources.get(domain_of(item.url), set())
+            ),
+            None,
+        )
+        if candidate is None:
+            continue
+        selected.append(candidate)
+        selected_domains.add(domain_of(candidate.url))
+        if len(selected) == verify_count:
+            return selected
+
+    direct_evidence_sources = {"linkedin_evidence", "search_evidence"}
+    for candidate in scored:
+        domain = domain_of(candidate.url)
+        if domain in selected_domains:
+            continue
+        if not candidate_sources.get(domain, set()).intersection(direct_evidence_sources):
+            continue
+        selected.append(candidate)
+        selected_domains.add(domain)
+        if len(selected) == verify_count:
+            return selected
+
+    for candidate in scored:
+        domain = domain_of(candidate.url)
+        if domain in selected_domains:
+            continue
+        selected.append(candidate)
+        selected_domains.add(domain)
+        if len(selected) == verify_count:
+            break
+    return selected
 
 
 def clean_search_url(url: str) -> str:
