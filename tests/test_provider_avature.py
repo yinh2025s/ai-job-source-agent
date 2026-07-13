@@ -94,6 +94,30 @@ class AvatureAdapterTests(unittest.TestCase):
         self.assertTrue(result.trace["exact_title_found"])
         self.assertEqual(result.trace["inventory_scope"], "title_filtered")
 
+    def test_normalizes_unicode_dash_in_search_query(self):
+        search_url = f"{BOARD}?sort=relevancy&search=Agentic+AI+Engineer+-+Healthcare+AI"
+        fetcher = RecordingFetcher(
+            {
+                search_url: Page(
+                    url=search_url,
+                    html=portal_html(
+                        '<a href="/en_US/careers/JobDetail/Agentic-AI-Engineer/355577">'
+                        "Agentic AI Engineer - Healthcare AI</a>"
+                    ),
+                )
+            }
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Agentic AI Engineer — Healthcare AI"),
+        )
+
+        self.assertIsNone(result.reason_code)
+        self.assertEqual(fetcher.requests[0][0], search_url)
+        self.assertTrue(result.trace["exact_title_found"])
+
     def test_rejects_cross_host_and_cross_portal_details(self):
         search_url = f"{BOARD}?sort=relevancy&search=Engineer"
         html = portal_html(

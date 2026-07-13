@@ -12,7 +12,14 @@ from job_source_agent.stages import (
 
 
 class FakeDiscoveryService:
-    def find_career_page(self, company_website_url, company_name=None, preferred_url=None, target_title=None):
+    def find_career_page(
+        self,
+        company_website_url,
+        company_name=None,
+        preferred_url=None,
+        target_title=None,
+        target_location=None,
+    ):
         return f"{company_website_url}/careers", {"method": "fake-career"}
 
     def find_job_board(self, career_page_url, company_name=None):
@@ -109,7 +116,14 @@ class DiscoveryStageTests(unittest.TestCase):
             def __init__(self):
                 self.preferred_url = None
 
-            def find_career_page(self, company_website_url, company_name=None, preferred_url=None, target_title=None):
+            def find_career_page(
+                self,
+                company_website_url,
+                company_name=None,
+                preferred_url=None,
+                target_title=None,
+                target_location=None,
+            ):
                 self.preferred_url = preferred_url
                 return "https://job-boards.greenhouse.io/acme", {"validated": True}
 
@@ -161,7 +175,14 @@ class DiscoveryStageTests(unittest.TestCase):
 
     def test_career_failure_makes_downstream_stages_not_run(self):
         class MissingCareerService(FakeDiscoveryService):
-            def find_career_page(self, company_website_url, company_name=None, preferred_url=None, target_title=None):
+            def find_career_page(
+                self,
+                company_website_url,
+                company_name=None,
+                preferred_url=None,
+                target_title=None,
+                target_location=None,
+            ):
                 raise DiscoveryError("career_page_not_found", "missing", trace={"searched": True})
 
         service = MissingCareerService()

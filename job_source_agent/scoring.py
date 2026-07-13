@@ -164,6 +164,9 @@ def is_ats_url(url: str) -> bool:
 
 
 def score_career_link(link: RawLink) -> LinkCandidate:
+    if is_resource_url(link.url):
+        return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"])
+
     haystack = f"{urlparse(link.url).path.lower()} {link.text.lower()} {domain_of(link.url)}"
     score = 0
     reasons: list[str] = []

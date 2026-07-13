@@ -139,7 +139,7 @@ class CompanyWebsiteResolver:
             "linkedin_company_url": linkedin_company_url,
             "job_location": job_location,
             "preferred_url": preferred_url,
-            "target_region": _location_region(job_location),
+            "target_region": location_region(job_location),
             "candidates": [],
         }
 
@@ -225,6 +225,7 @@ class CompanyWebsiteResolver:
                 }
                 return regional_selected.url, trace
 
+        loaded_linkedin_evidence_after_fast_path = False
         if not linkedin_evidence_loaded:
             linkedin_evidence = self._linkedin_company_candidates(
                 linkedin_company_url,
@@ -235,6 +236,60 @@ class CompanyWebsiteResolver:
             linkedin_official_source = linkedin_evidence.official_source
             if linkedin_official_source:
                 trace["linkedin_official_evidence_source"] = linkedin_official_source
+            loaded_linkedin_evidence_after_fast_path = True
+        if loaded_linkedin_evidence_after_fast_path and linkedin_official_candidates:
+            official_sources = _candidate_source_map(
+                ("linkedin_official_website", linkedin_official_candidates),
+                (
+                    "linkedin_cached_official_website",
+                    linkedin_official_candidates if linkedin_official_source == "cache" else [],
+                ),
+            )
+            recovered: list[WebsiteCandidate] = []
+            missing_verification: list[str] = []
+            for official_url in dedupe_urls(linkedin_official_candidates):
+                official_domain = domain_of(official_url)
+                prior = next(
+                    (
+                        candidate
+                        for candidate in fast_scored
+                        if domain_of(candidate.url) == official_domain
+                        and "domain-only score" not in candidate.reasons
+                    ),
+                    None,
+                )
+                if prior is None:
+                    missing_verification.append(official_url)
+                    continue
+                recovered_url = (
+                    prior.url if "homepage verified" in prior.reasons else normalize_url(official_url)
+                )
+                recovered.append(
+                    _append_candidate_sources(
+                        WebsiteCandidate(recovered_url, prior.score, list(prior.reasons)),
+                        official_sources.get(official_domain, set()),
+                    )
+                )
+            if missing_verification:
+                recovered.extend(
+                    self._rank_and_verify_candidates(
+                        missing_verification,
+                        company_name,
+                        linkedin_company_url,
+                        job_location=job_location,
+                        candidate_sources=official_sources,
+                    )
+                )
+            official_selected = self._select_verified_candidate(
+                sorted(recovered, key=lambda candidate: candidate.score, reverse=True)
+            )
+            if official_selected:
+                trace["selected"] = {
+                    "url": official_selected.url,
+                    "score": official_selected.score,
+                    "reasons": official_selected.reasons,
+                }
+                return official_selected.url, trace
         search_evidence = self._search_candidates_with_evidence(company_name, job_location)
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
@@ -356,7 +411,7 @@ class CompanyWebsiteResolver:
         company_name: str,
         job_location: str | None = None,
     ) -> list[SearchEvidence]:
-        region = _location_region(job_location)
+        region = location_region(job_location)
         region_query = " United States" if region == "us" else ""
         query_text = f"{company_name}{region_query} official website"
         query = urlencode({"q": query_text, "setlang": "en-us", "cc": "us"})
@@ -653,7 +708,7 @@ class CompanyWebsiteResolver:
                 score += 20
                 reasons.append("homepage canonical confirms company identity")
 
-        target_region = _location_region(job_location)
+        target_region = location_region(job_location)
         resolved_region = _url_region(resolved_url)
         if target_region and resolved_region and target_region != resolved_region:
             score -= 120
@@ -1296,7 +1351,7 @@ _NON_US_REGION_SEGMENTS = {
 }
 
 
-def _location_region(location: str | None) -> str | None:
+def location_region(location: str | None) -> str | None:
     if not location:
         return None
     normalized = location.casefold()
@@ -1329,7 +1384,7 @@ def _regional_root_candidates(
     scored: list[WebsiteCandidate],
     job_location: str | None,
 ) -> list[str]:
-    target_region = _location_region(job_location)
+    target_region = location_region(job_location)
     if target_region != "us":
         return []
     conflicting = next(

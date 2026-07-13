@@ -20,6 +20,7 @@ class CareerDiscoveryService(Protocol):
         company_name: str | None = None,
         preferred_url: str | None = None,
         target_title: str | None = None,
+        target_location: str | None = None,
     ) -> tuple[str, dict]:
         ...
 
@@ -80,6 +81,7 @@ class CareerDiscoveryStage:
                     company_name=context.company.company_name,
                     preferred_url=context.career_root_url,
                     target_title=context.company.job_title,
+                    target_location=context.company.job_location,
                 )
                 detail = (
                     "Replay career root was revalidated."

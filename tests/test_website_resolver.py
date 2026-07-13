@@ -260,6 +260,46 @@ class WebsiteResolverTests(unittest.TestCase):
             trace["selected"]["reasons"],
         )
 
+    def test_linkedin_official_evidence_reuses_failed_fast_verification_before_search(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class OfficialEvidenceFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.homepage_calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme",'
+                            '"sameAs":"https://www.acme.com"}'
+                            "</script>"
+                        ),
+                    )
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    raise AssertionError("official evidence should resolve before search")
+                self.homepage_calls.append(url)
+                raise FetchError("homepage unavailable")
+
+        fetcher = OfficialEvidenceFetcher()
+        website_url, trace = CompanyWebsiteResolver(
+            fetcher,
+            verify_limit=3,
+        ).resolve("Acme", linkedin_url, "Austin, TX")
+
+        self.assertEqual(website_url, "https://www.acme.com")
+        self.assertEqual(
+            sum(domain_of(url) == "acme.com" for url in fetcher.homepage_calls),
+            1,
+        )
+        self.assertIn(
+            "LinkedIn official website accepted without homepage response",
+            trace["selected"]["reasons"],
+        )
+
     def test_cached_official_website_beats_stale_preferred_domain_during_throttle(self):
         linkedin_url = "https://www.linkedin.com/company/m-r-walls"
 

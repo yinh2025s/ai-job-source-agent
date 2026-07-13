@@ -18,6 +18,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "DNS_FAILED": ReasonSpec(True, "network"),
     "CONNECTION_FAILED": ReasonSpec(True, "network"),
     "FETCH_FAILED": ReasonSpec(True, "network"),
+    "HTTP_NOT_FOUND": ReasonSpec(False, "external"),
     "HTTP_FORBIDDEN": ReasonSpec(False, "external"),
     "RATE_LIMITED": ReasonSpec(True, "external"),
     "SERVER_ERROR": ReasonSpec(True, "external"),
@@ -92,6 +93,8 @@ def classify_fetch_error(detail: str) -> str:
         return "LOGIN_REQUIRED"
     if any(marker in text for marker in ("403", "forbidden")):
         return "HTTP_FORBIDDEN"
+    if re.search(r"(?:http(?: error)?|status(?: code)?)\D*404\b", text) or "not found" in text:
+        return "HTTP_NOT_FOUND"
     if any(marker in text for marker in ("captcha", "challenge", "cloudflare")):
         return "BOT_PROTECTION"
     if "server error" in text or re.search(r"(?:http(?: error)?|status(?: code)?)\D*5\d\d\b", text):

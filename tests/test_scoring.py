@@ -20,6 +20,18 @@ class ScoringTests(unittest.TestCase):
         )
         self.assertGreaterEqual(candidate.score, 100)
 
+    def test_career_asset_is_rejected_even_when_filename_contains_keyword(self):
+        candidate = score_career_link(
+            RawLink(
+                url="https://example.com/uploads/life-at-careers.webp",
+                text="Careers image",
+                source_url="https://example.com/sitemap.xml",
+            )
+        )
+
+        self.assertEqual(candidate.score, -500)
+        self.assertEqual(candidate.reasons, ["static/resource URL"])
+
     def test_job_link_prefers_ats_job_detail(self):
         candidate = score_job_link(
             RawLink(

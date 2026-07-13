@@ -46,7 +46,7 @@ class AvatureAdapter:
         host, language, portal = config
         params = {"sort": "relevancy"}
         if query.title:
-            params["search"] = query.title.strip()
+            params["search"] = _search_title(query.title)
         search_url = f"{_search_url(host, language, portal)}?{urlencode(params)}"
 
         try:
@@ -258,6 +258,11 @@ def _safe_https_url(url: str):
 
 def _normalized_title(value: str | None) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", value.casefold())) if value else ""
+
+
+def _search_title(value: str) -> str:
+    normalized = re.sub(r"[\u2010-\u2015\u2212]", " - ", value)
+    return " ".join(normalized.split())
 
 
 def _unsupported(board: JobBoard, error: str, rejected_url: str | None = None) -> AdapterResult:

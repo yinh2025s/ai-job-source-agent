@@ -93,6 +93,7 @@ class StageResultTests(unittest.TestCase):
         self.assertEqual(classify_fetch_error("The read operation timed out"), "NETWORK_TIMEOUT")
         self.assertEqual(classify_fetch_error("[Errno 8] nodename nor servname provided"), "DNS_FAILED")
         self.assertEqual(classify_fetch_error("HTTP Error 429: Too Many Requests"), "RATE_LIMITED")
+        self.assertEqual(classify_fetch_error("HTTP Error 404: Not Found"), "HTTP_NOT_FOUND")
         self.assertEqual(classify_fetch_error("HTTP status 599"), "SERVER_ERROR")
         self.assertEqual(classify_fetch_error("Temporary failure in name resolution"), "DNS_FAILED")
         self.assertEqual(classify_fetch_error("parser mismatch"), "PARSING_FAILED")

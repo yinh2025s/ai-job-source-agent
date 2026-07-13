@@ -43,6 +43,7 @@ from .scoring import (
 )
 from .stages import CareerDiscoveryStage, JobBoardDiscoveryStage, OpeningMatchStage, PipelineStageRunner
 from .web import FetchError, Page, RawLink, domain_of, extract_links, normalize_url
+from .website_resolver import location_region
 
 
 COMMON_CAREER_PATHS = (
@@ -302,6 +303,7 @@ class JobSourceAgent:
         company_name: str | None = None,
         preferred_url: str | None = None,
         target_title: str | None = None,
+        target_location: str | None = None,
     ) -> tuple[str, dict]:
         homepage_url = normalize_url(company_website_url)
         raw_candidates: list[RawLink] = []
@@ -324,32 +326,72 @@ class JobSourceAgent:
             )
             trace["preferred_career_root"] = normalize_url(preferred_url)
         raw_candidates.extend(self._common_path_candidates(homepage_url))
-        if self.enable_sitemap_discovery:
-            sitemap_candidates, sitemap_trace = self._sitemap_candidates(homepage_url)
-            raw_candidates.extend(sitemap_candidates)
-            trace["sitemap_discovery"] = sitemap_trace
-        else:
-            trace["sitemap_discovery"] = {"skipped": True}
-
-        scored = sorted(
+        primary_scored = sorted(
             [
-                self._score_career_candidate(link, homepage_url, target_title=target_title)
+                self._score_career_candidate(
+                    link,
+                    homepage_url,
+                    target_title=target_title,
+                    target_location=target_location,
+                )
                 for link in raw_candidates
             ],
             key=lambda candidate: candidate.score,
             reverse=True,
         )
-        deduped = self._dedupe_candidates(scored)
+        primary_candidates = self._dedupe_candidates(primary_scored)
         trace["homepage_url"] = homepage_url
-        trace["candidates"] = dataclass_to_dict(deduped[:10])
+        trace["candidates"] = dataclass_to_dict(primary_candidates[:10])
 
         selected_url = self._select_verified_career_candidate(
-            deduped,
+            primary_candidates,
             trace,
             target_title=target_title,
         )
         if selected_url:
+            trace["sitemap_discovery"] = {
+                "skipped": True,
+                "reason": "primary candidate verified before sitemap fanout",
+            }
             return selected_url, trace
+
+        if self.enable_sitemap_discovery:
+            target_region = location_region(target_location)
+            sitemap_links, sitemap_trace = self._sitemap_candidates(
+                homepage_url,
+                target_region=target_region,
+            )
+            trace["sitemap_discovery"] = sitemap_trace
+            sitemap_scored = sorted(
+                [
+                    self._score_career_candidate(
+                        link,
+                        homepage_url,
+                        target_title=target_title,
+                        target_location=target_location,
+                    )
+                    for link in sitemap_links
+                ],
+                key=lambda candidate: candidate.score,
+                reverse=True,
+            )
+            sitemap_candidates = self._dedupe_candidates(sitemap_scored)
+            combined_candidates = sorted(
+                primary_candidates + sitemap_candidates,
+                key=lambda candidate: candidate.score,
+                reverse=True,
+            )
+            trace["candidates"] = dataclass_to_dict(combined_candidates[:10])
+            selected_url = self._select_verified_career_candidate(
+                sitemap_candidates,
+                trace,
+                target_title=target_title,
+            )
+            if selected_url:
+                trace["selected_from"] = "sitemap_discovery"
+                return selected_url, trace
+        else:
+            trace["sitemap_discovery"] = {"skipped": True}
 
         if self.enable_career_search and company_name:
             search_result = self._search_career_candidates(company_name, homepage_url)
@@ -973,11 +1015,11 @@ class JobSourceAgent:
         candidates: list[LinkCandidate] = []
         for slug in self._ats_slug_candidates(company_name, homepage_url):
             urls = (
+                (f"https://jobs.smartrecruiters.com/{slug}", "SmartRecruiters"),
                 (f"https://jobs.lever.co/{slug}", "Lever"),
                 (f"https://boards.greenhouse.io/{slug}", "Greenhouse"),
                 (f"https://jobs.ashbyhq.com/{slug}", "Ashby"),
                 (f"https://{slug}.breezy.hr/", "Breezy"),
-                (f"https://jobs.smartrecruiters.com/{slug}", "SmartRecruiters"),
                 (f"https://apply.workable.com/{slug}", "Workable"),
                 (f"https://{slug}.bamboohr.com/careers", "BambooHR"),
                 (f"https://ats.rippling.com/embed/{slug}/jobs", "Rippling"),
@@ -1053,6 +1095,7 @@ class JobSourceAgent:
         homepage_url: str | None = None,
         *,
         target_title: str | None = None,
+        target_location: str | None = None,
     ) -> LinkCandidate:
         candidate = score_career_link(link)
         path_parts = [part.lower() for part in urlparse(link.url).path.split("/") if part]
@@ -1071,6 +1114,16 @@ class JobSourceAgent:
             candidate.reasons.append(f"career audience mismatch: {audience_mismatch}")
         homepage_locale = _leading_locale_segment(homepage_url)
         candidate_locale = _leading_locale_segment(link.url)
+        target_region = location_region(target_location)
+        if target_region and candidate_locale:
+            if candidate_locale == target_region:
+                candidate.score += 180
+                candidate.reasons.append(f"matches target location region '{target_region}'")
+            else:
+                candidate.score -= 300
+                candidate.reasons.append(
+                    f"conflicts with target location region '{target_region}': '{candidate_locale}'"
+                )
         if (
             homepage_locale
             and candidate_locale
@@ -1353,7 +1406,12 @@ class JobSourceAgent:
         verification["title_match_count"] = len(matching_links)
         return has_job_detail, verification
 
-    def _sitemap_candidates(self, homepage_url: str) -> tuple[list[RawLink], dict]:
+    def _sitemap_candidates(
+        self,
+        homepage_url: str,
+        *,
+        target_region: str | None = None,
+    ) -> tuple[list[RawLink], dict]:
         parsed = urlparse(homepage_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
         sitemap_urls = [normalize_url("/sitemap.xml", base), normalize_url("/sitemap_index.xml", base)]
@@ -1363,6 +1421,7 @@ class JobSourceAgent:
             "fanout_limit": MAX_SITEMAPS_PER_DISCOVERY,
             "fanout_limit_reached": False,
             "sitemaps_not_scheduled": 0,
+            "target_region": target_region,
         }
 
         try:
@@ -1389,7 +1448,15 @@ class JobSourceAgent:
                 continue
 
             urls = self._extract_sitemap_locs(page.html)
+            if target_region:
+                urls.sort(
+                    key=lambda url: (
+                        0 if _sitemap_matches_region(url, target_region) else 1,
+                        url,
+                    )
+                )
             trace["sitemaps_checked"].append({"url": sitemap_url, "url_count": len(urls)})
+            candidates_before = len(links)
             for url in urls:
                 lower_url = url.lower()
                 if lower_url.endswith(".xml"):
@@ -1403,18 +1470,37 @@ class JobSourceAgent:
                     scheduled_sitemaps.add(normalized_sitemap)
                     pending_sitemaps.append(normalized_sitemap)
                     continue
+                normalized_url = normalize_url(url)
+                target_host = urlparse(normalized_url).hostname or ""
+                homepage_host = parsed.hostname or ""
+                if is_resource_url(normalized_url):
+                    continue
+                if not (
+                    self._same_site_host(target_host, homepage_host)
+                    or self._is_provider_job_board_url(normalized_url)
+                ):
+                    continue
                 if any(
                     token in lower_url
                     for token in ("career", "careers", "jobs", "join-us", "join-our-team", "join-", "openings")
                 ):
                     links.append(
                         RawLink(
-                            url=normalize_url(url),
+                            url=normalized_url,
                             text=urlparse(url).path,
                             source_url=sitemap_url,
                             origin="sitemap",
                         )
                     )
+
+            if (
+                target_region
+                and _sitemap_matches_region(sitemap_url, target_region)
+                and len(links) > candidates_before
+            ):
+                trace["stopped_reason"] = "target_region_candidates_found"
+                trace["sitemaps_not_scheduled"] += len(pending_sitemaps)
+                break
 
         trace["candidate_count"] = len(links)
         return links, trace
@@ -1589,6 +1675,15 @@ def _leading_locale_segment(url: str | None) -> str | None:
     if first in {"southeast-asia", "united-kingdom", "australia", "canada", "india"}:
         return first
     return None
+
+
+def _sitemap_matches_region(url: str, region: str) -> bool:
+    try:
+        path = urlparse(url).path.casefold()
+    except (TypeError, ValueError):
+        return False
+    escaped = re.escape(region.casefold())
+    return re.search(rf"(?:^|[._/-]){escaped}(?:[._/-]|$)", path) is not None
 
 
 def _career_audience_mismatch(

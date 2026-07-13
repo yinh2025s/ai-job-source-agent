@@ -73,6 +73,7 @@ class RetryFetcherTests(unittest.TestCase):
     def test_non_retryable_matrix_preserves_original_fetch_error(self):
         cases = {
             "HTTP Error 403: Forbidden": "HTTP_FORBIDDEN",
+            "HTTP Error 404: Not Found": "HTTP_NOT_FOUND",
             "Login required": "LOGIN_REQUIRED",
             "parser mismatch for jobs payload": "PARSING_FAILED",
             "invalid structured data": "PARSING_FAILED",
