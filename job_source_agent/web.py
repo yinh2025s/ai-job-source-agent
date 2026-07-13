@@ -26,6 +26,18 @@ TRACKING_PARAMS = {
     "gclid",
 }
 
+MAX_EXTRACTED_LINKS = 200
+MAX_EMBEDDED_SCAN_CHARS = 250_000
+_URL_DATA_ATTRIBUTES = {
+    "data-apply-url",
+    "data-careers-url",
+    "data-href",
+    "data-job-board-url",
+    "data-jobs-url",
+    "data-src",
+    "data-url",
+}
+
 
 @dataclass
 class RawLink:
@@ -124,6 +136,13 @@ class _LinkParser(HTMLParser):
         self._active_href: str | None = None
         self._active_text: list[str] = []
 
+    def _append_attribute_link(self, value: str, origin: str) -> None:
+        if len(self.links) >= MAX_EXTRACTED_LINKS:
+            return
+        normalized = safe_normalize_url(value, self.base_url)
+        if normalized:
+            self.links.append(RawLink(normalized, "", self.source_url, origin))
+
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag_name = tag.lower()
         attrs_dict = {key.lower(): value for key, value in attrs}
@@ -132,6 +151,11 @@ class _LinkParser(HTMLParser):
             if normalized_base:
                 self.base_url = normalized_base
             return
+        if tag_name == "iframe" and attrs_dict.get("src"):
+            self._append_attribute_link(attrs_dict["src"] or "", "iframe_src")
+        for name, value in attrs_dict.items():
+            if value and (name in _URL_DATA_ATTRIBUTES or (name.startswith("data-") and name.endswith("-url"))):
+                self._append_attribute_link(value, "data_attribute")
         if tag_name != "a":
             return
         href = attrs_dict.get("href")
@@ -148,7 +172,7 @@ class _LinkParser(HTMLParser):
             return
         text = " ".join("".join(self._active_text).split())
         normalized_href = safe_normalize_url(self._active_href, self.base_url)
-        if normalized_href:
+        if normalized_href and len(self.links) < MAX_EXTRACTED_LINKS:
             self.links.append(
                 RawLink(
                     url=normalized_href,
@@ -165,10 +189,23 @@ def extract_links(page: Page) -> list[RawLink]:
     parser = _LinkParser(page.final_url or page.url)
     parser.feed(page.html)
     links = parser.links
-    # Some modern sites store navigation targets in data attributes or escaped
-    # JSON blobs. This conservative pass catches obvious absolute URLs.
-    for url in re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", page.html):
-        normalized_url = safe_normalize_url(url)
+    source_url = page.final_url or page.url
+    if (
+        len(links) < MAX_EXTRACTED_LINKS
+        and page.final_url
+        and normalize_url(page.final_url) != normalize_url(page.url)
+    ):
+        links.append(RawLink(normalize_url(page.final_url), "", page.url, "redirect_final_url"))
+
+    # Script and JSON payloads commonly slash- or unicode-escape ATS URLs.
+    embedded = page.html[:MAX_EMBEDDED_SCAN_CHARS]
+    embedded = re.sub(r"\\u00(?:2f|2F)", "/", embedded)
+    embedded = embedded.replace(r"\/", "/")
+    embedded = unescape(embedded)
+    for url in re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", embedded):
+        if len(links) >= MAX_EXTRACTED_LINKS:
+            break
+        normalized_url = safe_normalize_url(url.rstrip("'\"),.;"))
         if not normalized_url:
             continue
         if any(existing.url == normalized_url for existing in links):
@@ -177,7 +214,7 @@ def extract_links(page: Page) -> list[RawLink]:
             RawLink(
                 url=normalized_url,
                 text="",
-                source_url=page.final_url or page.url,
+                source_url=source_url,
                 origin="embedded_url",
             )
         )

@@ -25,6 +25,9 @@ ATS_DOMAINS = (
     "sapsf.com",
     "myworkdayjobs.com",
     "ats.rippling.com",
+    "eightfold.ai",
+    "careers.oracle.com",
+    "oraclecloud.com",
 )
 
 CAREER_KEYWORDS = {
@@ -106,6 +109,9 @@ NON_JOB_PATH_PARTS = {
     "locations",
     "departments",
     "people",
+    "login",
+    "my-profile",
+    "sign-in",
 }
 
 RESOURCE_EXTENSIONS = (
@@ -147,6 +153,8 @@ GENERIC_JOB_LISTING_PARTS = {
     "positions",
     "openings",
     "job-openings",
+    "search-results",
+    "candidateexperience",
 }
 
 
@@ -213,6 +221,9 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     elif any(token in path for token in ("/jobs", "/careers", "/positions", "/openings", "/job-openings")):
         score += 25
         reasons.append("job-listing path pattern")
+    elif [part for part in path.split("/") if part] and path.rstrip("/").split("/")[-1] in GENERIC_JOB_LISTING_PARTS:
+        score += 50
+        reasons.append("job-listing route name")
 
     for keyword, weight in JOB_TITLE_KEYWORDS.items():
         if keyword in haystack:
@@ -260,12 +271,15 @@ def is_likely_job_listing_page(candidate: LinkCandidate) -> bool:
         return False
     reason_text = " ".join(candidate.reasons)
     path_parts = [part.lower() for part in urlparse(candidate.url).path.split("/") if part]
+    if any(part in NON_JOB_PATH_PARTS for part in path_parts):
+        return False
     text = candidate.text.lower()
     return (
         candidate.score >= 45
         and (
             "ATS board/listing candidate" in reason_text
             or "job-listing path pattern" in reason_text
+            or "job-listing route name" in reason_text
             or (path_parts and path_parts[-1] in GENERIC_JOB_LISTING_PARTS)
             or "open roles" in text
             or "open positions" in text
@@ -303,6 +317,11 @@ def _looks_like_ats_job_detail(url: str) -> bool:
         return "jobs" in [part.lower() for part in parts] and any(part.isdigit() for part in parts)
     if "workdayjobs.com" in host or "myworkdayjobs.com" in host:
         return "job" in [part.lower() for part in parts] and len(parts) >= 3
+    if "eightfold.ai" in host:
+        return any(part.lower() in {"job", "jobs"} for part in parts) and len(parts) >= 3
+    if host == "careers.oracle.com" or host.endswith(".oraclecloud.com"):
+        lowered = [part.lower() for part in parts]
+        return "job" in lowered or "jobdetail" in lowered
     if "successfactors.com" in host or "sapsf.com" in host:
         query = urlparse(url).query.lower()
         return "career_job_req_id" in query or "jobreqid" in query or any(part.lower() == "job" for part in parts)

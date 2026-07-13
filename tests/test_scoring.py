@@ -82,6 +82,31 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(is_likely_job_listing_page(candidate))
         self.assertLess(candidate.score, 0)
 
+    def test_ats_login_is_not_a_job_listing(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://acme.fa.oraclecloud.com/hcmUI/CandidateExperience/en/sites/Acme/my-profile/sign-in",
+                text="Login",
+                source_url="https://example.com/careers",
+            ),
+            career_page_url="https://example.com/careers",
+        )
+
+        self.assertFalse(is_likely_job_detail(candidate))
+        self.assertFalse(is_likely_job_listing_page(candidate))
+
+    def test_search_results_route_is_a_listing_candidate(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://careers.example.com/us/en/search-results",
+                text="Explore roles",
+                source_url="https://careers.example.com/us/en",
+            ),
+            career_page_url="https://careers.example.com/us/en",
+        )
+
+        self.assertTrue(is_likely_job_listing_page(candidate))
+
 
 if __name__ == "__main__":
     unittest.main()

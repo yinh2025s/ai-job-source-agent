@@ -483,8 +483,9 @@ class JobSourceAgent:
                 return None, board.url, trace
             if self._is_provider_job_board_url(actual_page_url):
                 trace["job_list_page_url"] = actual_page_url
+            raw_job_links = [self._canonicalize_job_board_link(link) for link in extract_links(page)]
             scored = sorted(
-                [score_job_link(link, actual_page_url) for link in extract_links(page)],
+                [score_job_link(link, actual_page_url) for link in raw_job_links],
                 key=lambda candidate: candidate.score,
                 reverse=True,
             )
@@ -515,10 +516,56 @@ class JobSourceAgent:
                 return opened.final_url or opened.url, actual_page_url, trace
 
             for candidate in deduped[: self.max_candidates]:
-                if is_likely_job_listing_page(candidate) and candidate.url.rstrip("/") not in visited:
+                if (
+                    is_likely_job_listing_page(candidate)
+                    and self._is_safe_traversal_target(candidate.url, actual_page_url)
+                    and candidate.url.rstrip("/") not in visited
+                ):
                     queue.append(candidate.url)
 
         return None, trace["job_list_page_url"], trace
+
+    def _is_safe_traversal_target(self, url: str, source_url: str) -> bool:
+        if is_resource_url(url):
+            return False
+        parsed_target = urlparse(url)
+        if parsed_target.username or parsed_target.password:
+            return False
+        try:
+            if parsed_target.port not in {None, 80, 443}:
+                return False
+        except ValueError:
+            return False
+        target_host = parsed_target.hostname or ""
+        source_host = urlparse(source_url).hostname or ""
+        if not target_host or not source_host:
+            return False
+        return is_ats_url(url) or self._same_site_host(target_host, source_host)
+
+    def _canonicalize_job_board_link(self, link: RawLink) -> RawLink:
+        parsed = urlparse(link.url)
+        host = (parsed.hostname or "").casefold()
+        parts = [part for part in parsed.path.split("/") if part]
+        lowered = [part.casefold() for part in parts]
+        if host.endswith(".oraclecloud.com") and "my-profile" in lowered:
+            cutoff = lowered.index("my-profile")
+            path = "/" + "/".join(parts[:cutoff])
+            url = parsed._replace(path=path, query="", fragment="").geturl()
+            return RawLink(url, link.text, link.source_url, "derived_ats_root")
+        return link
+
+    def _same_site_host(self, first: str, second: str) -> bool:
+        if first == second or first.endswith("." + second) or second.endswith("." + first):
+            return True
+        return self._registrable_site(first) == self._registrable_site(second)
+
+    def _registrable_site(self, host: str) -> str:
+        parts = host.casefold().strip(".").split(".")
+        if len(parts) <= 2:
+            return ".".join(parts)
+        two_level_suffixes = {"co.uk", "com.au", "com.br", "com.sg", "co.jp", "co.nz"}
+        suffix = ".".join(parts[-2:])
+        return ".".join(parts[-3:]) if suffix in two_level_suffixes else suffix
 
     def _has_job_list_evidence(self, page_url: str, candidates: list[LinkCandidate]) -> bool:
         if self._is_provider_job_board_url(page_url):
@@ -533,7 +580,7 @@ class JobSourceAgent:
             return False
         provider = self.provider_registry.detect(url)
         if provider == "generic":
-            return False
+            return is_ats_url(url)
         parts = [part.lower() for part in urlparse(url).path.split("/") if part]
         if provider == "workday":
             return bool(parts) and not any(part in NON_JOB_BOARD_PATH_PARTS for part in parts)
@@ -893,6 +940,9 @@ class JobSourceAgent:
             "smartrecruiters.com",
             "myworkdayjobs.com",
             "icims.com",
+            "eightfold.ai",
+            "careers.oracle.com",
+            "oraclecloud.com",
         )
         return any(marker in text for marker in ats_markers)
 
