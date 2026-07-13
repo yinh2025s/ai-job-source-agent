@@ -47,6 +47,23 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("abcdefghijklmnop", sanitized)
         self.assertIn("[REDACTED]", sanitized)
 
+    def test_sanitize_snapshot_body_redacts_standalone_unquoted_code(self):
+        for body in ("code=secret-one", "code: secret-two", "/code=secret-three"):
+            with self.subTest(body=body):
+                sanitized = sanitize_snapshot_body(body)
+
+                self.assertNotIn("secret", sanitized)
+                self.assertIn("code", sanitized)
+                self.assertIn("[REDACTED]", sanitized)
+
+    def test_sanitize_snapshot_body_preserves_compound_code_identifiers(self):
+        body = (
+            "urlCode=TALEO-123 statusCode=active countryCode=US "
+            'window.taleo = {"urlCode": "TALEO-456"}'
+        )
+
+        self.assertEqual(sanitize_snapshot_body(body), body)
+
     def test_sanitize_snapshot_body_redacts_ceipal_credential_path(self):
         body = (
             '{"next":"https://careerapi.ceipal.com/private-key/'

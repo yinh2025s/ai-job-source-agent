@@ -44,6 +44,7 @@
 - 成功 replay 除 pipeline status 外必须验证 URL/provider identity；fixture smoke 或仅比较
   failure signature 不能替代 full-outcome gate。
 - 自动 replay 的 mismatch 或 fixture gap 必须使 live gate 非零；bundle 文件成功生成不等于验收通过。
+- `budget_recovery` 只允许 outer company timeout 在完整 authoritative prefix 上离线前进；它必须越过原超时 stage、保持 source identity prefix、没有 fixture gap，并在 manifest 暴露 replay full identity。其他结果改善仍是 mismatch。
 - Run configuration 只允许固定数值/布尔字段；路径、cookies、tokens、headers、HTML 和
   登录态信息不得写入该 contract。
 

@@ -33,7 +33,7 @@ from job_source_agent.web import normalize_url
 from scripts.export_replay_input import export_replay_records
 
 
-BUNDLE_SCHEMA_VERSION = 3
+BUNDLE_SCHEMA_VERSION = 4
 
 
 class FailureReplayError(ValueError):
@@ -208,6 +208,7 @@ def _empty_bundle_manifest(args: argparse.Namespace) -> dict:
             "classification_counts": {
                 "reproduced": 0,
                 "expected_transition": 0,
+                "budget_recovery": 0,
                 "fixture_gap": 0,
                 "mismatch": 0,
             },
@@ -401,6 +402,7 @@ def _build_outcome_gate(
     counts = {
         "reproduced": 0,
         "expected_transition": 0,
+        "budget_recovery": 0,
         "fixture_gap": 0,
         "mismatch": 0,
     }
@@ -440,15 +442,31 @@ def _build_outcome_gate(
             if expected_transition is not None
             else replayed_original
         )
+        budget_replay_outcome = _result_outcome(
+            replay_result,
+            failure_stage=None,
+            include_identity=True,
+        )
+        source_identity_prefix = _successful_identity_prefix(source_record)
         if original == replayed_original and original is not None:
             classification = "reproduced"
             reason = "outcome_equal"
         elif _has_reason_code(replay_result, "OFFLINE_FIXTURE_MISSING"):
             classification = "fixture_gap"
             reason = "offline_fixture_missing"
-        elif expected_transition is not None and expected_transition == replayed_expected:
+        elif (
+            expected_transition is not None
+            and expected_transition == replayed_expected
+            and _identity_prefix_matches(source_record, replay_result)
+        ):
             classification = "expected_transition"
             reason = "declared_transition_equal"
+        elif (
+            expected_transition is None
+            and _is_budget_recovery(source_record, replay_result)
+        ):
+            classification = "budget_recovery"
+            reason = "company_budget_replay_advanced"
         else:
             classification = "mismatch"
             reason = (
@@ -476,8 +494,11 @@ def _build_outcome_gate(
                 "replay_outcome": (
                     replayed_expected
                     if expected_transition is not None
+                    else budget_replay_outcome
+                    if classification == "budget_recovery"
                     else replayed_original
                 ),
+                "source_identity_prefix": source_identity_prefix,
             }
         )
 
@@ -614,6 +635,97 @@ def _result_identity(record: dict) -> dict:
         "open_position_url": _canonical_public_url(record.get("open_position_url")),
         "provider": _optional_string(result_provider(record)),
     }
+
+
+def _successful_identity_prefix(record: dict | None) -> dict | None:
+    if not isinstance(record, dict):
+        return None
+    stages = record.get("stages")
+    if not isinstance(stages, list):
+        return None
+    stage_by_name = {
+        stage.get("stage"): stage
+        for stage in stages
+        if isinstance(stage, dict) and stage.get("stage") in PIPELINE_STAGES
+    }
+    identity = _result_identity(record)
+    fields_by_stage = {
+        "website_resolution": ("company_website_url",),
+        "hiring_identity_resolution": (
+            "company_website_url",
+            "hiring_entity_name",
+        ),
+        "career_discovery": ("career_page_url",),
+        "job_board_discovery": ("job_list_page_url", "provider"),
+        "opening_match": ("open_position_url",),
+    }
+    prefix: dict[str, str | None] = {}
+    for stage_name in PIPELINE_STAGES:
+        stage = stage_by_name.get(stage_name)
+        if stage is None or stage.get("status") not in {"success", "not_applicable"}:
+            break
+        if stage.get("status") == "success":
+            for field in fields_by_stage.get(stage_name, ()):
+                prefix[field] = identity[field]
+            if stage_name == "hiring_identity_resolution":
+                career_root = _canonical_public_url(record.get("career_root_url"))
+                if career_root is not None:
+                    prefix["career_root_url"] = career_root
+    return prefix
+
+
+def _identity_prefix_matches(source: dict | None, replay: dict | None) -> bool:
+    prefix = _successful_identity_prefix(source)
+    if prefix is None:
+        return source is None
+    if not isinstance(replay, dict):
+        return False
+    replay_identity = _result_identity(replay)
+    if "career_root_url" in prefix:
+        replay_identity["career_root_url"] = _canonical_public_url(
+            replay.get("career_root_url")
+        )
+    return all(replay_identity.get(field) == value for field, value in prefix.items())
+
+
+def _is_budget_recovery(source: dict | None, replay: dict | None) -> bool:
+    if not isinstance(source, dict) or not isinstance(replay, dict):
+        return False
+    source_failure = _first_non_success_result_stage(source)
+    if not isinstance(source_failure, dict):
+        return False
+    source_stage = _optional_string(source_failure.get("stage"))
+    if (
+        source_failure.get("reason_code") != "COMPANY_TIME_BUDGET_EXHAUSTED"
+        or source_stage not in PIPELINE_STAGES
+        or _authoritative_upstream_executions(source, source_stage) is None
+        or not _identity_prefix_matches(source, replay)
+        or _has_reason_code(replay, "COMPANY_TIME_BUDGET_EXHAUSTED")
+    ):
+        return False
+
+    replay_stages = replay.get("stages")
+    if not isinstance(replay_stages, list):
+        return False
+    replay_by_name = {
+        stage.get("stage"): stage
+        for stage in replay_stages
+        if isinstance(stage, dict) and stage.get("stage") in PIPELINE_STAGES
+    }
+    completed = replay_by_name.get(source_stage)
+    if not isinstance(completed, dict) or completed.get("status") not in {
+        "success",
+        "not_applicable",
+    }:
+        return False
+    replay_failure = _first_non_success_result_stage(replay)
+    if replay_failure is None:
+        return True
+    replay_stage = _optional_string(replay_failure.get("stage"))
+    return bool(
+        replay_stage in PIPELINE_STAGES
+        and PIPELINE_STAGES.index(replay_stage) > PIPELINE_STAGES.index(source_stage)
+    )
 
 
 def _canonical_public_url(value: object) -> str | None:

@@ -288,7 +288,7 @@ def sanitize_snapshot_body(body: str) -> str:
             redacted,
         )
         redacted = re.sub(
-            rf"(?i)({re.escape(key)}\s*[=:]\s*)([\"']?)[^\"'&\s<>,;]+(\2)",
+            rf"(?i)((?<![A-Za-z0-9_$]){re.escape(key)}\s*[=:]\s*)([\"']?)[^\"'&\s<>,;]+(\2)",
             rf"\1\2[REDACTED]\3",
             redacted,
         )

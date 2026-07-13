@@ -100,6 +100,7 @@ class FailureReplayBundleTests(unittest.TestCase):
             {
                 "reproduced": 1,
                 "expected_transition": 0,
+                "budget_recovery": 0,
                 "fixture_gap": 0,
                 "mismatch": 0,
             },
@@ -140,7 +141,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                 (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
             )
 
-        self.assertEqual(manifest["bundle_schema_version"], 3)
+        self.assertEqual(manifest["bundle_schema_version"], 4)
         self.assertEqual(manifest["run_configuration"], source_config.to_payload())
         self.assertEqual(manifest["run_configuration_digest"], source_config.digest)
         self.assertEqual(manifest["run_configuration_provenance"], "source_record")
@@ -321,6 +322,7 @@ class FailureReplayBundleTests(unittest.TestCase):
             {
                 "reproduced": 0,
                 "expected_transition": 0,
+                "budget_recovery": 0,
                 "fixture_gap": 1,
                 "mismatch": 0,
             },
@@ -485,6 +487,178 @@ class FailureReplayBundleTests(unittest.TestCase):
 
         self.assertEqual(gate["status"], "incomplete")
         self.assertEqual(gate["records"][0]["classification"], "fixture_gap")
+
+    def test_company_budget_timeout_can_replay_to_later_structured_outcome(self):
+        source = {
+            "company_name": "Budget Example",
+            "company_website_url": "https://budget.example",
+            "career_root_url": "https://budget.example/career-root",
+            "pipeline_status": "failed",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                },
+                {"stage": "job_board_discovery", "status": "not_run"},
+                {"stage": "opening_match", "status": "not_run"},
+                {"stage": "result_validation", "status": "success"},
+            ],
+        }
+        replayed = {
+            **source,
+            "pipeline_status": "partial",
+            "career_page_url": "https://budget.example/careers",
+            "job_list_page_url": "https://jobs.example.test/budget",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "lever",
+                },
+                {
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                },
+                {"stage": "result_validation", "status": "success"},
+            ],
+        }
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Budget Example"}],
+            [replayed],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["classification_counts"]["budget_recovery"], 1)
+        comparison = gate["records"][0]
+        self.assertEqual(comparison["classification"], "budget_recovery")
+        self.assertEqual(comparison["reason"], "company_budget_replay_advanced")
+        self.assertEqual(
+            comparison["source_identity_prefix"],
+            {
+                "company_website_url": "https://budget.example",
+                "hiring_entity_name": None,
+                "career_root_url": "https://budget.example/career-root",
+            },
+        )
+        self.assertEqual(
+            comparison["replay_outcome"]["failure_stage"]["stage"],
+            "opening_match",
+        )
+        self.assertEqual(
+            comparison["replay_outcome"]["result_identity"]["job_list_page_url"],
+            "https://jobs.example.test/budget",
+        )
+
+    def test_budget_recovery_rejects_established_identity_drift(self):
+        source = {
+            "company_name": "Budget Example",
+            "company_website_url": "https://budget.example",
+            "career_root_url": "https://budget.example/career-root",
+            "pipeline_status": "failed",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                },
+            ],
+        }
+        replayed = {
+            **source,
+            "career_root_url": "https://wrong.example/careers",
+            "pipeline_status": "success",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+            ],
+        }
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Budget Example"}],
+            [replayed],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "failed")
+        self.assertEqual(gate["classification_counts"]["mismatch"], 1)
+
+    def test_expected_transition_rejects_established_provider_identity_drift(self):
+        replay_input = {
+            "company_name": "Transition Example",
+            "source_trace": {"replay": {
+                "pipeline_status": "partial",
+                "first_non_success_stage": {
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                },
+                "expected_transition": {
+                    "pipeline_status": "success",
+                    "failure_stage": None,
+                },
+            }},
+        }
+        source = {
+            "company_name": "Transition Example",
+            "company_website_url": "https://transition.example",
+            "career_page_url": "https://transition.example/careers",
+            "job_list_page_url": "https://jobs.example.test/transition",
+            "pipeline_status": "partial",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "greenhouse",
+                },
+                {
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                },
+            ],
+        }
+        replayed = {
+            **source,
+            "pipeline_status": "success",
+            "stages": [
+                *source["stages"][:4],
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "lever",
+                },
+                {"stage": "opening_match", "status": "success"},
+            ],
+        }
+
+        gate = _build_outcome_gate(
+            [replay_input],
+            [replayed],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "failed")
+        self.assertEqual(gate["classification_counts"]["mismatch"], 1)
 
     def test_replay_preserves_linkedin_native_only_evidence(self):
         with tempfile.TemporaryDirectory() as directory:

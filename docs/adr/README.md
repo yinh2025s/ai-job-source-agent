@@ -20,3 +20,4 @@ NNNN-short-decision-title.md
 - [ADR-0006: Record Request-Aware Snapshot Outcomes](0006-record-request-aware-snapshot-outcomes.md)
 - [ADR-0007: Bind Replay And Checkpoints To Run Configuration](0007-bind-replay-and-checkpoints-to-run-configuration.md)
 - [ADR-0008: Publish Budgeted Results Before The Deadline](0008-publish-budgeted-results-before-deadline.md)
+- [ADR-0009: Distinguish Budget Recovery From Replay Drift](0009-distinguish-budget-recovery-from-replay-drift.md)
