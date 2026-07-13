@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-14.54`. The registry auto-discovers 23 adapter modules: 22 provide native inventory or constrained positive evidence, while only Talemetry remains detection-only. CEIPAL verifies a first-party widget, tenant-bound iframe, sanitized public multipart inventory, and first-party opening URL without persisting its credential-shaped runtime identity. ADR-0005 adds a typed S5→S6 board handoff; checkpoint schema 1.2 accepts only registered public-locator policies and rejects unknown providers, cross-origin evidence, sensitive query keys, credential/HTML-shaped content, and oversized values. Request-aware snapshot v2 preserves sanitized method/body/header identity and terminal fetch outcomes, while failure replay compares outcome signatures and exits nonzero for mismatches or fixture gaps. S4 now schedules candidates in a dedicated module by structured evidence tier and host/route-family diversity, delaying rather than deleting locale and `www` aliases and reserving one bounded host fallback. Final CPython 3.12 gates pass 826 tests, 24/24 provider cases, 6/6 resolver cases, and 23 adapters / 0 architecture issues. The serialized `.53` frozen-30 cohort is 30 websites, 28 career pages, 27 verified job lists, and 22 exact openings; all 8 non-success outcomes replay with 0 fixture gaps and 0 mismatches. Authenticated LinkedIn extension Scan/Run acceptance remains deferred.
+Current adapter iteration: `2026-07-14.55`. The registry auto-discovers 23 adapter modules: 22 provide native inventory or constrained positive evidence, while only Talemetry remains detection-only. CEIPAL verifies a first-party widget, tenant-bound iframe, sanitized public multipart inventory, and first-party opening URL without persisting its credential-shaped runtime identity. ADR-0005/0006 define typed board handoff and request-aware snapshot replay; ADR-0007 adds agent and batch execution configuration schema `1.0`, result schema `2.1`, stage checkpoint `1.3`, batch completion `1.1`, and replay bundle `3`. Stage checkpoints are keyed by company input plus pipeline behavior; whole-company completions and baselines additionally bind wall-clock, fetch/retry, render, verification, and offline policy. Legacy replay must be explicit, successful replay compares verified website/career/job-list/opening/provider identity, and any automatic replay mismatch or fixture gap makes the live gate nonzero. Final gates pass 846 tests, 24/24 provider cases, 6/6 resolver cases, and 23 adapters / 0 architecture issues. The serialized `.54` frozen-30 cohort is 30 websites, 27 career pages, 26 verified job lists, and 22 exact openings; its one-record career/job-list delta is isolated to Akkodis hitting the 45-second fresh-run deadline, not a provider coverage loss. A fresh 60-second Akkodis run restores the official Sitecore/Next job list, and schema-3 offline replay reproduces its partial result plus full URL/provider identity with zero gaps or mismatches. Authenticated LinkedIn extension Scan/Run acceptance remains deferred.
 
 ## What It Returns
 
@@ -559,12 +559,12 @@ Career page finder
         |
         v
 Job-list/opening finder
-  - 23 auto-discovered adapter modules: 21 provide native inventory or constrained positive evidence, while CEIPAL and Talemetry are detection-only
+  - 23 auto-discovered adapter modules: 22 provide native inventory or constrained positive evidence, while only Talemetry is detection-only
   - Workday CXS jobs API adapter with title search payloads
   - structured JSON-LD / embedded JSON extraction for iCIMS, SuccessFactors, and Workable-style pages
   - native server-rendered search for Google Careers and positive-evidence-only parsing for Meta Careers
   - Sitecore/Next tenant configuration from first-party `__NEXT_DATA__`, same-origin summarized-jobs POST pagination, and safe `jobId` URL reconstruction
-  - CEIPAL/Talemetry tenant detection that preserves typed incomplete failures without inventing candidates or empty inventory
+  - CEIPAL public multipart inventory plus Talemetry detection-only semantics; blocked or unknown schemas preserve typed incomplete failures without inventing candidates or empty inventory
   - provider adapters for Lever, Greenhouse, Ashby, Workable, SmartRecruiters, iCIMS, Workday, and SuccessFactors-style systems
   - target-title matching from LinkedIn job cards
   - job-detail path scoring

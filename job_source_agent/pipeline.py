@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import re
+from dataclasses import asdict
 from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from .career_search import CareerSearchResolver
+from .checkpoint import execution_fingerprint
 from .career_candidate_scheduler import (
     candidate_concrete_host,
     candidate_evidence_tier,
@@ -47,6 +49,7 @@ from .opening_matcher import (
 )
 from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
 from .reasons import canonical_reason_code, make_stage_result
+from .run_configuration import AgentConfig, DeterministicRunConfig
 from .scoring import (
     is_ats_url,
     is_likely_job_detail,
@@ -129,9 +132,22 @@ class JobSourceAgent:
         self.enable_sitemap_discovery = enable_sitemap_discovery
         self.enable_career_search = enable_career_search
         self.career_search_timeout = career_search_timeout
+        self.run_configuration = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                max_candidates=max_candidates,
+                max_job_pages=max_job_pages,
+                max_career_candidate_fetches=self.max_career_candidate_fetches,
+                max_career_search_queries=self.max_career_search_queries,
+                max_ats_board_fetches=self.max_ats_board_fetches,
+                enable_sitemap_discovery=enable_sitemap_discovery,
+                enable_career_search=enable_career_search,
+                career_search_timeout=career_search_timeout,
+            )
+        )
 
     def discover(self, company: CompanyInput) -> DiscoveryResult:
         company_website_url = normalize_url(company.company_website_url) if company.company_website_url else ""
+        fingerprint = execution_fingerprint(asdict(company), self.run_configuration.digest)
         result = DiscoveryResult(
             company_name=company.company_name,
             company_website_url=company_website_url,
@@ -142,6 +158,9 @@ class JobSourceAgent:
             linkedin_company_url=company.linkedin_company_url,
             linkedin_job_title=company.job_title,
             linkedin_job_location=company.job_location,
+            run_configuration=self.run_configuration.to_payload(),
+            run_configuration_digest=self.run_configuration.digest,
+            execution_fingerprint=fingerprint,
             trace={
                 "source": company.source,
                 "linkedin_job_url": company.linkedin_job_url,
@@ -149,6 +168,8 @@ class JobSourceAgent:
                 "linkedin_company_url": company.linkedin_company_url,
                 "linkedin_job_title": company.job_title,
                 "source_trace": company.source_trace,
+                "run_configuration_digest": self.run_configuration.digest,
+                "execution_fingerprint": fingerprint,
                 "steps": [],
             },
         )

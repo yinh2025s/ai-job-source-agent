@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict
 
 from .application_runner import ApplicationRunner
-from .checkpoint import input_fingerprint
+from .checkpoint import execution_fingerprint
 from .contracts import PipelineContext
 from .models import (
     STAGE_CAREER_DISCOVERY,
@@ -14,13 +14,22 @@ from .models import (
     DiscoveryResult,
 )
 from .pipeline_status import derive_pipeline_status
+from .run_configuration import AgentConfig, DeterministicRunConfig
 
 
 class PipelineApplication:
     """Product-level use case for running the versioned seven-stage pipeline."""
 
-    def __init__(self, runner: ApplicationRunner) -> None:
+    def __init__(
+        self,
+        runner: ApplicationRunner,
+        *,
+        run_configuration: DeterministicRunConfig | None = None,
+    ) -> None:
         self.runner = runner
+        self.run_configuration = run_configuration or DeterministicRunConfig.from_agent_config(
+            AgentConfig()
+        )
 
     def discover(
         self,
@@ -35,17 +44,28 @@ class PipelineApplication:
             "start_at": rerun_from or start_at,
             "stop_after": stop_after,
         }
+        fingerprint = execution_fingerprint(asdict(company), self.run_configuration.digest)
         if self.runner.checkpointing_enabled:
-            run_options["input_fingerprint"] = input_fingerprint(asdict(company))
+            run_options["input_fingerprint"] = fingerprint
             run_options["rerun_from"] = rerun_from
         elif rerun_from is not None:
             raise ValueError("rerun_from requires a checkpoint-enabled application runner")
         self.runner.run(context, **run_options)
-        return discovery_result_from_context(context)
+        return discovery_result_from_context(
+            context,
+            run_configuration=self.run_configuration,
+            execution_fingerprint_value=fingerprint,
+        )
 
 
-def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
+def discovery_result_from_context(
+    context: PipelineContext,
+    *,
+    run_configuration: DeterministicRunConfig | None = None,
+    execution_fingerprint_value: str | None = None,
+) -> DiscoveryResult:
     company = context.company
+    settings = run_configuration or DeterministicRunConfig.from_agent_config(AgentConfig())
     result = DiscoveryResult(
         company_name=company.company_name,
         company_website_url=context.company_website_url,
@@ -60,6 +80,10 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
         job_list_page_url=context.job_list_page_url,
         open_position_url=context.open_position_url,
         stage_results=list(context.stage_results),
+        run_configuration=settings.to_payload(),
+        run_configuration_digest=settings.digest,
+        execution_fingerprint=execution_fingerprint_value
+        or execution_fingerprint(asdict(company), settings.digest),
         trace={
             "source": company.source,
             "linkedin_job_url": company.linkedin_job_url,
@@ -69,6 +93,9 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
             "source_trace": company.source_trace,
             "stages": context.trace.get("stages", {}),
             "checkpoint_events": context.trace.get("checkpoint_events", []),
+            "run_configuration_digest": settings.digest,
+            "execution_fingerprint": execution_fingerprint_value
+            or execution_fingerprint(asdict(company), settings.digest),
             "steps": [],
         },
     )

@@ -10,6 +10,18 @@
 
 ### Added
 
+- ADR-0007 冻结 deterministic run configuration：`AgentConfig` 的候选、岗位页、career/ATS fetch、search、sitemap 与 timeout 行为被规范化为隐私安全 schema `1.0`。Result `2.1`、trace、summary 和 replay manifest 保存 canonical payload/digest；baseline 只有在 cohort、expectations 与 run configuration 均一致时才可比较。
+
+- Stage checkpoint `1.3` 与 batch completion `1.1` 改用 `input fingerprint + run configuration digest` 形成的 execution fingerprint。相同公司更换预算或 discovery policy 后会安全 miss，不再恢复语义不兼容的旧执行；result/trace 同时记录 execution provenance。
+
+- 整家公司 completion 另加入隐私安全的 batch execution schema `1.0`，绑定 company/website wall-clock budget、fetch timeout/retry、render policy、verify limit 和 offline mode；这些设置变化时不会复用旧 timeout/success completion，baseline identity 同时要求 agent 与 batch digest 一致。
+
+- Failure bundle 升至 schema `3` 并按 source run configuration 重建 `AgentConfig`；混合配置、payload/digest 不一致和隐式 legacy replay 会 fail closed。旧 artifact 只有显式指定 `--legacy-run-config composition-defaults` 才可运行，manifest 标记 `legacy_defaulted`，run configuration 不进入逐公司 replay input。
+
+- 新增 full-outcome replay bundle与成功 URL identity gate：成功 replay 同时比较规范化官网、招聘主体、career、job list、exact opening 和 provider，不再把“状态为 success 但导航到不同 URL”视为复现。Live runner 可用 `--replay-bundle-dir` 对成功、部分、失败和 unsupported 结果统一验收。
+
+- Live runner 现在把自动 failure/full replay 的 `failed` 或 `incomplete` outcome gate 作为非零退出；bundle 成功生成不再掩盖 URL/provider mismatch 或 fixture gap。
+
 - ADR-0006 冻结 request-aware snapshot outcome contract：统一脱敏 URL、HTTP method、结构化 JSON/form body digest 与 allowlist semantic headers 形成版本化 request identity；`api_key`、`api-key`、`apikey` 等拼写共享 punctuation-insensitive 敏感键策略。Opaque body 只记录 privacy exclusion，不保存原文或未脱敏 credential digest。
 
 - Snapshot v2 在 `snapshots.jsonl` 为成功页面记录 request identity/sequence，并在独立 `fetch-failures.jsonl` 保存 terminal status、canonical reason、retryability 与安全消息；replay 物化 request-specific POST fixture 和结构化 `fetch-failures.json`。同 URL 的 Sitecore/Next 分页不再坍缩为最后一页，成功后发生的 403 可在 failure-focused replay 中复现；legacy v1 success snapshot 继续读取，未知版本与损坏 failure manifest fail closed。
@@ -76,6 +88,8 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- `ADAPTER_VERSION` 提升到 `2026-07-14.55`，result/checkpoint/batch completion/replay bundle 分别提升到 `2.1`/`1.3`/`1.1`/`3`。最终门禁为 846 tests、24/24 provider、6/6 resolver 和 23-adapter architecture gate / 0 issues；60 秒 Akkodis focused live 恢复官方 Sitecore/Next job list，使用 source run configuration 的 URL/provider-aware replay 为 1/1 reproduced、0 gap、0 mismatch。真实登录态插件验收继续 deferred。
 
 - `ADAPTER_VERSION` 提升到 `2026-07-14.54`。S4 新增独立的 evidence-first、host/route-family-diverse 有界候选调度模块：`LinkCandidate` 保留结构化 origin，identity/明确官网导航/discovered/speculative 分层严格排序，普通非 career 导航位于其后；同层先覆盖不同 canonical host 与 locale-free route family，再延后裸域/`www` 和 locale alias，并在五次 speculative budget 中为最强 route 保留一次 concrete-host fallback。`subdomain_probe` 与 blind ATS 保持 speculative，两字母产品路径不会误作 locale；trace 按 selection phase 记录调度版本、tier、score、host、locale、family role、截断与剩余候选。M|R Walls focused live 验证前五次覆盖四类 route 加一次 host fallback，真实 404/DNS 后仍保守返回 retryable budget exhaustion。826 tests、24/24 provider、6/6 resolver 和 23-adapter architecture gate 通过；真实登录态插件验收继续 deferred。
 

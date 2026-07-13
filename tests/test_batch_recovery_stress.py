@@ -11,6 +11,12 @@ import unittest
 from pathlib import Path
 
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
+from job_source_agent.run_configuration import (
+    AgentConfig,
+    BatchExecutionConfig,
+    DeterministicRunConfig,
+    combined_configuration_digest,
+)
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -131,7 +137,40 @@ class BatchRecoveryStressTests(unittest.TestCase):
                 if first.stderr is not None:
                     first.stderr.close()
 
-            store = FilesystemBatchCompletionStore(completion_dir)
+            run_configuration = DeterministicRunConfig.from_agent_config(
+                AgentConfig(
+                    max_candidates=6,
+                    max_job_pages=3,
+                    max_career_candidate_fetches=5,
+                    max_career_search_queries=5,
+                    max_ats_board_fetches=5,
+                    career_search_timeout=6,
+                )
+            )
+            batch_execution = BatchExecutionConfig.from_payload(
+                {
+                    "schema_version": "1.0",
+                    "batch": {
+                        "company_time_budget": 45,
+                        "website_time_budget": 20,
+                        "fetch_timeout": 3,
+                        "fetch_retries": 0,
+                        "retry_base_delay": 0.25,
+                        "render_mode": "none",
+                        "render_budget": 2,
+                        "verify_limit": 3,
+                        "offline": True,
+                    },
+                }
+            )
+            store = FilesystemBatchCompletionStore(
+                completion_dir,
+                run_configuration,
+                combined_configuration_digest(
+                    run_configuration.digest,
+                    batch_execution.digest,
+                ),
+            )
             completed_after_crash = store.scan(records)
             self.assertGreaterEqual(len(completed_after_crash), 6)
             self.assertLess(len(completed_after_crash), COMPANY_COUNT)

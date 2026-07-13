@@ -11,15 +11,17 @@ from typing import Any, Iterable, Iterator
 
 import fcntl
 
-from .checkpoint import ADAPTER_VERSION, input_fingerprint
+from .checkpoint import ADAPTER_VERSION, execution_fingerprint, input_fingerprint
+from .run_configuration import AgentConfig, DeterministicRunConfig
 
 
-BATCH_COMPLETION_SCHEMA_VERSION = "1.0"
+BATCH_COMPLETION_SCHEMA_VERSION = "1.1"
 
 
 @dataclass(frozen=True)
 class BatchCompletion:
     input_fingerprint: str
+    execution_fingerprint: str
     result: dict[str, Any]
     trace: dict[str, Any]
     elapsed: float
@@ -28,8 +30,20 @@ class BatchCompletion:
 class FilesystemBatchCompletionStore:
     """Persist completed company runs as versioned, atomic JSON envelopes."""
 
-    def __init__(self, root: str | Path) -> None:
+    def __init__(
+        self,
+        root: str | Path,
+        run_configuration: DeterministicRunConfig | None = None,
+        completion_scope_digest: str | None = None,
+    ) -> None:
         self.root = Path(root)
+        self.run_configuration = run_configuration or DeterministicRunConfig.from_agent_config(
+            AgentConfig()
+        )
+        self.completion_scope_digest = completion_scope_digest or self.run_configuration.digest
+
+    def fingerprint(self, input_record: dict[str, Any]) -> str:
+        return execution_fingerprint(input_record, self.completion_scope_digest)
 
     def save(
         self,
@@ -40,21 +54,23 @@ class FilesystemBatchCompletionStore:
     ) -> BatchCompletion:
         completion = _validate_completion(
             input_fingerprint(input_record),
+            self.fingerprint(input_record),
             result,
             trace,
             elapsed,
         )
-        path = self._completion_path(completion.input_fingerprint)
+        path = self._completion_path(completion.execution_fingerprint)
         payload = {
             "batch_completion_schema_version": BATCH_COMPLETION_SCHEMA_VERSION,
             "adapter_version": ADAPTER_VERSION,
             "input_fingerprint": completion.input_fingerprint,
+            "execution_fingerprint": completion.execution_fingerprint,
             "result": completion.result,
             "trace": completion.trace,
             "elapsed": completion.elapsed,
         }
 
-        with self._completion_lock(completion.input_fingerprint):
+        with self._completion_lock(completion.execution_fingerprint):
             path.parent.mkdir(parents=True, exist_ok=True)
             temporary_path: str | None = None
             try:
@@ -62,7 +78,7 @@ class FilesystemBatchCompletionStore:
                     mode="w",
                     encoding="utf-8",
                     dir=path.parent,
-                    prefix=f".{completion.input_fingerprint}.",
+                    prefix=f".{completion.execution_fingerprint}.",
                     suffix=".tmp",
                     delete=False,
                 ) as handle:
@@ -84,15 +100,19 @@ class FilesystemBatchCompletionStore:
         return completion
 
     def load(self, input_record: dict[str, Any]) -> BatchCompletion | None:
-        fingerprint = input_fingerprint(input_record)
+        fingerprint = self.fingerprint(input_record)
         with self._completion_lock(fingerprint):
-            return self._load_path(self._completion_path(fingerprint), fingerprint)
+            return self._load_path(
+                self._completion_path(fingerprint),
+                fingerprint,
+                input_fingerprint(input_record),
+            )
 
     def scan(self, input_records: Iterable[dict[str, Any]]) -> dict[str, BatchCompletion]:
         """Return compatible completions keyed by fingerprint for expected inputs."""
         completions: dict[str, BatchCompletion] = {}
         for input_record in input_records:
-            fingerprint = input_fingerprint(input_record)
+            fingerprint = self.fingerprint(input_record)
             if fingerprint in completions:
                 continue
             completion = self.load(input_record)
@@ -116,10 +136,18 @@ class FilesystemBatchCompletionStore:
         return self.root / fingerprint[:2] / f"{fingerprint}.json"
 
     @staticmethod
-    def _load_path(path: Path, expected_fingerprint: str) -> BatchCompletion | None:
+    def _load_path(
+        path: Path,
+        expected_fingerprint: str,
+        expected_input_fingerprint: str,
+    ) -> BatchCompletion | None:
         try:
             payload = json.loads(path.read_text(encoding="utf-8"))
-            return _deserialize_completion(payload, expected_fingerprint)
+            return _deserialize_completion(
+                payload,
+                expected_fingerprint,
+                expected_input_fingerprint,
+            )
         except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
             return None
 
@@ -127,13 +155,18 @@ class FilesystemBatchCompletionStore:
 BatchCompletionStore = FilesystemBatchCompletionStore
 
 
-def _deserialize_completion(payload: Any, expected_fingerprint: str) -> BatchCompletion:
+def _deserialize_completion(
+    payload: Any,
+    expected_fingerprint: str,
+    expected_input_fingerprint: str,
+) -> BatchCompletion:
     if not isinstance(payload, dict):
         raise ValueError("Batch completion envelope must be an object")
     if set(payload) != {
         "batch_completion_schema_version",
         "adapter_version",
         "input_fingerprint",
+        "execution_fingerprint",
         "result",
         "trace",
         "elapsed",
@@ -143,9 +176,12 @@ def _deserialize_completion(payload: Any, expected_fingerprint: str) -> BatchCom
         raise ValueError("Batch completion schema version is incompatible")
     if payload["adapter_version"] != ADAPTER_VERSION:
         raise ValueError("Batch completion adapter version is incompatible")
-    if payload["input_fingerprint"] != expected_fingerprint:
+    if payload["execution_fingerprint"] != expected_fingerprint:
+        raise ValueError("Batch completion execution fingerprint does not match")
+    if payload["input_fingerprint"] != expected_input_fingerprint:
         raise ValueError("Batch completion input fingerprint does not match")
     return _validate_completion(
+        payload["input_fingerprint"],
         expected_fingerprint,
         payload["result"],
         payload["trace"],
@@ -154,7 +190,8 @@ def _deserialize_completion(payload: Any, expected_fingerprint: str) -> BatchCom
 
 
 def _validate_completion(
-    fingerprint: str,
+    input_fingerprint_value: str,
+    execution_fingerprint_value: str,
     result: Any,
     trace: Any,
     elapsed: Any,
@@ -172,7 +209,8 @@ def _validate_completion(
     except (TypeError, ValueError) as error:
         raise ValueError("Batch completion result and trace must be JSON serializable") from error
     return BatchCompletion(
-        input_fingerprint=fingerprint,
+        input_fingerprint=input_fingerprint_value,
+        execution_fingerprint=execution_fingerprint_value,
         result=result,
         trace=trace,
         elapsed=elapsed_value,

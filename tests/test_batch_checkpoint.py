@@ -10,6 +10,7 @@ from job_source_agent.batch_checkpoint import (
     FilesystemBatchCompletionStore,
 )
 from job_source_agent.checkpoint import ADAPTER_VERSION, input_fingerprint
+from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 
 
 class FilesystemBatchCompletionStoreTests(unittest.TestCase):
@@ -30,14 +31,21 @@ class FilesystemBatchCompletionStoreTests(unittest.TestCase):
 
         self.assertEqual(
             saved,
-            BatchCompletion(input_fingerprint(self.input_record), self.result, self.trace, 1.25),
+            BatchCompletion(
+                input_fingerprint(self.input_record),
+                self.store.fingerprint(self.input_record),
+                self.result,
+                self.trace,
+                1.25,
+            ),
         )
         self.assertEqual(self.store.load(self.input_record), saved)
 
-        payload = json.loads(self.store._completion_path(saved.input_fingerprint).read_text())
+        payload = json.loads(self.store._completion_path(saved.execution_fingerprint).read_text())
         self.assertEqual(payload["batch_completion_schema_version"], BATCH_COMPLETION_SCHEMA_VERSION)
         self.assertEqual(payload["adapter_version"], ADAPTER_VERSION)
         self.assertEqual(payload["input_fingerprint"], input_fingerprint(self.input_record))
+        self.assertEqual(payload["execution_fingerprint"], saved.execution_fingerprint)
 
     def test_equivalent_input_uses_stable_fingerprint(self):
         self.store.save(self.input_record, self.result, self.trace, 1)
@@ -56,14 +64,50 @@ class FilesystemBatchCompletionStoreTests(unittest.TestCase):
         self.assertEqual(
             scanned,
             {
-                first_completion.input_fingerprint: first_completion,
-                second_completion.input_fingerprint: second_completion,
+                first_completion.execution_fingerprint: first_completion,
+                second_completion.execution_fingerprint: second_completion,
             },
         )
 
+    def test_configuration_mismatch_is_a_cache_miss(self):
+        first_config = DeterministicRunConfig.from_agent_config(AgentConfig(max_job_pages=3))
+        second_config = DeterministicRunConfig.from_agent_config(AgentConfig(max_job_pages=4))
+        first_store = FilesystemBatchCompletionStore(
+            self.temporary_directory.name,
+            first_config,
+        )
+        second_store = FilesystemBatchCompletionStore(
+            self.temporary_directory.name,
+            second_config,
+        )
+
+        saved = first_store.save(self.input_record, self.result, self.trace, 1)
+
+        self.assertNotEqual(
+            first_store.fingerprint(self.input_record),
+            second_store.fingerprint(self.input_record),
+        )
+        self.assertEqual(first_store.scan([self.input_record]), {saved.execution_fingerprint: saved})
+        self.assertIsNone(second_store.load(self.input_record))
+        self.assertEqual(second_store.scan([self.input_record]), {})
+
+    def test_batch_execution_scope_mismatch_is_a_cache_miss(self):
+        first = FilesystemBatchCompletionStore(
+            self.temporary_directory.name,
+            completion_scope_digest="a" * 64,
+        )
+        second = FilesystemBatchCompletionStore(
+            self.temporary_directory.name,
+            completion_scope_digest="b" * 64,
+        )
+
+        first.save(self.input_record, self.result, self.trace, 1)
+
+        self.assertIsNone(second.load(self.input_record))
+
     def test_corrupt_incomplete_and_incompatible_records_are_ignored(self):
         completion = self.store.save(self.input_record, self.result, self.trace, 1)
-        path = self.store._completion_path(completion.input_fingerprint)
+        path = self.store._completion_path(completion.execution_fingerprint)
         valid = json.loads(path.read_text())
 
         invalid_payloads = [
@@ -71,6 +115,7 @@ class FilesystemBatchCompletionStoreTests(unittest.TestCase):
             {**valid, "batch_completion_schema_version": "old"},
             {**valid, "adapter_version": "old"},
             {**valid, "input_fingerprint": "0" * 64},
+            {**valid, "execution_fingerprint": "0" * 64},
             {key: value for key, value in valid.items() if key != "trace"},
             {**valid, "unexpected": True},
             {**valid, "result": []},
@@ -83,7 +128,7 @@ class FilesystemBatchCompletionStoreTests(unittest.TestCase):
 
     def test_failed_replace_preserves_previous_completion_and_removes_temp_file(self):
         old = self.store.save(self.input_record, self.result, self.trace, 1)
-        path = self.store._completion_path(old.input_fingerprint)
+        path = self.store._completion_path(old.execution_fingerprint)
 
         with patch("job_source_agent.batch_checkpoint.os.replace", side_effect=OSError("replace failed")):
             with self.assertRaises(OSError):
@@ -108,7 +153,7 @@ class FilesystemBatchCompletionStoreTests(unittest.TestCase):
 
     def test_missing_record_and_unreadable_directory_are_safe_misses(self):
         self.assertIsNone(self.store.load(self.input_record))
-        fingerprint = input_fingerprint(self.input_record)
+        fingerprint = self.store.fingerprint(self.input_record)
         path = self.store._completion_path(fingerprint)
         path.mkdir(parents=True)
 

@@ -11,8 +11,9 @@ import time
 import unittest
 from pathlib import Path
 
-from job_source_agent.checkpoint import input_fingerprint
+from job_source_agent.checkpoint import execution_fingerprint
 from job_source_agent.models import PIPELINE_STAGES
+from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 
 
@@ -48,7 +49,7 @@ args = Namespace(
     max_career_search_queries=5,
     max_ats_board_fetches=5,
     skip_sitemap=False,
-    career_search_timeout=None,
+    career_search_timeout=6,
 )
 result = run_pipeline_phase(
     CompanyInput(**record),
@@ -158,6 +159,12 @@ class LiveCrashRecoveryTests(unittest.TestCase):
                     "--offline",
                     "--fetch-timeout",
                     "0.1",
+                    "--max-career-candidates",
+                    "12",
+                    "--max-career-fetches",
+                    "12",
+                    "--max-job-pages",
+                    "8",
                     "--company-time-budget",
                     "10",
                     "--website-time-budget",
@@ -210,7 +217,17 @@ class LiveCrashRecoveryTests(unittest.TestCase):
                 resume_from,
             )
 
-            fingerprint = input_fingerprint(record)
+            run_configuration = DeterministicRunConfig.from_agent_config(
+                AgentConfig(
+                    max_candidates=12,
+                    max_job_pages=8,
+                    max_career_candidate_fetches=12,
+                    max_career_search_queries=5,
+                    max_ats_board_fetches=5,
+                    career_search_timeout=6,
+                )
+            )
+            fingerprint = execution_fingerprint(record, run_configuration.digest)
             store = FilesystemCheckpointStore(checkpoint_dir)
             for stage in PIPELINE_STAGES:
                 execution = store.load(fingerprint, stage)

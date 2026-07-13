@@ -9,11 +9,14 @@ from unittest.mock import patch
 
 from job_source_agent.models import CompanyInput, DiscoveryResult, StageResult
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
+from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.web import Fetcher, Page
 from scripts.live_batch_eval import (
     build_automatic_failure_bundle,
+    build_automatic_replay_bundle,
     build_summary,
+    enforce_bundle_gates,
     failure_result,
     _inner_deadline_budget,
     _load_completed_companies,
@@ -33,6 +36,9 @@ from scripts.live_batch_eval import (
 
 
 class LiveBatchEvalTests(unittest.TestCase):
+    def run_configuration(self, **overrides):
+        return DeterministicRunConfig.from_agent_config(AgentConfig(**overrides))
+
     def test_print_summary_handles_incompatible_baseline(self):
         summary = {
             "total": 1,
@@ -296,6 +302,47 @@ class LiveBatchEvalTests(unittest.TestCase):
             summary["evaluation_manifest"]["expectations_sha256"],
             r"^[0-9a-f]{64}$",
         )
+        expected = self.run_configuration(
+            max_candidates=6,
+            max_job_pages=3,
+            max_career_candidate_fetches=5,
+            max_career_search_queries=5,
+            max_ats_board_fetches=5,
+            career_search_timeout=6,
+        )
+        self.assertEqual(summary["run_configuration"], expected.to_payload())
+        self.assertEqual(summary["run_configuration_digest"], expected.digest)
+        self.assertEqual(
+            summary["evaluation_manifest"]["run_configuration_digest"],
+            expected.digest,
+        )
+        self.assertRegex(summary["batch_execution_configuration_digest"], r"^[0-9a-f]{64}$")
+        self.assertEqual(
+            summary["evaluation_manifest"]["batch_execution_configuration_digest"],
+            summary["batch_execution_configuration_digest"],
+        )
+
+    def test_batch_execution_settings_change_completion_scope(self):
+        base = SimpleNamespace(expectations=None, company_time_budget=45, website_time_budget=20)
+        changed = SimpleNamespace(expectations=None, company_time_budget=60, website_time_budget=20)
+
+        first = build_summary([], base, elapsed_sec=0)
+        second = build_summary([], changed, elapsed_sec=0)
+
+        self.assertNotEqual(
+            first["batch_execution_configuration_digest"],
+            second["batch_execution_configuration_digest"],
+        )
+
+    def test_failed_or_incomplete_automatic_replay_gate_is_fatal(self):
+        for status in ("failed", "incomplete"):
+            with self.subTest(status=status):
+                with self.assertRaisesRegex(SystemExit, status):
+                    enforce_bundle_gates(
+                        {"replay_bundle": {"outcome_gate": status}}
+                    )
+
+        enforce_bundle_gates({"replay_bundle": {"outcome_gate": "passed"}})
 
     def test_live_expectations_can_require_all_companies(self):
         result = {
@@ -495,6 +542,16 @@ class LiveBatchEvalTests(unittest.TestCase):
                     failure_bundle_limit=20,
                 )
             )
+        with self.assertRaisesRegex(SystemExit, "requires --snapshot-dir"):
+            validate_artifact_args(
+                SimpleNamespace(
+                    failure_bundle_dir=None,
+                    replay_bundle_dir="bundle",
+                    snapshot_dir=None,
+                    failure_bundle_limit=20,
+                    replay_bundle_limit=50,
+                )
+            )
         with self.assertRaisesRegex(SystemExit, "greater than zero"):
             validate_artifact_args(
                 SimpleNamespace(
@@ -527,6 +584,8 @@ class LiveBatchEvalTests(unittest.TestCase):
                             "career_root_url": board_url,
                             "linkedin_job_title": "Data Analyst",
                             "pipeline_status": "partial",
+                            "run_configuration": self.run_configuration().to_payload(),
+                            "run_configuration_digest": self.run_configuration().digest,
                             "stages": [
                                 {
                                     "stage": "opening_match",
@@ -553,6 +612,24 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "success")
         self.assertEqual(manifest["summary"]["total"], 1)
         self.assertIn("123-data-analyst", replay_results[0]["open_position_url"])
+
+    def test_automatic_replay_bundle_selects_success_and_all_other_statuses(self):
+        args = SimpleNamespace(
+            replay_bundle_dir="bundle",
+            replay_bundle_limit=11,
+            snapshot_dir="snapshots",
+        )
+
+        with patch("scripts.live_batch_eval.replay_failure_bundle") as replay:
+            replay.return_value = {"status": "success", "summary": {"total": 1}}
+            manifest = build_automatic_replay_bundle(args, Path("trace.json"))
+
+        self.assertEqual(manifest["status"], "success")
+        replay_args = replay.call_args.args[0]
+        self.assertIsNone(replay_args.pipeline_status)
+        self.assertEqual(replay_args.limit, 11)
+        self.assertTrue(replay_args.include_missing_website)
+        self.assertEqual(replay.call_args.kwargs, {"allow_empty": True})
 
     def test_automatic_failure_bundle_records_skipped_when_batch_is_green(self):
         with tempfile.TemporaryDirectory() as directory:

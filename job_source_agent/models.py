@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RESULT_SCHEMA_VERSION = "2.0"
+RESULT_SCHEMA_VERSION = "2.1"
 
 STAGE_LINKEDIN_DISCOVERY = "linkedin_discovery"
 STAGE_WEBSITE_RESOLUTION = "website_resolution"
@@ -89,6 +89,9 @@ class DiscoveryResult:
     error_code: str | None = None
     pipeline_status: str = "failed"
     stage_results: list[StageResult] = field(default_factory=list)
+    run_configuration: dict[str, Any] = field(default_factory=dict)
+    run_configuration_digest: str | None = None
+    execution_fingerprint: str | None = None
     result_schema_version: str = RESULT_SCHEMA_VERSION
     trace: dict[str, Any] = field(default_factory=dict)
 
@@ -117,6 +120,9 @@ class DiscoveryResult:
             "error": self.error,
             "error_code": self.error_code,
             "pipeline_status": self.pipeline_status,
+            "run_configuration": self.run_configuration,
+            "run_configuration_digest": self.run_configuration_digest,
+            "execution_fingerprint": self.execution_fingerprint,
             "career_page_status": self.stage_status(STAGE_CAREER_DISCOVERY),
             "job_board_status": self.stage_status(STAGE_JOB_BOARD_DISCOVERY),
             "opening_match_status": self.stage_status(STAGE_OPENING_MATCH),

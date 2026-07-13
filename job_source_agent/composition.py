@@ -14,6 +14,7 @@ from .posting_identity import LinkedInPostingIdentityProbe
 from .providers import ProviderRegistry, build_default_provider_registry
 from .rendered_fetcher import RenderedFetcher, SmartRenderedFetcher
 from .retrying_fetcher import RetryingFetcher
+from .run_configuration import AgentConfig, DeterministicRunConfig
 from .snapshot import SnapshottingFetcher
 from .stage_checkpoint import FilesystemCheckpointStore
 from .stages import (
@@ -44,18 +45,6 @@ class FetcherConfig:
     retry_base_delay: float = 0.25
     retry_deadline: float | None = None
     snapshot_dir: str | Path | None = None
-
-
-@dataclass(frozen=True)
-class AgentConfig:
-    max_candidates: int = 12
-    max_job_pages: int = 8
-    max_career_candidate_fetches: int | None = None
-    max_career_search_queries: int = 5
-    max_ats_board_fetches: int = 5
-    enable_sitemap_discovery: bool = True
-    enable_career_search: bool = True
-    career_search_timeout: float | None = None
 
 
 @dataclass
@@ -131,7 +120,8 @@ def build_application(
 ) -> ApplicationComponents:
     registry = provider_registry or build_default_provider_registry()
     fetcher = build_fetcher(fetcher_config)
-    agent = build_agent(fetcher, agent_config, registry)
+    settings = agent_config or AgentConfig()
+    agent = build_agent(fetcher, settings, registry)
     evidence_cache_path = linkedin_evidence_cache_path
     if evidence_cache_path is None and checkpoint_dir is not None:
         evidence_cache_path = Path(checkpoint_dir) / LINKEDIN_EVIDENCE_CACHE_FILENAME
@@ -167,5 +157,8 @@ def build_application(
         fetcher=fetcher,
         provider_registry=registry,
         agent=agent,
-        pipeline=PipelineApplication(runner),
+        pipeline=PipelineApplication(
+            runner,
+            run_configuration=DeterministicRunConfig.from_agent_config(settings),
+        ),
     )

@@ -137,6 +137,41 @@ class EvaluationHistoryTests(unittest.TestCase):
             self.assertIsNone(current.baseline_run_id)
             self.assertEqual(current.regression["comparison_status"], "no_compatible_baseline")
 
+    def test_run_configuration_digest_is_part_of_baseline_compatibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first_summary = _summary(0.5, 5, companies_sha256="a" * 64)
+            first_summary["evaluation_manifest"]["run_configuration_digest"] = "b" * 64
+            second_summary = _summary(0.9, 9, companies_sha256="a" * 64)
+            second_summary["evaluation_manifest"]["run_configuration_digest"] = "c" * 64
+            history = EvaluationHistory(directory)
+            history.archive(first_summary)
+
+            current = history.archive(second_summary)
+
+            self.assertEqual(
+                current.cohort_identity,
+                {
+                    "companies_sha256": "a" * 64,
+                    "run_configuration_digest": "c" * 64,
+                },
+            )
+            self.assertIsNone(current.baseline_run_id)
+            self.assertEqual(current.regression, {"comparison_status": "no_compatible_baseline"})
+
+    def test_batch_execution_digest_is_part_of_baseline_compatibility(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first_summary = _summary(0.5, 5, companies_sha256="a" * 64)
+            first_summary["evaluation_manifest"]["batch_execution_configuration_digest"] = "b" * 64
+            second_summary = _summary(0.9, 9, companies_sha256="a" * 64)
+            second_summary["evaluation_manifest"]["batch_execution_configuration_digest"] = "c" * 64
+            history = EvaluationHistory(directory)
+            history.archive(first_summary)
+
+            current = history.archive(second_summary)
+
+            self.assertIsNone(current.baseline_run_id)
+            self.assertEqual(current.regression, {"comparison_status": "no_compatible_baseline"})
+
     def test_manifest_input_identity_precedes_metadata_fallback(self):
         with tempfile.TemporaryDirectory() as directory:
             summary = _summary(0.5, 5)

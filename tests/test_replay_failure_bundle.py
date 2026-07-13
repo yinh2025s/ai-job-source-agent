@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from job_source_agent.snapshot import SnapshotStore
+from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 from job_source_agent.web import Page
 from scripts.replay_failure_bundle import (
     FailureReplayError,
@@ -30,6 +31,7 @@ class FailureReplayBundleTests(unittest.TestCase):
             "provider": None,
             "limit": None,
             "include_missing_website": False,
+            "legacy_run_config": "composition-defaults",
         }
         values.update(overrides)
         return SimpleNamespace(**values)
@@ -41,6 +43,8 @@ class FailureReplayBundleTests(unittest.TestCase):
                 "company_name": "Example Data",
                 "company_website_url": "https://example.test",
                 "career_root_url": board_url,
+                "career_page_url": board_url,
+                "job_list_page_url": board_url,
                 "linkedin_job_title": "Data Analyst",
                 "pipeline_status": "partial",
                 "stages": [
@@ -81,6 +85,10 @@ class FailureReplayBundleTests(unittest.TestCase):
             )
 
         self.assertEqual(manifest["summary"]["total"], 1)
+        self.assertEqual(
+            manifest["summary"]["run_configuration_digest"],
+            manifest["run_configuration_digest"],
+        )
         self.assertEqual(manifest["status"], "success")
         self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["save"], 7)
         self.assertIsNone(replay_results[0]["open_position_url"])
@@ -99,6 +107,54 @@ class FailureReplayBundleTests(unittest.TestCase):
         comparison = manifest["outcome_gate"]["records"][0]
         self.assertEqual(comparison["classification"], "reproduced")
         self.assertEqual(comparison["original_outcome"], comparison["replay_outcome"])
+        self.assertEqual(manifest["run_configuration_provenance"], "legacy_defaulted")
+
+    def test_source_run_configuration_is_replayed_faithfully_and_not_exported_as_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+            source_config = DeterministicRunConfig.from_agent_config(
+                AgentConfig(
+                    max_candidates=19,
+                    max_job_pages=7,
+                    max_career_candidate_fetches=11,
+                    max_career_search_queries=2,
+                    max_ats_board_fetches=3,
+                    enable_sitemap_discovery=False,
+                    enable_career_search=False,
+                    career_search_timeout=4.5,
+                )
+            )
+            results_path = root / "results.json"
+            results = json.loads(results_path.read_text(encoding="utf-8"))
+            results[0]["linkedin_job_title"] = "Missing Role"
+            results[0]["run_configuration"] = source_config.to_payload()
+            results[0]["run_configuration_digest"] = source_config.digest
+            results_path.write_text(json.dumps(results), encoding="utf-8")
+
+            manifest = replay_failure_bundle(self._args(root, legacy_run_config=None))
+            replay_input = json.loads(
+                (root / "bundle" / "replay-input.json").read_text(encoding="utf-8")
+            )
+            replay_results = json.loads(
+                (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(manifest["bundle_schema_version"], 3)
+        self.assertEqual(manifest["run_configuration"], source_config.to_payload())
+        self.assertEqual(manifest["run_configuration_digest"], source_config.digest)
+        self.assertEqual(manifest["run_configuration_provenance"], "source_record")
+        self.assertEqual(replay_results[0]["run_configuration"], source_config.to_payload())
+        self.assertNotIn("run_configuration", replay_input[0])
+        self.assertNotIn("run_configuration_digest", replay_input[0])
+
+    def test_legacy_source_requires_explicit_configuration_mode(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+
+            with self.assertRaisesRegex(FailureReplayError, "legacy-run-config"):
+                replay_failure_bundle(self._args(root, legacy_run_config=None))
 
     def test_reusing_bundle_output_removes_stale_checkpoints(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -219,6 +275,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                 "--stage", "opening_match",
                 "--stage-status", "partial",
                 "--reason-code", "OPENING_NOT_FOUND",
+                "--legacy-run-config", "composition-defaults",
             ]
             with contextlib.redirect_stdout(io.StringIO()):
                 with self.assertRaisesRegex(SystemExit, "1 outcome mismatch"):
@@ -522,6 +579,90 @@ class FailureReplayBundleTests(unittest.TestCase):
             opening_stage["evidence"][0]["source_posting_status"],
             "closed",
         )
+
+    def test_successful_replay_with_changed_url_or_provider_is_mismatch(self):
+        replay_input = [{"company_name": "Example"}]
+        source = {
+            "company_name": "Example",
+            "pipeline_status": "success",
+            "company_website_url": "https://example.test",
+            "hiring_entity_name": "Example Holdings",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": "https://jobs.example.test/openings",
+            "open_position_url": "https://jobs.example.test/openings/123",
+            "stages": [{"stage": "job_board_discovery", "status": "success", "provider": "greenhouse"}],
+        }
+
+        for changed in (
+            {**source, "open_position_url": "https://jobs.example.test/openings/456"},
+            {
+                **source,
+                "stages": [{"stage": "job_board_discovery", "status": "success", "provider": "lever"}],
+            },
+        ):
+            with self.subTest(changed=changed):
+                gate = _build_outcome_gate(
+                    replay_input,
+                    [changed],
+                    source_records=[source],
+                )
+
+                self.assertEqual(gate["status"], "failed")
+                self.assertEqual(gate["classification_counts"]["mismatch"], 1)
+
+    def test_canonical_trailing_slash_is_equal_for_successful_replay(self):
+        replay_input = [{"company_name": "Example"}]
+        source = {
+            "company_name": "Example",
+            "pipeline_status": "success",
+            "company_website_url": "https://example.test/",
+            "hiring_entity_name": " Example   Holdings ",
+            "career_page_url": "https://example.test/careers/",
+            "job_list_page_url": "https://jobs.example.test/openings/",
+            "open_position_url": "https://jobs.example.test/openings/123/",
+            "stages": [{"stage": "job_board_discovery", "status": "success", "provider": "greenhouse"}],
+        }
+        replayed = {
+            **source,
+            "company_website_url": "https://example.test",
+            "hiring_entity_name": "example holdings",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": "https://jobs.example.test/openings",
+            "open_position_url": "https://jobs.example.test/openings/123",
+        }
+
+        gate = _build_outcome_gate(
+            replay_input,
+            [replayed],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["classification_counts"]["reproduced"], 1)
+
+    def test_verified_job_list_partial_pipeline_still_uses_identity_gate(self):
+        source = {
+            "company_name": "Example",
+            "status": "success",
+            "pipeline_status": "partial",
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": "https://jobs.example.test/openings",
+            "open_position_url": None,
+            "stages": [
+                {"stage": "opening_match", "status": "partial", "reason_code": "OPENING_NOT_FOUND"}
+            ],
+        }
+        replayed = {**source, "job_list_page_url": "https://wrong.example/jobs"}
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Example"}],
+            [replayed],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "failed")
+        self.assertEqual(gate["classification_counts"]["mismatch"], 1)
 
     def test_rejects_empty_filter_selection(self):
         with tempfile.TemporaryDirectory() as directory:

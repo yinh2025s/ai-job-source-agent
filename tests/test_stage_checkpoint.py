@@ -44,7 +44,7 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         payload = json.loads(next(self.root.rglob("career_discovery.json")).read_text())
         self.assertEqual(payload["checkpoint_schema_version"], CHECKPOINT_SCHEMA_VERSION)
         self.assertEqual(payload["adapter_version"], ADAPTER_VERSION)
-        self.assertEqual(payload["input_fingerprint"], self.fingerprint)
+        self.assertEqual(payload["execution_fingerprint"], self.fingerprint)
 
     def test_missing_and_corrupt_checkpoints_are_safe_cache_misses(self):
         self.assertIsNone(self.store.load(self.fingerprint, "career_discovery"))
@@ -113,7 +113,7 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         incompatible_fields = {
             "checkpoint_schema_version": "old",
             "adapter_version": "old",
-            "input_fingerprint": "wrong",
+            "execution_fingerprint": "wrong",
             "stage": "job_board_discovery",
         }
 

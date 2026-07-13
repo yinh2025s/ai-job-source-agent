@@ -23,21 +23,21 @@ class FilesystemCheckpointStore:
     def __init__(self, root: str | Path) -> None:
         self.root = Path(root)
 
-    def load(self, input_fingerprint: str, stage: str) -> StageExecution | None:
+    def load(self, execution_fingerprint: str, stage: str) -> StageExecution | None:
         _stage_index(stage)
-        with self._fingerprint_lock(input_fingerprint):
-            path = self._checkpoint_path(input_fingerprint, stage)
+        with self._fingerprint_lock(execution_fingerprint):
+            path = self._checkpoint_path(execution_fingerprint, stage)
             try:
                 payload = json.loads(path.read_text(encoding="utf-8"))
-                return _deserialize_checkpoint(payload, input_fingerprint, stage)
+                return _deserialize_checkpoint(payload, execution_fingerprint, stage)
             except (FileNotFoundError, OSError, UnicodeError, json.JSONDecodeError, TypeError, ValueError):
                 return None
 
-    def save(self, input_fingerprint: str, execution: StageExecution) -> None:
+    def save(self, execution_fingerprint: str, execution: StageExecution) -> None:
         stage = execution.result.stage
         _stage_index(stage)
-        with self._fingerprint_lock(input_fingerprint):
-            path = self._checkpoint_path(input_fingerprint, stage)
+        with self._fingerprint_lock(execution_fingerprint):
+            path = self._checkpoint_path(execution_fingerprint, stage)
             execution_payload = asdict(execution)
             discovered_board = execution.updates.get("discovered_job_board")
             if "discovered_job_board" in execution.updates and not isinstance(
@@ -53,7 +53,7 @@ class FilesystemCheckpointStore:
             payload = {
                 "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
                 "adapter_version": ADAPTER_VERSION,
-                "input_fingerprint": input_fingerprint,
+                "execution_fingerprint": execution_fingerprint,
                 "stage": stage,
                 "execution": execution_payload,
             }
@@ -85,10 +85,10 @@ class FilesystemCheckpointStore:
                     except FileNotFoundError:
                         pass
 
-    def invalidate_from(self, input_fingerprint: str, stage: str) -> None:
+    def invalidate_from(self, execution_fingerprint: str, stage: str) -> None:
         stage_index = _stage_index(stage)
-        with self._fingerprint_lock(input_fingerprint):
-            directory = self._fingerprint_directory(input_fingerprint)
+        with self._fingerprint_lock(execution_fingerprint):
+            directory = self._fingerprint_directory(execution_fingerprint)
             changed = False
             for invalidated_stage in PIPELINE_STAGES[stage_index:]:
                 self._cleanup_temporary_files(directory, invalidated_stage)
@@ -168,7 +168,7 @@ def _fsync_directory(directory: Path) -> None:
 
 def _deserialize_checkpoint(
     payload: Any,
-    input_fingerprint: str,
+    execution_fingerprint: str,
     stage: str,
 ) -> StageExecution:
     if not isinstance(payload, dict):
@@ -177,8 +177,8 @@ def _deserialize_checkpoint(
         raise ValueError("Checkpoint schema version is incompatible")
     if payload.get("adapter_version") != ADAPTER_VERSION:
         raise ValueError("Checkpoint adapter version is incompatible")
-    if payload.get("input_fingerprint") != input_fingerprint:
-        raise ValueError("Checkpoint input fingerprint does not match")
+    if payload.get("execution_fingerprint") != execution_fingerprint:
+        raise ValueError("Checkpoint execution fingerprint does not match")
     if payload.get("stage") != stage:
         raise ValueError("Checkpoint stage does not match")
 

@@ -36,7 +36,7 @@ class StageResultTests(unittest.TestCase):
 
         record = result.result_record()
 
-        self.assertEqual(record["result_schema_version"], "2.0")
+        self.assertEqual(record["result_schema_version"], "2.1")
         self.assertEqual(record["pipeline_status"], "success")
         self.assertEqual([stage["stage"] for stage in record["stages"]], list(PIPELINE_STAGES))
         self.assertEqual(record["opening_match_status"], "success")

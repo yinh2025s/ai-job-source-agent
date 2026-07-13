@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from job_source_agent.composition import FetcherConfig, build_application
+from job_source_agent.composition import AgentConfig, FetcherConfig, build_application
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import (
     PIPELINE_STAGES,
@@ -14,15 +14,17 @@ from job_source_agent.models import (
 )
 from job_source_agent.contracts import PipelineContext
 from job_source_agent.pipeline_application import discovery_result_from_context
+from job_source_agent.run_configuration import DeterministicRunConfig
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class PipelineApplicationTests(unittest.TestCase):
-    def build_application(self, checkpoint_dir=None):
+    def build_application(self, checkpoint_dir=None, agent_config=None):
         return build_application(
             FetcherConfig(fixtures_dir=ROOT / "samples" / "sites", offline=True),
+            agent_config,
             checkpoint_dir=checkpoint_dir,
         )
 
@@ -38,6 +40,34 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertEqual(result.career_page_url, "https://jobs.lever.co/aurora-data")
         self.assertIn("d9d64766", result.open_position_url)
         self.assertEqual(result.result_record()["output_validation_status"], "success")
+        self.assertEqual(result.result_schema_version, "2.1")
+        self.assertEqual(result.run_configuration["schema_version"], "1.0")
+        self.assertRegex(result.run_configuration_digest, r"^[0-9a-f]{64}$")
+        self.assertRegex(result.execution_fingerprint, r"^[0-9a-f]{64}$")
+
+    def test_result_records_the_exact_deterministic_run_configuration(self):
+        company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]
+        agent_config = AgentConfig(
+            max_candidates=7,
+            max_job_pages=4,
+            max_career_candidate_fetches=6,
+            max_career_search_queries=3,
+            max_ats_board_fetches=2,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+            career_search_timeout=2.5,
+        )
+        expected = DeterministicRunConfig.from_agent_config(agent_config)
+
+        result = self.build_application(agent_config=agent_config).pipeline.discover(
+            company,
+            stop_after=STAGE_HIRING_IDENTITY_RESOLUTION,
+        )
+
+        self.assertEqual(result.run_configuration, expected.to_payload())
+        self.assertEqual(result.run_configuration_digest, expected.digest)
+        self.assertEqual(result.trace["run_configuration_digest"], expected.digest)
+        self.assertEqual(result.trace["execution_fingerprint"], result.execution_fingerprint)
 
     def test_stop_after_marks_downstream_stages_not_run(self):
         company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]

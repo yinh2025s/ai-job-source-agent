@@ -1,10 +1,34 @@
 import unittest
 
-from job_source_agent.checkpoint import CHECKPOINT_SCHEMA_VERSION, checkpoint_metadata, input_fingerprint
+from job_source_agent.checkpoint import (
+    CHECKPOINT_SCHEMA_VERSION,
+    checkpoint_metadata,
+    execution_fingerprint,
+    input_fingerprint,
+)
 from job_source_agent.models import RESULT_SCHEMA_VERSION
 
 
 class CheckpointTests(unittest.TestCase):
+    def test_execution_fingerprint_is_stable_and_configuration_sensitive(self):
+        record = {"company_name": "Example Corp", "job_title": "Engineer"}
+        first_digest = "a" * 64
+
+        self.assertEqual(
+            execution_fingerprint(record, first_digest),
+            execution_fingerprint({"job_title": "Engineer", "company_name": " Example Corp "}, first_digest),
+        )
+        self.assertNotEqual(
+            execution_fingerprint(record, first_digest),
+            execution_fingerprint(record, "b" * 64),
+        )
+
+    def test_execution_fingerprint_rejects_invalid_configuration_digest(self):
+        for digest in (None, "short", "z" * 64):
+            with self.subTest(digest=digest):
+                with self.assertRaises(ValueError):
+                    execution_fingerprint({"company_name": "Example"}, digest)  # type: ignore[arg-type]
+
     def test_input_fingerprint_is_stable_for_equivalent_spacing(self):
         left = {
             "company_name": " Example Robotics ",

@@ -31,6 +31,22 @@
 
 纯格式整理可以合并记录，但任何行为、接口、schema、依赖、命令行或架构变化都必须有独立 changelog 条目。
 
+## Deterministic Artifact Governance
+
+- 改变候选数、fetch/search budget、sitemap/search policy 或 timeout 时，必须通过
+  `DeterministicRunConfig` 更新 execution identity；不得复用仅按公司输入命中的 artifact。
+- 改变 company/website wall-clock budget、fetch timeout/retry、render policy、verify limit
+  或 offline mode 时，必须更新 `BatchExecutionConfig`；batch completion 和 baseline 必须 miss。
+- Result、trace、summary 和 replay manifest 必须携带同一 canonical run configuration
+  digest。不同 digest 的 benchmark 不得直接声明 regression delta。
+- Replay 不得静默使用 composition defaults。缺少配置的历史 artifact 只能显式进入
+  legacy 模式，并在 manifest 标记 provenance，不能声称完整 deterministic reproduction。
+- 成功 replay 除 pipeline status 外必须验证 URL/provider identity；fixture smoke 或仅比较
+  failure signature 不能替代 full-outcome gate。
+- 自动 replay 的 mismatch 或 fixture gap 必须使 live gate 非零；bundle 文件成功生成不等于验收通过。
+- Run configuration 只允许固定数值/布尔字段；路径、cookies、tokens、headers、HTML 和
+  登录态信息不得写入该 contract。
+
 ## Parallel Development Rules
 
 - `main` 始终保持可运行，功能开发使用独立分支。

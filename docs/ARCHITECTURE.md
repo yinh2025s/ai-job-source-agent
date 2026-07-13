@@ -34,6 +34,28 @@ evaluation/reporting consume versioned outputs and do not control execution.
 
 内层模块不得 import CLI 或 batch runner。Provider adapter 不得依赖某个具体 browser/fetcher。Reporting 不得读取 runner 的进程内对象。
 
+## Input And Execution Identity
+
+Company/posting identity and execution identity are separate contracts. `input_fingerprint`
+contains only stable domain input. `DeterministicRunConfig` contains the bounded behavior
+settings that alter candidate scheduling, fetch/search limits, sitemap policy, and search
+timeout. `execution_fingerprint` combines their digests and is the key for stage checkpoints
+records. `BatchExecutionConfig` separately captures company/website wall-clock budgets,
+fetch/retry policy, render policy, verification limit, and offline mode. Batch completion keys
+combine both configuration digests; stage checkpoints remain reusable across transport-budget
+changes because they contain only already-published compatible stage executions.
+
+The composition root constructs one canonical run configuration and injects it into the
+pipeline. Result, trace, summary, and replay bundle use that same agent payload; live summary
+also records the batch execution payload. Replay reconstructs
+the source `AgentConfig`; it never reads behavior settings from trace fragments or machine-local
+CLI state. Per-company replay input remains configuration-free. See ADR-0007.
+
+Successful replay is a data-contract check as well as a control-flow check: canonical website,
+hiring entity, career page, job list, opening, and provider identity must remain equal. Focused
+failure replay may compare the first non-success signature, while full-outcome replay applies
+the stronger identity gate to successful records.
+
 ## Standard Pipeline
 
 | Stage | Owner | Input | Output |

@@ -2,14 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from typing import Any
 
 from .models import RESULT_SCHEMA_VERSION
 from .source_posting import source_posting_fingerprint_payload
 
 
-CHECKPOINT_SCHEMA_VERSION = "1.2"
-ADAPTER_VERSION = "2026-07-14.54"
+CHECKPOINT_SCHEMA_VERSION = "1.3"
+ADAPTER_VERSION = "2026-07-14.55"
 
 FINGERPRINT_FIELDS = (
     "company_name",
@@ -34,6 +35,21 @@ def input_fingerprint(record: dict[str, Any]) -> str:
     if source_posting:
         payload["source_posting"] = source_posting
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def execution_fingerprint(record: dict[str, Any], run_configuration_digest: str) -> str:
+    if not isinstance(run_configuration_digest, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", run_configuration_digest
+    ):
+        raise ValueError("run_configuration_digest must be a lowercase SHA-256 hex digest")
+    payload = {
+        "input_fingerprint": input_fingerprint(record),
+        "run_configuration_digest": run_configuration_digest,
+    }
+    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode(
+        "utf-8"
+    )
     return hashlib.sha256(encoded).hexdigest()
 
 

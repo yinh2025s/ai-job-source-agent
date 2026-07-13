@@ -311,6 +311,14 @@ def derive_cohort_identity(
         expectations_identity = _first_metadata_value(metadata, "cohort_expectations_sha256")
     if expectations_identity is not None:
         identity["expectations_identity"] = expectations_identity
+    run_configuration_digest = _identity_value(manifest, "run_configuration_digest")
+    if run_configuration_digest is not None:
+        identity["run_configuration_digest"] = run_configuration_digest
+    batch_execution_digest = _identity_value(
+        manifest, "batch_execution_configuration_digest"
+    )
+    if batch_execution_digest is not None:
+        identity["batch_execution_configuration_digest"] = batch_execution_digest
     return identity or None
 
 
@@ -369,6 +377,9 @@ def cohort_identities_compatible(
         left_primary is not None
         and left_primary == right_primary
         and left.get("expectations_identity") == right.get("expectations_identity")
+        and left.get("run_configuration_digest") == right.get("run_configuration_digest")
+        and left.get("batch_execution_configuration_digest")
+        == right.get("batch_execution_configuration_digest")
     )
 
 

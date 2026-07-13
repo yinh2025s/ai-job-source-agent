@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from job_source_agent.company_identity import CompanyIdentityResolver
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.batch_discovery import LinkedInDiscoveryManifestStore
-from job_source_agent.checkpoint import input_fingerprint
+from job_source_agent.checkpoint import execution_fingerprint
 from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
 from job_source_agent.contracts import FetchClient
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
@@ -40,6 +40,12 @@ from job_source_agent.models import (
 )
 from job_source_agent.process_budget import ProcessBudgetExceeded, RemoteProcessError, run_with_process_budget
 from job_source_agent.reasons import canonical_reason_code, make_stage_result
+from job_source_agent.run_configuration import (
+    BATCH_EXECUTION_SCHEMA_VERSION,
+    BatchExecutionConfig,
+    DeterministicRunConfig,
+    combined_configuration_digest,
+)
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.web import normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
@@ -100,6 +106,16 @@ def build_parser() -> argparse.ArgumentParser:
         default=20,
         help="Maximum failure records included in the automatic replay bundle.",
     )
+    parser.add_argument(
+        "--replay-bundle-dir",
+        help="Build an offline replay bundle for every pipeline outcome after the batch.",
+    )
+    parser.add_argument(
+        "--replay-bundle-limit",
+        type=int,
+        default=50,
+        help="Maximum records included in the full outcome replay bundle.",
+    )
     parser.add_argument("--baseline-summary", help="Optional prior summary JSON used for regression deltas.")
     parser.add_argument("--workers", type=int, default=1, help="Number of companies to process concurrently.")
     stage_group = parser.add_mutually_exclusive_group()
@@ -152,7 +168,13 @@ def main() -> None:
     output_path = Path(args.output)
     trace_path = Path(args.trace_output)
     summary_path = Path(args.summary_output)
-    completion_store = FilesystemBatchCompletionStore(_batch_checkpoint_dir(args))
+    run_configuration = _run_configuration(args)
+    batch_execution = _batch_execution_configuration(args)
+    completion_store = FilesystemBatchCompletionStore(
+        _batch_checkpoint_dir(args),
+        run_configuration,
+        combined_configuration_digest(run_configuration.digest, batch_execution.digest),
+    )
     completed = _load_completed_companies(companies, completion_store, args)
     started = time.time()
 
@@ -204,7 +226,12 @@ def main() -> None:
                     index, result, elapsed = future.result()
                 except Exception as error:
                     index = expected_index
-                    result = failure_result(company, "batch_worker_failed", detail=repr(error))
+                    result = failure_result(
+                        company,
+                        "batch_worker_failed",
+                        detail=repr(error),
+                        run_configuration=_run_configuration(args),
+                    )
                     elapsed = 0.0
                 _record_company_completion(
                     index,
@@ -244,6 +271,16 @@ def main() -> None:
             "reason": bundle_manifest.get("reason"),
             "selected": int(bundle_manifest.get("summary", {}).get("total", 0)),
             "manifest": str(Path(args.failure_bundle_dir) / "bundle-manifest.json"),
+            "outcome_gate": bundle_manifest.get("outcome_gate", {}).get("status"),
+        }
+    replay_manifest = build_automatic_replay_bundle(args, trace_path)
+    if replay_manifest is not None:
+        summary["replay_bundle"] = {
+            "status": replay_manifest["status"],
+            "reason": replay_manifest.get("reason"),
+            "selected": int(replay_manifest.get("summary", {}).get("total", 0)),
+            "manifest": str(Path(args.replay_bundle_dir) / "bundle-manifest.json"),
+            "outcome_gate": replay_manifest.get("outcome_gate", {}).get("status"),
         }
     _atomic_write_json(summary_path, summary)
     print_summary(summary)
@@ -253,13 +290,29 @@ def main() -> None:
     expectation_checks = summary.get("expectation_checks", {})
     if expectation_checks.get("failed"):
         raise SystemExit("Live expectations failed; see the summary JSON for details.")
+    enforce_bundle_gates(summary)
+
+
+def enforce_bundle_gates(summary: dict) -> None:
+    for bundle_name in ("failure_bundle", "replay_bundle"):
+        gate_status = summary.get(bundle_name, {}).get("outcome_gate")
+        if gate_status in {"failed", "incomplete"}:
+            raise SystemExit(
+                f"Live {bundle_name.replace('_', ' ')} gate {gate_status}; "
+                "see the bundle manifest for details."
+            )
 
 
 def validate_artifact_args(args: argparse.Namespace) -> None:
-    if getattr(args, "failure_bundle_dir", None) and not getattr(args, "snapshot_dir", None):
-        raise SystemExit("--failure-bundle-dir requires --snapshot-dir.")
+    if (
+        getattr(args, "failure_bundle_dir", None)
+        or getattr(args, "replay_bundle_dir", None)
+    ) and not getattr(args, "snapshot_dir", None):
+        raise SystemExit("Replay bundle output requires --snapshot-dir.")
     if int(getattr(args, "failure_bundle_limit", 20)) <= 0:
         raise SystemExit("--failure-bundle-limit must be greater than zero.")
+    if int(getattr(args, "replay_bundle_limit", 50)) <= 0:
+        raise SystemExit("--replay-bundle-limit must be greater than zero.")
 
 
 def build_automatic_failure_bundle(args: argparse.Namespace, trace_path: Path) -> dict | None:
@@ -277,6 +330,27 @@ def build_automatic_failure_bundle(args: argparse.Namespace, trace_path: Path) -
         provider=None,
         limit=int(args.failure_bundle_limit),
         include_missing_website=True,
+        legacy_run_config=None,
+    )
+    return replay_failure_bundle(replay_args, allow_empty=True)
+
+
+def build_automatic_replay_bundle(args: argparse.Namespace, trace_path: Path) -> dict | None:
+    output_dir = getattr(args, "replay_bundle_dir", None)
+    if not output_dir:
+        return None
+    replay_args = argparse.Namespace(
+        results=str(trace_path),
+        snapshot_dir=str(args.snapshot_dir),
+        output_dir=str(output_dir),
+        pipeline_status=None,
+        stage=None,
+        stage_status=None,
+        reason_code=None,
+        provider=None,
+        limit=int(args.replay_bundle_limit),
+        include_missing_website=True,
+        legacy_run_config=None,
     )
     return replay_failure_bundle(replay_args, allow_empty=True)
 
@@ -323,7 +397,15 @@ def build_summary(
 ) -> dict:
     summary_records = traces if traces is not None else results
     summary = summarize_results(summary_records, elapsed_sec=elapsed_sec)
+    run_configuration = _run_configuration(args)
+    batch_execution = _batch_execution_configuration(args)
+    summary["run_configuration"] = run_configuration.to_payload()
+    summary["run_configuration_digest"] = run_configuration.digest
+    summary["batch_execution_configuration"] = batch_execution.to_payload()
+    summary["batch_execution_configuration_digest"] = batch_execution.digest
     evaluation_manifest = {}
+    evaluation_manifest["run_configuration_digest"] = run_configuration.digest
+    evaluation_manifest["batch_execution_configuration_digest"] = batch_execution.digest
     companies_sha256 = getattr(args, "cohort_companies_sha256", None)
     if companies_sha256:
         evaluation_manifest["companies_sha256"] = companies_sha256
@@ -378,7 +460,7 @@ def _load_completed_companies(
     saved = store.scan(input_records)
     completed: dict[int, tuple[dict, dict, float]] = {}
     for index, input_record in enumerate(input_records, start=1):
-        completion = saved.get(input_fingerprint(input_record))
+        completion = saved.get(store.fingerprint(input_record))
         if completion is not None:
             completed[index] = (completion.result, completion.trace, completion.elapsed)
     return completed
@@ -543,9 +625,15 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                 company,
                 error="company_time_budget_exhausted",
                 detail=f"Website/identity resolution exceeded its {min(args.website_time_budget, args.company_time_budget):g}-second stage budget.",
+                run_configuration=_run_configuration(args),
             )
         except RemoteProcessError as exc:
-            return failure_result(company, error="batch_worker_failed", detail=str(exc))
+            return failure_result(
+                company,
+                error="batch_worker_failed",
+                detail=str(exc),
+                run_configuration=_run_configuration(args),
+            )
         if not upstream_result.company_website_url and not company.external_apply_url:
             return upstream_result
 
@@ -559,6 +647,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                 "compatible upstream checkpoint chain, replay company_website_url, or "
                 "a supported external_apply_url."
             ),
+            run_configuration=_run_configuration(args),
         )
 
     remaining = args.company_time_budget - (time.monotonic() - started)
@@ -568,6 +657,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             error="company_time_budget_exhausted",
             detail=f"Exceeded the {args.company_time_budget:g}-second company budget after website resolution.",
             completed_result=upstream_result,
+            run_configuration=_run_configuration(args),
         )
     try:
         downstream_deadline = time.monotonic() + _inner_deadline_budget(remaining)
@@ -589,6 +679,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             error="company_time_budget_exhausted",
             detail=f"Career discovery exceeded the remaining {remaining:.1f}-second company budget.",
             completed_result=upstream_result,
+            run_configuration=_run_configuration(args),
         )
     except RemoteProcessError as exc:
         return failure_result(
@@ -596,6 +687,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             error="batch_worker_failed",
             detail=str(exc),
             completed_result=upstream_result,
+            run_configuration=_run_configuration(args),
         )
 
 
@@ -650,7 +742,11 @@ def _missing_resume_checkpoints(
     args: argparse.Namespace,
     requested: str,
 ) -> list[str]:
-    fingerprint = input_fingerprint(dataclass_to_dict(company))
+    run_configuration = _run_configuration(args)
+    fingerprint = execution_fingerprint(
+        dataclass_to_dict(company),
+        run_configuration.digest,
+    )
     store = FilesystemCheckpointStore(_checkpoint_dir(args))
     requested_index = PIPELINE_STAGES.index(requested)
     missing: list[str] = []
@@ -771,15 +867,7 @@ def run_pipeline_phase(
 ) -> DiscoveryResult:
     application = build_application(
         _company_fetcher_config(args, retry_deadline=retry_deadline),
-        AgentConfig(
-            max_candidates=args.max_career_candidates,
-            max_job_pages=args.max_job_pages,
-            max_career_candidate_fetches=args.max_career_fetches,
-            max_career_search_queries=args.max_career_search_queries,
-            max_ats_board_fetches=args.max_ats_board_fetches,
-            enable_sitemap_discovery=not args.skip_sitemap,
-            career_search_timeout=args.career_search_timeout,
-        ),
+        _agent_config(args),
         checkpoint_dir=_checkpoint_dir(args),
     )
     result = application.pipeline.discover(
@@ -796,6 +884,50 @@ def run_pipeline_phase(
     if render_events:
         result.trace["render_events"] = render_events
     return result
+
+
+def _agent_config(args: argparse.Namespace) -> AgentConfig:
+    career_search_timeout = getattr(args, "career_search_timeout", 6)
+    return AgentConfig(
+        max_candidates=int(getattr(args, "max_career_candidates", 6)),
+        max_job_pages=int(getattr(args, "max_job_pages", 3)),
+        max_career_candidate_fetches=int(getattr(args, "max_career_fetches", 5)),
+        max_career_search_queries=int(getattr(args, "max_career_search_queries", 5)),
+        max_ats_board_fetches=int(getattr(args, "max_ats_board_fetches", 5)),
+        enable_sitemap_discovery=not bool(getattr(args, "skip_sitemap", False)),
+        enable_career_search=True,
+        career_search_timeout=(
+            None if career_search_timeout is None else float(career_search_timeout)
+        ),
+    )
+
+
+def _run_configuration(args: argparse.Namespace) -> DeterministicRunConfig:
+    return DeterministicRunConfig.from_agent_config(_agent_config(args))
+
+
+def _batch_execution_configuration(args: argparse.Namespace) -> BatchExecutionConfig:
+    company_time_budget = float(getattr(args, "company_time_budget", 45))
+    website_time_budget = min(
+        float(getattr(args, "website_time_budget", 20)),
+        company_time_budget,
+    )
+    return BatchExecutionConfig.from_payload(
+        {
+            "schema_version": BATCH_EXECUTION_SCHEMA_VERSION,
+            "batch": {
+                "company_time_budget": company_time_budget,
+                "website_time_budget": website_time_budget,
+                "fetch_timeout": float(getattr(args, "fetch_timeout", 3)),
+                "fetch_retries": int(getattr(args, "fetch_retries", 0)),
+                "retry_base_delay": float(getattr(args, "retry_base_delay", 0.25)),
+                "render_mode": "smart" if bool(getattr(args, "render_js", False)) else "none",
+                "render_budget": int(getattr(args, "render_budget", 2)),
+                "verify_limit": int(getattr(args, "verify_limit", 3)),
+                "offline": bool(getattr(args, "offline", False)),
+            },
+        }
+    )
 
 
 def build_company_fetcher(args: argparse.Namespace):
@@ -856,6 +988,7 @@ def failure_result(
     error: str,
     detail: str | None = None,
     completed_result: DiscoveryResult | None = None,
+    run_configuration: DeterministicRunConfig | None = None,
 ) -> DiscoveryResult:
     error_code = canonical_reason_code(error)
     stage_metrics = company.source_trace.get("stage_metrics", {})
@@ -935,6 +1068,8 @@ def failure_result(
             ),
         ]
     )
+    settings = run_configuration or DeterministicRunConfig.from_agent_config(AgentConfig())
+    fingerprint = execution_fingerprint(dataclass_to_dict(company), settings.digest)
     return DiscoveryResult(
         company_name=company.company_name,
         company_website_url=website_url,
@@ -958,6 +1093,9 @@ def failure_result(
         error_code=error_code,
         pipeline_status="failed",
         stage_results=stages,
+        run_configuration=settings.to_payload(),
+        run_configuration_digest=settings.digest,
+        execution_fingerprint=fingerprint,
         trace={
             **(completed_result.trace if completed_result is not None else {}),
             "source": company.source,
@@ -972,6 +1110,8 @@ def failure_result(
             },
             "batch_error": error,
             "batch_error_detail": detail,
+            "run_configuration_digest": settings.digest,
+            "execution_fingerprint": fingerprint,
         },
     )
 

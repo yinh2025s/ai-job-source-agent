@@ -68,6 +68,7 @@ def main() -> None:
         max_ats_board_fetches=args.max_ats_board_fetches,
         enable_sitemap_discovery=not args.skip_sitemap,
     )
+    evaluation_manifest["run_configuration_digest"] = agent.run_configuration.digest
     output_path = Path(args.output)
     trace_path = Path(args.trace_output)
     summary_path = Path(args.summary_output)
@@ -80,6 +81,8 @@ def main() -> None:
         result_records.append(result.result_record())
         trace_records.append(dataclass_to_dict(result.trace_record()))
         summary = summarize_results(result_records, elapsed_sec=round(time.time() - started, 3))
+        summary["run_configuration"] = agent.run_configuration.to_payload()
+        summary["run_configuration_digest"] = agent.run_configuration.digest
         summary["expectation_checks"] = evaluate_expectations(result_records, expectations)
         summary["evaluation_manifest"] = evaluation_manifest
 
@@ -98,6 +101,8 @@ def main() -> None:
         )
 
     summary = summarize_results(result_records, elapsed_sec=round(time.time() - started, 3))
+    summary["run_configuration"] = agent.run_configuration.to_payload()
+    summary["run_configuration_digest"] = agent.run_configuration.digest
     summary["expectation_checks"] = evaluate_expectations(result_records, expectations)
     summary["evaluation_manifest"] = evaluation_manifest
     if args.baseline_summary:

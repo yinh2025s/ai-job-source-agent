@@ -14,11 +14,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from job_source_agent.checkpoint import (
     ADAPTER_VERSION,
     CHECKPOINT_SCHEMA_VERSION,
-    input_fingerprint,
+    execution_fingerprint,
 )
-from job_source_agent.composition import FetcherConfig, build_application
+from job_source_agent.composition import AgentConfig, FetcherConfig, build_application
 from job_source_agent.contracts import StageExecution
-from job_source_agent.evaluation import summarize_results
+from job_source_agent.evaluation import result_provider, summarize_results
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import (
     PIPELINE_STAGES,
@@ -28,10 +28,12 @@ from job_source_agent.models import (
 )
 from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
+from job_source_agent.run_configuration import DeterministicRunConfig
+from job_source_agent.web import normalize_url
 from scripts.export_replay_input import export_replay_records
 
 
-BUNDLE_SCHEMA_VERSION = 2
+BUNDLE_SCHEMA_VERSION = 3
 
 
 class FailureReplayError(ValueError):
@@ -52,6 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provider", action="append")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--include-missing-website", action="store_true")
+    parser.add_argument(
+        "--legacy-run-config",
+        choices=("composition-defaults",),
+        help="Explicitly replay legacy records that predate deterministic run metadata.",
+    )
     return parser
 
 
@@ -102,6 +109,11 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             return manifest
         raise FailureReplayError("No replayable records matched the requested filters")
 
+    run_configuration, run_configuration_provenance = _resolve_run_configuration(
+        source_records,
+        getattr(args, "legacy_run_config", None),
+    )
+
     _reset_checkpoint_output(output_root / "checkpoints")
     fixture_result = replay_snapshots(args.snapshot_dir, output_root / "offline")
     input_path = output_root / "replay-input.json"
@@ -112,9 +124,11 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         replay_records,
         source_records,
         output_root / "checkpoints",
+        run_configuration,
     )
     application = build_application(
         FetcherConfig(fixtures_dir=output_root / "offline" / "sites", offline=True),
+        run_configuration.to_agent_config(),
         checkpoint_dir=output_root / "checkpoints",
     )
     discoveries = [
@@ -124,7 +138,13 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
     result_records = [result.result_record() for result in discoveries]
     trace_records = [dataclass_to_dict(result.trace_record()) for result in discoveries]
     summary = summarize_results(trace_records)
-    outcome_gate = _build_outcome_gate(replay_records, result_records)
+    summary["run_configuration"] = run_configuration.to_payload()
+    summary["run_configuration_digest"] = run_configuration.digest
+    outcome_gate = _build_outcome_gate(
+        replay_records,
+        result_records,
+        source_records=source_records,
+    )
 
     _write_json_atomic(output_root / "replay-results.json", result_records)
     _write_json_atomic(output_root / "replay-trace.json", trace_records)
@@ -135,6 +155,9 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
         "result_schema_version": RESULT_SCHEMA_VERSION,
         "adapter_version": ADAPTER_VERSION,
+        "run_configuration": run_configuration.to_payload(),
+        "run_configuration_digest": run_configuration.digest,
+        "run_configuration_provenance": run_configuration_provenance,
         "paths": {
             "input": "replay-input.json",
             "fixtures": "offline/sites",
@@ -224,6 +247,7 @@ def _seed_authoritative_handoffs(
     replay_records: list[dict],
     source_records: list[dict],
     checkpoint_root: Path,
+    run_configuration: DeterministicRunConfig,
 ) -> list[str | None]:
     store = FilesystemCheckpointStore(checkpoint_root)
     resume_stages: list[str | None] = []
@@ -238,11 +262,40 @@ def _seed_authoritative_handoffs(
         if executions is None:
             resume_stages.append(None)
             continue
-        fingerprint = input_fingerprint(asdict(company))
+        fingerprint = execution_fingerprint(asdict(company), run_configuration.digest)
         for execution in executions:
             store.save(fingerprint, execution)
         resume_stages.append(resume_stage)
     return resume_stages
+
+
+def _resolve_run_configuration(
+    source_records: list[dict],
+    legacy_mode: str | None,
+) -> tuple[DeterministicRunConfig, str]:
+    payloads = [record.get("run_configuration") for record in source_records]
+    present = [payload for payload in payloads if payload is not None]
+    if not present:
+        if legacy_mode != "composition-defaults":
+            raise FailureReplayError(
+                "Selected records predate run configuration metadata; pass "
+                "--legacy-run-config composition-defaults to replay them explicitly"
+            )
+        return DeterministicRunConfig.from_agent_config(AgentConfig()), "legacy_defaulted"
+    if len(present) != len(payloads):
+        raise FailureReplayError("Selected records mix missing and versioned run configurations")
+    try:
+        configurations = [DeterministicRunConfig.from_payload(payload) for payload in present]
+    except ValueError as error:
+        raise FailureReplayError(f"Invalid source run configuration: {error}") from error
+    first = configurations[0]
+    if any(configuration.digest != first.digest for configuration in configurations[1:]):
+        raise FailureReplayError("Selected records contain incompatible run configurations")
+    for source_record in source_records:
+        recorded_digest = source_record.get("run_configuration_digest")
+        if recorded_digest is not None and recorded_digest != first.digest:
+            raise FailureReplayError("Source run configuration digest does not match its payload")
+    return first, "source_record"
 
 
 def _first_non_success_stage_name(replay_record: dict) -> str | None:
@@ -338,7 +391,12 @@ def _authoritative_stage_updates(stage: str, source_record: dict) -> dict:
     return updates
 
 
-def _build_outcome_gate(replay_records: list[dict], result_records: list[dict]) -> dict:
+def _build_outcome_gate(
+    replay_records: list[dict],
+    result_records: list[dict],
+    *,
+    source_records: list[dict] | None = None,
+) -> dict:
     comparisons = []
     counts = {
         "reproduced": 0,
@@ -350,16 +408,34 @@ def _build_outcome_gate(replay_records: list[dict], result_records: list[dict]) 
     for index in range(record_count):
         replay_input = replay_records[index] if index < len(replay_records) else None
         replay_result = result_records[index] if index < len(result_records) else None
-        original = _original_outcome(replay_input)
+        source_record = (
+            source_records[index]
+            if source_records is not None and index < len(source_records)
+            else None
+        )
+        compare_identity = bool(
+            source_record is not None
+            and (
+                _optional_string(source_record.get("pipeline_status")) == "success"
+                or _optional_string(source_record.get("status")) == "success"
+            )
+        )
+        original = (
+            _source_outcome(source_record, include_identity=compare_identity)
+            if source_record is not None
+            else _original_outcome(replay_input)
+        )
         expected_transition = _expected_transition(replay_input)
         replayed_original = _result_outcome(
             replay_result,
             failure_stage=_outcome_stage_name(original),
+            include_identity=compare_identity,
         )
         replayed_expected = (
             _result_outcome(
                 replay_result,
                 failure_stage=_outcome_stage_name(expected_transition),
+                include_identity=False,
             )
             if expected_transition is not None
             else replayed_original
@@ -458,7 +534,28 @@ def _outcome_stage_name(outcome: dict | None) -> str | None:
     return _optional_string(failure_stage.get("stage"))
 
 
-def _result_outcome(record: dict | None, *, failure_stage: str | None) -> dict | None:
+def _source_outcome(
+    record: dict | None,
+    *,
+    include_identity: bool,
+) -> dict | None:
+    if not isinstance(record, dict):
+        return None
+    outcome = {
+        "pipeline_status": _optional_string(record.get("pipeline_status") or record.get("status")),
+        "failure_stage": _stage_outcome(_first_non_success_result_stage(record)),
+    }
+    if include_identity:
+        outcome["result_identity"] = _result_identity(record)
+    return outcome
+
+
+def _result_outcome(
+    record: dict | None,
+    *,
+    failure_stage: str | None,
+    include_identity: bool = False,
+) -> dict | None:
     if not isinstance(record, dict):
         return None
     stages = record.get("stages")
@@ -477,12 +574,63 @@ def _result_outcome(record: dict | None, *, failure_stage: str | None) -> dict |
             ),
             None,
         )
-    return {
+    outcome = {
         "pipeline_status": _optional_string(
             record.get("pipeline_status") or record.get("status")
         ),
         "failure_stage": _stage_outcome(replay_failure),
     }
+    if include_identity:
+        outcome["result_identity"] = _result_identity(record)
+    return outcome
+
+
+def _first_non_success_result_stage(record: dict) -> dict | None:
+    stages = record.get("stages")
+    if not isinstance(stages, list):
+        return None
+    stage_by_name = {
+        stage.get("stage"): stage
+        for stage in stages
+        if isinstance(stage, dict) and stage.get("stage") in PIPELINE_STAGES
+    }
+    return next(
+        (
+            stage_by_name[stage_name]
+            for stage_name in PIPELINE_STAGES
+            if stage_name in stage_by_name
+            and stage_by_name[stage_name].get("status") not in {"success", "not_applicable"}
+        ),
+        None,
+    )
+
+
+def _result_identity(record: dict) -> dict:
+    return {
+        "company_website_url": _canonical_public_url(record.get("company_website_url")),
+        "hiring_entity_name": _normalized_identity_text(record.get("hiring_entity_name")),
+        "career_page_url": _canonical_public_url(record.get("career_page_url")),
+        "job_list_page_url": _canonical_public_url(record.get("job_list_page_url")),
+        "open_position_url": _canonical_public_url(record.get("open_position_url")),
+        "provider": _optional_string(result_provider(record)),
+    }
+
+
+def _canonical_public_url(value: object) -> str | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        normalized = normalize_url(value)
+    except (TypeError, ValueError):
+        return None
+    return normalized[:-1] if normalized.endswith("/") and normalized.count("/") > 2 else normalized
+
+
+def _normalized_identity_text(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split()).casefold()
+    return normalized or None
 
 
 def _stage_outcome(value: object) -> dict | None:
