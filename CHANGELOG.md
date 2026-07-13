@@ -47,6 +47,8 @@
 
 ### Changed
 
+- SmartRecruiters adapter 现在从公开 inventory 保留 company identifier/name，并输出严格的 `tenant_identity_verified` 证据；derived board 即使没有旧职位标题命中，也可在非空库存与租户标识一致时确认为官方 job list，中央 discovery 只消费布尔 contract，不解析 provider payload。Centraprise focused live/replay 已稳定确认 `jobs.smartrecruiters.com/centraprise`，当前 4 个公开岗位不含旧 `AI/ML Engineer`，因此诚实保持 `OPENING_NOT_FOUND`。其官网同时暴露 CEIPAL widget，但公开 API 返回 bot access block，CEIPAL 继续列为 unsupported/browser 后续项。S5/S6/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.39`；565 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。
+
 - S4 将官网明确导航到的 `/team` 作为需强就业证据验证的 startup career route；普通团队介绍页仍拒绝。S4/S5 共享有界 Magnolia Delivery probe：仅当同站 module bundle 明确声明公开 delivery endpoint、HTTPS 标准端口 CMS host 与官网品牌一致且 payload 不跨 host redirect 时，才合并公开 CMS 内容。GPTZero 从官网 Team 页进入 Ashby，当前 3 个公开岗位不含旧 LinkedIn 标题，稳定得到 verified job list + `OPENING_NOT_FOUND`；Direct Supply 从 React shell 读取公开 Magnolia payload，进入 Workday 并 exact 命中 `AI Engineer` `REQ-2026-2441`。两份 live capture 分别以 0.3/0.2 秒离线回放；冻结 11-company failure cluster 从 `.36` 的 0/11 提升到 3/11 job list、2/11 exact，其余 8 家无假阳性。S4/S5/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.38`；563 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。
 
 - S2 不再无条件信任 `replay_input` 中可能过期的历史官网：旧 URL 作为 `preferred_input` 占用明确的验证槽，验证失败后继续使用 LinkedIn、搜索和推测候选；普通直接输入仍保持无网络快速路径。官网验证新增 Sedo 与 Squarespace parking-page 基础设施指纹，同时不使用泛化的 “resources and information” 文案单独判定停放，避免误杀正常站点。Suffolk Construction live 从两个停放域迁移到 `suffolk.com`，随后进入官方 iCIMS 并 exact 命中 Site AI Engineer `11054`；冻结的 11-company 失败簇从 0/11 提升到 1/11 exact，其余 10 家没有产生假阳性。S2/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.37`；560 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。

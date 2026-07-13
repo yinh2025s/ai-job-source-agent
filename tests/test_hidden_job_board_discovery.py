@@ -453,6 +453,41 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertIsNotNone(accepted)
         self.assertEqual(accepted[0], "https://jobs.smartrecruiters.com/AcmeApi")
 
+    def test_speculative_native_adapter_accepts_verified_tenant_without_title_match(self):
+        board = "https://jobs.smartrecruiters.com/Centraprise"
+        api = (
+            "https://api.smartrecruiters.com/v1/companies/Centraprise/postings"
+            "?limit=100&q=AI%2FML+Engineer"
+        )
+        payload = json.dumps(
+            {
+                "totalFound": 1,
+                "limit": 100,
+                "content": [
+                    {
+                        "name": "Backend Engineer",
+                        "id": "job-1",
+                        "company": {
+                            "identifier": "Centraprise",
+                            "name": "Centraprise",
+                        },
+                    }
+                ],
+            }
+        )
+        agent = JobSourceAgent(MappingFetcher({api: Page(url=api, html=payload)}))
+
+        verified = agent._verify_derived_provider_with_adapter(
+            board,
+            target_title="AI/ML Engineer",
+            trusted_configuration=False,
+        )
+
+        self.assertIsNotNone(verified)
+        self.assertEqual(verified[0], board)
+        self.assertEqual(verified[1]["title_match_count"], 0)
+        self.assertTrue(verified[1]["adapter_trace"]["tenant_identity_verified"])
+
 
 if __name__ == "__main__":
     unittest.main()

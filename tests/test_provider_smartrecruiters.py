@@ -60,6 +60,29 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
             "https://jobs.smartrecruiters.com/AcmeApi/743999222222222-sales-manager",
         )
         self.assertEqual(result.trace["candidate_count"], 2)
+        self.assertFalse(result.trace["tenant_identity_verified"])
+
+    def test_marks_matching_record_company_identity_as_verified_tenant(self):
+        adapter = SmartRecruitersAdapter()
+        board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
+        payload = json.dumps(
+            {
+                "totalFound": 1,
+                "limit": 100,
+                "content": [
+                    {
+                        "name": "Backend Engineer",
+                        "id": "job-1",
+                        "company": {"identifier": "AcmeApi", "name": "Acme API"},
+                    }
+                ],
+            }
+        )
+
+        result = adapter.list_jobs(_StaticFetcher(payload), board, JobQuery())
+
+        self.assertTrue(result.trace["tenant_identity_verified"])
+        self.assertEqual(result.candidates[0].raw["company_identifier"], "AcmeApi")
 
     def test_uses_keyword_query_and_follows_bounded_offset_pages(self):
         adapter = SmartRecruitersAdapter()

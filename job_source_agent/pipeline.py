@@ -1239,7 +1239,13 @@ class JobSourceAgent:
             "reason_code": result.reason_code,
             "adapter_trace": result.trace,
         }
-        verified = bool(matching) if target_title else trusted_configuration and bool(result.candidates)
+        verified = bool(matching) or (
+            bool(result.candidates)
+            and (
+                trusted_configuration
+                or result.trace.get("tenant_identity_verified") is True
+            )
+        )
         if verified:
             return (
                 self._canonical_provider_board_url(adapter.name, board.url, board.identifier),

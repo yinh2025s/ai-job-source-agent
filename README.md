@@ -35,6 +35,8 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
+Current adapter iteration: `2026-07-13.39`. Derived SmartRecruiters boards can now be verified by non-empty structured inventory whose company identifier matches the requested tenant, even when a historical LinkedIn title is no longer open. Centraprise is the focused live/replay case: its official job list is verified and the stale `AI/ML Engineer` opening remains correctly unconfirmed.
+
 ## What It Returns
 
 For each input record:

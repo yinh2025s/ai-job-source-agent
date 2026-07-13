@@ -105,7 +105,11 @@ class SmartRecruitersAdapter:
                         url=detail_url,
                         provider=self.name,
                         location=_location_name(posting),
-                        raw={"id": posting.get("id")},
+                        raw={
+                            "id": posting.get("id"),
+                            "company_identifier": _company_identifier(posting),
+                            "company_name": _company_name(posting),
+                        },
                     )
                 )
                 if normalized_target and _normalized_title(title) == normalized_target:
@@ -125,6 +129,11 @@ class SmartRecruitersAdapter:
                 break
             offset = next_offset
 
+        tenant_identity_verified = bool(candidates) and all(
+            str(candidate.raw.get("company_identifier") or "").casefold()
+            == board.identifier.casefold()
+            for candidate in candidates
+        )
         reason_code = None if candidates else (
             "PROVIDER_FETCH_FAILED" if errors else "EMPTY_PROVIDER_RESPONSE"
         )
@@ -141,6 +150,7 @@ class SmartRecruitersAdapter:
                 "page_count": len(api_urls) - len(errors),
                 "total_found": total_found,
                 "exact_title_found": exact_title_found,
+                "tenant_identity_verified": tenant_identity_verified,
                 "errors": errors,
             },
         )
@@ -186,6 +196,22 @@ def _detail_url(posting: dict, board: JobBoard) -> str:
         )
         return candidate if _is_public_detail_url(candidate, board.identifier) else ""
     return ""
+
+
+def _company_identifier(posting: dict) -> str | None:
+    company = posting.get("company")
+    if not isinstance(company, dict):
+        return None
+    value = company.get("identifier")
+    return value.strip() if isinstance(value, str) and value.strip() else None
+
+
+def _company_name(posting: dict) -> str | None:
+    company = posting.get("company")
+    if not isinstance(company, dict):
+        return None
+    value = company.get("name")
+    return value.strip() if isinstance(value, str) and value.strip() else None
 
 
 def _is_company_api_url(url: str, identifier: str) -> bool:
