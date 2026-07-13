@@ -464,7 +464,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         prepare_replay_company_for_resume(company, args)
     else:
         upstream_budget = min(args.website_time_budget, args.company_time_budget)
-        upstream_deadline = time.monotonic() + upstream_budget
+        upstream_deadline = time.monotonic() + _inner_deadline_budget(upstream_budget)
         try:
             upstream_result = run_with_process_budget(
                 run_pipeline_phase,
@@ -509,7 +509,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             completed_result=upstream_result,
         )
     try:
-        downstream_deadline = time.monotonic() + remaining
+        downstream_deadline = time.monotonic() + _inner_deadline_budget(remaining)
         return run_with_process_budget(
             run_pipeline_phase,
             (
@@ -739,6 +739,13 @@ def run_pipeline_phase(
 
 def build_company_fetcher(args: argparse.Namespace):
     return build_fetcher(_company_fetcher_config(args))
+
+
+def _inner_deadline_budget(outer_budget: float) -> float:
+    """Leave time to finalize stage results and publish checkpoints before hard kill."""
+
+    reserve = min(1.0, max(0.05, outer_budget * 0.05))
+    return max(0.001, outer_budget - reserve)
 
 
 def _company_fetcher_config(

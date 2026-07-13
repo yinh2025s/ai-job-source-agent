@@ -163,6 +163,49 @@ class CareerSearchTests(unittest.TestCase):
 
         self.assertEqual(result.candidates, [])
 
+    def test_nonempty_rss_drift_skips_duplicate_html_sources_for_that_query(self):
+        rss = "<rss><channel><item><link>https://unrelated.example/careers</link></item></channel></rss>"
+        fetcher = MappingFetcher(
+            lambda url: Page(url, rss, final_url=url)
+            if "format=rss" in url
+            else (_ for _ in ()).throw(AssertionError(url))
+        )
+
+        result = CareerSearchResolver(fetcher, max_queries=1).search(
+            "Acme Co", "https://acme.example"
+        )
+
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(len(fetcher.calls), 1)
+        self.assertEqual(
+            result.trace["queries"][0]["fallback_skipped"],
+            "rss_returned_results_without_valid_candidate",
+        )
+
+    def test_generic_search_caps_redundant_queries_but_ats_search_keeps_provider_sweep(self):
+        fetcher = MappingFetcher(
+            lambda url: Page(
+                url,
+                "<rss><channel><item><link>https://unrelated.example/</link></item></channel></rss>",
+                final_url=url,
+            )
+        )
+
+        generic = CareerSearchResolver(fetcher, max_queries=5, max_source_fetches=6).search(
+            "Acme Co", "https://acme.example"
+        )
+
+        self.assertEqual(len(generic.trace["queries"]), 3)
+        self.assertEqual(generic.trace["effective_query_limit"], 3)
+
+        fetcher.calls.clear()
+        ats = CareerSearchResolver(fetcher, max_queries=5, max_source_fetches=6).search(
+            "Acme Co", "https://acme.example", ats_only=True
+        )
+
+        self.assertEqual(len(ats.trace["queries"]), 5)
+        self.assertEqual(ats.trace["effective_query_limit"], 5)
+
     def test_brand_prefixed_official_career_path_is_accepted(self):
         rss = "<rss><channel><item><link>https://acme.example/real-careers</link></item></channel></rss>"
 

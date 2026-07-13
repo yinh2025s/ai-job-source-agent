@@ -37,6 +37,14 @@ class CompositionTests(unittest.TestCase):
         self.assertIsInstance(fetcher, RetryingFetcher)
         self.assertEqual(fetcher._deadline, 123.5)
 
+    def test_deadline_wrapper_is_present_even_when_retries_are_disabled(self):
+        fetcher = build_fetcher(
+            FetcherConfig(offline=True, retries=0, retry_deadline=123.5)
+        )
+
+        self.assertIsInstance(fetcher, RetryingFetcher)
+        self.assertEqual(fetcher.max_retries, 0)
+
     def test_application_shares_registry_between_agent_and_matcher_boundary(self):
         application = build_application(
             FetcherConfig(offline=True),

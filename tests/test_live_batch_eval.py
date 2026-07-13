@@ -12,6 +12,7 @@ from scripts.live_batch_eval import (
     build_automatic_failure_bundle,
     build_summary,
     failure_result,
+    _inner_deadline_budget,
     _load_completed_companies,
     _downstream_start_stage,
     _ordered_records,
@@ -28,6 +29,11 @@ from scripts.live_batch_eval import (
 
 
 class LiveBatchEvalTests(unittest.TestCase):
+    def test_inner_deadline_leaves_bounded_checkpoint_reserve(self):
+        self.assertEqual(_inner_deadline_budget(45), 44)
+        self.assertEqual(_inner_deadline_budget(10), 9.5)
+        self.assertEqual(_inner_deadline_budget(0.5), 0.45)
+
     def pipeline_args(self, directory):
         return SimpleNamespace(
             checkpoint_dir=str(Path(directory) / "checkpoints"),

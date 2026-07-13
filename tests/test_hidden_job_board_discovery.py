@@ -1,9 +1,13 @@
 import unittest
 import json
+from pathlib import Path
 
 from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.errors import DiscoveryError
-from job_source_agent.web import FetchError, Page
+from job_source_agent.web import FetchError, Fetcher, Page
+
+
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class MappingFetcher:
@@ -248,6 +252,27 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
 
         self.assertFalse(verified)
         self.assertEqual(trace["title_match_count"], 0)
+
+    def test_speculative_native_adapter_rejects_valid_wrong_company_inventory(self):
+        agent = JobSourceAgent(Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True))
+
+        rejected = agent._verify_derived_provider_with_adapter(
+            "https://jobs.smartrecruiters.com/AcmeApi",
+            target_title="Quantum Archaeologist",
+            trusted_configuration=False,
+        )
+        accepted = agent._verify_derived_provider_with_adapter(
+            "https://jobs.smartrecruiters.com/AcmeApi",
+            target_title="Data Analyst",
+            trusted_configuration=False,
+        )
+
+        self.assertIsNotNone(rejected)
+        self.assertIsNone(rejected[0])
+        self.assertEqual(rejected[1]["method"], "native_adapter_first")
+        self.assertGreater(rejected[1]["candidate_count"], 0)
+        self.assertIsNotNone(accepted)
+        self.assertEqual(accepted[0], "https://jobs.smartrecruiters.com/AcmeApi")
 
 
 if __name__ == "__main__":

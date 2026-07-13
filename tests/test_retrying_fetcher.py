@@ -138,6 +138,35 @@ class RetryFetcherTests(unittest.TestCase):
         self.assertEqual(base.calls, 2)
         self.assertEqual(fetcher.retry_events[-1]["outcome"], "deadline_exhausted")
 
+    def test_deadline_clamps_each_underlying_fetch_timeout_and_restores_it(self):
+        class TimeoutRecordingFetcher(SequenceFetcher):
+            timeout = 8
+
+            def __init__(self):
+                super().__init__([Page("u", "ok")])
+                self.observed_timeouts = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.observed_timeouts.append(self.timeout)
+                return super().fetch(url, data=data, headers=headers)
+
+        base = TimeoutRecordingFetcher()
+        fetcher = RetryingFetcher(base, max_retries=0, clock=lambda: 10.0, deadline=12.5)
+
+        fetcher.fetch("u")
+
+        self.assertEqual(base.observed_timeouts, [2.5])
+        self.assertEqual(base.timeout, 8)
+
+    def test_expired_deadline_prevents_initial_fetch(self):
+        base = SequenceFetcher([Page("u", "ok")])
+        fetcher = RetryingFetcher(base, max_retries=0, clock=lambda: 10.0, deadline=10.0)
+
+        with self.assertRaisesRegex(FetchError, "caller deadline"):
+            fetcher.fetch("u")
+
+        self.assertEqual(base.calls, 0)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -169,7 +169,14 @@ class OfflinePipelineTests(unittest.TestCase):
         )
 
         self.assertIsNone(selected)
-        self.assertEqual(trace["provider_board_verification"][0]["method"], "unverified")
+        self.assertEqual(
+            trace["provider_board_verification"][0]["method"],
+            "native_adapter_first",
+        )
+        self.assertEqual(
+            trace["candidate_fetch_errors"][0]["error"],
+            "derived provider adapter rejected tenant or title",
+        )
 
     def test_common_path_candidates_include_www_variant(self):
         agent = JobSourceAgent(

@@ -82,11 +82,15 @@ class CareerSearchResolver:
             "ats_only": ats_only,
         }
 
-        queries = (
+        configured_queries = (
             build_ats_search_queries(company_name)
             if ats_only
             else build_search_queries(company_name, official_domain)
-        )[: self.max_queries]
+        )
+        effective_query_limit = self.max_queries if ats_only else min(self.max_queries, 3)
+        queries = configured_queries[:effective_query_limit]
+        trace["configured_query_limit"] = self.max_queries
+        trace["effective_query_limit"] = effective_query_limit
         source_fetches = 0
         for query_text in queries:
             sources = _search_sources(query_text)
@@ -130,6 +134,9 @@ class CareerSearchResolver:
                 )
                 if candidates:
                     trace["stopped_reason"] = "search_candidate_found"
+                    break
+                if source.name == "bing_rss" and raw_urls:
+                    query_trace["fallback_skipped"] = "rss_returned_results_without_valid_candidate"
                     break
             if candidates:
                 break

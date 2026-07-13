@@ -55,12 +55,25 @@ class RetryingFetcher:
         last_error: FetchError | None = None
         last_event: dict[str, Any] | None = None
         while True:
-            if last_error is not None and self._remaining_time() <= 0:
+            remaining_before_fetch = self._remaining_time()
+            if remaining_before_fetch <= 0:
                 if last_event is not None:
                     last_event["outcome"] = "deadline_exhausted"
-                raise last_error
+                raise last_error or FetchError("operation timed out at caller deadline")
+            original_timeout = getattr(self.fetcher, "timeout", None)
+            bounded_timeout = (
+                min(float(original_timeout), remaining_before_fetch)
+                if original_timeout is not None and remaining_before_fetch != float("inf")
+                else None
+            )
             try:
-                page = self.fetcher.fetch(url, data=data, headers=headers)
+                if bounded_timeout is not None:
+                    self.fetcher.timeout = max(0.001, bounded_timeout)
+                try:
+                    page = self.fetcher.fetch(url, data=data, headers=headers)
+                finally:
+                    if bounded_timeout is not None:
+                        self.fetcher.timeout = original_timeout
             except FetchError as exc:
                 reason_code = classify_fetch_error(str(exc))
                 retryable = reason_spec(reason_code).retryable

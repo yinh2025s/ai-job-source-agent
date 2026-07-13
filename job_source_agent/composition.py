@@ -82,7 +82,7 @@ def build_fetcher(config: FetcherConfig) -> FetchClient:
     else:
         raise ValueError(f"Unsupported render mode: {config.render_mode}")
 
-    if config.retries > 0:
+    if config.retries > 0 or config.retry_deadline is not None:
         fetcher = RetryingFetcher(
             fetcher,
             max_retries=config.retries,

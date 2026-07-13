@@ -894,6 +894,24 @@ class JobSourceAgent:
                 }
                 return None
             fetch_attempts += 1
+            derived_reasons = [reason for reason in candidate.reasons if reason.startswith("derived ")]
+            if derived_reasons:
+                adapter_decision = self._verify_derived_provider_with_adapter(
+                    candidate.url,
+                    target_title=target_title,
+                    trusted_configuration="derived provider configuration" in derived_reasons,
+                )
+                if adapter_decision is not None:
+                    verified_url, verification = adapter_decision
+                    trace.setdefault("provider_board_verification", []).append(verification)
+                    if verified_url:
+                        trace["selected"] = dataclass_to_dict(candidate)
+                        trace["selected_page_source"] = "provider_adapter"
+                        return verified_url
+                    trace["candidate_fetch_errors"].append(
+                        {"url": candidate.url, "error": "derived provider adapter rejected tenant or title"}
+                    )
+                    continue
             try:
                 page = self.fetcher.fetch(candidate.url)
             except FetchError as exc:
@@ -914,7 +932,6 @@ class JobSourceAgent:
             if self._looks_like_error_page(actual_url, page.html):
                 trace["candidate_fetch_errors"].append({"url": candidate.url, "error": f"error page: {actual_url}"})
                 continue
-            derived_reasons = [reason for reason in candidate.reasons if reason.startswith("derived ")]
             if derived_reasons:
                 verified, verification = self._verify_derived_provider_board(
                     actual_url,
@@ -933,6 +950,52 @@ class JobSourceAgent:
                 trace["selected_page_source"] = page.source
                 return actual_url
         return None
+
+    def _verify_derived_provider_with_adapter(
+        self,
+        url: str,
+        *,
+        target_title: str | None,
+        trusted_configuration: bool,
+    ) -> tuple[str | None, dict] | None:
+        adapter = self.provider_registry.adapter_for(url)
+        board = adapter.identify_board(url) if adapter else None
+        if adapter is None or board is None or not adapter.supports_listing:
+            return None
+        try:
+            result = adapter.list_jobs(self.fetcher, board, JobQuery(title=target_title))
+        except FetchError:
+            return None
+
+        matching = [
+            candidate
+            for candidate in result.candidates
+            if target_title
+            and score_title_match(candidate.title, target_title)[0]
+            >= MIN_DERIVED_TENANT_TITLE_SCORE
+        ]
+        verification = {
+            "url": board.url,
+            "provider": adapter.name,
+            "method": "native_adapter_first",
+            "candidate_count": len(result.candidates),
+            "title_match_count": len(matching),
+            "reason_code": result.reason_code,
+            "adapter_trace": result.trace,
+        }
+        verified = bool(matching) if target_title else trusted_configuration and bool(result.candidates)
+        if verified:
+            return (
+                self._canonical_provider_board_url(adapter.name, board.url, board.identifier),
+                verification,
+            )
+
+        conclusive = (
+            bool(result.candidates)
+            or result.reason_code == "EMPTY_PROVIDER_RESPONSE"
+            or "404" in repr(result.trace)
+        )
+        return (None, verification) if conclusive else None
 
     def _verify_provider_candidate_without_page(
         self,
