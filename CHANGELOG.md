@@ -47,6 +47,8 @@
 
 ### Changed
 
+- S2 不再无条件信任 `replay_input` 中可能过期的历史官网：旧 URL 作为 `preferred_input` 占用明确的验证槽，验证失败后继续使用 LinkedIn、搜索和推测候选；普通直接输入仍保持无网络快速路径。官网验证新增 Sedo 与 Squarespace parking-page 基础设施指纹，同时不使用泛化的 “resources and information” 文案单独判定停放，避免误杀正常站点。Suffolk Construction live 从两个停放域迁移到 `suffolk.com`，随后进入官方 iCIMS 并 exact 命中 Site AI Engineer `11054`；冻结的 11-company 失败簇从 0/11 提升到 1/11 exact，其余 10 家没有产生假阳性。S2/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.37`；560 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。
+
 - 将 SOLID 架构拆分设为继续扩展 ATS provider 之前的前置阶段。
 - 明确 stage、provider、fetcher、orchestration 和 reporting 的依赖方向与并行开发边界。
 - 第一轮和第二轮 provider/stage 并行开发通过统一集成门禁；一个 Workable 脏 URL 问题由跨工作线全量测试发现并修复。

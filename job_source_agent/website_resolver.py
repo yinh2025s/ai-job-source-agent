@@ -81,6 +81,14 @@ PARKED_DOMAIN_TEXT_MARKERS = (
     "purchase this domain",
 )
 
+PARKED_DOMAIN_INFRASTRUCTURE_MARKERS = (
+    "data-adblockkey=",
+    "sedoparking.com",
+    "iseaskies.com",
+    "assets.squarespace.com/universal/scripts-compressed/parking-page-",
+    "assets.squarespace.com/universal/styles-compressed/parking-page-",
+)
+
 
 @dataclass
 class WebsiteCandidate:
@@ -112,12 +120,14 @@ class CompanyWebsiteResolver:
         company_name: str,
         linkedin_company_url: str | None = None,
         job_location: str | None = None,
+        preferred_url: str | None = None,
     ) -> tuple[str | None, dict]:
         normalized_name = normalize_company_key(company_name)
         trace = {
             "company_name": company_name,
             "linkedin_company_url": linkedin_company_url,
             "job_location": job_location,
+            "preferred_url": preferred_url,
             "target_region": _location_region(job_location),
             "candidates": [],
         }
@@ -129,10 +139,14 @@ class CompanyWebsiteResolver:
 
         guessed_candidates = self._guess_domain_candidates(company_name)
 
+        preferred_candidates = [preferred_url] if preferred_url else []
         fast_candidates = dedupe_urls(
-            self._linkedin_slug_domain_candidates(linkedin_company_url) + guessed_candidates[:6]
+            preferred_candidates
+            + self._linkedin_slug_domain_candidates(linkedin_company_url)
+            + guessed_candidates[:6]
         )
         fast_sources = _candidate_source_map(
+            ("preferred_input", preferred_candidates),
             ("linkedin_slug", self._linkedin_slug_domain_candidates(linkedin_company_url)),
             ("speculative_guess", guessed_candidates[:6]),
         )
@@ -183,8 +197,14 @@ class CompanyWebsiteResolver:
         search_evidence = self._search_candidates_with_evidence(company_name, job_location)
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
-        all_candidates = dedupe_urls(linkedin_candidates[:5] + search_candidates[:5] + guessed_candidates[:6])
+        all_candidates = dedupe_urls(
+            preferred_candidates
+            + linkedin_candidates[:5]
+            + search_candidates[:5]
+            + guessed_candidates[:6]
+        )
         candidate_sources = _candidate_source_map(
+            ("preferred_input", preferred_candidates),
             ("linkedin_evidence", linkedin_candidates[:5]),
             ("search_evidence", search_candidates[:5]),
             ("speculative_guess", guessed_candidates[:6]),
@@ -921,7 +941,11 @@ def _is_parked_domain_page(html: str, resolved_url: str) -> bool:
     host = domain_of(resolved_url)
     if any(host == parked or host.endswith(f".{parked}") for parked in PARKED_DOMAIN_HOSTS):
         return True
-    visible_head = re.sub(r"<[^>]+>", " ", (html or "")[:20000], flags=re.S)
+    html_head = (html or "")[:20000]
+    normalized_markup = html_head.casefold()
+    if any(marker in normalized_markup for marker in PARKED_DOMAIN_INFRASTRUCTURE_MARKERS):
+        return True
+    visible_head = re.sub(r"<[^>]+>", " ", html_head, flags=re.S)
     normalized = " ".join(html_unescape(visible_head).casefold().split())
     return any(marker in normalized for marker in PARKED_DOMAIN_TEXT_MARKERS)
 
@@ -960,7 +984,12 @@ def _allocate_verification_slots(
     selected_domains: set[str] = set()
     # Direct page evidence is scarcer than generated guesses. Give each source
     # one opportunity before filling the remaining bounded slots by score.
-    for source in ("linkedin_evidence", "search_evidence", "linkedin_slug"):
+    for source in (
+        "preferred_input",
+        "linkedin_evidence",
+        "search_evidence",
+        "linkedin_slug",
+    ):
         candidate = next(
             (
                 item

@@ -11,6 +11,82 @@ from job_source_agent.website_resolver import (
 
 
 class WebsiteResolverTests(unittest.TestCase):
+    def test_preferred_parked_domain_falls_back_to_verified_official_site(self):
+        class MigratedDomainFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "old-acme.com":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            '<html data-adblockkey="abc"><head>'
+                            '<title>old-acme.com - Resources and Information</title>'
+                            '</head><body><img src="https://img.sedoparking.com/logo.png"></body></html>'
+                        ),
+                    )
+                if domain_of(url) == "acme.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.acme.com/",
+                        html="<html><head><title>Acme</title></head><body>Acme</body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(MigratedDomainFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "Acme",
+            preferred_url="https://old-acme.com",
+        )
+
+        self.assertEqual(website_url, "https://www.acme.com/")
+        parked = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "old-acme.com"
+        )
+        self.assertIn("parked domain rejected", parked["reasons"])
+
+    def test_parked_infrastructure_marker_is_not_inferred_from_generic_copy(self):
+        class LegitimateFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=(
+                        "<html><head><title>Acme Resources and Information</title></head>"
+                        "<body>Company resources and information for customers.</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(LegitimateFetcher(offline=True))
+
+        candidate = resolver._score_candidate("https://acme.com", "Acme", verify=True)
+
+        self.assertIn("homepage verified", candidate.reasons)
+        self.assertNotIn("parked domain rejected", candidate.reasons)
+
+    def test_squarespace_parking_template_is_rejected(self):
+        class ParkingFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=(
+                        "<html><head><title>Coming Soon</title>"
+                        '<script src="//assets.squarespace.com/universal/scripts-compressed/'
+                        'parking-page-example-min.en-US.js"></script></head>'
+                        "<body>We're under construction.</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ParkingFetcher(offline=True))
+
+        candidate = resolver._score_candidate(
+            "https://acmeconstruction.com", "Acme Construction", verify=True
+        )
+
+        self.assertIn("parked domain rejected", candidate.reasons)
+        self.assertNotIn("homepage verified", candidate.reasons)
+
     def test_us_job_location_recovers_same_host_us_root_after_foreign_redirect(self):
         us_root = "https://www.deloitte.com/us/en.html"
 

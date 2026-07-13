@@ -138,6 +138,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 
 - S2-S7 均有独立 stage，通用 `ApplicationRunner` 已支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
 - 18 个主要 provider 已使用原生 adapter，包括 Rippling、Google Careers、page-aware Phenom、Paycom、RippleHire、Taleo、Eightfold、JazzHR 和 Avature；Meta Careers 和 generic fallback 仍依赖 compatibility path。
+- S2 根据输入 provenance 区分用户当前声明与历史回放证据：普通 direct input 可直接采用显式官网；`replay_input` 官网只能作为优先候选，必须通过 bounded verification，停放、托管或身份不符时继续进入 LinkedIn/search/guess resolver。验证槽分配保证历史候选确实被请求，同时保留严格的 verified-homepage 选择门槛。
 - `live_batch_eval.py` 只负责公司级并发、两段 process hard budget 和输出；实际 S1-S7 执行委托 `PipelineApplication`，S1-S3 与 S4-S7 通过 filesystem stage checkpoint 衔接。每段先向 fetch wrapper 注入略早于 outer budget 的 soft deadline，逐请求压缩 socket timeout，并为结构化收尾和 checkpoint 发布预留最多 1 秒；process kill 只作不合作底层调用的最后保险。
 - Fetch wrappers 已满足显式 `FetchClient` protocol 和跨实现 contract suite；deadline wrapper 在零重试时仍生效，并在每次初始/重试请求前执行预算门禁；browser live variants 仍需持续验证。
 - S5 first-party traversal 使用有界 BFS；同分 listing route 优先保留 source locale prefix，redirect 到已访问 canonical page 不消耗有效 page budget。Known-ATS embed 和 registry-backed board 只负责进入 adapter boundary，最终 board root 仍由 adapter 识别和规范化。

@@ -15,8 +15,14 @@ class FakeWebsiteResolver:
         self.result = result
         self.calls = []
 
-    def resolve(self, company_name, linkedin_company_url=None, job_location=None):
-        self.calls.append((company_name, linkedin_company_url))
+    def resolve(
+        self,
+        company_name,
+        linkedin_company_url=None,
+        job_location=None,
+        preferred_url=None,
+    ):
+        self.calls.append((company_name, linkedin_company_url, preferred_url))
         return self.result, {"method": "fake-website"}
 
 
@@ -49,6 +55,28 @@ class UpstreamStageTests(unittest.TestCase):
         self.assertEqual(execution.result.status, "success")
         self.assertEqual(execution.updates["company_website_url"], "https://acme.test")
         self.assertEqual(resolver.calls, [])
+
+    def test_s2_revalidates_replay_website_as_preferred_candidate(self):
+        resolver = FakeWebsiteResolver("https://new-acme.example")
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://old-acme.example",
+                source="replay_input",
+            )
+        )
+
+        execution = WebsiteResolutionStage(resolver).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.updates["company_website_url"], "https://new-acme.example"
+        )
+        self.assertEqual(
+            resolver.calls,
+            [("Acme", None, "https://old-acme.example")],
+        )
+        self.assertIn("revalidated", execution.result.detail)
 
     def test_s2_resolves_missing_website_and_can_update_context(self):
         context = PipelineContext.from_company(
