@@ -122,6 +122,60 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(job_list, board)
         self.assertNotIn("https://evil.example.net/jobs", fetcher.requested)
 
+    def test_follows_known_ats_embed_board_and_returns_its_canonical_root(self):
+        career = "https://example.com/careers"
+        embed = "https://jobs.ashbyhq.com/Acme/embed?version=2"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<iframe src="{embed}"></iframe>'),
+            embed: Page(url=embed, html="<html>Ashby job board</html>"),
+        })
+
+        job_list, _trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, "https://jobs.ashbyhq.com/Acme")
+
+    def test_listing_traversal_prefers_route_that_preserves_locale_prefix(self):
+        career = "https://careers.example.com/world/en"
+        alias = "https://careers.example.com/world/search-results"
+        localized = "https://careers.example.com/world/en/search-results"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<a href="{alias}">Search results</a>'
+                    f'<a href="{localized}">Search results</a>'
+                ),
+            ),
+            localized: Page(url=localized, html="<html>Search open roles</html>"),
+        })
+
+        job_list, _trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, localized)
+        self.assertNotIn(alias, fetcher.requested)
+
+    def test_redirect_back_to_visited_root_does_not_consume_page_budget(self):
+        career = "https://careers.example.com/global/en"
+        alias = "https://careers.example.com/global/search-results"
+        localized = "https://careers.example.com/global/en/search-results"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<a href="{alias}">Engineer search results</a>'
+                    f'<a href="{localized}">Search results</a>'
+                ),
+            ),
+            alias: Page(url=alias, final_url=career, html="<html>Career root</html>"),
+            localized: Page(url=localized, html="<html>Search open roles</html>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, localized)
+        self.assertEqual(fetcher.requested, [career, alias, localized])
+        self.assertTrue(trace["pages_visited"][1]["redirect_duplicate"])
+
     def test_redirect_final_url_is_used_as_board_evidence(self):
         career = "https://example.com/careers"
         board = "https://boards.greenhouse.io/acme"

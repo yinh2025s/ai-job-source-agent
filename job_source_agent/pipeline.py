@@ -580,6 +580,20 @@ class JobSourceAgent:
                 trace["fetch_errors"].append({"url": page_url, "error": str(exc)})
                 continue
             actual_page_url = page.final_url or page.url
+            normalized_actual_url = actual_page_url.rstrip("/")
+            if normalized_actual_url != normalized_page_url and normalized_actual_url in visited:
+                pages_checked -= 1
+                trace["pages_visited"].append(
+                    {
+                        "url": actual_page_url,
+                        "requested_url": page_url,
+                        "source": page.source,
+                        "redirect_duplicate": True,
+                        "top_candidates": [],
+                    }
+                )
+                continue
+            visited.add(normalized_actual_url)
             page_board = self.provider_registry.board_for_page(page)
             if page_board is not None:
                 adapter, board = page_board
@@ -594,7 +608,18 @@ class JobSourceAgent:
                     {"url": actual_page_url, "source": page.source, "top_candidates": []}
                 )
                 return None, board.url, trace
-            if self._is_provider_job_board_url(actual_page_url):
+            url_adapter = self.provider_registry.adapter_for(actual_page_url)
+            url_board = url_adapter.identify_board(actual_page_url) if url_adapter else None
+            if url_adapter is not None and url_board is not None and url_adapter.supports_listing:
+                canonical_board_url = url_board.url
+                trace["provider"] = url_adapter.name
+                trace["provider_detection"] = {
+                    "method": "url_evidence",
+                    "provider": url_adapter.name,
+                    "url": canonical_board_url,
+                }
+                trace["job_list_page_url"] = canonical_board_url
+            elif self._is_provider_job_board_url(actual_page_url):
                 trace["job_list_page_url"] = actual_page_url
             scored = sorted(
                 [score_job_link(link, actual_page_url) for link in extract_links(page)],
@@ -602,7 +627,7 @@ class JobSourceAgent:
                 reverse=True,
             )
             deduped = self._dedupe_candidates(scored)
-            if self._has_job_list_evidence(actual_page_url, deduped):
+            if self._has_job_list_evidence(actual_page_url, deduped) and not trace["job_list_page_url"]:
                 trace["job_list_page_url"] = actual_page_url
             elif (
                 actual_page_url.rstrip("/") != career_page_url.rstrip("/")
@@ -618,7 +643,15 @@ class JobSourceAgent:
             )
             trace["candidates"].extend(dataclass_to_dict(deduped[:5]))
 
-            for candidate in deduped[: self.max_candidates]:
+            traversal_candidates = sorted(
+                deduped[: self.max_candidates],
+                key=lambda candidate: (
+                    candidate.score,
+                    self._shared_path_prefix(candidate.url, actual_page_url),
+                ),
+                reverse=True,
+            )
+            for candidate in traversal_candidates:
                 if candidate.score < 55:
                     continue
                 if not is_likely_job_detail(candidate):
@@ -632,7 +665,7 @@ class JobSourceAgent:
                 trace["selected_page_source"] = opened.source
                 return opened.final_url or opened.url, actual_page_url, trace
 
-            for candidate in deduped[: self.max_candidates]:
+            for candidate in traversal_candidates:
                 if (
                     (
                         is_likely_job_listing_page(candidate)
@@ -644,6 +677,16 @@ class JobSourceAgent:
                     queue.append(candidate.url)
 
         return None, trace["job_list_page_url"], trace
+
+    def _shared_path_prefix(self, target_url: str, source_url: str) -> int:
+        target_parts = [part.casefold() for part in urlparse(target_url).path.split("/") if part]
+        source_parts = [part.casefold() for part in urlparse(source_url).path.split("/") if part]
+        shared = 0
+        for target_part, source_part in zip(target_parts, source_parts):
+            if target_part != source_part:
+                break
+            shared += 1
+        return shared
 
     def _is_safe_traversal_target(self, url: str, source_url: str) -> bool:
         if is_resource_url(url):

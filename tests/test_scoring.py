@@ -107,6 +107,18 @@ class ScoringTests(unittest.TestCase):
 
         self.assertTrue(is_likely_job_listing_page(candidate))
 
+    def test_known_ats_embed_board_is_a_listing_candidate(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://jobs.ashbyhq.com/Acme/embed?version=2",
+                text="",
+                source_url="https://acme.example/careers",
+            ),
+            career_page_url="https://acme.example/careers",
+        )
+
+        self.assertTrue(is_likely_job_listing_page(candidate))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -271,7 +271,13 @@ def is_likely_job_listing_page(candidate: LinkCandidate) -> bool:
         return False
     reason_text = " ".join(candidate.reasons)
     path_parts = [part.lower() for part in urlparse(candidate.url).path.split("/") if part]
-    if any(part in NON_JOB_PATH_PARTS for part in path_parts):
+    blocked_parts = set(path_parts).intersection(NON_JOB_PATH_PARTS)
+    trusted_ats_embed = (
+        blocked_parts == {"embed"}
+        and is_ats_url(candidate.url)
+        and "ATS board/listing candidate" in reason_text
+    )
+    if blocked_parts and not trusted_ats_embed:
         return False
     text = candidate.text.lower()
     return (
