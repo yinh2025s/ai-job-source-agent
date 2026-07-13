@@ -6,7 +6,12 @@ from typing import Protocol
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
 from ..job_board import DiscoveredJobBoard
-from ..models import STAGE_CAREER_DISCOVERY, STAGE_JOB_BOARD_DISCOVERY, STAGE_OPENING_MATCH
+from ..models import (
+    STAGE_CAREER_DISCOVERY,
+    STAGE_HIRING_IDENTITY_RESOLUTION,
+    STAGE_JOB_BOARD_DISCOVERY,
+    STAGE_OPENING_MATCH,
+)
 from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
 from ..reasons import canonical_reason_code, classify_fetch_error, make_stage_result
@@ -67,6 +72,22 @@ class CareerDiscoveryStage:
         self.service = service
 
     def run(self, context: PipelineContext) -> StageExecution:
+        if _upstream_stage_failed(context, STAGE_HIRING_IDENTITY_RESOLUTION):
+            return StageExecution(
+                make_stage_result(
+                    self.name,
+                    "not_run",
+                    detail=(
+                        "Hiring identity resolution did not produce a safe hiring entity."
+                    ),
+                ),
+                trace={
+                    "scheduler": {
+                        "status": "not_run",
+                        "reason": "hiring_identity_unresolved",
+                    }
+                },
+            )
         if not context.company_website_url:
             return StageExecution(
                 make_stage_result(
@@ -494,6 +515,13 @@ def _trace_has_discovery_errors(value: object, key: str = "") -> bool:
     if isinstance(value, list):
         return any(_trace_has_discovery_errors(item) for item in value)
     return False
+
+
+def _upstream_stage_failed(context: PipelineContext, stage: str) -> bool:
+    return any(
+        result.stage == stage and result.status in {"failed", "unsupported"}
+        for result in context.stage_results
+    )
 
 
 def _elapsed_ms(started: float) -> int:

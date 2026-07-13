@@ -3,7 +3,11 @@ import unittest
 from job_source_agent.contracts import PipelineContext
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
-from job_source_agent.models import CompanyInput, StageResult
+from job_source_agent.models import (
+    STAGE_HIRING_IDENTITY_RESOLUTION,
+    CompanyInput,
+    StageResult,
+)
 from job_source_agent.stages import (
     CareerDiscoveryStage,
     JobBoardDiscoveryStage,
@@ -31,6 +35,33 @@ class FakeDiscoveryService:
 
 
 class DiscoveryStageTests(unittest.TestCase):
+    def test_career_stage_does_not_search_publisher_after_identity_failure(self):
+        class MustNotSearch(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise AssertionError("publisher career site must not be searched")
+
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Recruiting Publisher",
+                company_website_url="https://publisher.example",
+            )
+        )
+        context.stage_results.append(
+            StageResult(
+                stage=STAGE_HIRING_IDENTITY_RESOLUTION,
+                status="failed",
+                reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+            )
+        )
+
+        execution = CareerDiscoveryStage(MustNotSearch()).run(context)
+
+        self.assertEqual(execution.result.status, "not_run")
+        self.assertEqual(
+            execution.trace["scheduler"]["reason"],
+            "hiring_identity_unresolved",
+        )
+
     def test_s4_s5_s6_can_run_through_versioned_context(self):
         service = FakeDiscoveryService()
         context = PipelineContext.from_company(
@@ -381,6 +412,59 @@ class DiscoveryStageTests(unittest.TestCase):
 
         self.assertEqual(execution.result.status, "failed")
         self.assertEqual(execution.result.reason_code, "JOB_BOARD_NOT_FOUND")
+
+    def test_career_budget_exhaustion_remains_retryable(self):
+        class BudgetService(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise DiscoveryError(
+                    "FETCH_BUDGET_EXHAUSTED",
+                    "candidate budget exhausted",
+                    trace={"candidate_fetch_budget_exhausted": {"limit": 5}},
+                )
+
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+            )
+        )
+
+        execution = CareerDiscoveryStage(BudgetService()).run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(execution.result.reason_code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertTrue(execution.result.retryable)
+
+    def test_explicit_empty_official_career_page_is_not_rewritten_as_native_only(self):
+        class EmptyService(FakeDiscoveryService):
+            def find_job_board(self, career_page_url, company_name=None):
+                raise DiscoveryError(
+                    "NO_PUBLIC_OPENINGS",
+                    "official empty state",
+                    trace={"explicit_empty_inventory": {"phrase": "no open positions"}},
+                )
+
+        job_url = "https://www.linkedin.com/jobs/view/123"
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_job_url=job_url,
+                source_trace={
+                    "linkedin_posting": {
+                        "availability": "active",
+                        "apply_mode": "linkedin_native",
+                        "evidence_source": "authenticated_detail_dom",
+                        "job_url": job_url,
+                    }
+                },
+            )
+        )
+        context.career_page_url = "https://acme.example/careers"
+
+        execution = JobBoardDiscoveryStage(EmptyService()).run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(execution.result.reason_code, "NO_PUBLIC_OPENINGS")
 
 
 if __name__ == "__main__":

@@ -218,12 +218,25 @@ class HiringIdentityResolutionStage:
             else:
                 posting_identity = trace.get("posting_identity", {})
                 if posting_identity.get("classification") == "agency_unresolved":
-                    evidence.append(
-                        {"field": "publisher_role", "value": "recruiting_agency"}
-                    )
-                    detail = (
-                        "Publisher is recruiting for an undisclosed client; "
-                        "no alternate hiring entity was selected."
+                    return StageExecution(
+                        result=make_stage_result(
+                            self.name,
+                            "failed",
+                            reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+                            duration_ms=_elapsed_ms(started),
+                            input_count=1,
+                            evidence=[
+                                {
+                                    "field": "publisher_role",
+                                    "value": "recruiting_agency",
+                                }
+                            ],
+                            detail=(
+                                "Publisher is recruiting for an undisclosed client; "
+                                "no safe hiring entity can be selected."
+                            ),
+                        ),
+                        trace=trace,
                     )
                 if context.company.hiring_entity_name:
                     evidence.append(

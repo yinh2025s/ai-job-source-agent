@@ -24,7 +24,7 @@
 
 - 新增 page-aware `SitecoreNextJobsAdapter`：从 first-party `__NEXT_DATA__` 绑定 Sitecore `JobSearch` tenant 配置，只向同源 `/api/data/jobs/summarized` 发起有界 POST 分页，校验 total/range、重复 job ID、语言/国家/品牌身份，并从安全 `jobId` 构造官网具体岗位 URL。固定 provider benchmark 增加该端到端 exact-opening 样本。
 
-- 新增 CEIPAL widget 与 Talemetry Career Sites 的 detection-only adapter。两者只在强页面指纹成立时绑定 first-party tenant，并始终以 `inventory_scope=unknown`、`inventory_complete=false` 保留 bot、403、离线 fixture 缺失或未知 schema；在冻结并验证成功 inventory contract 前不构造 candidate，也不支持权威 no-match。
+- 新增 CEIPAL widget 与 Talemetry Career Sites 的 page-aware adapter。Talemetry 继续保持 detection-only；CEIPAL 在 `.53` 冻结 first-party widget -> tenant-bound iframe -> public multipart inventory 两跳 contract，执行最多 50 页的 title-filtered/full inventory、稳定 total/page metadata、重复 ID、tenant/redirect 和 first-party detail URL 校验。只有完整遍历才能支持 empty/no-match，中途错误始终保持 incomplete。
 
 - 新增第 20 个原生 provider `MetaCareersAdapter`：仅消费 visible-page positive evidence，可验证页面中明确出现的具体岗位；结果始终标记 `inventory_complete=false`，因此不能据此宣布 no-match。匿名 live hydration 仍不稳定，当前 exact 保证仅来自离线 fixture/provider benchmark，不声称 live stable。
 
@@ -76,6 +76,12 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- `ADAPTER_VERSION` 提升到 `2026-07-14.53`。Request identity 支持有界 text-only multipart form，以结构化字段脱敏摘要区分 page/tenant/search，并将 `Origin`/`Referer` 纳入 semantic headers；文件上传或未知 multipart 结构 fail closed。CEIPAL credential-bearing endpoint path、query、body、trace 与 snapshot 使用同一脱敏策略，离线 parser 只额外接受精确 `[REDACTED]` pagination path，host/method/page/结构验证不放宽。
+
+- S3 对 `agency_unresolved` 现在输出 terminal `COMPANY_IDENTITY_AMBIGUOUS`，S4 因招聘主体未解析而 `not_run`，不会搜索发布代理自己的官网。First-party career 页的可见明确空岗位声明输出 `NO_PUBLIC_OPENINGS`，hidden/script 文本不作为证据；候选抓取预算已耗尽时输出 retryable `FETCH_BUDGET_EXHAUSTED`，不再误报确定性的 `CAREER_PAGE_NOT_FOUND`。Focused public live 中 Centraprise 经 CEIPAL exact 成功并由 29 fixtures 在 0.3 秒离线复现；Eightpoint、Aventis Solutions、M|R Walls 分别稳定复现上述三类 outcome，0 fixture gap、0 mismatch。真实登录态 extension Scan/Run 继续 deferred。
+
+- `.53` 最终门禁为 CPython 3.12 下 817 tests、24/24 provider benchmark、6/6 resolver benchmark、23-adapter architecture validation / 0 issues。同一 serialized frozen-30 cohort 为 30 website、28 career、27 verified job list、22 exact opening；相对 `.52` job list 不变、exact +1，career -1 是 Aventis 在 S3 正确终止后不再把代理官网计为招聘主体。299 page records 与 85 terminal failures 物化为 291 fixtures，8 个 non-success outcome 全部 reproduced，0 fixture gap / 0 mismatch；完整 live/replay artifact 扫描为 0 条未脱敏 CEIPAL credential path。
 
 - `ADAPTER_VERSION` 提升到 `2026-07-14.52`，snapshot replay 与 failure bundle schema 提升到 v2，checkpoint schema 保持 `1.2`。CEIPAL response URL 改按 HTTPS origin/path、`apikey`/`cp_id` tenant identity 与参数集合验证，仅允许服务端省略已知空 presentation 参数；host/path/tenant/新增参数/fragment/scheme 变化仍拒绝。URL normalization 保留 response-affecting empty query values。
 

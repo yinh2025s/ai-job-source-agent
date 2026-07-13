@@ -29,15 +29,22 @@ failure selection must be frozen before parallel implementation.
 2. GET without a body remains compatible with legacy URL-only fixture paths. A
    request that can change the response, including POST JSON/form pagination, gets
    a deterministic request suffix derived from the complete sanitized identity.
-3. JSON and form bodies are parsed structurally, sensitive fields are replaced by
-   `[REDACTED]`, and only a SHA-256 digest of canonical sanitized content is stored.
-   Raw request bodies and digests of unredacted credentials are prohibited.
+3. JSON, URL-encoded form, and bounded text-only multipart bodies are parsed
+   structurally, sensitive fields are replaced by `[REDACTED]`, and only a SHA-256
+   digest of canonical sanitized content is stored. Multipart boundaries remain
+   case-sensitive and form fields are canonicalized independently of their wire
+   order. File parts, filenames, unknown part headers, malformed boundaries, and
+   oversized bodies are non-replayable. Raw request bodies and digests of
+   unredacted credentials are prohibited.
 4. Opaque bodies that cannot be safely parsed are marked non-replayable. Capture
    may record that classification, but must not persist the body or a reversible or
    credential-derived representation.
-5. Semantic headers are allowlisted. `Authorization`, `Cookie`, proxy credentials,
-   CSRF/session/token headers, browser storage, and unknown credential-bearing
-   headers are excluded and never influence a persisted raw value.
+5. Semantic headers are allowlisted. Content negotiation plus sanitized
+   `Origin`, `Referer`, and `X-Referer-Host` may affect identity when a public
+   provider requires first-party portal provenance. `Authorization`, `Cookie`,
+   proxy credentials, CSRF/session/token headers, browser storage, and unknown
+   credential-bearing headers are excluded and never influence a persisted raw
+   value.
 
 ### Shared Sensitive-Key Policy
 
@@ -51,6 +58,11 @@ failure selection must be frozen before parallel implementation.
 3. Snapshot validation rejects any record, manifest, or materialized body that is
    not fully sanitized. It also rejects unsafe paths, symlinks, inconsistent
    digests, duplicate sequence numbers, and unsupported major schema versions.
+4. Credential-bearing URL paths require an explicit provider endpoint contract.
+   CEIPAL public inventory paths redact the tenant key segment before metadata,
+   fixture-path, trace, or body persistence while retaining endpoint shape and a
+   sanitized multipart fingerprint. Runtime-only tenant values may select the live
+   endpoint but never become checkpoint locators or product output.
 
 ### Success And Failure Outcomes
 
@@ -112,9 +124,10 @@ Costs and limits:
 
 ## Validation
 
-- Contract tests cover sensitive-key spelling variants, sanitized identity
-  stability, GET/query variants, POST JSON/form pagination, semantic-header
-  allowlisting, and opaque-body privacy exclusion.
+- Contract tests cover sensitive-key spelling variants, credential-bearing path
+  redaction, sanitized identity stability, GET/query variants, POST
+  JSON/URL-encoded/multipart pagination, semantic-header allowlisting, file-part
+  rejection, and opaque-body privacy exclusion.
 - Snapshot tests cover success and 403/429/5xx/timeout failure round trips,
   success-then-failure selection, legacy v1 reads, unknown-version rejection,
   corruption, path safety, and absence of raw credentials.

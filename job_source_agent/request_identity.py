@@ -33,7 +33,20 @@ _SENSITIVE_KEYS = {
     "token",
 }
 _SENSITIVE_MARKERS = ("token", "secret", "password", "credential", "session", "csrf")
-_SEMANTIC_HEADERS = {"accept", "content-type", "x-referer-host"}
+_SEMANTIC_HEADERS = {
+    "accept",
+    "content-type",
+    "origin",
+    "referer",
+    "x-referer-host",
+}
+_MAX_MULTIPART_CHARS = 2_000_000
+_MAX_MULTIPART_FIELDS = 100
+_CEIPAL_CREDENTIAL_PATH = re.compile(
+    r"^/([^/]+)/((?:careerportal)[A-Za-z0-9_-]*)(/.*)?$",
+    re.I,
+)
+_REDACTED_PATH_SEGMENT = "%5BREDACTED%5D"
 
 
 @dataclass(frozen=True)
@@ -78,6 +91,17 @@ def is_sensitive_key(key: str) -> bool:
 
 def sanitize_url(url: str) -> str:
     parsed = urlparse(url)
+    path = parsed.path
+    if (parsed.hostname or "").casefold() == "careerapi.ceipal.com":
+        match = _CEIPAL_CREDENTIAL_PATH.fullmatch(path)
+        if match and match.group(1).casefold() not in {
+            REDACTED_VALUE.casefold(),
+            _REDACTED_PATH_SEGMENT.casefold(),
+        }:
+            path = (
+                f"/{_REDACTED_PATH_SEGMENT}/{match.group(2)}"
+                + (match.group(3) or "")
+            )
     query = urlencode(
         [
             (key, _redacted_value(value) if is_sensitive_key(key) else value)
@@ -85,7 +109,7 @@ def sanitize_url(url: str) -> str:
         ],
         doseq=True,
     )
-    return urlunparse(parsed._replace(query=query, fragment=""))
+    return urlunparse(parsed._replace(path=path, query=query, fragment=""))
 
 
 def build_request_identity(
@@ -186,6 +210,23 @@ def _body_identity(
         )
         return _digest_text(canonical), True, None
 
+    if content_type == "multipart/form-data":
+        fields = _multipart_form_fields(text, semantic_headers.get("content-type", ""))
+        if fields is None:
+            return None, False, "invalid_multipart_form_body"
+        canonical = json.dumps(
+            sorted(
+                (
+                    key,
+                    _redacted_value(value) if is_sensitive_key(key) else value,
+                )
+                for key, value in fields
+            ),
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        return _digest_text(canonical), True, None
+
     if content_type == "application/x-www-form-urlencoded" or "=" in text:
         try:
             fields = parse_qsl(text, keep_blank_values=True, strict_parsing=True)
@@ -204,6 +245,58 @@ def _body_identity(
         return _digest_text(canonical), True, None
 
     return None, False, "opaque_body"
+
+
+def _multipart_form_fields(text: str, content_type: str) -> list[tuple[str, str]] | None:
+    if len(text) > _MAX_MULTIPART_CHARS:
+        return None
+    boundary_match = re.search(
+        r"(?:^|;)\s*boundary=(?:\"([^\"]+)\"|([^;\s]+))",
+        content_type,
+        re.I,
+    )
+    if boundary_match is None:
+        return None
+    boundary = boundary_match.group(1) or boundary_match.group(2)
+    if (
+        not boundary
+        or len(boundary) > 70
+        or any(ord(character) < 32 or ord(character) > 126 for character in boundary)
+    ):
+        return None
+
+    delimiter = f"--{boundary}"
+    parts = text.split(delimiter)
+    if len(parts) < 3 or parts[0] or parts[-1] not in {"--", "--\r\n"}:
+        return None
+    fields: list[tuple[str, str]] = []
+    for part in parts[1:-1]:
+        if not part.startswith("\r\n") or not part.endswith("\r\n"):
+            return None
+        header_text, separator, value = part[2:-2].partition("\r\n\r\n")
+        if not separator:
+            return None
+        headers: dict[str, str] = {}
+        for line in header_text.split("\r\n"):
+            name, colon, header_value = line.partition(":")
+            key = name.casefold().strip()
+            if not colon or not key or key in headers:
+                return None
+            headers[key] = header_value.strip()
+        disposition = headers.get("content-disposition", "")
+        name_match = re.fullmatch(
+            r'form-data\s*;\s*name="([^"\r\n]{1,200})"',
+            disposition,
+            re.I,
+        )
+        if name_match is None or "filename" in disposition.casefold():
+            return None
+        if set(headers) - {"content-disposition"}:
+            return None
+        fields.append((name_match.group(1), value))
+        if len(fields) > _MAX_MULTIPART_FIELDS:
+            return None
+    return fields
 
 
 def _sanitize_structured_value(value: Any, *, parent_sensitive: bool = False) -> Any:
@@ -228,10 +321,13 @@ def _sanitize_semantic_headers(headers: dict[str, str]) -> dict[str, str]:
         if key not in _SEMANTIC_HEADERS or is_sensitive_key(key):
             continue
         value = " ".join(str(raw_value).split())
-        if key == "x-referer-host":
+        if key in {"origin", "referer", "x-referer-host"}:
             value = sanitize_url(value)
         elif key == "content-type":
-            value = value.casefold()
+            media_type, separator, parameters = value.partition(";")
+            value = media_type.casefold().strip()
+            if separator:
+                value += ";" + parameters.strip()
         sanitized[key] = value
     return dict(sorted(sanitized.items()))
 

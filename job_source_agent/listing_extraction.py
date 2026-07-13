@@ -16,6 +16,7 @@ MAX_SCRIPT_CHARS = 2_000_000
 MAX_JSON_DEPTH = 24
 MAX_JSON_RECORDS = 10_000
 MAX_CANDIDATES = 1_000
+MAX_VISIBLE_TEXT_CHARS = 500_000
 
 TITLE_FIELDS = ("title", "name", "jobTitle", "job_title", "positionTitle")
 URL_FIELDS = (
@@ -25,6 +26,16 @@ URL_FIELDS = (
 CARD_TAGS = {"article", "li", "tr", "section"}
 TITLE_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6"}
 CARD_HINT = re.compile(r"(?:job|role|position|opening|vacan)(?:[-_\s]*(?:card|item|result|listing|row))?", re.I)
+EXPLICIT_EMPTY_INVENTORY = re.compile(
+    r"\b(?:"
+    r"no open (?:jobs?|roles?|positions?|openings?)(?: are)? available "
+    r"(?:at the moment|right now|currently)"
+    r"|there are (?:currently )?no open (?:jobs?|roles?|positions?|openings?)"
+    r"|we (?:currently )?(?:have no|do not have|don't have) open "
+    r"(?:jobs?|roles?|positions?|openings?)"
+    r")\b",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -114,6 +125,78 @@ class _ListingParser(HTMLParser):
             if url:
                 self.results.append(ListingCandidate(title, url, self.source_url, "parent_card"))
                 return
+
+
+class _VisibleTextParser(HTMLParser):
+    _IGNORED_TAGS = {"script", "style", "template", "noscript"}
+    _VOID_TAGS = {
+        "area",
+        "base",
+        "br",
+        "col",
+        "embed",
+        "hr",
+        "img",
+        "input",
+        "link",
+        "meta",
+        "param",
+        "source",
+        "track",
+        "wbr",
+    }
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.ignored_depth = 0
+        self.hidden_depth = 0
+        self.parts: list[str] = []
+        self.character_count = 0
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        normalized_tag = tag.casefold()
+        if normalized_tag in self._IGNORED_TAGS:
+            self.ignored_depth += 1
+        values = {name.casefold(): (value or "") for name, value in attrs}
+        if (
+            normalized_tag not in self._VOID_TAGS
+            and (
+                self.hidden_depth
+                or "hidden" in values
+                or values.get("aria-hidden", "").casefold() == "true"
+            )
+        ):
+            self.hidden_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() in self._IGNORED_TAGS and self.ignored_depth:
+            self.ignored_depth -= 1
+        if self.hidden_depth:
+            self.hidden_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self.ignored_depth or self.hidden_depth or self.character_count >= MAX_VISIBLE_TEXT_CHARS:
+            return
+        remaining = MAX_VISIBLE_TEXT_CHARS - self.character_count
+        value = data[:remaining]
+        self.parts.append(value)
+        self.character_count += len(value)
+
+
+def explicit_empty_inventory_evidence(html: str) -> str | None:
+    """Return bounded visible first-party evidence that public inventory is empty."""
+
+    if not isinstance(html, str):
+        return None
+    parser = _VisibleTextParser()
+    try:
+        parser.feed(html[:2_000_000])
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    text = " ".join(" ".join(parser.parts).split())
+    match = EXPLICIT_EMPTY_INVENTORY.search(text)
+    return match.group(0) if match else None
 
 
 def validate_output_url(url: str, source_url: str, *, title: str = "") -> str | None:

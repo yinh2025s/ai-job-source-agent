@@ -13,6 +13,7 @@ from .content_probe import (
 from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
 from .job_board import DiscoveredJobBoard
+from .listing_extraction import explicit_empty_inventory_evidence
 from .models import (
     STAGE_CAREER_DISCOVERY,
     STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -475,9 +476,19 @@ class JobSourceAgent:
         else:
             trace["ats_board_discovery"] = {"skipped": True}
 
+        reason_code = (
+            "FETCH_BUDGET_EXHAUSTED"
+            if _trace_has_fetch_budget_exhaustion(trace)
+            else "career_page_not_found"
+        )
+        detail = (
+            "Career candidates remain unverified because the fetch budget was exhausted."
+            if reason_code == "FETCH_BUDGET_EXHAUSTED"
+            else "No reliable career page candidate found."
+        )
         raise DiscoveryError(
-            "career_page_not_found",
-            "No reliable career page candidate found.",
+            reason_code,
+            detail,
             step_name="find_career_page",
             trace=trace,
         )
@@ -536,6 +547,13 @@ class JobSourceAgent:
                 trace["job_list_page_url"] = searched_url
                 trace["selected_from"] = "ats_search_fallback"
                 trace["provider"] = self.provider_registry.detect(searched_url)
+        if not job_list_url and trace.get("explicit_empty_inventory"):
+            raise DiscoveryError(
+                "NO_PUBLIC_OPENINGS",
+                "The official career page explicitly reports no current public openings.",
+                step_name="find_job_board",
+                trace=trace,
+            )
         if not job_list_url:
             raise DiscoveryError(
                 "job_board_not_found",
@@ -814,6 +832,13 @@ class JobSourceAgent:
                     }
                 )
                 continue
+            empty_evidence = explicit_empty_inventory_evidence(page.html)
+            if empty_evidence:
+                trace["explicit_empty_inventory"] = {
+                    "url": actual_page_url,
+                    "source": page.source,
+                    "phrase": empty_evidence,
+                }
             scored = sorted(
                 [
                     score_job_link(
@@ -1971,6 +1996,19 @@ def _legacy_step_name(stage: str) -> str:
         STAGE_JOB_BOARD_DISCOVERY: "find_job_board",
         STAGE_OPENING_MATCH: "match_opening",
     }.get(stage, stage)
+
+
+def _trace_has_fetch_budget_exhaustion(value: object, key: str = "") -> bool:
+    if key in {"candidate_fetch_budget_exhausted", "fetch_budget_exhausted"}:
+        return value not in (None, "", [], {})
+    if isinstance(value, dict):
+        return any(
+            _trace_has_fetch_budget_exhaustion(item, str(name))
+            for name, item in value.items()
+        )
+    if isinstance(value, list):
+        return any(_trace_has_fetch_budget_exhaustion(item) for item in value)
+    return False
 
 
 def _legacy_error(stage: str, reason_code: str | None) -> str:

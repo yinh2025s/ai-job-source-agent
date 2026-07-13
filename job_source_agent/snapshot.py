@@ -281,6 +281,12 @@ def sanitize_snapshot_body(body: str) -> str:
         r"\1[REDACTED]",
         body,
     )
+    redacted = re.sub(
+        r"(?i)(https://careerapi\.ceipal\.com/)[^/\"'\s<>]+"
+        r"(/(?:careerportal)[A-Za-z0-9_-]*/)",
+        r"\1[REDACTED]\2",
+        redacted,
+    )
     for key in sorted(SENSITIVE_BODY_FIELDS):
         redacted = re.sub(
             rf"(?i)([\"']{re.escape(key)}[\"']\s*:\s*)([\"'])[^\"']*(\2)",

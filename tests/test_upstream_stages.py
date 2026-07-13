@@ -172,7 +172,7 @@ class UpstreamStageTests(unittest.TestCase):
         self.assertEqual(execution.result.status, "success")
         self.assertIn("input company remains", execution.result.detail)
 
-    def test_s3_records_undisclosed_agency_without_selecting_client(self):
+    def test_s3_stops_undisclosed_agency_without_selecting_client(self):
         context = PipelineContext.from_company(
             CompanyInput(
                 company_name="Aventis Solutions",
@@ -191,7 +191,11 @@ class UpstreamStageTests(unittest.TestCase):
 
         execution = HiringIdentityResolutionStage(resolver).run(context)
 
-        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
         self.assertEqual(execution.updates, {})
         self.assertIn(
             {"field": "publisher_role", "value": "recruiting_agency"},

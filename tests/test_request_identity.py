@@ -67,6 +67,93 @@ class RequestIdentityTests(unittest.TestCase):
         self.assertEqual(first.body_fingerprint, second.body_fingerprint)
         self.assertTrue(first.requires_fixture_suffix)
 
+    def test_ceipal_credential_path_is_redacted_without_losing_endpoint_shape(self):
+        first = sanitize_url(
+            "https://careerapi.ceipal.com/private-one/CareerPortalJobPostings/?page=2"
+        )
+        second = sanitize_url(
+            "https://careerapi.ceipal.com/private-two/CareerPortalJobPostings/?page=2"
+        )
+
+        self.assertEqual(first, second)
+        self.assertNotIn("private-one", first)
+        self.assertIn("/%5BREDACTED%5D/CareerPortalJobPostings/", first)
+        self.assertEqual(sanitize_url(first), first)
+
+    def test_multipart_body_redacts_api_key_and_preserves_tenant_page_and_search(self):
+        boundary = "----Ceipal-Test-Boundary"
+
+        def body(api_key, page="2", portal="tenant-one", search="AI Engineer"):
+            fields = {
+                "page": page,
+                "api_key": api_key,
+                "method": "CareerPortalJobPostings",
+                "cp_id": portal,
+                "from_career_portal": "1",
+                "searchkey": search,
+            }
+            chunks = []
+            for name, value in fields.items():
+                chunks.append(
+                    f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+                    f"\r\n\r\n{value}\r\n"
+                )
+            chunks.append(f"--{boundary}--\r\n")
+            return "".join(chunks).encode()
+
+        headers = {
+            "Content-Type": f"multipart/form-data; boundary={boundary}",
+            "Origin": "https://jobsapi.ceipal.com",
+            "Referer": "https://jobsapi.ceipal.com/APISource/v1/index.html",
+        }
+        first = build_request_identity(
+            "https://careerapi.ceipal.com/first/CareerPortalJobPostings/?page=2",
+            data=body("first"),
+            headers=headers,
+        )
+        same = build_request_identity(
+            "https://careerapi.ceipal.com/second/CareerPortalJobPostings/?page=2",
+            data=body("second"),
+            headers=headers,
+        )
+        other_page = build_request_identity(
+            "https://careerapi.ceipal.com/first/CareerPortalJobPostings/?page=3",
+            data=body("first", page="3"),
+            headers=headers,
+        )
+        other_tenant = build_request_identity(
+            "https://careerapi.ceipal.com/first/CareerPortalJobPostings/?page=2",
+            data=body("first", portal="tenant-two"),
+            headers=headers,
+        )
+
+        self.assertTrue(first.replayable)
+        self.assertEqual(first.body_fingerprint, same.body_fingerprint)
+        self.assertEqual(first.fingerprint(), same.fingerprint())
+        self.assertNotEqual(first.fingerprint(), other_page.fingerprint())
+        self.assertNotEqual(first.body_fingerprint, other_tenant.body_fingerprint)
+        self.assertNotIn("first", str(first.as_dict()))
+        self.assertEqual(
+            set(first.semantic_headers),
+            {"content-type", "origin", "referer"},
+        )
+
+    def test_multipart_file_or_malformed_body_is_not_replayable(self):
+        boundary = "----unsafe"
+        data = (
+            f'--{boundary}\r\nContent-Disposition: form-data; name="resume"; '
+            'filename="resume.pdf"\r\n\r\nsecret\r\n'
+            f"--{boundary}--\r\n"
+        ).encode()
+        identity = build_request_identity(
+            "https://example.test/apply",
+            data=data,
+            headers={"Content-Type": f"multipart/form-data; boundary={boundary}"},
+        )
+
+        self.assertFalse(identity.replayable)
+        self.assertEqual(identity.non_replayable_reason, "invalid_multipart_form_body")
+
     def test_opaque_body_is_classified_without_a_raw_digest(self):
         identity = build_request_identity(
             "https://example.test/api",
@@ -83,6 +170,8 @@ class RequestIdentityTests(unittest.TestCase):
             headers={
                 "Accept": "application/json",
                 "X-Referer-Host": "https://jobs.example.test/?token=secret",
+                "Origin": "https://jobsapi.ceipal.com",
+                "Referer": "https://jobsapi.ceipal.com/APISource/v1/index.html",
                 "Authorization": "Bearer private",
                 "Cookie": "session=private",
             },
@@ -92,6 +181,8 @@ class RequestIdentityTests(unittest.TestCase):
             identity.semantic_headers,
             {
                 "accept": "application/json",
+                "origin": "https://jobsapi.ceipal.com",
+                "referer": "https://jobsapi.ceipal.com/APISource/v1/index.html",
                 "x-referer-host": "https://jobs.example.test/?token=%5BREDACTED%5D",
             },
         )

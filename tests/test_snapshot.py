@@ -45,6 +45,66 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("abcdefghijklmnop", sanitized)
         self.assertIn("[REDACTED]", sanitized)
 
+    def test_sanitize_snapshot_body_redacts_ceipal_credential_path(self):
+        body = (
+            '{"next":"https://careerapi.ceipal.com/private-key/'
+            'CareerPortalJobPostings/?page=2"}'
+        )
+
+        sanitized = sanitize_snapshot_body(body)
+
+        self.assertNotIn("private-key", sanitized)
+        self.assertIn(
+            "https://careerapi.ceipal.com/[REDACTED]/CareerPortalJobPostings/",
+            sanitized,
+        )
+
+    def test_multipart_ceipal_snapshot_replays_without_persisting_path_key(self):
+        boundary = "----ceipal-snapshot-boundary"
+
+        def body(api_key):
+            fields = (("page", "1"), ("api_key", api_key), ("cp_id", "portal-one"))
+            return (
+                "".join(
+                    f'--{boundary}\r\nContent-Disposition: form-data; name="{name}"'
+                    f"\r\n\r\n{value}\r\n"
+                    for name, value in fields
+                )
+                + f"--{boundary}--\r\n"
+            ).encode()
+
+        headers = {"Content-Type": f"multipart/form-data; boundary={boundary}"}
+        first_url = (
+            "https://careerapi.ceipal.com/private-one/"
+            "CareerPortalJobPostings/?page=1"
+        )
+        second_url = first_url.replace("private-one", "private-two")
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            record = store.write_page(
+                Page(
+                    url=first_url,
+                    final_url=first_url,
+                    html='{"next":"https://careerapi.ceipal.com/private-one/'
+                    'CareerPortalJobPostings/?page=2"}',
+                    source="live",
+                ),
+                request_url=first_url,
+                data=body("private-one"),
+                headers=headers,
+            )
+            page = Fetcher(fixtures_dir=store.fixtures_dir, offline=True).fetch(
+                second_url,
+                data=body("private-two"),
+                headers=headers,
+            )
+            metadata = Path(store.index_path).read_text(encoding="utf-8")
+
+        self.assertIn(".__request_", record.path)
+        self.assertNotIn("private-one", metadata)
+        self.assertNotIn("private-one", page.html)
+        self.assertIn("[REDACTED]", page.html)
+
     def test_sanitize_snapshot_body_redacts_hidden_input_tokens_in_any_order(self):
         body = (
             '<input type="hidden" id="token" value="public-routing-token">'

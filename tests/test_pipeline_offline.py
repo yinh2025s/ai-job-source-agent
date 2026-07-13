@@ -16,6 +16,97 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfflinePipelineTests(unittest.TestCase):
+    def test_official_visible_empty_state_is_terminal_without_company_exception(self):
+        career = "https://empty.example/careers"
+
+        class EmptyCareerFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == career:
+                    return Page(
+                        url=url,
+                        final_url=career,
+                        html=(
+                            "<html><h1>Open positions</h1>"
+                            "<p>No open positions available at the moment.</p></html>"
+                        ),
+                        source="official-career-page",
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        agent = JobSourceAgent(
+            EmptyCareerFetcher(offline=True),
+            max_job_pages=1,
+            max_ats_board_fetches=0,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_job_board(career)
+
+        self.assertEqual(raised.exception.code, "NO_PUBLIC_OPENINGS")
+        self.assertEqual(
+            raised.exception.trace["explicit_empty_inventory"]["phrase"],
+            "No open positions available at the moment",
+        )
+
+    def test_hidden_or_script_empty_copy_is_not_authoritative(self):
+        career = "https://not-empty.example/careers"
+
+        class ScriptOnlyFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=career,
+                    html=(
+                        "<html><h1>Careers</h1>"
+                        '<div hidden>No open positions available at the moment.</div>'
+                        '<script>const empty = "There are currently no open jobs";</script>'
+                        "</html>"
+                    ),
+                )
+
+        agent = JobSourceAgent(
+            ScriptOnlyFetcher(offline=True),
+            max_job_pages=1,
+            max_ats_board_fetches=0,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_job_board(career)
+
+        self.assertEqual(raised.exception.code, "job_board_not_found")
+        self.assertNotIn("explicit_empty_inventory", raised.exception.trace)
+
+    def test_unverified_career_candidates_report_retryable_budget_exhaustion(self):
+        homepage = "https://budget.example"
+
+        class HomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html='<html><a href="/careers">Careers</a></html>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        agent = JobSourceAgent(
+            HomepageFetcher(offline=True),
+            max_career_candidate_fetches=0,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(raised.exception.code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertEqual(
+            raised.exception.trace["candidate_fetch_budget_exhausted"]["limit"],
+            0,
+        )
     def test_labeled_first_party_bundle_navigation_recovers_career_without_sitemap(self):
         homepage = "https://bundle.example"
         asset = homepage + "/assets/index-app.js"

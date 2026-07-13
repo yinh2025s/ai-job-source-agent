@@ -459,7 +459,12 @@ class FailureReplayBundleTests(unittest.TestCase):
                 Page(
                     url=career_url,
                     final_url=career_url,
-                    html="<html><body><h1>Careers</h1><p>No public board.</p></body></html>",
+                    html=(
+                        "<html><head><title>Careers - Native Apply</title></head>"
+                        "<body><h1>Careers</h1>"
+                        "<p>Join our team. Explore career opportunities.</p>"
+                        "</body></html>"
+                    ),
                     source="live",
                 ),
                 request_url=career_url,

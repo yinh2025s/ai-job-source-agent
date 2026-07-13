@@ -296,7 +296,7 @@
 
 当前测试数量：
 
-- 477 unit tests passing
+- 817 unit tests passing
 
 ## 当前主要短板
 
@@ -305,7 +305,7 @@
 当前已完成第一轮 SOLID 拆分，但仍有兼容层需要逐步迁移：
 
 - S2-S7 已有独立 stage，通用 `ApplicationRunner` 支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- 23 个 provider module 已自动发现；其中 21 个提供原生 inventory 或受约束 positive evidence，CEIPAL/Talemetry 只提供 detection-only typed incomplete semantics；generic fallback 继续作为兼容路径。
+- 23 个 provider module 已自动发现；其中 22 个提供原生 inventory 或受约束 positive evidence，仅 Talemetry 提供 detection-only typed incomplete semantics；generic fallback 继续作为兼容路径。
 - `live_batch_eval.py` 保留公司级并发、process budget 和输出职责，七关业务执行已委托统一 `PipelineApplication`。
 - Fetcher 已有显式 protocol 和跨实现 contract suite；filesystem stage store 已接入 production CLI 和 live batch。
 - 原生 adapter 已支持包内自动发现；新 provider 不再需要修改中央 registry。
@@ -323,7 +323,7 @@ Phase 2.5 并行门槛已经达到。后续可以让 Provider、Pipeline、Resol
 - Workable public jobs cursor API 已完成 5 个真实 tenant smoke；后续继续扩展固定 live 样本和未知 payload 变体
 - Ashby embedded fallback 已完成，后续做真实 board live hardening
 - Rippling Next.js structured state 已完成 5 个真实 tenant 覆盖；后续继续跟踪未知 locale/state 变体
-- CEIPAL/Talemetry 需要在冻结并验证成功 public inventory schema 后才能从 detection-only 升级；bot block、Cloudflare challenge 或未知 JSON 不能解释为空库存
+- CEIPAL public multipart inventory contract 已冻结并通过 live/replay；后续扩大未知 tenant/theme 样本。Talemetry 仍需在冻结并验证成功 public inventory schema 后才能从 detection-only 升级；bot block、Cloudflare challenge 或未知 JSON 不能解释为空库存
 
 ### 3. Browser Rendering Needs Live Hardening
 
@@ -690,7 +690,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.3 Introduce Provider Adapter Registry
 
-当前状态：已完成可并行扩展的第一版。23 个 provider module 通过导出 `ADAPTER` 自动注册；21 个提供 native inventory 或受约束 positive evidence，CEIPAL/Talemetry 使用 page-evidence extension 仅提供 detection-only typed incomplete contract。Generic fallback 暂时保留 compatibility path。
+当前状态：已完成可并行扩展的第一版。23 个 provider module 通过导出 `ADAPTER` 自动注册；22 个提供 native inventory 或受约束 positive evidence，仅 Talemetry 使用 page-evidence extension 提供 detection-only typed incomplete contract。Generic fallback 暂时保留 compatibility path。
 
 已完成目标：
 
@@ -1010,6 +1010,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - `.50` typed-board/replay-evaluation/SPA-navigation reliability workstream 完成：ADR-0005 将 S5 page-derived `JobBoard` 以类型化、版本化 contract 传到 S6；provider 默认 runtime-only，只有明确 public locator 可写 checkpoint，CEIPAL credential-like identifier 不落盘。S6 resume 可直接按 provider-owned locator 读取库存，不读取 trace 或重复识别 landing page。Failure bundle outcome gate 现在输出 reproduced、显式 expected transition、fixture gap 和 mismatch，结构变化默认非零；summary/Markdown report 按规模排名 `stage x provider x reason_code` cluster。S4 在最多 3 个同站 asset 中只接受强标签绑定的同源 career route，Direct Supply 在 skip-sitemap snapshot 与当前 live 均恢复 Workday exact；Akkodis current live 到 official Sitecore board，但变化中的 pagination total 保持 `INVALID_STRUCTURED_DATA / discovery_incomplete`。Contract/checkpoint 为 `1.1`，adapter 为 `2026-07-14.50`；765 tests、23/23 provider、6/6 resolver、23-adapter architecture gate / 0 issues。旧 `.49` partial replay 为 4 reproduced、2 fixture gaps、2 mismatches，纠正“bundle 运行完成=失败已复现”的错误指标。下一项是同一 frozen-30 cohort 的最终 live/replay gate与按新 cluster 排序的 checkpoint 精细失效；真实登录态插件验收继续 deferred。
 - `.51` locator-policy/final-gate workstream 完成：checkpoint schema 提升到 `1.2`，七个 replay-safe provider 通过注册式 policy 绑定 public URL、origin、path 与 identifier；未知 provider、跨 origin evidence、敏感 query、控制字符、HTML/密钥/JWT/auth 形态内容和越界 locator 在 decode 前拒绝，CEIPAL 等 runtime-only identity 继续不落盘。Fixture gap 与 mismatch 都使 failure replay CLI 非零，跨阶段 expected transition 以声明阶段比较；复用 bundle output 时清理受管 fixture/checkpoint。最终门禁为 774 tests、23/23 provider、6/6 resolver、23-adapter architecture gate / 0 issues；相同 frozen-30 serialized live 为 30 website、28 career、26 verified job list、20 exact，rate delta 全为 0。10 个非成功样本 replay 为 6 reproduced、2 fixture gaps、2 mismatches，留下的是明确的 capture/behavior debt 而不是被“脚本跑完”掩盖的成功。插件真实登录态 Scan/Run 是当前唯一 deferred release gate。
 - `.52` request-aware outcome replay workstream 完成：ADR-0006 统一敏感键、sanitized request identity、POST JSON/form body digest、semantic header allowlist 和 terminal fetch failure contract；snapshot/failure-bundle schema 升至 v2，legacy v1 success record 保持兼容。Failure bundle 从首个 non-success stage 复用 authoritative typed handoff，修复 Aventis 同名实体漂移；Sitecore/Next 同 endpoint POST 分页按 body identity 隔离，修复 Akkodis replay 坍缩；Kirkland 的 success-then-403 可结构化复现；CEIPAL 安全接受服务端省略已知空参数，`apikey` 不再通过 metadata/manifest 泄漏。4-company focused live 为 4/4 website、4/4 career、3/4 verified job list，45 page + 1 terminal failure 物化为 46 fixtures，4/4 outcome signature 原样复现。最终门禁为 791 tests、23/23 provider、6/6 resolver、23-adapter architecture gate / 0 issues；同一 frozen-30 cohort 为 30 website、29 career、27 verified job list、21 exact opening，相对 `.51` 为 +0/+1/+1/+1，pipeline 从 20 success / 8 partial / 2 failed 改善为 21 / 8 / 1。9 个 non-success outcome 全部 reproduced，0 fixture gap / 0 mismatch。插件真实登录态 Scan/Run 继续 deferred，不阻塞 provider/pipeline 主线。
+- `.53` CEIPAL public-inventory/failure-semantics workstream 完成：CEIPAL 从 detection-only 提升为 page-aware inventory adapter，严格验证 first-party widget、单一 tenant iframe、Origin/Referer、公开 text-only multipart inventory、稳定 count/limit/pages、连续 pagination、重复 ID、最多 50 页和 first-party detail URL。Request identity 对 endpoint path/query/body 统一脱敏，snapshot 中的精确 `[REDACTED]` pagination path 可离线重放但不放宽 host/method/page contract。Centraprise focused live exact，29 fixtures 在 0.3 秒复现同一 opening；固定 provider benchmark 增加完全脱敏的 CEIPAL exact case。S3 未披露代理客户以 `COMPANY_IDENTITY_AMBIGUOUS` 终止；visible explicit-empty 与 candidate fetch-budget exhaustion 分别输出 `NO_PUBLIC_OPENINGS` 和 retryable `FETCH_BUDGET_EXHAUSTED`。Eightpoint/Aventis/M|R Walls focused live/replay 3/3 reproduced。最终门禁为 817 tests、24/24 provider、6/6 resolver、23-adapter architecture gate / 0 issues；同一 serialized frozen-30 为 30 website、28 career、27 verified job list、22 exact，299 page + 85 terminal failures 物化为 291 fixtures，8/8 non-success reproduced、0 gap、0 mismatch。插件真实登录态 Scan/Run 继续 deferred。
 - 最小浏览器扩展采集层完成：`extension/` 提供 Manifest V3 content script 和 popup，从当前 LinkedIn Jobs 详情/列表读取最多 30 条可见 evidence，展示 Apply URL 数量并异步报告 job-list/exact-opening rate；不读取 cookie、不模拟点击、不猜 redirect。`ExtensionRunManager` 和 loopback-only HTTP bridge 复用统一 input normalization 与 `PipelineApplication`，使用 bearer token、Chrome-extension Origin gate、256 KiB request limit 和本地原子 artifacts；长任务在 popup 关闭后继续。真实 HTTP smoke 为 health 200、submit 202、最终 1/1 job list + 1/1 exact opening，results/trace/summary 均落盘。ADR-0002 固化 evidence-adapter 边界；556 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。Chrome `Load unpacked` 与一次登录态 LinkedIn DOM scan 保留为需用户明确执行的手工验收；完成后回到固定 cohort 下一 failure cluster。
 
 目标：
@@ -1114,7 +1115,7 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - LinkedIn discovery 已经接入
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
-- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 23 个 module；21 个提供 inventory/positive evidence，2 个为 detection-only
+- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 23 个 module；22 个提供 inventory/positive evidence，仅 Talemetry 为 detection-only
 - Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR 已接 structured API
 - iCIMS、SuccessFactors、Workable、Rippling 已加入原生 structured page / embedded JSON / verified-link extraction，但还需要更多真实站点 live hardening
 - browser fallback 已经从全量渲染升级为 smart fallback + render budget
@@ -1122,4 +1123,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 均有独立 stage class，23 个 provider module 自动发现；其中 21 个提供 native inventory 或受约束 positive evidence，CEIPAL/Talemetry 仅提供 detection-only typed incomplete semantics。ADR-0005 让 page-derived provider board 以隐私最小、checkpoint-safe 的类型化 contract 从 S5 进入 S6；schema 1.2 再以注册式 provider policy 强制 locator 的 origin/path/identifier 和敏感内容边界。ADR-0006 进一步用 request-aware snapshot v2 区分 POST pagination、记录 terminal fetch failure，并让 failure bundle 从 authoritative typed handoff 恢复。S6 以 inventory completeness 和严格标题门槛阻止 incomplete miss 与泛化单词假阳性。固定 provider benchmark 为 23/23 exact，resolver 为 6/6；`.52` 通过 791 tests 与 architecture validation 23 adapters / 0 issues。同一 frozen-30 live 为 30/29/27/21，9 个非成功样本 replay 全部 reproduced、0 fixture gap、0 mismatch。Unpacked extension 已安装，真实登录态 LinkedIn Scan/Run 验收继续 deferred。最终 release 指标仍是陌生冻结样本上的 URL 正确性和成功率，而不是 cache hit、并行任务数或已知 focused 样本。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 均有独立 stage class，23 个 provider module 自动发现；其中 22 个提供 native inventory 或受约束 positive evidence，仅 Talemetry 保持 detection-only。CEIPAL 已实现 first-party widget 到 tenant iframe、公开 multipart inventory 与 first-party exact URL 的完整 contract，credential 仅以脱敏 request identity 进入 snapshot。ADR-0005 让 page-derived provider board 以隐私最小、checkpoint-safe 的类型化 contract 从 S5 进入 S6；schema 1.2 再以注册式 provider policy 强制 locator 的 origin/path/identifier 和敏感内容边界。ADR-0006 用 request-aware snapshot v2 区分 POST pagination、记录 terminal fetch failure，并让 failure bundle 从 authoritative typed handoff 恢复。S3 identity dependency、visible explicit-empty 与 fetch-budget exhaustion 现在有互斥 typed outcome。`.53` 通过 817 tests、24/24 provider、6/6 resolver 和 23-adapter architecture gate；同一 frozen-30 为 30/28/27/22，8/8 non-success replay，0 gap、0 mismatch。最终 release 指标仍是陌生冻结样本上的 URL 正确性和成功率；Unpacked extension 已安装，真实登录态 LinkedIn Scan/Run 验收继续 deferred，不阻塞其余主线。

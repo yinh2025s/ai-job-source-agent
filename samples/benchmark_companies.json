@@ -138,5 +138,12 @@
     "career_root_url": "https://sitecore-jobs.example/en-us/careers/job-results",
     "job_title": "Data Analyst",
     "job_location": "Austin, Texas"
+  },
+  {
+    "company_name": "Acme CEIPAL",
+    "company_website_url": "https://acme-ceipal.example",
+    "career_root_url": "https://acme-ceipal.example/careers",
+    "job_title": "Data Analyst",
+    "job_location": "Austin, Texas"
   }
 ]
