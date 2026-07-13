@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from .career_search import CareerSearchResolver
-from .content_probe import probe_first_party_cms_payload
+from .content_probe import probe_first_party_cms_payload, probe_first_party_provider_assets
 from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
 from .models import (
@@ -599,6 +599,13 @@ class JobSourceAgent:
             page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
             if content_probe:
                 trace.setdefault("content_payload_probes", []).append(content_probe)
+            page, provider_asset_probe = probe_first_party_provider_assets(
+                self.fetcher,
+                page,
+                self._is_provider_job_board_url,
+            )
+            if provider_asset_probe:
+                trace.setdefault("content_payload_probes", []).append(provider_asset_probe)
             actual_page_url = page.final_url or page.url
             normalized_actual_url = actual_page_url.rstrip("/")
             if normalized_actual_url != normalized_page_url and normalized_actual_url in visited:
@@ -969,6 +976,7 @@ class JobSourceAgent:
                 (f"https://jobs.lever.co/{slug}", "Lever"),
                 (f"https://boards.greenhouse.io/{slug}", "Greenhouse"),
                 (f"https://jobs.ashbyhq.com/{slug}", "Ashby"),
+                (f"https://{slug}.breezy.hr/", "Breezy"),
                 (f"https://jobs.smartrecruiters.com/{slug}", "SmartRecruiters"),
                 (f"https://apply.workable.com/{slug}", "Workable"),
                 (f"https://{slug}.bamboohr.com/careers", "BambooHR"),

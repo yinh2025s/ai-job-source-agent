@@ -143,7 +143,7 @@ class CompanyWebsiteResolver:
         linkedin_official_candidates: list[str] = []
         linkedin_candidates: list[str] = []
         linkedin_evidence_loaded = False
-        if preferred_url and linkedin_company_url:
+        if (preferred_url or _linkedin_slug_uses_marketing_prefix(linkedin_company_url)) and linkedin_company_url:
             linkedin_official_candidates, linkedin_candidates = self._linkedin_company_candidates(
                 linkedin_company_url,
                 company_name,
@@ -370,6 +370,13 @@ class CompanyWebsiteResolver:
             page = self.fetcher.fetch(linkedin_company_url)
         except FetchError:
             return [], []
+        if _linkedin_company_page_incomplete(page.html):
+            retry_url = f"{linkedin_company_url.rstrip('/')}/"
+            if retry_url != linkedin_company_url:
+                try:
+                    page = self.fetcher.fetch(retry_url)
+                except FetchError:
+                    pass
         official = _linkedin_json_ld_websites(page.html, company_name)
         urls: list[str] = []
         for url in re.findall(r"https?://[^\"'<>\s)\\]+", page.html):
@@ -414,12 +421,13 @@ class CompanyWebsiteResolver:
         base = re.sub(r"(inc|llc|ltd|corp|corporation|company|co|hq)$", "", base)
         compact = base.replace("-", "")
         product_suffix_base = re.sub(r"-(ai|app|tech)$", "", base)
-        candidates = [base, compact, product_suffix_base]
+        prefix_stripped_base = re.sub(r"^(get|go|join|try|use)-?", "", base)
+        candidates = [base, compact, product_suffix_base, prefix_stripped_base]
         return [
             f"https://{candidate}.{tld}"
             for candidate in dict.fromkeys(candidates)
             if candidate
-            for tld in ("com", "ai", "io", "co")
+            for tld in ("com", "ai", "io", "co", "app")
         ]
 
     def _select_verified_candidate(
@@ -430,8 +438,23 @@ class CompanyWebsiteResolver:
         for candidate in scored:
             if candidate.score < 25:
                 continue
-            if "homepage verified" not in candidate.reasons:
+            linkedin_official = (
+                "LinkedIn company page identifies official website" in candidate.reasons
+            )
+            if any(
+                reason in candidate.reasons
+                for reason in (
+                    "hosted non-company destination rejected",
+                    "parked domain rejected",
+                )
+            ):
                 continue
+            if "homepage verified" not in candidate.reasons and not linkedin_official:
+                continue
+            if "homepage verified" not in candidate.reasons and linkedin_official:
+                candidate.reasons.append(
+                    "LinkedIn official website accepted without homepage response"
+                )
             if "single-token brand extension domain" in candidate.reasons and not any(
                 reason in candidate.reasons
                 for reason in (
@@ -452,7 +475,13 @@ class CompanyWebsiteResolver:
                         "LinkedIn company page identifies official website",
                     )
                 )
-                slug_has_support = "LinkedIn slug confirms domain" in candidate.reasons and (
+                slug_has_support = any(
+                    reason in candidate.reasons
+                    for reason in (
+                        "LinkedIn slug confirms domain",
+                        "LinkedIn slug exactly matches domain",
+                    )
+                ) and (
                     "company token missing from homepage" not in candidate.reasons
                     or "preferred .com TLD" in candidate.reasons
                 )
@@ -463,6 +492,12 @@ class CompanyWebsiteResolver:
                 or "LinkedIn company slug matches domain TLD" in candidate.reasons
                 or "homepage canonical URL" in candidate.reasons
                 or "LinkedIn company page identifies official website" in candidate.reasons
+            ):
+                continue
+            if (
+                require_fast_confidence
+                and "LinkedIn marketing-prefix slug is TLD-ambiguous" in candidate.reasons
+                and not linkedin_official
             ):
                 continue
             return candidate
@@ -512,6 +547,8 @@ class CompanyWebsiteResolver:
         if _linkedin_slug_confirms_domain(domain, company_tokens, linkedin_company_url):
             score += 30
             reasons.append("LinkedIn slug confirms domain")
+            if _linkedin_slug_uses_marketing_prefix(linkedin_company_url):
+                reasons.append("LinkedIn marketing-prefix slug is TLD-ambiguous")
 
         if _linkedin_slug_exactly_matches_domain(domain, company_tokens, linkedin_company_url):
             score += 75
@@ -881,9 +918,22 @@ def _linkedin_slug_confirms_domain(
         f"{compact_name}corp",
         f"{compact_name}hq",
         f"get{compact_name}",
+        f"go{compact_name}",
         f"join{compact_name}",
+        f"try{compact_name}",
+        f"use{compact_name}",
     }
     return slug in accepted
+
+
+def _linkedin_slug_uses_marketing_prefix(linkedin_company_url: str | None) -> bool:
+    if not linkedin_company_url:
+        return False
+    path_parts = [part for part in urlparse(linkedin_company_url).path.split("/") if part]
+    if len(path_parts) < 2 or path_parts[0].casefold() != "company":
+        return False
+    slug = re.sub(r"[^a-z0-9]", "", path_parts[1].casefold())
+    return any(slug.startswith(prefix) and len(slug) > len(prefix) for prefix in ("get", "go", "join", "try", "use"))
 
 
 def _linkedin_slug_exactly_matches_domain(
@@ -1030,10 +1080,21 @@ def _linkedin_json_ld_websites(html: str, company_name: str) -> list[str]:
             for value in values:
                 if not isinstance(value, str):
                     continue
-                cleaned = clean_search_url(value)
+                candidate = value.strip()
+                if re.fullmatch(
+                    r"(?:www\.)?[a-z0-9][a-z0-9.-]+\.[a-z]{2,}(?:/[^\s]*)?",
+                    candidate,
+                    flags=re.I,
+                ):
+                    candidate = f"https://{candidate}"
+                cleaned = clean_search_url(candidate)
                 if cleaned and not is_blocked_domain(cleaned):
                     websites.append(cleaned)
     return dedupe_urls(websites)
+
+
+def _linkedin_company_page_incomplete(html: str) -> bool:
+    return len(html) < 10_000 or "application/ld+json" not in html.casefold()
 
 
 def _walk_linkedin_organizations(value):

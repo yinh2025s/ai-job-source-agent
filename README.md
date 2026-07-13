@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-13.41`. S3 can now distinguish a LinkedIn publisher from the actual employer using a bounded posting-identity probe for investment/recruiting intermediaries. Stage 2 Capital resolves to ModMed and its exact Workday opening; Aventis Solutions is recorded as an agency for an undisclosed client and remains unresolved instead of being attributed to a guessed company.
+Current adapter iteration: `2026-07-13.42`. Marketing-prefix LinkedIn slugs now require official company-page evidence before fast website selection, first-party module assets can expose registry-verified ATS boards under a strict three-asset budget, and Breezy is supported by a native public-inventory adapter. Focused live checks resolve VELOX, Nevis, and Mirage to their exact current openings.
 
 ## What It Returns
 

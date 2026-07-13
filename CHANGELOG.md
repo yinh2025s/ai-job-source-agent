@@ -10,6 +10,8 @@
 
 ### Added
 
+- 新增第 19 个原生 provider `BreezyAdapter`：规范化 `*.breezy.hr` public board，使用 Breezy portal 指纹解析完整 HTML inventory，并校验同租户 `/p/{id}-{slug}` 具体岗位；固定 provider benchmark 扩展为 21/21 exact opening。
+
 - 增加独立 `LinkedInPostingIdentityProbe`：只对名称具有投资/招聘中介特征的发布者执行有界公开职位详情探测，解析 `JobPosting` JSON-LD，并以重复提及、至少两类雇主上下文及 benefits/anti-fraud 自有上下文确认 alternate employer；普通发布者不增加详情请求，单次技术名词提及、解析失败和网络失败不会改变招聘主体。
 
 - 增加正式的开发治理、架构边界和 ADR 记录机制。
@@ -48,6 +50,8 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- S2 对 `get/go/join/try/use` 型 LinkedIn company slug 不再用前缀剥离结果快速确认任意同名 TLD，而是先读取公司名匹配的官方 `Organization.sameAs`；公开公司页的薄响应会用 trailing-slash 有界重试，bare-domain `sameAs` 会安全规范化。S5 增加最多 3 个同源 JavaScript module asset 的有界 ATS evidence probe，按当前 route chunk 优先并只在 registry 能识别 provider URL 时合并内容。VELOX 由官方 `velox.com` 进入 Breezy 并 exact 命中 `Artificial (AI) Engineer`，Nevis 从 first-party chunk 恢复 Ashby 并 exact 命中 `Applied AI Engineer`，Mirage 拒绝错误 `mirage.ai`、确认 `mirage.app` 并 exact 命中 `Software Engineer, Agents`。S2/S4-S6/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.42`；587 tests、21/21 provider、6/6 resolver 和 19-adapter architecture gate 通过。
 
 - S3 hiring-identity contract 现在可消费 `alternate_employer` 与 `agency_unresolved` posting evidence。Stage 2 Capital 的公开职位正文以 12 次 ModMed 提及和 4 类雇主上下文确认实际雇主，随后复用 ModMed 官方 Workday `ModMed12` 并 exact 命中 Machine Learning Engineer `R4352`；Aventis Solutions 命中“partner/on behalf”代理声明但客户未披露，因此仅输出 `publisher_role=recruiting_agency`，不猜客户、不改官网。29-record capture 物化为 28 fixtures，并在 0.3 秒离线复现一条 exact 与一条结构化失败。S3/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.41`；576 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。
 

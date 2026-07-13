@@ -4,6 +4,7 @@ import time
 from job_source_agent.web import FetchError, Fetcher, Page, domain_of
 from job_source_agent.website_resolver import (
     CompanyWebsiteResolver,
+    _linkedin_json_ld_websites,
     clean_search_url,
     is_blocked_domain,
     tokenize_company_name,
@@ -163,6 +164,141 @@ class WebsiteResolverTests(unittest.TestCase):
         )
 
         self.assertEqual(website_url, "https://mrwalls.io/")
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
+
+    def test_linkedin_bare_same_as_is_normalized_as_official_website(self):
+        html = (
+            '<script type="application/ld+json">'
+            '{"@type":"Organization","name":"Nevis",'
+            '"sameAs":"www.neviswealth.com"}'
+            "</script>"
+        )
+
+        self.assertEqual(
+            _linkedin_json_ld_websites(html, "Nevis"),
+            ["https://www.neviswealth.com"],
+        )
+
+    def test_thin_linkedin_page_retries_and_official_url_survives_homepage_block(self):
+        linkedin_url = "https://www.linkedin.com/company/velox"
+
+        class ThrottledLinkedInFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == linkedin_url:
+                    return Page(url=url, html="<html>temporary throttle</html>")
+                if url == f"{linkedin_url}/":
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"VELOX",'
+                            '"sameAs":"https://www.velox.com"}'
+                            "</script>"
+                        ),
+                    )
+                raise FetchError("homepage or search blocked")
+
+        fetcher = ThrottledLinkedInFetcher()
+        resolver = CompanyWebsiteResolver(fetcher, verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "VELOX",
+            linkedin_url,
+            "Boise, ID",
+        )
+
+        self.assertEqual(website_url, "https://www.velox.com")
+        self.assertIn(f"{linkedin_url}/", fetcher.calls)
+        self.assertIn(
+            "LinkedIn official website accepted without homepage response",
+            trace["selected"]["reasons"],
+        )
+
+    def test_exact_disambiguating_slug_selects_verified_extended_brand(self):
+        class ExtendedBrandFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "neviswealth.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.neviswealth.com/",
+                        html="<html><body>Nevis wealth management</body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(ExtendedBrandFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "Nevis",
+            "https://www.linkedin.com/company/neviswealth",
+            "New York, NY",
+        )
+
+        self.assertEqual(website_url, "https://www.neviswealth.com/")
+        self.assertIn(
+            "LinkedIn slug exactly matches domain",
+            trace["selected"]["reasons"],
+        )
+
+    def test_try_slug_generates_candidate_without_confirming_arbitrary_tld(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+
+        candidates = resolver._linkedin_slug_domain_candidates(
+            "https://www.linkedin.com/company/trymirage"
+        )
+        scored = resolver._score_candidate(
+            "https://mirage.app",
+            "Mirage",
+            linkedin_company_url="https://www.linkedin.com/company/trymirage",
+            verify=False,
+        )
+
+        self.assertIn("https://mirage.app", candidates)
+        self.assertIn("LinkedIn slug confirms domain", scored.reasons)
+        self.assertIn("LinkedIn marketing-prefix slug is TLD-ambiguous", scored.reasons)
+
+    def test_marketing_prefix_slug_loads_official_linkedin_evidence_before_fast_selection(self):
+        linkedin_url = "https://www.linkedin.com/company/trymirage"
+
+        class MirageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Mirage",'
+                            '"sameAs":"https://mirage.app"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "mirage.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://mirage.ai/",
+                        html="<html><head><title>Mirage AI</title></head><body>Mirage</body></html>",
+                    )
+                if domain_of(url) == "mirage.app":
+                    return Page(
+                        url=url,
+                        final_url="https://mirage.app/",
+                        html="<html><head><title>Mirage</title></head><body>Mirage</body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            MirageFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Mirage", linkedin_url, "New York, NY")
+
+        self.assertEqual(website_url, "https://mirage.app/")
         self.assertIn(
             "LinkedIn company page identifies official website",
             trace["selected"]["reasons"],

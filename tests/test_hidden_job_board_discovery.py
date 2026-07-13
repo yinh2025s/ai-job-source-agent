@@ -25,6 +25,52 @@ class MappingFetcher:
 
 
 class HiddenJobBoardDiscoveryTests(unittest.TestCase):
+    def test_recovers_provider_url_from_bounded_same_site_module_assets(self):
+        career = "https://www.example.com/careers/"
+        route_asset = "https://www.example.com/assets/page-careers-A1.js"
+        shared_asset = "https://www.example.com/assets/page-about-B2.js"
+        board = "https://jobs.ashbyhq.com/example"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<link rel="modulepreload" href="{shared_asset}">'
+                    f'<link rel="modulepreload" href="{route_asset}">'
+                    "<main>Open positions</main>"
+                ),
+            ),
+            route_asset: Page(url=route_asset, html='import "./page-about-B2.js";'),
+            shared_asset: Page(url=shared_asset, html=f'const jobs="{board}";'),
+            board: Page(url=board, html="<html>Ashby job board</html>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, board)
+        probe = trace["content_payload_probes"][0]
+        self.assertEqual(probe["method"], "first_party_provider_asset")
+        self.assertEqual(probe["asset_urls"], [route_asset, shared_asset])
+        self.assertEqual(probe["provider_urls"], [board])
+
+    def test_provider_asset_probe_rejects_credentials_and_cross_site_assets(self):
+        career = "https://www.example.com/careers/"
+        credentialed = "https://user@www.example.com/assets/page-careers.js"
+        cross_site = "https://cdn.evil.example/assets/page-careers.js"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<link rel="modulepreload" href="{credentialed}">'
+                    f'<link rel="modulepreload" href="{cross_site}">'
+                ),
+            ),
+        })
+
+        with self.assertRaises(DiscoveryError):
+            JobSourceAgent(fetcher, max_job_pages=1).find_job_board(career)
+
+        self.assertEqual(fetcher.requested, [career])
+
     def test_invalid_identity_career_root_falls_back_to_verified_homepage_link(self):
         homepage = "https://example.com"
         wrong = "https://example.com/careers-channel"

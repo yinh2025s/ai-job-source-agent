@@ -118,5 +118,11 @@
     "company_website_url": "https://avature.example/en_US/careers",
     "career_root_url": "https://avature.example/en_US/careers",
     "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Breezy",
+    "company_website_url": "https://acme.breezy.hr/",
+    "career_root_url": "https://acme.breezy.hr/",
+    "job_title": "Data Analyst"
   }
 ]

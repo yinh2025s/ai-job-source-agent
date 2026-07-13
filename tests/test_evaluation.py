@@ -53,8 +53,8 @@ class EvaluationTests(unittest.TestCase):
         results = [agent.discover(company).result_record() for company in companies]
         summary = summarize_results(results)
 
-        self.assertEqual(summary["total"], 20)
-        self.assertEqual(summary["with_opening"], 20)
+        self.assertEqual(summary["total"], 21)
+        self.assertEqual(summary["with_opening"], 21)
         self.assertEqual(summary["provider_counts"]["icims"], 3)
         self.assertEqual(summary["provider_counts"]["workday"], 1)
         self.assertEqual(summary["provider_counts"]["bamboohr"], 1)
@@ -66,14 +66,15 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(summary["provider_counts"]["eightfold"], 1)
         self.assertEqual(summary["provider_counts"]["jazzhr"], 1)
         self.assertEqual(summary["provider_counts"]["avature"], 1)
-        self.assertEqual(summary["stage_funnel"]["opening_match"]["success"], 20)
-        self.assertEqual(summary["pipeline_status_counts"]["success"], 20)
-        self.assertEqual(len(summary["company_stage_matrix"]), 20)
+        self.assertEqual(summary["provider_counts"]["breezy"], 1)
+        self.assertEqual(summary["stage_funnel"]["opening_match"]["success"], 21)
+        self.assertEqual(summary["pipeline_status_counts"]["success"], 21)
+        self.assertEqual(len(summary["company_stage_matrix"]), 21)
 
         expectations = json.loads((ROOT / "samples" / "benchmark_expectations.json").read_text(encoding="utf-8"))
         checks = evaluate_expectations(results, expectations)
 
-        self.assertEqual(checks["passed"], 20)
+        self.assertEqual(checks["passed"], 21)
         self.assertEqual(checks["failed"], 0)
 
     def test_summary_comparison_reports_rate_and_stage_deltas(self):

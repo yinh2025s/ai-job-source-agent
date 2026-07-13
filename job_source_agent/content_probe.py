@@ -1,10 +1,14 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from urllib.parse import urlparse
 
 from .contracts import FetchClient
 from .web import FetchError, Page, domain_of, normalize_url
+
+
+_RAW_WEB_URL = re.compile(r"https?:(?:\\?/){2}[^\"'<>\s]+", flags=re.I)
 
 
 def probe_first_party_cms_payload(
@@ -23,10 +27,7 @@ def probe_first_party_cms_payload(
     page_url = page.final_url or page.url
     try:
         asset_url = normalize_url(module_match.group(1), page_url)
-        if not _same_site_host(
-            urlparse(asset_url).hostname or "",
-            urlparse(page_url).hostname or "",
-        ):
+        if not _is_safe_same_site_asset(asset_url, page_url):
             return page, None
         asset_page = fetcher.fetch(asset_url)
     except (FetchError, TypeError, ValueError):
@@ -94,10 +95,121 @@ def probe_first_party_cms_payload(
     )
 
 
+def probe_first_party_provider_assets(
+    fetcher: FetchClient,
+    page: Page,
+    recognizes_provider_url: Callable[[str], bool],
+    *,
+    max_assets: int = 3,
+) -> tuple[Page, dict | None]:
+    """Recover ATS URLs embedded in bounded, same-site JavaScript chunks."""
+    html = page.html or ""
+    page_url = page.final_url or page.url
+    asset_hrefs = re.findall(
+        r'<(?:script|link)\b[^>]*(?:src|href)=["\']([^"\']+\.js(?:\?[^"\']*)?)["\']',
+        html[:300000],
+        flags=re.I,
+    )
+    route_token = next(
+        (part.casefold() for part in reversed(urlparse(page_url).path.split("/")) if part),
+        "",
+    )
+
+    asset_urls: list[str] = []
+    for href in asset_hrefs:
+        try:
+            asset_url = normalize_url(href, page_url)
+        except (TypeError, ValueError):
+            continue
+        if not _is_safe_same_site_asset(asset_url, page_url):
+            continue
+        if asset_url not in asset_urls:
+            asset_urls.append(asset_url)
+    asset_urls.sort(key=lambda url: _provider_asset_priority(url, route_token))
+
+    fetched: list[str] = []
+    bundles: list[str] = []
+    provider_urls: list[str] = []
+    for asset_url in asset_urls[:max_assets]:
+        try:
+            asset_page = fetcher.fetch(asset_url)
+        except (FetchError, OSError, TimeoutError):
+            continue
+        if not _is_safe_same_site_asset(asset_page.final_url or asset_page.url, page_url):
+            continue
+        bundle = asset_page.html or ""
+        fetched.append(asset_url)
+        bundles.append(bundle)
+        provider_urls.extend(_recognized_provider_urls(bundle, recognizes_provider_url))
+        if provider_urls:
+            break
+
+    if not provider_urls:
+        return page, None
+    return (
+        Page(
+            url=page.url,
+            final_url=page.final_url,
+            html="\n".join((html, *bundles)),
+            source=f"{page.source}|first_party_provider_asset",
+            artifacts=page.artifacts,
+        ),
+        {
+            "method": "first_party_provider_asset",
+            "asset_urls": fetched,
+            "provider_urls": list(dict.fromkeys(provider_urls)),
+        },
+    )
+
+
+def _provider_asset_priority(url: str, route_token: str) -> tuple[int, str]:
+    filename = urlparse(url).path.rsplit("/", 1)[-1].casefold()
+    if route_token and route_token in filename:
+        return 0, filename
+    if filename.startswith("page-"):
+        return 1, filename
+    if filename.startswith("index-"):
+        return 2, filename
+    return 3, filename
+
+
+def _recognized_provider_urls(
+    bundle: str,
+    recognizes_provider_url: Callable[[str], bool],
+) -> list[str]:
+    urls: list[str] = []
+    for match in _RAW_WEB_URL.finditer(bundle[:5_000_000]):
+        raw_url = match.group(0).replace(r"\/", "/").rstrip("),.;]")
+        try:
+            normalized = normalize_url(raw_url)
+        except (TypeError, ValueError):
+            continue
+        if recognizes_provider_url(normalized):
+            urls.append(normalized)
+    return urls
+
+
 def _same_site_host(first: str, second: str) -> bool:
     if first == second or first.endswith("." + second) or second.endswith("." + first):
         return True
     return _registrable_site(first) == _registrable_site(second)
+
+
+def _is_safe_same_site_asset(asset_url: str, page_url: str) -> bool:
+    try:
+        asset = urlparse(asset_url)
+        page = urlparse(page_url)
+        asset_port = asset.port
+    except (TypeError, ValueError):
+        return False
+    if (
+        asset.scheme.casefold() != "https"
+        or asset.username is not None
+        or asset.password is not None
+        or asset_port not in {None, 443}
+    ):
+        return False
+    return _same_site_host(asset.hostname or "", page.hostname or "")
 
 
 def _registrable_site(host: str) -> str:
