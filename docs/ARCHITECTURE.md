@@ -58,6 +58,16 @@ S5 不把 generic career landing page 自动视作 job list。成功必须来自
 
 `scripts/extension_bridge.py` 只绑定 loopback，使用 bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
 
+## LinkedIn Website Evidence Cache
+
+ADR-0003 定义 S2 的持久化 LinkedIn official-website evidence boundary。Store key 是规范化 company name 与规范化 LinkedIn company URL 组合的 SHA-256；单独的公司名或 slug 不足以标识记录。Value 只包含该组合身份、严格名称匹配的公开 `Organization` JSON-LD 官网 URL 和观测时间，默认 TTL 30 天。
+
+Resolver 始终先请求 live 公司页，仅在当前页面没有匹配官网时加载 cache，并在 trace 中把 provenance 标为 `live` 或 `cache`。Cached evidence 只是候选，不是 identity override 或成功结果；它仍经过 redirect、parking、region 和 brand-identity verification，也不能单独证明 career page、job list 或 opening。LinkedIn 公司页保留 bounded trailing-slash retry。
+
+Filesystem store 将缺失文件、schema mismatch、corrupt JSON、malformed roots/records/URLs、future/nonfinite timestamp 和过期记录视为安全 miss。读取与 read-modify-write 保存持有进程锁；写入使用同目录临时文件、file `fsync`、atomic replace 和 directory `fsync`，replace 失败时保留上一完整文件。CLI 可通过 `--linkedin-evidence-cache` 指定路径；否则 checkpoint 使用 `<checkpoint_dir>/linkedin-website-evidence.json`，extension manager 在其 output directory 复用同名稳定文件。并行 worktree/benchmark 不共享 cache root。
+
+Cache 只允许公开公司级 URL evidence，不得保存求职者身份、个人 profile、职位页 HTML、cookies、tokens、request headers、browser storage 或 authenticated LinkedIn payload，也不得把 company-specific cache records 提交到仓库。自动化 extension smoke 不覆盖真实登录态 DOM 或本地安装；Chrome `Load unpacked` 与一次登录态 LinkedIn scan 仍是独立人工验收。Release 以陌生冻结样本的 exact-opening 与 verified-job-list 结果为最终指标，不以 cache hit count 代替。
+
 ## Target Contracts
 
 Stage 只接收和返回版本化数据，不互相调用内部方法：
@@ -152,6 +162,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 - Bounded BFS 可穿过 career root 下最多两层的 staff、business-services、professional、student/lateral audience taxonomy；只有官网明确使用 job-opportunity 语义并指向同 registrable domain 的 jobs/careers 子域时，才允许在 portal 被 challenge 阻挡时保留官方 job-list root。
 - First-party provider configuration 在 bounded link extraction 内派生 board；当前 Greenhouse template API 和带 embed 指纹的 Lever `accountName` 配置会优先于普通页面链接，最终仍由原生 adapter 验证 tenant 和目标标题。
 - Filesystem stage checkpoint store 已支持原子保存、兼容性校验、安全 cache miss 和从指定 stage 向下失效。
+- LinkedIn website evidence store 已按 ADR-0003 支持 30 天 TTL、schema/corruption/nonfinite 安全 miss、进程锁和 atomic replace；composition root 为 CLI checkpoint 与 extension output 注入稳定路径。`.43` 门禁为 616 tests、21/21 provider、6/6 resolver 和 architecture validation 19 adapters / 0 issues；相同冻结 30-company clean run 为 29/30 官网、23/30 verified job list、18/30 exact opening，未读取 seeded cache。Content script 通过 DOM visibility contract 排除隐藏记录但保留 offscreen cards，loopback handler 有真实 HTTP contract tests；人工登录态 Chrome 验收仍未完成。
 - Production CLI 和 live batch 均由 `PipelineApplication` 和通用 runner/store 执行；live batch 保留两段 process hard budget。
 - Stage store 通过 fingerprint 级进程锁和原子替换保证并发安全；checkpoint trace 明确记录 save、restore、miss 和 invalidate。
 - Sanitized live snapshots 使用跨进程发布锁和内容寻址的不可变 page/artifact blobs；canonical fixture view 保持 Fetcher 兼容。`scripts/replay_snapshots.py` 会验证 blob 与最终 canonical view，并把重复 URL 的最后一个完整版本转换成 deterministic fixture tree。

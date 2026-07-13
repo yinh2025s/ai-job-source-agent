@@ -10,6 +10,12 @@
 
 ### Added
 
+- 增加 ADR-0003 LinkedIn official-website evidence cache：以规范化 company name 与 LinkedIn company URL 的组合身份为 key，默认 TTL 30 天；只保存公开公司级官网 URL 和观测时间，不保存个人资料、职位 HTML、cookie、token、header、browser storage 或认证 LinkedIn payload。CLI 支持 `--linkedin-evidence-cache` 显式路径，checkpoint 默认使用 `<checkpoint_dir>/linkedin-website-evidence.json`，extension output 目录复用稳定文件。
+
+- 增加根目录 `AGENTS.md`，将默认并行 fan-out、独立 worktree/ownership、临时 artifact 隔离、局部测试与主线统一 gate、串行 live/登录态资源及 failure-cluster 节奏固化为长期协作规范。
+
+- 增加 content-script DOM harness 和真实 loopback HTTP handler 回归：隐藏元素与隐藏祖先不会被提交，offscreen job cards 仍保留；bridge 覆盖 health、submit/run lookup、CORS/no-store 及 HTTP 401/403/404/413。
+
 - 新增第 19 个原生 provider `BreezyAdapter`：规范化 `*.breezy.hr` public board，使用 Breezy portal 指纹解析完整 HTML inventory，并校验同租户 `/p/{id}-{slug}` 具体岗位；固定 provider benchmark 扩展为 21/21 exact opening。
 
 - 增加独立 `LinkedInPostingIdentityProbe`：只对名称具有投资/招聘中介特征的发布者执行有界公开职位详情探测，解析 `JobPosting` JSON-LD，并以重复提及、至少两类雇主上下文及 benefits/anti-fraud 自有上下文确认 alternate employer；普通发布者不增加详情请求，单次技术名词提及、解析失败和网络失败不会改变招聘主体。
@@ -50,6 +56,8 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- S2 先读取 live LinkedIn company-page evidence，当前响应没有严格名称匹配的官方官网时才回退 cache，并在 trace 中区分 `live`/`cache`；LinkedIn company URL 保留 bounded trailing-slash retry。Cache 的 schema mismatch、corrupt/malformed payload、future/nonfinite timestamp 和过期记录均安全 miss，读与 read-modify-write 使用进程锁，写入使用同目录临时文件、`fsync` 和 atomic replace。Cached URL 仍需通过 redirect、parking、region 与 brand identity 校验，不能单独产生 career/job-list/opening 成功。缓存契约进入 checkpoint/CLI/extension 后将 `ADAPTER_VERSION` 提升到 `2026-07-13.43`；最终离线门禁为 616 tests、21/21 provider、6/6 resolver 和 architecture validation 19 adapters / 0 issues。相同 hash 的冻结 30-company clean run 为 29/30 官网、23/30 career、23/30 verified job list、18/30 exact opening，相比 v32 分别提升 2、6、9、7 家；新 cache 只写入 4 条 live evidence、未读取 seeded cache。认证 Chrome 的 `Load unpacked` 与一次真实 LinkedIn DOM scan 仍待人工验收；最终 release 指标是陌生冻结样本结果，不是 cache hit 数。
 
 - S2 对 `get/go/join/try/use` 型 LinkedIn company slug 不再用前缀剥离结果快速确认任意同名 TLD，而是先读取公司名匹配的官方 `Organization.sameAs`；公开公司页的薄响应会用 trailing-slash 有界重试，bare-domain `sameAs` 会安全规范化。S5 增加最多 3 个同源 JavaScript module asset 的有界 ATS evidence probe，按当前 route chunk 优先并只在 registry 能识别 provider URL 时合并内容。VELOX 由官方 `velox.com` 进入 Breezy 并 exact 命中 `Artificial (AI) Engineer`，Nevis 从 first-party chunk 恢复 Ashby 并 exact 命中 `Applied AI Engineer`，Mirage 拒绝错误 `mirage.ai`、确认 `mirage.app` 并 exact 命中 `Software Engineer, Agents`。S2/S4-S6/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.42`；587 tests、21/21 provider、6/6 resolver 和 19-adapter architecture gate 通过。
 

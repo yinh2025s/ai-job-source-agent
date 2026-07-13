@@ -11,6 +11,7 @@
 | 当前能力与后续路线 | `IMPLEMENTATION_PLAN.md` | milestone 状态或优先级变化时 |
 | 稳定架构边界 | `docs/ARCHITECTURE.md` | 模块职责或依赖方向变化时 |
 | 重大技术决策 | `docs/adr/` | 决策实施前或同时 |
+| 多代理长期协作规则 | `AGENTS.md` | 并行策略或隔离规则变化时 |
 | 发布版本 | `pyproject.toml` | release commit |
 
 `pyproject.toml` 是包版本号的 canonical source。完成后续 packaging cleanup 前，
@@ -39,6 +40,25 @@
 - Fetcher 工作保持统一 `fetch()` contract，不向 resolver 暴露具体网络实现。
 - Reporting 只消费版本化 result/checkpoint schema，不依赖 live runner 内部状态。
 - 跨边界需求先修改 contract 和 contract test，再由各模块分别适配。
+
+每轮并行任务还必须满足以下运行隔离规则：
+
+- 开始前冻结共享 contract、schema、cache key、TTL、版本失效、损坏恢复和隐私语义；实现过程中不得由支线自行改变。
+- 每条写入线使用独立 Git worktree、独立 checkpoint root 和独立临时目录，并在任务说明中列出唯一文件 ownership；只读调查线不得修改文件。
+- 两条线不得同时修改同一文件。需要跨 ownership 的改动由主线在集成阶段完成，支线不得覆盖或回退其他人的修改。
+- 支线只运行自己 ownership 内的定向测试，不同时运行完整 live benchmark。主线合并后统一运行全量离线门禁和同一冻结 cohort。
+- 自动 bridge smoke 和静态 extension 测试不能替代一次真实登录态 Chrome 中的 unpacked-extension 安装、LinkedIn DOM 扫描和结果核验。
+- 失败调查先分类公开岗位为空、招聘主体未披露、外部阻塞和系统能力缺口；不得用公司特例把正常空结果伪装成成功。
+- 并行数量和 cache hit 只属于工程过程指标；验收仍以冻结陌生样本的官网、job-list、exact-opening 成功率与不编造 URL 为准。
+
+S2 evidence-cache 并行轮次的文件 ownership 固定如下：
+
+| Workstream | 可写文件 | 运行范围 |
+| --- | --- | --- |
+| Main S2 | `identity_evidence.py`、`website_resolver.py`、对应 resolver 测试、ADR/架构/版本文档 | 集成后全量门禁与冻结 cohort |
+| Product wiring | `composition.py`、`cli.py`、`extension_bridge.py` 及各自测试 | 定向离线测试 |
+| Cache contract | `tests/test_identity_evidence.py` | 定向 contract 测试 |
+| Failure analysis | 无，只读 results/trace | 不运行完整 live，不写公司特例 |
 
 推荐分支：
 
@@ -87,4 +107,3 @@ ADR 一旦 accepted 不直接改写历史结论；后续决策通过新的 ADR s
 - `CHANGELOG.md` 已更新。
 - 路线图、架构或重大决策发生变化时，相应文档已同步。
 - Commit message 能单独说明这次变化的目的。
-
