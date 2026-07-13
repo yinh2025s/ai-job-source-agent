@@ -140,13 +140,24 @@ class CompanyWebsiteResolver:
         guessed_candidates = self._guess_domain_candidates(company_name)
 
         preferred_candidates = [preferred_url] if preferred_url else []
+        linkedin_official_candidates: list[str] = []
+        linkedin_candidates: list[str] = []
+        linkedin_evidence_loaded = False
+        if preferred_url and linkedin_company_url:
+            linkedin_official_candidates, linkedin_candidates = self._linkedin_company_candidates(
+                linkedin_company_url,
+                company_name,
+            )
+            linkedin_evidence_loaded = True
         fast_candidates = dedupe_urls(
             preferred_candidates
+            + linkedin_official_candidates
             + self._linkedin_slug_domain_candidates(linkedin_company_url)
             + guessed_candidates[:6]
         )
         fast_sources = _candidate_source_map(
             ("preferred_input", preferred_candidates),
+            ("linkedin_official_website", linkedin_official_candidates),
             ("linkedin_slug", self._linkedin_slug_domain_candidates(linkedin_company_url)),
             ("speculative_guess", guessed_candidates[:6]),
         )
@@ -193,18 +204,24 @@ class CompanyWebsiteResolver:
                 }
                 return regional_selected.url, trace
 
-        linkedin_candidates = self._linkedin_company_candidates(linkedin_company_url)
+        if not linkedin_evidence_loaded:
+            linkedin_official_candidates, linkedin_candidates = self._linkedin_company_candidates(
+                linkedin_company_url,
+                company_name,
+            )
         search_evidence = self._search_candidates_with_evidence(company_name, job_location)
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
         all_candidates = dedupe_urls(
             preferred_candidates
+            + linkedin_official_candidates
             + linkedin_candidates[:5]
             + search_candidates[:5]
             + guessed_candidates[:6]
         )
         candidate_sources = _candidate_source_map(
             ("preferred_input", preferred_candidates),
+            ("linkedin_official_website", linkedin_official_candidates),
             ("linkedin_evidence", linkedin_candidates[:5]),
             ("search_evidence", search_candidates[:5]),
             ("speculative_guess", guessed_candidates[:6]),
@@ -262,6 +279,11 @@ class CompanyWebsiteResolver:
                 f"candidate source: {source}"
                 for source in sorted(candidate_sources.get(domain_of(candidate.url), set()))
             )
+            if "linkedin_official_website" in candidate_sources.get(
+                domain_of(candidate.url), set()
+            ):
+                candidate.score += 100
+                candidate.reasons.append("LinkedIn company page identifies official website")
         base_scored.sort(key=lambda candidate: candidate.score, reverse=True)
 
         verify_count = min(self.verify_limit, len(base_scored))
@@ -337,20 +359,25 @@ class CompanyWebsiteResolver:
                 break
         return results
 
-    def _linkedin_company_candidates(self, linkedin_company_url: str | None) -> list[str]:
+    def _linkedin_company_candidates(
+        self,
+        linkedin_company_url: str | None,
+        company_name: str,
+    ) -> tuple[list[str], list[str]]:
         if not linkedin_company_url:
-            return []
+            return [], []
         try:
             page = self.fetcher.fetch(linkedin_company_url)
         except FetchError:
-            return []
+            return [], []
+        official = _linkedin_json_ld_websites(page.html, company_name)
         urls: list[str] = []
         for url in re.findall(r"https?://[^\"'<>\s)\\]+", page.html):
             cleaned = clean_search_url(url)
             if not cleaned or is_blocked_domain(cleaned):
                 continue
             urls.append(cleaned)
-        return urls
+        return dedupe_urls(official), dedupe_urls(urls)
 
     def _guess_domain_candidates(self, company_name: str) -> list[str]:
         tokens = tokenize_company_name(company_name)
@@ -411,6 +438,7 @@ class CompanyWebsiteResolver:
                     "LinkedIn slug confirms domain",
                     "LinkedIn slug exactly matches domain",
                     "homepage canonical confirms company identity",
+                    "LinkedIn company page identifies official website",
                 )
             ):
                 continue
@@ -421,6 +449,7 @@ class CompanyWebsiteResolver:
                         "search result confirms company identity",
                         "homepage title confirms company identity",
                         "homepage canonical confirms company identity",
+                        "LinkedIn company page identifies official website",
                     )
                 )
                 slug_has_support = "LinkedIn slug confirms domain" in candidate.reasons and (
@@ -433,6 +462,7 @@ class CompanyWebsiteResolver:
                 "preferred .com TLD" in candidate.reasons
                 or "LinkedIn company slug matches domain TLD" in candidate.reasons
                 or "homepage canonical URL" in candidate.reasons
+                or "LinkedIn company page identifies official website" in candidate.reasons
             ):
                 continue
             return candidate
@@ -969,7 +999,54 @@ def _append_candidate_sources(
         for source in sorted(sources)
         if (reason := f"candidate source: {source}") not in candidate.reasons
     )
+    if "linkedin_official_website" in sources:
+        candidate.score += 100
+        candidate.reasons.append("LinkedIn company page identifies official website")
     return candidate
+
+
+def _linkedin_json_ld_websites(html: str, company_name: str) -> list[str]:
+    company_tokens = tokenize_company_name(company_name)
+    websites: list[str] = []
+    for attrs, body in re.findall(
+        r"<script\b([^>]*)>(.*?)</script>",
+        html,
+        flags=re.I | re.S,
+    ):
+        if "application/ld+json" not in attrs.lower():
+            continue
+        try:
+            payload = json.loads(html_unescape(body.strip()))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for organization in _walk_linkedin_organizations(payload):
+            if not _text_confirms_company_identity(
+                str(organization.get("name") or ""),
+                company_tokens,
+            ):
+                continue
+            same_as = organization.get("sameAs")
+            values = same_as if isinstance(same_as, list) else [same_as]
+            for value in values:
+                if not isinstance(value, str):
+                    continue
+                cleaned = clean_search_url(value)
+                if cleaned and not is_blocked_domain(cleaned):
+                    websites.append(cleaned)
+    return dedupe_urls(websites)
+
+
+def _walk_linkedin_organizations(value):
+    if isinstance(value, dict):
+        item_type = value.get("@type")
+        item_types = item_type if isinstance(item_type, list) else [item_type]
+        if any(str(kind).casefold() == "organization" for kind in item_types):
+            yield value
+        for child in value.values():
+            yield from _walk_linkedin_organizations(child)
+    elif isinstance(value, list):
+        for item in value:
+            yield from _walk_linkedin_organizations(item)
 
 
 def _allocate_verification_slots(
@@ -986,6 +1063,7 @@ def _allocate_verification_slots(
     # one opportunity before filling the remaining bounded slots by score.
     for source in (
         "preferred_input",
+        "linkedin_official_website",
         "linkedin_evidence",
         "search_evidence",
         "linkedin_slug",

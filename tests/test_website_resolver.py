@@ -45,6 +45,129 @@ class WebsiteResolverTests(unittest.TestCase):
         )
         self.assertIn("parked domain rejected", parked["reasons"])
 
+    def test_historical_domain_yields_to_linkedin_json_ld_official_website(self):
+        linkedin_url = "https://www.linkedin.com/company/eightpoint"
+
+        class MigratedIdentityFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Eightpoint",'
+                            '"sameAs":"https://eightpoint.io/li"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "eightpoint.com":
+                    return Page(
+                        url=url,
+                        final_url="https://eightpoint.com/",
+                        html="<title>Eightpoint</title>",
+                    )
+                if domain_of(url) == "eightpoint.io":
+                    return Page(
+                        url=url,
+                        final_url="https://eightpoint.io/",
+                        html="<title>Eightpoint</title>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(MigratedIdentityFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "Eightpoint",
+            linkedin_url,
+            preferred_url="https://eightpoint.com/",
+        )
+
+        self.assertEqual(website_url, "https://eightpoint.io/")
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
+
+    def test_linkedin_json_ld_ignores_different_organization_identity(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class UnrelatedIdentityFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Other Company",'
+                            '"sameAs":"https://other.example"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "acme.com":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.com/",
+                        html="<title>Acme</title>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(UnrelatedIdentityFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "Acme",
+            linkedin_url,
+            preferred_url="https://acme.com/",
+        )
+
+        self.assertEqual(website_url, "https://acme.com/")
+        self.assertNotIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
+
+    def test_linkedin_official_website_supports_punctuated_brand_domain(self):
+        linkedin_url = "https://www.linkedin.com/company/m-r-walls"
+
+        class PunctuatedBrandFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"M|R Walls",'
+                            '"sameAs":"http://mrwalls.io"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "mrwalls.com":
+                    return Page(
+                        url=url,
+                        final_url="https://mrwalls.com/",
+                        html="<title>M R Walls</title>",
+                    )
+                if domain_of(url) == "mrwalls.io":
+                    return Page(
+                        url=url,
+                        final_url="https://mrwalls.io/",
+                        html="<title>M R Walls</title>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(PunctuatedBrandFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "M|R Walls",
+            linkedin_url,
+            preferred_url="https://mrwalls.com",
+        )
+
+        self.assertEqual(website_url, "https://mrwalls.io/")
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
+
     def test_parked_infrastructure_marker_is_not_inferred_from_generic_copy(self):
         class LegitimateFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):
