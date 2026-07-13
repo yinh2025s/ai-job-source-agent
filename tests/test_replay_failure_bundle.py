@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -6,7 +8,12 @@ from types import SimpleNamespace
 
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.web import Page
-from scripts.replay_failure_bundle import FailureReplayError, replay_failure_bundle
+from scripts.replay_failure_bundle import (
+    FailureReplayError,
+    _build_outcome_gate,
+    main,
+    replay_failure_bundle,
+)
 
 
 class FailureReplayBundleTests(unittest.TestCase):
@@ -58,10 +65,14 @@ class FailureReplayBundleTests(unittest.TestCase):
             request_url=board_url,
         )
 
-    def test_builds_bundle_and_executes_selected_failure_offline(self):
+    def test_reproduced_failure_passes_outcome_gate(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             self._write_inputs(root)
+            results_path = root / "results.json"
+            results = json.loads(results_path.read_text(encoding="utf-8"))
+            results[0]["linkedin_job_title"] = "Missing Role"
+            results_path.write_text(json.dumps(results), encoding="utf-8")
 
             manifest = replay_failure_bundle(self._args(root))
             replay_results = json.loads(
@@ -71,9 +82,82 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(manifest["summary"]["total"], 1)
         self.assertEqual(manifest["status"], "success")
         self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["save"], 7)
-        self.assertEqual(replay_results[0]["open_position_url"], "https://jobs.example.test/jobs/123-data-analyst")
+        self.assertIsNone(replay_results[0]["open_position_url"])
         self.assertNotIn(str(root), json.dumps(manifest))
         self.assertEqual(manifest["paths"]["fixtures"], "offline/sites")
+        self.assertEqual(manifest["outcome_gate"]["status"], "passed")
+        self.assertEqual(
+            manifest["outcome_gate"]["classification_counts"],
+            {"reproduced": 1, "fixture_gap": 0, "mismatch": 0},
+        )
+        comparison = manifest["outcome_gate"]["records"][0]
+        self.assertEqual(comparison["classification"], "reproduced")
+        self.assertEqual(comparison["original_outcome"], comparison["replay_outcome"])
+
+    def test_improved_replay_is_mismatch_and_cli_exits_nonzero(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+            args = self._args(root)
+
+            manifest = replay_failure_bundle(args)
+            written = json.loads(
+                (root / "bundle" / "bundle-manifest.json").read_text(encoding="utf-8")
+            )
+            cli_args = [
+                "--results", args.results,
+                "--snapshot-dir", args.snapshot_dir,
+                "--output-dir", str(root / "cli-bundle"),
+                "--pipeline-status", "partial",
+                "--stage", "opening_match",
+                "--stage-status", "partial",
+                "--reason-code", "OPENING_NOT_FOUND",
+            ]
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, "outcome mismatch: 1 record"):
+                    main(cli_args)
+
+        self.assertEqual(manifest, written)
+        self.assertEqual(manifest["status"], "success")
+        self.assertEqual(manifest["outcome_gate"]["status"], "failed")
+        comparison = manifest["outcome_gate"]["records"][0]
+        self.assertEqual(comparison["classification"], "mismatch")
+        self.assertEqual(comparison["reason"], "outcome_changed")
+        self.assertEqual(comparison["replay_outcome"]["pipeline_status"], "success")
+
+    def test_offline_fixture_failure_is_classified_as_fixture_gap(self):
+        replay_inputs = [{
+            "company_name": "Example Data",
+            "job_title": "Data Analyst",
+            "source_trace": {"replay": {
+                "pipeline_status": "partial",
+                "first_non_success_stage": {
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                },
+            }},
+        }]
+        replay_results = [{
+            "company_name": "Example Data",
+            "linkedin_job_title": "Data Analyst",
+            "pipeline_status": "failed",
+            "stages": [{
+                "stage": "opening_match",
+                "status": "failed",
+                "reason_code": "OFFLINE_FIXTURE_MISSING",
+            }],
+        }]
+
+        gate = _build_outcome_gate(replay_inputs, replay_results)
+
+        self.assertEqual(gate["status"], "incomplete")
+        self.assertEqual(
+            gate["classification_counts"],
+            {"reproduced": 0, "fixture_gap": 1, "mismatch": 0},
+        )
+        self.assertEqual(gate["records"][0]["classification"], "fixture_gap")
+        self.assertEqual(gate["records"][0]["reason"], "offline_fixture_missing")
 
     def test_replay_preserves_linkedin_native_only_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -189,6 +273,7 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "skipped")
         self.assertEqual(manifest["reason"], "no_replayable_failure_records")
         self.assertEqual(manifest["summary"], {"total": 0})
+        self.assertEqual(manifest["outcome_gate"]["status"], "skipped")
 
 
 if __name__ == "__main__":

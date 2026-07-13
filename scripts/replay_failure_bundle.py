@@ -50,6 +50,12 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(f"failure replay failed: {exc}") from exc
     print(json.dumps(manifest["summary"], sort_keys=True), flush=True)
     print(f"bundle: {Path(args.output_dir).resolve()}", flush=True)
+    outcome_gate = manifest.get("outcome_gate")
+    if isinstance(outcome_gate, dict) and outcome_gate.get("status") == "failed":
+        mismatch_count = outcome_gate.get("classification_counts", {}).get("mismatch", 0)
+        raise SystemExit(
+            f"failure replay outcome mismatch: {mismatch_count} record(s) changed structurally"
+        )
 
 
 def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False) -> dict:
@@ -89,6 +95,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
     result_records = [result.result_record() for result in discoveries]
     trace_records = [dataclass_to_dict(result.trace_record()) for result in discoveries]
     summary = summarize_results(trace_records)
+    outcome_gate = _build_outcome_gate(replay_records, result_records)
 
     _write_json_atomic(output_root / "replay-results.json", result_records)
     _write_json_atomic(output_root / "replay-trace.json", trace_records)
@@ -118,6 +125,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         },
         "snapshot_summary": fixture_result.summary,
         "summary": summary,
+        "outcome_gate": outcome_gate,
     }
     _write_json_atomic(output_root / "bundle-manifest.json", manifest)
     return manifest
@@ -142,7 +150,153 @@ def _empty_bundle_manifest(args: argparse.Namespace) -> dict:
         },
         "snapshot_summary": None,
         "summary": {"total": 0},
+        "outcome_gate": {
+            "status": "skipped",
+            "classification_counts": {
+                "reproduced": 0,
+                "fixture_gap": 0,
+                "mismatch": 0,
+            },
+            "records": [],
+        },
     }
+
+
+def _build_outcome_gate(replay_records: list[dict], result_records: list[dict]) -> dict:
+    comparisons = []
+    counts = {"reproduced": 0, "fixture_gap": 0, "mismatch": 0}
+    record_count = max(len(replay_records), len(result_records))
+    for index in range(record_count):
+        replay_input = replay_records[index] if index < len(replay_records) else None
+        replay_result = result_records[index] if index < len(result_records) else None
+        original = _original_outcome(replay_input)
+        failure_stage = (
+            original.get("failure_stage", {}).get("stage")
+            if isinstance(original, dict) and isinstance(original.get("failure_stage"), dict)
+            else None
+        )
+        replayed = _result_outcome(replay_result, failure_stage=failure_stage)
+        if original == replayed and original is not None:
+            classification = "reproduced"
+            reason = "outcome_equal"
+        elif _has_reason_code(replay_result, "OFFLINE_FIXTURE_MISSING"):
+            classification = "fixture_gap"
+            reason = "offline_fixture_missing"
+        else:
+            classification = "mismatch"
+            reason = "record_count_changed" if replay_input is None or replay_result is None else "outcome_changed"
+        counts[classification] += 1
+        comparisons.append(
+            {
+                "index": index,
+                "company_name": _record_field(replay_input, replay_result, "company_name"),
+                "job_title": _record_field(
+                    replay_input,
+                    replay_result,
+                    "job_title",
+                    fallback="linkedin_job_title",
+                ),
+                "classification": classification,
+                "reason": reason,
+                "original_outcome": original,
+                "replay_outcome": replayed,
+            }
+        )
+
+    if counts["mismatch"]:
+        status = "failed"
+    elif counts["fixture_gap"]:
+        status = "incomplete"
+    else:
+        status = "passed"
+    return {
+        "status": status,
+        "classification_counts": counts,
+        "records": comparisons,
+    }
+
+
+def _original_outcome(record: dict | None) -> dict | None:
+    if not isinstance(record, dict):
+        return None
+    source_trace = record.get("source_trace")
+    replay_metadata = source_trace.get("replay") if isinstance(source_trace, dict) else None
+    if not isinstance(replay_metadata, dict):
+        return None
+    return {
+        "pipeline_status": _optional_string(replay_metadata.get("pipeline_status")),
+        "failure_stage": _stage_outcome(
+            replay_metadata.get("first_non_success_stage")
+        ),
+    }
+
+
+def _result_outcome(record: dict | None, *, failure_stage: str | None) -> dict | None:
+    if not isinstance(record, dict):
+        return None
+    stages = record.get("stages")
+    stage_by_name = {
+        str(stage.get("stage")): stage
+        for stage in stages if isinstance(stage, dict) and stage.get("stage")
+    } if isinstance(stages, list) else {}
+    replay_failure = stage_by_name.get(failure_stage) if failure_stage else None
+    if not failure_stage:
+        replay_failure = next(
+            (
+                stage_by_name[stage_name]
+                for stage_name in PIPELINE_STAGES
+                if stage_name in stage_by_name
+                and stage_by_name[stage_name].get("status") not in {"success", "not_applicable"}
+            ),
+            None,
+        )
+    return {
+        "pipeline_status": _optional_string(
+            record.get("pipeline_status") or record.get("status")
+        ),
+        "failure_stage": _stage_outcome(replay_failure),
+    }
+
+
+def _stage_outcome(value: object) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    return {
+        "stage": _optional_string(value.get("stage")),
+        "status": _optional_string(value.get("status")),
+        "reason_code": _optional_string(value.get("reason_code")),
+    }
+
+
+def _has_reason_code(record: dict | None, reason_code: str) -> bool:
+    if not isinstance(record, dict) or not isinstance(record.get("stages"), list):
+        return False
+    return any(
+        isinstance(stage, dict) and stage.get("reason_code") == reason_code
+        for stage in record["stages"]
+    )
+
+
+def _record_field(
+    primary: dict | None,
+    secondary: dict | None,
+    field: str,
+    *,
+    fallback: str | None = None,
+) -> str | None:
+    for record in (primary, secondary):
+        if isinstance(record, dict):
+            value = record.get(field) or (record.get(fallback) if fallback else None)
+            if normalized := _optional_string(value):
+                return normalized
+    return None
+
+
+def _optional_string(value: object) -> str | None:
+    if value is None:
+        return None
+    normalized = str(value).strip()
+    return normalized or None
 
 
 def _write_json_atomic(path: Path, payload) -> None:
