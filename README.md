@@ -1,5 +1,7 @@
 # AI Job Source Agent
 
+[![CI](https://github.com/yinh2025s/ai-job-source-agent/actions/workflows/ci.yml/badge.svg)](https://github.com/yinh2025s/ai-job-source-agent/actions/workflows/ci.yml)
+
 Take-home implementation for Part 2: discover companies hiring on LinkedIn, resolve their official websites or hiring entities, and navigate to official career/job-list pages.
 
 The implementation is intentionally agentic but controlled: deterministic link extraction and scoring do the first pass, then the agent follows promising career/job-listing pages for a few hops. The pipeline keeps trace data for every navigation decision.
@@ -30,6 +32,8 @@ make live-gate
 Set `PYTHON=/path/to/python3.12` when `python3.12` is not on `PATH`.
 
 GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offline release gates on 3.12 for every push and pull request. The network-dependent 51-company gate is a manual `Live release gate` workflow and retains its result, trace, and summary JSON as artifacts even when the gate fails.
+
+The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
 ## What It Returns
 
