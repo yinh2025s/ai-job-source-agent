@@ -58,12 +58,23 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
 
     records, skipped_corrupt_tail = _read_records(index_path)
     selected_by_path: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
+    selected_by_request_path: dict[str, dict[str, Any]] = {}
     duplicate_count = 0
     superseded_count = 0
 
     for line_number, record in records:
         entry = _validate_record(source_root, record, line_number)
         artifacts = _validate_artifacts(source_root, record, line_number)
+        request_fixture_path = snapshot_path_for_url(
+            Path("sites"),
+            entry["request_urls"][0],
+        ).as_posix()
+        if request_fixture_path != entry["fixture_path"]:
+            selected_by_request_path[request_fixture_path] = {
+                **entry,
+                "fixture_path": request_fixture_path,
+                "alias_of": entry["fixture_path"],
+            }
         selected = selected_by_path.get(entry["fixture_path"])
         if selected:
             existing = selected[0]
@@ -75,8 +86,15 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
             entry["page_urls"] = sorted(set(existing["page_urls"] + entry["page_urls"]))
         selected_by_path[entry["fixture_path"]] = (entry, artifacts)
 
+    selected_fixture_entries: dict[str, dict[str, Any]] = {}
+    for entry in [selected[0] for selected in selected_by_path.values()] + list(
+        selected_by_request_path.values()
+    ):
+        existing = selected_fixture_entries.get(entry["fixture_path"])
+        if existing is None or entry["record_index"] >= existing["record_index"]:
+            selected_fixture_entries[entry["fixture_path"]] = entry
     fixture_entries_internal = sorted(
-        (selected[0] for selected in selected_by_path.values()),
+        selected_fixture_entries.values(),
         key=lambda item: (item["fixture_path"], item["final_url"]),
     )
     artifact_entries: dict[str, dict[str, Any]] = {}
@@ -97,7 +115,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         {
             key: value
             for key, value in entry.items()
-            if key not in {"source_path", "canonical_path"}
+            if key not in {"source_path", "canonical_path", "record_index"}
         }
         for entry in fixture_entries_internal
     ]
@@ -227,6 +245,7 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
         "byte_count": len(body),
         "source_path": source_path,
         "canonical_path": canonical_path,
+        "record_index": line_number,
     }
 
 

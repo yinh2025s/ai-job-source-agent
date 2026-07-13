@@ -11,9 +11,10 @@ import socket
 import threading
 import time
 from contextlib import contextmanager
+from http.cookiejar import CookieJar
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlparse, urlunparse
-from urllib.request import Request, urlopen
+from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 
 TRACKING_PARAMS = {
@@ -299,6 +300,7 @@ class Fetcher:
         self.fixtures_dir = Path(fixtures_dir) if fixtures_dir else None
         self.offline = offline
         self.timeout = timeout
+        self._http_sessions = threading.local()
 
     def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
         normalized = normalize_url(url)
@@ -338,7 +340,7 @@ class Fetcher:
         )
         try:
             with hard_timeout(self.timeout + 1):
-                with urlopen(request, timeout=self.timeout) as response:
+                with self._thread_opener().open(request, timeout=self.timeout) as response:
                     charset = response.headers.get_content_charset() or "utf-8"
                     raw = response.read()
                     if response.headers.get("Content-Encoding") == "gzip":
@@ -348,6 +350,13 @@ class Fetcher:
         except (HTTPError, URLError, TimeoutError, socket.timeout, OSError) as exc:
             raise FetchError(str(exc)) from exc
         return Page(url=url, html=html, final_url=final_url, source="live")
+
+    def _thread_opener(self):
+        opener = getattr(self._http_sessions, "opener", None)
+        if opener is None:
+            opener = build_opener(HTTPCookieProcessor(CookieJar()))
+            self._http_sessions.opener = opener
+        return opener
 
     def _fixture_path_for(self, url: str) -> Path | None:
         if not self.fixtures_dir:

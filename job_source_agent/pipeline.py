@@ -689,6 +689,7 @@ class JobSourceAgent:
                     (
                         is_likely_job_listing_page(candidate)
                         or self._looks_like_generic_job_list_route(candidate.url)
+                        or self._has_listing_provider_adapter(candidate.url)
                         or self._career_category_priority(
                             candidate,
                             actual_page_url,
@@ -835,6 +836,14 @@ class JobSourceAgent:
         if provider == "rippling":
             return "embed" in parts and "jobs" in parts
         return True
+
+    def _has_listing_provider_adapter(self, url: str) -> bool:
+        adapter = self.provider_registry.adapter_for(url)
+        return bool(
+            adapter is not None
+            and adapter.supports_listing
+            and adapter.identify_board(url) is not None
+        )
 
     def _common_path_candidates(self, homepage_url: str) -> list[RawLink]:
         parsed = urlparse(homepage_url)

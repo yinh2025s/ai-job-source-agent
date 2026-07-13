@@ -46,6 +46,33 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(summary["artifact_count"], 1)
         self.assertNotIn("source_path", manifest["artifacts"][0])
 
+    def test_replay_materializes_redirect_request_alias(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            SnapshotStore(snapshots).write_page(
+                Page(
+                    url="https://jobs.example.com/careers",
+                    final_url="https://jobs.example.com/candidate/?token=secret",
+                    html='<input id="token" value="secret">',
+                    source="live",
+                ),
+                request_url="https://jobs.example.com/careers",
+            )
+
+            result = replay_snapshots(snapshots, output)
+            request_page = Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                "https://jobs.example.com/careers"
+            )
+            final_page = Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                "https://jobs.example.com/candidate/"
+            )
+
+        self.assertEqual(request_page.html, '<input id="token" value="[REDACTED]">')
+        self.assertEqual(final_page.html, request_page.html)
+        self.assertEqual(result.summary["fixture_count"], 2)
+
     def test_duplicate_identical_records_are_deduplicated_deterministically(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

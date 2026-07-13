@@ -36,6 +36,18 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("abcdefghijklmnop", sanitized)
         self.assertIn("[REDACTED]", sanitized)
 
+    def test_sanitize_snapshot_body_redacts_hidden_input_tokens_in_any_order(self):
+        body = (
+            '<input type="hidden" id="token" value="public-routing-token">'
+            '<input value="second-routing-token" name="authToken" type="hidden">'
+        )
+
+        sanitized = sanitize_snapshot_body(body)
+
+        self.assertNotIn("public-routing-token", sanitized)
+        self.assertNotIn("second-routing-token", sanitized)
+        self.assertEqual(sanitized.count("[REDACTED]"), 2)
+
     def test_snapshot_store_writes_fixture_compatible_page(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SnapshotStore(directory)

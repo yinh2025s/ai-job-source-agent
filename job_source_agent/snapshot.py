@@ -203,6 +203,18 @@ def sanitize_snapshot_body(body: str) -> str:
             rf"\1\2[REDACTED]\3",
             redacted,
         )
+        redacted = re.sub(
+            rf"(?i)(<input\b[^>]*(?:id|name)\s*=\s*[\"']{re.escape(key)}[\"'][^>]*"
+            rf"\bvalue\s*=\s*[\"'])[^\"']*([\"'])",
+            rf"\1[REDACTED]\2",
+            redacted,
+        )
+        redacted = re.sub(
+            rf"(?i)(<input\b[^>]*\bvalue\s*=\s*[\"'])[^\"']*([\"'][^>]*"
+            rf"(?:id|name)\s*=\s*[\"']{re.escape(key)}[\"'])",
+            rf"\1[REDACTED]\2",
+            redacted,
+        )
     redacted = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}", r"\1[REDACTED]", redacted)
     return redacted
 
