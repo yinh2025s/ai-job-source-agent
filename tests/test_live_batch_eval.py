@@ -7,10 +7,20 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from job_source_agent.models import CompanyInput, DiscoveryResult, StageResult
+from job_source_agent.checkpoint import execution_fingerprint
+from job_source_agent.contracts import StageExecution
+from job_source_agent.models import (
+    PIPELINE_STAGES,
+    CompanyInput,
+    DiscoveryResult,
+    StageResult,
+)
+from job_source_agent.pipeline_status import derive_pipeline_status
+from job_source_agent.process_budget import RemoteProcessError
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 from job_source_agent.snapshot import SnapshotStore
+from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.web import Fetcher, Page
 from scripts.live_batch_eval import (
     build_automatic_failure_bundle,
@@ -22,6 +32,7 @@ from scripts.live_batch_eval import (
     _load_completed_companies,
     _downstream_start_stage,
     _ordered_records,
+    _recover_checkpoint_prefix,
     _record_company_completion,
     load_batch_companies,
     prepare_replay_company_for_resume,
@@ -85,6 +96,284 @@ class LiveBatchEvalTests(unittest.TestCase):
             skip_sitemap=False,
             career_search_timeout=None,
         )
+
+    def save_checkpoint_chain(self, company, args, *, stages=PIPELINE_STAGES[:5]):
+        settings = self.run_configuration(
+            max_candidates=args.max_career_candidates,
+            max_job_pages=args.max_job_pages,
+            max_career_candidate_fetches=args.max_career_fetches,
+            max_career_search_queries=args.max_career_search_queries,
+            max_ats_board_fetches=args.max_ats_board_fetches,
+            enable_sitemap_discovery=not args.skip_sitemap,
+            career_search_timeout=args.career_search_timeout,
+        )
+        fingerprint = execution_fingerprint(company.__dict__, settings.digest)
+        store = FilesystemCheckpointStore(args.checkpoint_dir)
+        executions = {
+            "linkedin_discovery": StageExecution(
+                StageResult(stage="linkedin_discovery", status="success"),
+                trace={"source": "linkedin"},
+            ),
+            "website_resolution": StageExecution(
+                StageResult(stage="website_resolution", status="success"),
+                updates={"company_website_url": "https://checkpoint.example"},
+                trace={"selected": "https://checkpoint.example"},
+            ),
+            "hiring_identity_resolution": StageExecution(
+                StageResult(stage="hiring_identity_resolution", status="success"),
+                updates={
+                    "hiring_entity_name": "Checkpoint Labs",
+                    "career_root_url": "https://checkpoint.example/careers",
+                },
+            ),
+            "career_discovery": StageExecution(
+                StageResult(stage="career_discovery", status="success"),
+                updates={"career_page_url": "https://checkpoint.example/careers"},
+            ),
+            "job_board_discovery": StageExecution(
+                StageResult(
+                    stage="job_board_discovery",
+                    status="success",
+                    provider="greenhouse",
+                ),
+                updates={
+                    "job_list_page_url": "https://boards.greenhouse.io/checkpoint",
+                    "provider": "greenhouse",
+                },
+            ),
+            "opening_match": StageExecution(
+                StageResult(stage="opening_match", status="success"),
+                updates={
+                    "open_position_url": (
+                        "https://boards.greenhouse.io/checkpoint/jobs/should-not-leak"
+                    )
+                },
+            ),
+            "result_validation": StageExecution(
+                StageResult(stage="result_validation", status="success"),
+                trace={"pipeline_status": "success", "issues": []},
+            ),
+        }
+        for stage in stages:
+            store.save(fingerprint, executions[stage])
+        return store, fingerprint
+
+    def test_hard_timeout_recovers_durable_s1_to_s5_checkpoint_prefix(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            linkedin_company_url="https://www.linkedin.com/company/checkpoint-labs",
+            job_title="AI Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            self.save_checkpoint_chain(company, args)
+
+            recovered = _recover_checkpoint_prefix(company, args)
+            result = failure_result(
+                company,
+                error="company_time_budget_exhausted",
+                detail="Opening match exceeded the company budget.",
+                completed_result=recovered,
+            )
+
+        self.assertEqual(
+            [stage.status for stage in result.stage_results],
+            ["success", "success", "success", "success", "success", "failed", "success"],
+        )
+        self.assertEqual(result.company_website_url, "https://checkpoint.example")
+        self.assertEqual(result.hiring_entity_name, "Checkpoint Labs")
+        self.assertEqual(result.career_root_url, "https://checkpoint.example/careers")
+        self.assertEqual(result.career_page_url, "https://checkpoint.example/careers")
+        self.assertEqual(
+            result.job_list_page_url,
+            "https://boards.greenhouse.io/checkpoint",
+        )
+        self.assertEqual(result.stage_results[4].provider, "greenhouse")
+        self.assertIsNone(result.open_position_url)
+        self.assertEqual(result.stage_results[5].reason_code, "COMPANY_TIME_BUDGET_EXHAUSTED")
+        self.assertEqual(result.error_code, "COMPANY_TIME_BUDGET_EXHAUSTED")
+        self.assertEqual(result.pipeline_status, "failed")
+
+    def test_checkpoint_recovery_stops_at_corrupt_incompatible_or_missing_gap(self):
+        cases = ("corrupt", "incompatible", "missing", "semantic")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                company = CompanyInput(
+                    company_name="Checkpoint Labs",
+                    linkedin_company_url="https://www.linkedin.com/company/checkpoint-labs",
+                )
+                args = self.pipeline_args(directory)
+                stages = list(PIPELINE_STAGES[:6])
+                if case == "missing":
+                    stages.remove("hiring_identity_resolution")
+                store, fingerprint = self.save_checkpoint_chain(
+                    company,
+                    args,
+                    stages=stages,
+                )
+                if case in {"corrupt", "incompatible", "semantic"}:
+                    path = store._checkpoint_path(fingerprint, "hiring_identity_resolution")
+                    if case == "corrupt":
+                        path.write_text("{truncated", encoding="utf-8")
+                    else:
+                        payload = json.loads(path.read_text(encoding="utf-8"))
+                        if case == "incompatible":
+                            payload["checkpoint_schema_version"] = "incompatible"
+                        else:
+                            payload["execution"]["updates"]["unsupported_field"] = "blocked"
+                        path.write_text(json.dumps(payload), encoding="utf-8")
+
+                recovered = _recover_checkpoint_prefix(company, args)
+                result = failure_result(
+                    company,
+                    error="company_time_budget_exhausted",
+                    completed_result=recovered,
+                )
+
+                self.assertEqual(
+                    [stage.stage for stage in recovered.stage_results],
+                    ["linkedin_discovery", "website_resolution"],
+                )
+                self.assertEqual(result.stage_status("hiring_identity_resolution"), "failed")
+                self.assertNotEqual(result.stage_status("opening_match"), "success")
+                self.assertIsNone(result.open_position_url)
+                self.assertEqual(result.error_code, "COMPANY_TIME_BUDGET_EXHAUSTED")
+
+    def test_complete_checkpoint_chain_recovers_real_result(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            linkedin_company_url="https://www.linkedin.com/company/checkpoint-labs",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            self.save_checkpoint_chain(company, args, stages=PIPELINE_STAGES)
+
+            recovered = _recover_checkpoint_prefix(company, args)
+
+        self.assertEqual(len(recovered.stage_results), len(PIPELINE_STAGES))
+        self.assertEqual(recovered.pipeline_status, "success")
+        self.assertEqual(
+            recovered.open_position_url,
+            "https://boards.greenhouse.io/checkpoint/jobs/should-not-leak",
+        )
+
+    def test_result_validation_timeout_is_consistently_failed(self):
+        completed = DiscoveryResult(
+            company_name="Complete Domain Pipeline",
+            company_website_url="https://complete.example",
+            career_page_url="https://complete.example/careers",
+            job_list_page_url="https://boards.greenhouse.io/complete",
+            open_position_url="https://boards.greenhouse.io/complete/jobs/123",
+            stage_results=[
+                StageResult(stage=stage, status="success")
+                for stage in PIPELINE_STAGES[:-1]
+            ],
+            trace={"stages": {}},
+        )
+        company = CompanyInput(company_name="Complete Domain Pipeline")
+
+        result = failure_result(
+            company,
+            error="company_time_budget_exhausted",
+            completed_result=completed,
+        )
+
+        self.assertEqual(result.stage_status("result_validation"), "failed")
+        self.assertEqual(result.pipeline_status, "failed")
+        self.assertEqual(derive_pipeline_status(result.stage_results), "failed")
+        self.assertEqual(
+            result.trace["stages"]["result_validation"]["pipeline_status"],
+            "failed",
+        )
+
+    def test_failure_result_drops_fields_and_trace_after_first_stage_gap(self):
+        completed = DiscoveryResult(
+            company_name="Gap Example",
+            company_website_url="https://gap.example",
+            hiring_entity_name="Must Not Leak",
+            career_root_url="https://gap.example/career-root",
+            career_page_url="https://gap.example/careers",
+            job_list_page_url="https://jobs.gap.example",
+            open_position_url="https://jobs.gap.example/123",
+            stage_results=[
+                StageResult(stage="linkedin_discovery", status="success"),
+                StageResult(stage="website_resolution", status="success"),
+                StageResult(stage="hiring_identity_resolution", status="failed"),
+                StageResult(stage="career_discovery", status="success"),
+                StageResult(stage="job_board_discovery", status="success"),
+                StageResult(stage="opening_match", status="success"),
+            ],
+            trace={
+                "stages": {
+                    "website_resolution": {"selected": "https://gap.example"},
+                    "opening_match": {"selected": "must-not-leak"},
+                }
+            },
+        )
+
+        result = failure_result(
+            CompanyInput(company_name="Gap Example"),
+            error="company_time_budget_exhausted",
+            completed_result=completed,
+        )
+
+        self.assertEqual(result.company_website_url, "https://gap.example")
+        self.assertIsNone(result.hiring_entity_name)
+        self.assertIsNone(result.career_root_url)
+        self.assertIsNone(result.career_page_url)
+        self.assertIsNone(result.job_list_page_url)
+        self.assertIsNone(result.open_position_url)
+        self.assertNotIn("opening_match", result.trace["stages"])
+
+    def test_remote_worker_error_recovers_durable_downstream_prefix(self):
+        company = CompanyInput(
+            company_name="Remote Failure",
+            linkedin_company_url="https://www.linkedin.com/company/remote-failure",
+        )
+        upstream = DiscoveryResult(
+            company_name=company.company_name,
+            company_website_url="https://remote.example",
+            stage_results=[
+                StageResult(stage="linkedin_discovery", status="success"),
+                StageResult(stage="website_resolution", status="success"),
+                StageResult(stage="hiring_identity_resolution", status="success"),
+            ],
+        )
+        recovered = DiscoveryResult(
+            company_name=company.company_name,
+            company_website_url="https://remote.example",
+            career_page_url="https://remote.example/careers",
+            job_list_page_url="https://jobs.remote.example",
+            stage_results=[
+                StageResult(stage=stage, status="success")
+                for stage in PIPELINE_STAGES[:5]
+            ],
+            trace={"stages": {}},
+        )
+        args = SimpleNamespace(
+            website_time_budget=20,
+            company_time_budget=45,
+            resume_from_stage=None,
+            rerun_stage=None,
+        )
+
+        with patch(
+            "scripts.live_batch_eval.run_with_process_budget",
+            side_effect=[upstream, RemoteProcessError("worker crashed")],
+        ), patch(
+            "scripts.live_batch_eval._recover_checkpoint_prefix",
+            return_value=recovered,
+        ), patch(
+            "scripts.live_batch_eval._run_configuration",
+            return_value=self.run_configuration(),
+        ):
+            result = run_company(company, args)
+
+        self.assertEqual(result.stage_status("job_board_discovery"), "success")
+        self.assertEqual(result.stage_status("opening_match"), "failed")
+        self.assertEqual(result.job_list_page_url, "https://jobs.remote.example")
+        self.assertEqual(result.error_code, "FETCH_FAILED")
+        self.assertEqual(result.error, "batch_worker_failed")
 
     def test_downstream_failure_preserves_completed_upstream_evidence(self):
         company = CompanyInput(

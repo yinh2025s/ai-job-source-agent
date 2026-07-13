@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -17,7 +18,7 @@ from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.batch_discovery import LinkedInDiscoveryManifestStore
 from job_source_agent.checkpoint import execution_fingerprint
 from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
-from job_source_agent.contracts import FetchClient
+from job_source_agent.contracts import FetchClient, PipelineContext
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
 from job_source_agent.evaluation_history import cohort_identities_compatible, derive_cohort_identity
 from job_source_agent.linkedin import load_company_inputs
@@ -25,6 +26,7 @@ from job_source_agent.linkedin_discovery import (
     LinkedInJobsDiscoverer,
     linkedin_postings_to_company_inputs,
 )
+from job_source_agent.pipeline_application import discovery_result_from_context
 from job_source_agent.models import (
     STAGE_CAREER_DISCOVERY,
     STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -621,17 +623,23 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                 timeout=upstream_budget,
             )
         except ProcessBudgetExceeded:
+            recovered = _recover_checkpoint_prefix(company, args)
+            if recovered is not None and len(recovered.stage_results) == len(PIPELINE_STAGES):
+                return recovered
             return failure_result(
                 company,
                 error="company_time_budget_exhausted",
                 detail=f"Website/identity resolution exceeded its {min(args.website_time_budget, args.company_time_budget):g}-second stage budget.",
+                completed_result=recovered,
                 run_configuration=_run_configuration(args),
             )
         except RemoteProcessError as exc:
+            recovered = _recover_checkpoint_prefix(company, args)
             return failure_result(
                 company,
                 error="batch_worker_failed",
                 detail=str(exc),
+                completed_result=recovered,
                 run_configuration=_run_configuration(args),
             )
         if not upstream_result.company_website_url and not company.external_apply_url:
@@ -674,19 +682,23 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             timeout=remaining,
         )
     except ProcessBudgetExceeded:
+        recovered = _recover_checkpoint_prefix(company, args)
+        if recovered is not None and len(recovered.stage_results) == len(PIPELINE_STAGES):
+            return recovered
         return failure_result(
             company,
             error="company_time_budget_exhausted",
-            detail=f"Career discovery exceeded the remaining {remaining:.1f}-second company budget.",
-            completed_result=upstream_result,
+            detail=f"Downstream pipeline exceeded the remaining {remaining:.1f}-second company budget.",
+            completed_result=recovered or upstream_result,
             run_configuration=_run_configuration(args),
         )
     except RemoteProcessError as exc:
+        recovered = _recover_checkpoint_prefix(company, args)
         return failure_result(
             company,
             error="batch_worker_failed",
             detail=str(exc),
-            completed_result=upstream_result,
+            completed_result=recovered or upstream_result,
             run_configuration=_run_configuration(args),
         )
 
@@ -983,6 +995,84 @@ def _linkedin_manifest_path(args: argparse.Namespace) -> Path:
     return Path(_batch_checkpoint_dir(args)) / "linkedin-discovery.json"
 
 
+def _recover_checkpoint_prefix(
+    company: CompanyInput,
+    args: argparse.Namespace,
+) -> DiscoveryResult | None:
+    settings = _run_configuration(args)
+    fingerprint = execution_fingerprint(dataclass_to_dict(company), settings.digest)
+    store = FilesystemCheckpointStore(_checkpoint_dir(args))
+    context = PipelineContext.from_company(company)
+    for stage in PIPELINE_STAGES:
+        execution = store.load(fingerprint, stage)
+        if execution is None or execution.result.status not in {
+            "success",
+            "not_applicable",
+        }:
+            break
+        candidate_context = copy.deepcopy(context)
+        try:
+            candidate_context.apply(execution)
+        except (TypeError, ValueError):
+            break
+        context = candidate_context
+    if not context.stage_results:
+        return None
+    return discovery_result_from_context(
+        context,
+        run_configuration=settings,
+        execution_fingerprint_value=fingerprint,
+    )
+
+
+def _completed_stage_prefix(completed_result: DiscoveryResult | None) -> list:
+    if completed_result is None:
+        return []
+    prefix = []
+    for expected, stage in zip(
+        PIPELINE_STAGES[:-1],
+        completed_result.stage_results,
+    ):
+        if stage.stage != expected or stage.status not in {"success", "not_applicable"}:
+            break
+        prefix.append(stage)
+    return prefix
+
+
+def _timeout_result_trace(
+    completed_result: DiscoveryResult | None,
+    completed_stages: set[str],
+    failure_stage: str,
+    error: str,
+    detail: str | None,
+) -> dict:
+    trace = dict(completed_result.trace) if completed_result is not None else {}
+    existing_stage_traces = trace.get("stages", {})
+    stage_traces = {
+        stage: stage_trace
+        for stage, stage_trace in (
+            existing_stage_traces.items()
+            if isinstance(existing_stage_traces, dict)
+            else ()
+        )
+        if stage in completed_stages
+    }
+    stage_traces[failure_stage] = {
+        "batch_error": error,
+        "batch_error_detail": detail,
+    }
+    if failure_stage == STAGE_RESULT_VALIDATION:
+        stage_traces[failure_stage]["pipeline_status"] = "failed"
+    else:
+        stage_traces[STAGE_RESULT_VALIDATION] = {
+            "pipeline_status": "failed",
+            "issues": [],
+            "source": "parent_timeout_recovery",
+        }
+    trace["stages"] = stage_traces
+    return trace
+
+
 def failure_result(
     company: CompanyInput,
     error: str,
@@ -993,81 +1083,75 @@ def failure_result(
     error_code = canonical_reason_code(error)
     stage_metrics = company.source_trace.get("stage_metrics", {})
     has_linkedin_input = bool(company.linkedin_job_url or company.linkedin_company_url)
+    completed_prefix = _completed_stage_prefix(completed_result)
+    completed_stages = {stage.stage for stage in completed_prefix}
     website_url = (
         completed_result.company_website_url
-        if completed_result is not None
+        if completed_result is not None and STAGE_WEBSITE_RESOLUTION in completed_stages
         else company.company_website_url
     ) or ""
     website_resolved = bool(website_url) and error_code != "WEBSITE_NOT_RESOLVED"
-    completed_prefix = (
-        [
-            stage
-            for stage in completed_result.stage_results
-            if stage.stage
-            in {
-                STAGE_LINKEDIN_DISCOVERY,
-                STAGE_WEBSITE_RESOLUTION,
-                STAGE_HIRING_IDENTITY_RESOLUTION,
-            }
-        ]
-        if completed_result is not None and website_resolved
-        else []
-    )
     stages = completed_prefix or [
         make_stage_result(
             STAGE_LINKEDIN_DISCOVERY,
             "success" if has_linkedin_input else "not_applicable",
             input_count=1 if has_linkedin_input else 0,
             output_count=1 if has_linkedin_input else 0,
-        ),
-        make_stage_result(
-            STAGE_WEBSITE_RESOLUTION,
-            "success" if website_resolved else "failed",
-            reason_code=None if website_resolved else error_code,
-            duration_ms=int(stage_metrics.get("website_resolution_duration_ms") or 0),
-            input_count=1,
-            output_count=1 if website_resolved else 0,
-            evidence=(
-                [{"field": "company_website_url", "url": website_url}]
-                if website_resolved
-                else []
-            ),
-            detail=None if website_resolved else detail,
-        ),
-        make_stage_result(
-            STAGE_HIRING_IDENTITY_RESOLUTION,
-            "success" if website_resolved else "not_run",
-            duration_ms=int(stage_metrics.get("hiring_identity_resolution_duration_ms") or 0),
-            input_count=1 if website_resolved else 0,
-            output_count=1 if website_resolved else 0,
-            detail="Batch execution stopped before a complete identity result." if website_resolved else "Website resolution failed.",
-        ),
-    ]
-    if website_resolved:
-        stages.append(
-            make_stage_result(
-                STAGE_CAREER_DISCOVERY,
-                "failed",
-                reason_code=error_code,
-                input_count=1,
-                detail=detail,
-            )
         )
-    else:
-        stages.append(make_stage_result(STAGE_CAREER_DISCOVERY, "not_run", detail="Website resolution failed."))
-    stages.extend(
-        [
-            make_stage_result(STAGE_JOB_BOARD_DISCOVERY, "not_run", detail="A required upstream stage did not succeed."),
-            make_stage_result(STAGE_OPENING_MATCH, "not_run", detail="A required upstream stage did not succeed."),
+    ]
+    if not completed_prefix and website_resolved:
+        stages.extend(
+            [
+                make_stage_result(
+                    STAGE_WEBSITE_RESOLUTION,
+                    "success",
+                    duration_ms=int(stage_metrics.get("website_resolution_duration_ms") or 0),
+                    input_count=1,
+                    output_count=1,
+                    evidence=[{"field": "company_website_url", "url": website_url}],
+                ),
+                make_stage_result(
+                    STAGE_HIRING_IDENTITY_RESOLUTION,
+                    "success",
+                    duration_ms=int(
+                        stage_metrics.get("hiring_identity_resolution_duration_ms") or 0
+                    ),
+                    input_count=1,
+                    output_count=1,
+                    detail="Batch execution stopped after a complete identity result.",
+                ),
+            ]
+        )
+
+    failure_stage_index = len(stages)
+    failure_stage = PIPELINE_STAGES[failure_stage_index]
+    stages.append(
+        make_stage_result(
+            failure_stage,
+            "failed",
+            reason_code=error_code,
+            input_count=1,
+            detail=detail,
+        )
+    )
+    if failure_stage != STAGE_RESULT_VALIDATION:
+        for stage in PIPELINE_STAGES[failure_stage_index + 1 : -1]:
+            stages.append(
+                make_stage_result(
+                    stage,
+                    "not_run",
+                    detail="A required upstream stage did not succeed.",
+                )
+            )
+        stages.append(
             make_stage_result(
                 STAGE_RESULT_VALIDATION,
                 "success",
                 input_count=1,
                 output_count=1,
                 evidence=[{"field": "pipeline_status", "value": "failed"}],
-            ),
-        ]
-    )
+            )
+        )
     settings = run_configuration or DeterministicRunConfig.from_agent_config(AgentConfig())
     fingerprint = execution_fingerprint(dataclass_to_dict(company), settings.digest)
     return DiscoveryResult(
@@ -1076,11 +1160,13 @@ def failure_result(
         hiring_entity_name=(
             completed_result.hiring_entity_name
             if completed_result is not None
+            and STAGE_HIRING_IDENTITY_RESOLUTION in completed_stages
             else company.hiring_entity_name
         ),
         career_root_url=(
             completed_result.career_root_url
             if completed_result is not None
+            and STAGE_HIRING_IDENTITY_RESOLUTION in completed_stages
             else company.career_root_url
         ),
         linkedin_job_url=company.linkedin_job_url,
@@ -1088,6 +1174,21 @@ def failure_result(
         linkedin_company_url=company.linkedin_company_url,
         linkedin_job_title=company.job_title,
         linkedin_job_location=company.job_location,
+        career_page_url=(
+            completed_result.career_page_url
+            if completed_result is not None and STAGE_CAREER_DISCOVERY in completed_stages
+            else None
+        ),
+        job_list_page_url=(
+            completed_result.job_list_page_url
+            if completed_result is not None and STAGE_JOB_BOARD_DISCOVERY in completed_stages
+            else None
+        ),
+        open_position_url=(
+            completed_result.open_position_url
+            if completed_result is not None and STAGE_OPENING_MATCH in completed_stages
+            else None
+        ),
         status="failed",
         error=error,
         error_code=error_code,
@@ -1097,7 +1198,13 @@ def failure_result(
         run_configuration_digest=settings.digest,
         execution_fingerprint=fingerprint,
         trace={
-            **(completed_result.trace if completed_result is not None else {}),
+            **_timeout_result_trace(
+                completed_result,
+                completed_stages,
+                failure_stage,
+                error,
+                detail,
+            ),
             "source": company.source,
             "source_trace": {
                 **(
