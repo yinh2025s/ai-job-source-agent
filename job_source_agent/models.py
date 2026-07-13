@@ -45,6 +45,7 @@ class StageResult:
 @dataclass
 class CompanyInput:
     linkedin_job_url: str = ""
+    external_apply_url: str | None = None
     company_name: str = ""
     company_website_url: str = ""
     hiring_entity_name: str | None = None
@@ -73,6 +74,7 @@ class DiscoveryResult:
     hiring_entity_name: str | None = None
     career_root_url: str | None = None
     linkedin_job_url: str = ""
+    external_apply_url: str | None = None
     linkedin_company_url: str | None = None
     linkedin_job_title: str | None = None
     linkedin_job_location: str | None = None
@@ -103,6 +105,7 @@ class DiscoveryResult:
             "hiring_entity_name": self.hiring_entity_name,
             "career_root_url": self.career_root_url,
             "linkedin_job_url": self.linkedin_job_url,
+            "external_apply_url": self.external_apply_url,
             "linkedin_company_url": self.linkedin_company_url,
             "linkedin_job_title": self.linkedin_job_title,
             "linkedin_job_location": self.linkedin_job_location,

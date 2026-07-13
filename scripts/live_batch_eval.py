@@ -517,7 +517,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             )
         except RemoteProcessError as exc:
             return failure_result(company, error="batch_worker_failed", detail=str(exc))
-        if not upstream_result.company_website_url:
+        if not upstream_result.company_website_url and not company.external_apply_url:
             return upstream_result
 
     downstream_start, resume_fallback = _downstream_start_stage(company, args)
@@ -527,7 +527,8 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             error="website_not_resolved",
             detail=(
                 f"--resume-from-stage {args.resume_from_stage} requires a complete, "
-                "compatible upstream checkpoint chain or replay input with company_website_url."
+                "compatible upstream checkpoint chain, replay company_website_url, or "
+                "a supported external_apply_url."
             ),
         )
 
@@ -608,7 +609,7 @@ def _downstream_start_stage(
             "used_replay_upstream": True,
         }
     )
-    if company.company_website_url:
+    if company.company_website_url or company.external_apply_url:
         resume_trace["fallback"] = "rebuild_downstream_from_career_discovery"
         return STAGE_CAREER_DISCOVERY, "rebuild_downstream"
     resume_trace["fallback"] = "missing_resume_evidence"
@@ -919,6 +920,7 @@ def failure_result(
             else company.career_root_url
         ),
         linkedin_job_url=company.linkedin_job_url,
+        external_apply_url=company.external_apply_url,
         linkedin_company_url=company.linkedin_company_url,
         linkedin_job_title=company.job_title,
         linkedin_job_location=company.job_location,

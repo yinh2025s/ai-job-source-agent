@@ -6,8 +6,10 @@ from job_source_agent.composition import FetcherConfig, build_application
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import (
     PIPELINE_STAGES,
+    STAGE_CAREER_DISCOVERY,
     STAGE_HIRING_IDENTITY_RESOLUTION,
     STAGE_WEBSITE_RESOLUTION,
+    CompanyInput,
 )
 
 
@@ -50,6 +52,29 @@ class PipelineApplicationTests(unittest.TestCase):
             for stage in PIPELINE_STAGES[PIPELINE_STAGES.index(STAGE_HIRING_IDENTITY_RESOLUTION) + 1 :]
         ))
         self.assertIsNone(result.career_page_url)
+
+    def test_external_apply_recovers_when_website_resolution_fails(self):
+        external = (
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/job/New-York-NY/"
+            "Data-Analyst_R123"
+        )
+        company = CompanyInput(
+            company_name="Missing Marketing Site",
+            external_apply_url=external,
+            job_title="Data Analyst",
+            job_location="New York, NY",
+            source="linkedin_browser_extension",
+        )
+
+        result = self.build_application().pipeline.discover(company)
+        statuses = {stage.stage: stage.status for stage in result.stage_results}
+
+        self.assertEqual(statuses[STAGE_WEBSITE_RESOLUTION], "failed")
+        self.assertEqual(statuses[STAGE_CAREER_DISCOVERY], "not_run")
+        self.assertEqual(result.job_list_page_url, "https://company.wd5.myworkdayjobs.com/en-US/acme")
+        self.assertIn("Data-Analyst_R123", result.open_position_url)
+        self.assertEqual(result.pipeline_status, "success")
+        self.assertIsNone(result.error_code)
 
     def test_resume_hydrates_upstream_updates_from_stage_checkpoints(self):
         company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]

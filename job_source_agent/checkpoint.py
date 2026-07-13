@@ -8,7 +8,7 @@ from .models import RESULT_SCHEMA_VERSION
 
 
 CHECKPOINT_SCHEMA_VERSION = "1.0"
-ADAPTER_VERSION = "2026-07-13.35"
+ADAPTER_VERSION = "2026-07-13.36"
 
 FINGERPRINT_FIELDS = (
     "company_name",
@@ -16,6 +16,7 @@ FINGERPRINT_FIELDS = (
     "hiring_entity_name",
     "career_root_url",
     "linkedin_job_url",
+    "external_apply_url",
     "linkedin_company_url",
     "job_title",
     "job_location",

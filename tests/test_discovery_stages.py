@@ -52,6 +52,39 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(execution.result.status, "success")
         self.assertEqual(execution.updates["job_list_page_url"], "https://boards.greenhouse.io/acme")
 
+    def test_job_board_stage_uses_native_external_apply_without_career_page(self):
+        external = (
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/job/New-York-NY/"
+            "Data-Analyst_R123"
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", external_apply_url=external)
+        )
+
+        execution = JobBoardDiscoveryStage(FakeDiscoveryService()).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.provider, "workday")
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://company.wd5.myworkdayjobs.com/en-US/acme",
+        )
+        self.assertEqual(execution.trace["method"], "external_apply_url")
+
+    def test_job_board_stage_rejects_unknown_external_apply_provider(self):
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                external_apply_url="https://apply.untrusted.example/jobs/123",
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(FakeDiscoveryService()).run(context)
+
+        self.assertEqual(execution.result.status, "unsupported")
+        self.assertEqual(execution.result.reason_code, "PROVIDER_UNSUPPORTED")
+        self.assertEqual(execution.updates, {})
+
     def test_direct_input_career_root_is_trusted_without_network_revalidation(self):
         class MustNotFetchCareer(FakeDiscoveryService):
             def find_career_page(self, *args, **kwargs):

@@ -44,6 +44,7 @@ For each input record:
   "company_name": "Aurora Data",
   "company_website_url": "https://aurora-data.example",
   "linkedin_job_url": "https://www.linkedin.com/jobs/view/aurora-data-ai-engineer",
+  "external_apply_url": null,
   "hiring_entity_name": null,
   "career_root_url": null,
   "career_page_url": "https://jobs.lever.co/aurora-data",
@@ -147,6 +148,21 @@ FAIL Tessera Labs
 ```
 
 Many modern career pages render concrete job cards with JavaScript or do not expose a public official career page at all. In those cases, `open_position_url` may be `null` while `job_list_page_url` is still useful. If no official career page can be verified, the agent returns a structured failure instead of inventing a job URL.
+
+LinkedIn's public guest job HTML does not reliably expose the off-site target behind its Apply control. An authenticated browser extension, a saved authenticated page, or another trusted extractor can provide that target as `external_apply_url`. The backend does not trust an arbitrary external URL as a result: S5 must map it to a supported native provider board, and S6 must read that provider's public inventory before returning a concrete opening. This fallback can therefore recover a job when the marketing website is blocked or unresolved without weakening normal website verification.
+
+Example input for the fallback:
+
+```json
+{
+  "linkedin_job_url": "https://www.linkedin.com/jobs/view/example",
+  "external_apply_url": "https://company.wd5.myworkdayjobs.com/Site/job/Role_R123",
+  "company_name": "Example Company",
+  "job_title": "Machine Learning Engineer",
+  "job_location": "New York, NY",
+  "source": "linkedin_browser_extension"
+}
+```
 
 For checkpointed LinkedIn batches, `scripts/live_batch_eval.py` freezes the discovered companies, ordering, and target titles in a versioned `linkedin-discovery.json` manifest inside the batch checkpoint directory. A resumed command reuses that cohort instead of rerunning a changing public search. `--no-resume` explicitly refreshes both the cohort and company executions; `--linkedin-manifest` can place the manifest at a chosen path. The summary records whether the cohort was `saved`, `restored`, or `refreshed`.
 
@@ -335,6 +351,7 @@ Latest live checks on July 12, 2026:
 - July 13 regional resolver and Avature replay: S2 now passes the LinkedIn job location into website resolution, rejects verified regional redirects that conflict with a U.S. posting, and performs a bounded same-host U.S. root recovery before relying on noisy search results. S4 keeps same-domain sitemap and navigation candidates aligned with the verified homepage locale, rejects cross-region sitemap wins, avoids homepage self-links, and prefers the general careers root over mismatched executive/student channels. The new page-aware Avature adapter verifies `avature.portal.*` metadata plus same-host search-route evidence, runs title-filtered `SearchJobs`, and accepts only same-portal numeric `JobDetail` links. Deloitte now resolves from Grand Rapids to the U.S. site and exact live job `355577`; the eight-record capture replays exact offline in 0.3 seconds. A full live with global sitemap discovery also passes exact in 44.1 seconds. The `.33` gates pass 538 tests, 20/20 provider cases, 6/6 resolver cases, and the 18-adapter architecture validator.
 - July 13 ambiguous-brand resolver replay: for a short company name, an exact LinkedIn company-slug/domain-label match with a verified homepage is now a strong identity anchor only when the slug adds real disambiguating text. This keeps ordinary exact-brand and regional scoring unchanged while preventing a speculative short domain from beating the LinkedIn-linked organization. Finch now resolves from the wrong `finch.com` marketing company to `finchlegal.com`, follows its official careers page to Ashby, and matches the exact Machine Learning Engineer opening. The eight-record live capture materializes as seven fixtures and replays the full chain offline in 0.2 seconds. The `.34` gates pass 539 tests, 20/20 provider cases, 6/6 resolver cases, and the 18-adapter architecture validator.
 - July 13 abbreviated-brand and hidden-provider replay: S2 rejects Salesforce Experience Cloud and link-shortener hosts as company homepages both before and after redirects. Multiword brands can generate a constrained initials-plus-final-token abbreviation, and that candidate is accepted only when the verified homepage title repeats the same abbreviation; LinkedIn `-ai`, `-app`, and `-tech` slug suffixes can expose the underlying candidate. S5 now promotes an unlabelled ATS detail URL embedded in an official first-party careers payload to its native canonical board before generic detail handling. Standard Template Labs moves from a false `l.ink` homepage to `stlabs.com`, its official careers page, the `st-labs` Ashby board, and the exact AI Engineer opening. Five live records materialize as three fixtures and replay exact offline in 0.3 seconds. The `.35` gates pass 543 tests, 20/20 provider cases, 6/6 resolver cases, and the 18-adapter architecture validator.
+- July 13 External Apply fallback: a trusted browser or saved-page extractor can pass LinkedIn's off-site Apply target through `external_apply_url`. S5 accepts it only when the provider registry can derive a supported native board, and S6 still verifies the public inventory and title. ModMed succeeds even though website resolution produces no result: the Workday `ModMed12` board resolves the exact Machine Learning Engineer `R4352` opening in 11.4 seconds live, and the five-record sanitized snapshot reproduces it in 0.2 seconds offline. The `.36` gates pass 550 tests, 20/20 provider cases, 6/6 resolver cases, and the 18-adapter architecture validator.
 - Fixed JS-heavy browser cohort: five companies across five providers and five technologies (Plum, Meta, Apple Jobs, Spotify, and IIC Lakshya). The strict saved/live evidence gate requires a successful render event, structured selector evidence, optional expected URL, sufficient visible text, no loading state, and no final classified error. Saved replay and the 15-second live gate both pass 5/5 within the shared render budget; Meta exercises static HTTP 400 to browser fallback, and Meta, Apple, and IIC require exact job URLs.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
@@ -530,6 +547,7 @@ results.json + trace.json
 
 - LinkedIn extraction is adapter-based because production LinkedIn crawling typically needs login/session handling or a third-party crawler API.
 - The LinkedIn public jobs mode discovers hiring companies directly from LinkedIn guest job-search cards.
+- Public guest job HTML does not reliably reveal the off-site Apply target; authenticated browser/saved-page integrations may supply `external_apply_url`, which must pass native provider and inventory validation.
 - Brand identity is resolved before website crawling so product brands can route to parent hiring systems.
 - Official website resolution first verifies high-confidence domain candidates, then falls back to LinkedIn page signals and search. This keeps obvious domains such as `lyft.com` and `brex.com` fast while still rejecting unverified guesses.
 - LinkedIn company slugs can break domain ties, for example `tesseralabsai` favoring `tesseralabs.ai` over `tesseralabs.com`.

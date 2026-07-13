@@ -29,6 +29,14 @@ class CheckpointTests(unittest.TestCase):
 
         self.assertNotEqual(input_fingerprint(base), input_fingerprint(changed))
 
+    def test_input_fingerprint_includes_external_apply_url(self):
+        base = {"company_name": "Example Robotics", "job_title": "AI Engineer"}
+
+        self.assertNotEqual(
+            input_fingerprint(base),
+            input_fingerprint({**base, "external_apply_url": "https://jobs.lever.co/example/123"}),
+        )
+
     def test_checkpoint_metadata_records_versions_and_fingerprint(self):
         metadata = checkpoint_metadata({"company_name": "Example", "company_website_url": "https://example.com"})
 

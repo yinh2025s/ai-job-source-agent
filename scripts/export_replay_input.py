@@ -18,6 +18,7 @@ REPLAY_FIELDS = (
     "hiring_entity_name",
     "career_root_url",
     "linkedin_job_url",
+    "external_apply_url",
     "linkedin_company_url",
     "job_title",
     "job_location",
@@ -112,6 +113,7 @@ def _to_replay_record(record: dict, source_path: str) -> dict:
         "hiring_entity_name": record.get("hiring_entity_name"),
         "career_root_url": record.get("career_root_url") or record.get("career_page_url"),
         "linkedin_job_url": record.get("linkedin_job_url") or "",
+        "external_apply_url": record.get("external_apply_url"),
         "linkedin_company_url": record.get("linkedin_company_url"),
         "job_title": record.get("job_title") or record.get("linkedin_job_title"),
         "job_location": record.get("job_location") or record.get("linkedin_job_location"),
@@ -133,6 +135,8 @@ def _has_required_source(record: dict, include_missing_website: bool) -> bool:
     if not record.get("company_name"):
         return False
     if record.get("company_website_url"):
+        return True
+    if record.get("external_apply_url"):
         return True
     return include_missing_website and bool(record.get("linkedin_company_url"))
 

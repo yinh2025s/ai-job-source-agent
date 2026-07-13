@@ -51,6 +51,7 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
         hiring_entity_name=context.hiring_entity_name,
         career_root_url=context.career_root_url,
         linkedin_job_url=company.linkedin_job_url,
+        external_apply_url=company.external_apply_url,
         linkedin_company_url=company.linkedin_company_url,
         linkedin_job_title=company.job_title,
         linkedin_job_location=company.job_location,
@@ -61,6 +62,7 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
         trace={
             "source": company.source,
             "linkedin_job_url": company.linkedin_job_url,
+            "external_apply_url": company.external_apply_url,
             "linkedin_company_url": company.linkedin_company_url,
             "linkedin_job_title": company.job_title,
             "source_trace": company.source_trace,
@@ -70,6 +72,7 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
         },
     )
 
+    first_failed_stage = None
     for stage_result in result.stage_results:
         stage_trace = context.trace.get("stages", {}).get(stage_result.stage, {})
         if stage_result.stage in {
@@ -80,10 +83,13 @@ def discovery_result_from_context(context: PipelineContext) -> DiscoveryResult:
             result.trace["steps"].append(
                 {"name": _legacy_step_name(stage_result.stage), **stage_trace}
             )
-        if stage_result.status == "failed" and result.error_code is None:
-            result.error_code = stage_result.reason_code
-            result.error = _legacy_error(stage_result.stage, stage_result.reason_code)
-            result.trace["failure_detail"] = stage_result.detail
+        if stage_result.status == "failed" and first_failed_stage is None:
+            first_failed_stage = stage_result
+
+    if not context.job_list_page_url and first_failed_stage is not None:
+        result.error_code = first_failed_stage.reason_code
+        result.error = _legacy_error(first_failed_stage.stage, first_failed_stage.reason_code)
+        result.trace["failure_detail"] = first_failed_stage.detail
 
     result.pipeline_status = _pipeline_status(context)
     if result.job_list_page_url:

@@ -28,6 +28,7 @@ def load_company_inputs(path: str | Path) -> list[CompanyInput]:
             company.company_name = company.company_name or html_data.get("company_name", "")
             company.company_website_url = company.company_website_url or html_data.get("company_website_url", "")
             company.linkedin_company_url = company.linkedin_company_url or html_data.get("linkedin_company_url", "")
+            company.external_apply_url = company.external_apply_url or html_data.get("external_apply_url")
         if not company.company_name:
             company.company_name = infer_company_name_from_url(company.company_website_url)
         if not company.company_website_url and not company.linkedin_company_url:
@@ -70,6 +71,7 @@ def parse_linkedin_html(path: Path) -> dict[str, str]:
     company_name = parser.company_name or payload_data.get("company_name", "") or _guess_company_name_from_text(html)
     company_website_url = parser.company_website_url or payload_data.get("company_website_url", "")
     linkedin_company_url = parser.linkedin_company_url or payload_data.get("linkedin_company_url", "")
+    external_apply_url = parser.external_apply_url or payload_data.get("external_apply_url", "")
     data: dict[str, str] = {}
     if company_name:
         data["company_name"] = company_name
@@ -77,6 +79,8 @@ def parse_linkedin_html(path: Path) -> dict[str, str]:
         data["company_website_url"] = company_website_url
     if linkedin_company_url:
         data["linkedin_company_url"] = linkedin_company_url
+    if external_apply_url:
+        data["external_apply_url"] = external_apply_url
     return data
 
 
@@ -86,6 +90,7 @@ class _LinkedInHTMLParser(HTMLParser):
         self.company_name = ""
         self.company_website_url = ""
         self.linkedin_company_url = ""
+        self.external_apply_url = ""
         self.script_texts: list[str] = []
         self._active_href = ""
         self._active_text: list[str] = []
@@ -133,6 +138,8 @@ class _LinkedInHTMLParser(HTMLParser):
             self.linkedin_company_url = linkedin_company_url
         if not self.company_website_url and _is_website_label(text):
             self.company_website_url = _safe_company_website_url(href)
+        if not self.external_apply_url and _is_apply_label(text):
+            self.external_apply_url = _safe_external_apply_url(href)
         self._active_href = ""
         self._active_text = []
 
@@ -202,6 +209,12 @@ def _collect_payload_evidence(value, evidence: dict[str, str]) -> None:
                     safe_url = _safe_company_website_url(item)
                     if safe_url:
                         evidence["company_website_url"] = safe_url
+                elif normalized_key in {"externalapplyurl", "external_apply_url"} and not evidence.get(
+                    "external_apply_url"
+                ):
+                    safe_url = _safe_external_apply_url(item)
+                    if safe_url:
+                        evidence["external_apply_url"] = safe_url
             _collect_payload_evidence(item, evidence)
     elif isinstance(value, list):
         for item in value:
@@ -210,6 +223,23 @@ def _collect_payload_evidence(value, evidence: dict[str, str]) -> None:
 
 def _is_website_label(text: str) -> bool:
     return " ".join(text.lower().split()) in {"website", "company website", "visit website", "company site"}
+
+
+def _is_apply_label(text: str) -> bool:
+    return " ".join(text.casefold().split()) in {"apply", "apply now", "apply for this job"}
+
+
+def _safe_external_apply_url(url: str) -> str:
+    normalized = _safe_http_url(url)
+    if not normalized:
+        return ""
+    parsed = urlparse(normalized)
+    host = (parsed.hostname or "").casefold()
+    if host == "linkedin.com" or host.endswith(".linkedin.com"):
+        return ""
+    if host == "licdn.com" or host.endswith(".licdn.com") or host == "lnkd.in":
+        return ""
+    return normalized
 
 
 def _safe_linkedin_company_url(url: str) -> str:

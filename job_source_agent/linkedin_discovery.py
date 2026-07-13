@@ -20,6 +20,7 @@ class LinkedInJobPosting:
     linkedin_job_url: str
     linkedin_company_url: str
     location: str = ""
+    external_apply_url: str = ""
 
 
 class LinkedInJobsDiscoverer:
@@ -68,6 +69,7 @@ def linkedin_postings_to_company_inputs(postings: list[LinkedInJobPosting]) -> l
             CompanyInput(
                 linkedin_job_url=posting.linkedin_job_url,
                 linkedin_company_url=posting.linkedin_company_url,
+                external_apply_url=posting.external_apply_url or None,
                 company_name=posting.company_name,
                 job_title=posting.job_title,
                 job_location=posting.location,
@@ -109,6 +111,7 @@ class _LinkedInJobsParser(HTMLParser):
                 "linkedin_job_url": "",
                 "linkedin_company_url": "",
                 "location": "",
+                "external_apply_url": "",
             }
             return
 

@@ -122,12 +122,14 @@ class JobSourceAgent:
             hiring_entity_name=company.hiring_entity_name,
             career_root_url=company.career_root_url,
             linkedin_job_url=company.linkedin_job_url,
+            external_apply_url=company.external_apply_url,
             linkedin_company_url=company.linkedin_company_url,
             linkedin_job_title=company.job_title,
             linkedin_job_location=company.job_location,
             trace={
                 "source": company.source,
                 "linkedin_job_url": company.linkedin_job_url,
+                "external_apply_url": company.external_apply_url,
                 "linkedin_company_url": company.linkedin_company_url,
                 "linkedin_job_title": company.job_title,
                 "source_trace": company.source_trace,
@@ -135,7 +137,7 @@ class JobSourceAgent:
             },
         )
         result.stage_results.extend(self._upstream_stage_results(company, result.company_website_url))
-        if not result.company_website_url:
+        if not result.company_website_url and not company.external_apply_url:
             self._set_failure(result, "website_not_resolved", "No official company website was supplied.")
             self._append_not_run_stages(
                 result,
@@ -166,7 +168,11 @@ class JobSourceAgent:
             result.trace["steps"].append(
                 {"name": _legacy_step_name(stage_result.stage), **stage_trace}
             )
-            if stage_result.status == "failed" and result.error_code is None:
+            if (
+                stage_result.status == "failed"
+                and result.error_code is None
+                and not context.job_list_page_url
+            ):
                 result.error_code = stage_result.reason_code
                 result.error = _legacy_error(stage_result.stage, stage_result.reason_code)
                 result.trace["failure_detail"] = stage_result.detail
@@ -174,13 +180,19 @@ class JobSourceAgent:
 
     def _upstream_stage_results(self, company: CompanyInput, website_url: str) -> list[StageResult]:
         stage_metrics = company.source_trace.get("stage_metrics", {})
-        has_linkedin_input = bool(company.linkedin_job_url or company.linkedin_company_url)
+        has_linkedin_input = bool(
+            company.linkedin_job_url
+            or company.linkedin_company_url
+            or company.external_apply_url
+        )
         linkedin_status = "success" if has_linkedin_input else "not_applicable"
         linkedin_evidence = []
         if company.linkedin_job_url:
             linkedin_evidence.append(_url_evidence("linkedin_job_url", company.linkedin_job_url))
         if company.linkedin_company_url:
             linkedin_evidence.append(_url_evidence("linkedin_company_url", company.linkedin_company_url))
+        if company.external_apply_url:
+            linkedin_evidence.append(_url_evidence("external_apply_url", company.external_apply_url))
 
         website_status = "success" if website_url else "failed"
         website_reason = None if website_url else "WEBSITE_NOT_RESOLVED"

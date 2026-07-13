@@ -82,6 +82,31 @@ class ExportReplayInputTests(unittest.TestCase):
         self.assertEqual(len(exported), 1)
         self.assertEqual(exported[0]["linkedin_company_url"], "https://www.linkedin.com/company/unknown-startup")
 
+    def test_external_apply_is_replayable_without_company_website(self):
+        external = "https://jobs.ashbyhq.com/example/12345678-1234-1234-1234-123456789012"
+        records = [{
+            "company_name": "Example",
+            "external_apply_url": external,
+            "linkedin_job_title": "AI Engineer",
+            "pipeline_status": "success",
+            "stages": [_stage("job_board_discovery", "success")],
+        }]
+        args = SimpleNamespace(
+            input="/tmp/results.json",
+            pipeline_status=None,
+            stage=None,
+            stage_status=None,
+            reason_code=None,
+            provider=None,
+            include_missing_website=False,
+            limit=None,
+        )
+
+        exported = export_replay_records(records, args)
+
+        self.assertEqual(exported[0]["external_apply_url"], external)
+        self.assertRegex(exported[0]["checkpoint"]["input_fingerprint"], r"^[0-9a-f]{64}$")
+
     def test_exported_records_can_be_loaded_as_company_inputs(self):
         records = [
             {

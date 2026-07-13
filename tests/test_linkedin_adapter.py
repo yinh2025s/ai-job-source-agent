@@ -35,6 +35,10 @@ class LinkedInAdapterTests(unittest.TestCase):
 
         self.assertEqual(data["company_name"], "Safety Labs")
         self.assertEqual(data["linkedin_company_url"], "https://www.linkedin.com/company/safety-labs")
+        self.assertEqual(
+            data["external_apply_url"],
+            "https://apply.workable.com/safety-labs/j/ABC123",
+        )
         self.assertNotIn("company_website_url", data)
 
     def test_explicit_website_label_still_rejects_ats_host(self):

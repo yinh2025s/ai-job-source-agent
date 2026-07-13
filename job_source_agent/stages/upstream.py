@@ -47,12 +47,18 @@ class InputDiscoveryStage:
 
     def run(self, context: PipelineContext) -> StageExecution:
         company = context.company
-        has_linkedin_input = bool(company.linkedin_job_url or company.linkedin_company_url)
+        has_linkedin_input = bool(
+            company.linkedin_job_url
+            or company.linkedin_company_url
+            or company.external_apply_url
+        )
         evidence: list[dict] = []
         if company.linkedin_job_url:
             evidence.append({"field": "linkedin_job_url", "url": company.linkedin_job_url})
         if company.linkedin_company_url:
             evidence.append({"field": "linkedin_company_url", "url": company.linkedin_company_url})
+        if company.external_apply_url:
+            evidence.append({"field": "external_apply_url", "url": company.external_apply_url})
         return StageExecution(
             result=make_stage_result(
                 self.name,

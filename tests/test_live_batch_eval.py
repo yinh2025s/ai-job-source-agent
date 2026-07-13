@@ -557,7 +557,53 @@ class LiveBatchEvalTests(unittest.TestCase):
         result = run_company(company, args)
 
         self.assertEqual(result.error_code, "WEBSITE_NOT_RESOLVED")
-        self.assertIn("or replay input", result.trace["batch_error_detail"])
+        self.assertIn("replay company_website_url", result.trace["batch_error_detail"])
+        self.assertIn("external_apply_url", result.trace["batch_error_detail"])
+
+    def test_external_apply_bypasses_missing_website_in_two_phase_runner(self):
+        company = CompanyInput(
+            company_name="Missing Marketing Site",
+            external_apply_url=(
+                "https://company.wd5.myworkdayjobs.com/en-US/acme/job/New-York-NY/"
+                "Data-Analyst_R123"
+            ),
+            job_title="Data Analyst",
+            job_location="New York, NY",
+            source="linkedin_browser_extension",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.company_time_budget = 10
+            args.website_time_budget = 5
+            args.resume_from_stage = None
+            args.rerun_stage = None
+
+            result = run_company(company, args)
+
+        self.assertEqual(result.stage_status("website_resolution"), "failed")
+        self.assertEqual(result.stage_status("career_discovery"), "not_run")
+        self.assertEqual(
+            result.job_list_page_url,
+            "https://company.wd5.myworkdayjobs.com/en-US/acme",
+        )
+        self.assertIn("Data-Analyst_R123", result.open_position_url)
+        self.assertEqual(result.pipeline_status, "success")
+        self.assertIsNone(result.error_code)
+
+    def test_external_apply_allows_resume_fallback_without_website(self):
+        company = CompanyInput(
+            company_name="Missing Marketing Site",
+            external_apply_url="https://company.wd5.myworkdayjobs.com/en-US/acme/job/Role_R1",
+            source="replay_input",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.resume_from_stage = "opening_match"
+
+            start_at, fallback = _downstream_start_stage(company, args)
+
+        self.assertEqual(start_at, "career_discovery")
+        self.assertEqual(fallback, "rebuild_downstream")
 
     def test_resume_from_job_board_restores_s1_to_s4_without_reexecution(self):
         company = CompanyInput(

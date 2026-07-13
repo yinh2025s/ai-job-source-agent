@@ -125,6 +125,8 @@ class JobBoardDiscoveryStage:
 
     def run(self, context: PipelineContext) -> StageExecution:
         if not context.career_page_url:
+            if context.company.external_apply_url:
+                return self._from_external_apply(context)
             return StageExecution(
                 make_stage_result(
                     self.name,
@@ -140,8 +142,21 @@ class JobBoardDiscoveryStage:
                 company_name=context.company.company_name,
             )
         except FetchError as exc:
+            if context.company.external_apply_url:
+                return self._from_external_apply(
+                    context,
+                    fallback_trace={"career_job_board_error": str(exc)},
+                )
             return _failed_execution(self.name, classify_fetch_error(str(exc)), started, str(exc))
         except DiscoveryError as exc:
+            if context.company.external_apply_url:
+                return self._from_external_apply(
+                    context,
+                    fallback_trace={
+                        "career_job_board_error": str(exc),
+                        "career_job_board_trace": exc.trace,
+                    },
+                )
             return _failed_execution(
                 self.name,
                 canonical_reason_code(exc.code),
@@ -163,6 +178,75 @@ class JobBoardDiscoveryStage:
                 evidence=[{"field": "job_list_page_url", "url": job_list_url}],
             ),
             updates={"job_list_page_url": job_list_url, "provider": provider},
+            trace=trace,
+        )
+
+    def _from_external_apply(
+        self,
+        context: PipelineContext,
+        fallback_trace: dict | None = None,
+    ) -> StageExecution:
+        source_url = context.company.external_apply_url or ""
+        try:
+            source_url = normalize_url(source_url)
+        except (TypeError, ValueError) as exc:
+            return StageExecution(
+                make_stage_result(
+                    self.name,
+                    "unsupported",
+                    reason_code="PROVIDER_UNSUPPORTED",
+                    input_count=1,
+                    detail=f"External Apply URL is malformed: {exc}",
+                ),
+                trace={"method": "external_apply_url", "error": str(exc)},
+            )
+
+        adapter = self.provider_registry.adapter_for(source_url)
+        board = adapter.identify_board(source_url) if adapter else None
+        if adapter is None or board is None or not adapter.supports_listing:
+            return StageExecution(
+                make_stage_result(
+                    self.name,
+                    "unsupported",
+                    reason_code="PROVIDER_UNSUPPORTED",
+                    input_count=1,
+                    evidence=[{"field": "external_apply_url", "url": source_url}],
+                    detail="External Apply URL did not identify a supported native provider board.",
+                ),
+                trace={
+                    "method": "external_apply_url",
+                    "source_url": source_url,
+                    "provider": adapter.name if adapter else None,
+                    **(fallback_trace or {}),
+                },
+            )
+
+        trace = {
+            "method": "external_apply_url",
+            "source_url": source_url,
+            "job_list_page_url": board.url,
+            "provider": adapter.name,
+            "provider_detection": {
+                "method": "external_apply_url",
+                "provider": adapter.name,
+                "url": board.url,
+            },
+            **(fallback_trace or {}),
+        }
+        return StageExecution(
+            result=make_stage_result(
+                self.name,
+                "success",
+                provider=adapter.name,
+                input_count=1,
+                output_count=1,
+                evidence=[
+                    {"field": "external_apply_url", "url": source_url},
+                    {"field": "job_list_page_url", "url": board.url},
+                ],
+                detail="Native provider board derived from the LinkedIn External Apply URL.",
+            ),
+            updates={"job_list_page_url": board.url, "provider": adapter.name},
             trace=trace,
         )
 
