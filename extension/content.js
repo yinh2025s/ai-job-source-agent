@@ -3,17 +3,33 @@
   globalThis.__jobSourceAgentInstalled = true;
 
   const text = (node) => (node?.textContent || "").replace(/\s+/g, " ").trim();
+  const isVisible = (node) => {
+    for (let current = node; current; current = current.parentElement) {
+      if (current.hidden || current.hasAttribute?.("hidden")) return false;
+      if ((current.getAttribute?.("aria-hidden") || "").trim().toLowerCase() === "true") return false;
+      const style = getComputedStyle(current);
+      if (style.display === "none" || ["hidden", "collapse"].includes(style.visibility)) {
+        return false;
+      }
+    }
+    return true;
+  };
+  const visibleMatches = (root, selector) => (
+    Array.from(root.querySelectorAll(selector)).filter(isVisible)
+  );
   const firstText = (root, selectors) => {
     for (const selector of selectors) {
-      const value = text(root.querySelector(selector));
-      if (value) return value;
+      for (const node of visibleMatches(root, selector)) {
+        const value = text(node);
+        if (value) return value;
+      }
     }
     return "";
   };
   const firstHref = (root, selectors) => {
     for (const selector of selectors) {
-      const node = root.querySelector(selector);
-      if (node?.href) return node.href;
+      const node = visibleMatches(root, selector).find((candidate) => candidate.href);
+      if (node) return node.href;
     }
     return "";
   };
@@ -36,7 +52,7 @@
     }
   };
   const externalApplyUrl = (root) => {
-    for (const anchor of root.querySelectorAll("a[href]")) {
+    for (const anchor of visibleMatches(root, "a[href]")) {
       const label = `${text(anchor)} ${anchor.getAttribute("aria-label") || ""}`.toLowerCase();
       if (!label.includes("apply")) continue;
       try {
@@ -53,9 +69,10 @@
   };
 
   const detailRecord = () => {
-    const root = document.querySelector(
+    const root = visibleMatches(
+      document,
       ".jobs-search__job-details--container, .job-view-layout, .jobs-details, main"
-    ) || document;
+    )[0] || document;
     const jobUrl = canonicalJobUrl(location.href)
       || canonicalJobUrl(firstHref(root, ["a[href*='/jobs/view/']"]));
     const linkedinCompanyUrl = canonicalCompanyUrl(firstHref(root, [
@@ -88,7 +105,8 @@
   };
 
   const cardRecords = () => {
-    const cards = document.querySelectorAll(
+    const cards = visibleMatches(
+      document,
       "li.jobs-search-results__list-item, [data-occludable-job-id], .job-card-container, .base-card"
     );
     const records = [];
