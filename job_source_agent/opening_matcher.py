@@ -27,6 +27,8 @@ STOPWORDS = {
     "to",
 }
 
+MIN_TITLE_MATCH_SCORE = 45
+
 
 @dataclass
 class OpeningMatch:
@@ -99,7 +101,7 @@ class JobOpeningMatcher:
                 link = RawLink(validated_url, link.text, link.source_url, link.origin)
                 scored = score_job_link(link, page_url)
                 title_score, title_reasons = score_title_match(link.text, target_title)
-                if title_score < 45:
+                if title_score < MIN_TITLE_MATCH_SCORE:
                     continue
                 total_score = scored.score + title_score
                 reasons = scored.reasons + title_reasons + [f"listing origin: {link.origin}"]
@@ -198,7 +200,7 @@ class JobOpeningMatcher:
                         scored = []
                         for candidate in adapter_result.candidates:
                             title_score, title_reasons = score_title_match(candidate.title, target_title)
-                            if title_score < 45:
+                            if title_score < MIN_TITLE_MATCH_SCORE:
                                 continue
                             scored.append(
                                 OpeningMatch(
@@ -234,7 +236,7 @@ class JobOpeningMatcher:
             scored = []
             for title, url in candidates:
                 title_score, title_reasons = score_title_match(title, target_title)
-                if title_score < 45:
+                if title_score < MIN_TITLE_MATCH_SCORE:
                     continue
                 scored.append(
                     OpeningMatch(

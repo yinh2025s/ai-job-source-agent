@@ -27,6 +27,14 @@ class OpeningMatcherTests(unittest.TestCase):
 
         self.assertGreater(good_score, weak_score)
 
+    def test_title_match_scores_shared_generic_role_below_strict_tenant_gate(self):
+        score, _reasons = score_title_match(
+            "Senior Software Engineer, Backend",
+            "Software Engineer, Fullstack",
+        )
+
+        self.assertLess(score, 65)
+
     def test_google_search_results_match_linkedin_title(self):
         matcher = JobOpeningMatcher(
             Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)

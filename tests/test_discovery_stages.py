@@ -12,10 +12,10 @@ from job_source_agent.stages import (
 
 
 class FakeDiscoveryService:
-    def find_career_page(self, company_website_url, company_name=None):
+    def find_career_page(self, company_website_url, company_name=None, preferred_url=None, target_title=None):
         return f"{company_website_url}/careers", {"method": "fake-career"}
 
-    def find_job_board(self, career_page_url):
+    def find_job_board(self, career_page_url, company_name=None):
         return "https://boards.greenhouse.io/acme", {"method": "fake-board"}
 
     def match_opening(self, job_list_url, target_title=None, target_location=None):
@@ -52,9 +52,53 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(execution.result.status, "success")
         self.assertEqual(execution.updates["job_list_page_url"], "https://boards.greenhouse.io/acme")
 
+    def test_direct_input_career_root_is_trusted_without_network_revalidation(self):
+        class MustNotFetchCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise AssertionError("trusted direct root should not be re-fetched")
+
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+                career_root_url="https://jobs.lever.co/acme",
+                source="input",
+            )
+        )
+
+        execution = CareerDiscoveryStage(MustNotFetchCareer()).run(context)
+
+        self.assertEqual(execution.updates["career_page_url"], "https://jobs.lever.co/acme")
+        self.assertEqual(execution.trace["preferred_root_validation"], "trusted_provenance")
+
+    def test_replay_career_root_is_revalidated(self):
+        class CapturingCareer(FakeDiscoveryService):
+            def __init__(self):
+                self.preferred_url = None
+
+            def find_career_page(self, company_website_url, company_name=None, preferred_url=None, target_title=None):
+                self.preferred_url = preferred_url
+                return "https://job-boards.greenhouse.io/acme", {"validated": True}
+
+        service = CapturingCareer()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+                career_root_url="https://wrong.example/careers",
+                source="replay_input",
+                source_trace={"replay": {"source_result_file": "old.json"}},
+            )
+        )
+
+        execution = CareerDiscoveryStage(service).run(context)
+
+        self.assertEqual(service.preferred_url, "https://wrong.example/careers")
+        self.assertEqual(execution.updates["career_page_url"], "https://job-boards.greenhouse.io/acme")
+
     def test_job_board_stage_accepts_provider_from_verified_page_evidence(self):
         class PageAwareService(FakeDiscoveryService):
-            def find_job_board(self, career_page_url):
+            def find_job_board(self, career_page_url, company_name=None):
                 return career_page_url, {
                     "provider": "icims",
                     "provider_detection": {"method": "page_evidence"},
@@ -84,7 +128,7 @@ class DiscoveryStageTests(unittest.TestCase):
 
     def test_career_failure_makes_downstream_stages_not_run(self):
         class MissingCareerService(FakeDiscoveryService):
-            def find_career_page(self, company_website_url, company_name=None):
+            def find_career_page(self, company_website_url, company_name=None, preferred_url=None, target_title=None):
                 raise DiscoveryError("career_page_not_found", "missing", trace={"searched": True})
 
         service = MissingCareerService()

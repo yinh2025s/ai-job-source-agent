@@ -136,6 +136,7 @@ class OfflinePipelineTests(unittest.TestCase):
         career_url, trace = agent.find_career_page(
             "https://atsprobe.example",
             company_name="ATS Probe",
+            target_title="Data Analyst",
         )
 
         self.assertEqual(career_url, "https://jobs.lever.co/atsprobe")

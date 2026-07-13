@@ -22,13 +22,15 @@ from .models import (
     dataclass_to_dict,
 )
 from .opening_matcher import (
+    MIN_TITLE_MATCH_SCORE,
     JobOpeningMatcher,
     build_provider_api_requests,
     detect_provider,
     provider_api_candidates,
+    score_title_match,
     structured_job_links,
 )
-from .providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
+from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
 from .reasons import canonical_reason_code, make_stage_result
 from .scoring import (
     is_ats_url,
@@ -71,6 +73,8 @@ COMMON_CAREER_PATHS = (
     "/us/en/careers",
     "/us/en/jobs",
 )
+
+MIN_DERIVED_TENANT_TITLE_SCORE = 65
 
 NON_JOB_BOARD_PATH_PARTS = {
     "api",
@@ -278,7 +282,13 @@ class JobSourceAgent:
         )
         return result
 
-    def find_career_page(self, company_website_url: str, company_name: str | None = None) -> tuple[str, dict]:
+    def find_career_page(
+        self,
+        company_website_url: str,
+        company_name: str | None = None,
+        preferred_url: str | None = None,
+        target_title: str | None = None,
+    ) -> tuple[str, dict]:
         homepage_url = normalize_url(company_website_url)
         raw_candidates: list[RawLink] = []
         trace = {"homepage_url": homepage_url, "homepage_fetch_error": None, "candidates": [], "candidate_fetch_errors": []}
@@ -288,6 +298,17 @@ class JobSourceAgent:
             raw_candidates = extract_links(homepage)
         except FetchError as exc:
             trace["homepage_fetch_error"] = str(exc)
+        if preferred_url:
+            raw_candidates.insert(
+                0,
+                RawLink(
+                    url=normalize_url(preferred_url),
+                    text="Career root",
+                    source_url=homepage_url,
+                    origin="identity_career_root",
+                ),
+            )
+            trace["preferred_career_root"] = normalize_url(preferred_url)
         raw_candidates.extend(self._common_path_candidates(homepage_url))
         if self.enable_sitemap_discovery:
             sitemap_candidates, sitemap_trace = self._sitemap_candidates(homepage_url)
@@ -305,9 +326,27 @@ class JobSourceAgent:
         trace["homepage_url"] = homepage_url
         trace["candidates"] = dataclass_to_dict(deduped[:10])
 
-        selected_url = self._select_verified_career_candidate(deduped, trace)
+        selected_url = self._select_verified_career_candidate(
+            deduped,
+            trace,
+            target_title=target_title,
+        )
         if selected_url:
             return selected_url, trace
+
+        if self.enable_career_search and company_name:
+            search_result = self._search_career_candidates(company_name, homepage_url)
+            trace["search_discovery"] = search_result.trace
+            selected_url = self._select_verified_career_candidate(
+                search_result.candidates,
+                trace,
+                target_title=target_title,
+            )
+            if selected_url:
+                trace["selected_from"] = "search_discovery"
+                return selected_url, trace
+        else:
+            trace["search_discovery"] = {"skipped": True}
 
         if company_name and self.max_ats_board_fetches:
             ats_candidates = self._ats_board_candidates(company_name, homepage_url)
@@ -320,6 +359,7 @@ class JobSourceAgent:
                 ats_candidates,
                 ats_trace,
                 max_fetches=self.max_ats_board_fetches,
+                target_title=target_title,
             )
             if selected_url:
                 trace["selected"] = ats_trace["selected"]
@@ -329,16 +369,6 @@ class JobSourceAgent:
         else:
             trace["ats_board_discovery"] = {"skipped": True}
 
-        if self.enable_career_search and company_name:
-            search_result = self._search_career_candidates(company_name, homepage_url)
-            trace["search_discovery"] = search_result.trace
-            selected_url = self._select_verified_career_candidate(search_result.candidates, trace)
-            if selected_url:
-                trace["selected_from"] = "search_discovery"
-                return selected_url, trace
-        else:
-            trace["search_discovery"] = {"skipped": True}
-
         raise DiscoveryError(
             "career_page_not_found",
             "No reliable career page candidate found.",
@@ -346,7 +376,11 @@ class JobSourceAgent:
             trace=trace,
         )
 
-    def find_job_board(self, career_page_url: str) -> tuple[str, dict]:
+    def find_job_board(
+        self,
+        career_page_url: str,
+        company_name: str | None = None,
+    ) -> tuple[str, dict]:
         if self._is_provider_job_board_url(career_page_url):
             return career_page_url, {
                 "career_page_url": career_page_url,
@@ -364,10 +398,84 @@ class JobSourceAgent:
                 step_name="find_job_board",
                 trace=trace,
             )
+        if (
+            company_name
+            and self.max_ats_board_fetches
+            and self.provider_registry.detect(job_list_url) == "generic"
+            and job_list_url.rstrip("/") == career_page_url.rstrip("/")
+        ):
+            searched_url, search_trace = self._search_verified_ats_board(
+                company_name,
+                career_page_url,
+            )
+            trace["ats_search_fallback"] = search_trace
+            if searched_url:
+                job_list_url = searched_url
+                trace["job_list_page_url"] = searched_url
+                trace["selected_from"] = "ats_search_fallback"
+                trace["provider"] = self.provider_registry.detect(searched_url)
         trace.pop("selected", None)
         trace.pop("opening_error", None)
         trace["job_list_page_url"] = job_list_url
         return job_list_url, trace
+
+    def _search_verified_ats_board(
+        self,
+        company_name: str,
+        career_page_url: str,
+    ) -> tuple[str | None, dict]:
+        search_result = self._search_career_candidates(
+            company_name,
+            career_page_url,
+            ats_only=True,
+        )
+        trace = {
+            "search": search_result.trace,
+            "candidates": [],
+            "errors": [],
+        }
+        attempts = 0
+        for candidate in search_result.candidates:
+            if attempts >= self.max_ats_board_fetches:
+                trace["fetch_budget_exhausted"] = self.max_ats_board_fetches
+                break
+            adapter = self.provider_registry.adapter_for(candidate.url)
+            board = adapter.identify_board(candidate.url) if adapter else None
+            if adapter is None or board is None or not adapter.supports_listing:
+                continue
+            attempts += 1
+            try:
+                result = adapter.list_jobs(self.fetcher, board, JobQuery())
+            except FetchError as exc:
+                trace["errors"].append({"url": candidate.url, "error": str(exc)})
+                continue
+            trace["candidates"].append(
+                {
+                    "url": candidate.url,
+                    "provider": adapter.name,
+                    "board_url": board.url,
+                    "job_count": len(result.candidates),
+                    "reason_code": result.reason_code,
+                }
+            )
+            if not result.candidates:
+                continue
+            return self._canonical_provider_board_url(adapter.name, board.url, board.identifier), trace
+        return None, trace
+
+    def _canonical_provider_board_url(
+        self,
+        provider: str,
+        board_url: str,
+        identifier: str | None,
+    ) -> str:
+        if not identifier:
+            return board_url
+        if provider == "greenhouse":
+            return f"https://job-boards.greenhouse.io/{identifier}"
+        if provider == "lever":
+            return f"https://jobs.lever.co/{identifier}"
+        return board_url
 
     def match_opening(
         self,
@@ -483,9 +591,8 @@ class JobSourceAgent:
                 return None, board.url, trace
             if self._is_provider_job_board_url(actual_page_url):
                 trace["job_list_page_url"] = actual_page_url
-            raw_job_links = [self._canonicalize_job_board_link(link) for link in extract_links(page)]
             scored = sorted(
-                [score_job_link(link, actual_page_url) for link in raw_job_links],
+                [score_job_link(link, actual_page_url) for link in extract_links(page)],
                 key=lambda candidate: candidate.score,
                 reverse=True,
             )
@@ -541,18 +648,6 @@ class JobSourceAgent:
         if not target_host or not source_host:
             return False
         return is_ats_url(url) or self._same_site_host(target_host, source_host)
-
-    def _canonicalize_job_board_link(self, link: RawLink) -> RawLink:
-        parsed = urlparse(link.url)
-        host = (parsed.hostname or "").casefold()
-        parts = [part for part in parsed.path.split("/") if part]
-        lowered = [part.casefold() for part in parts]
-        if host.endswith(".oraclecloud.com") and "my-profile" in lowered:
-            cutoff = lowered.index("my-profile")
-            path = "/" + "/".join(parts[:cutoff])
-            url = parsed._replace(path=path, query="", fragment="").geturl()
-            return RawLink(url, link.text, link.source_url, "derived_ats_root")
-        return link
 
     def _same_site_host(self, first: str, second: str) -> bool:
         if first == second or first.endswith("." + second) or second.endswith("." + first):
@@ -687,7 +782,13 @@ class JobSourceAgent:
         parts = value.lower().split("-")
         return len(parts) in {1, 2} and all(len(part) == 2 and part.isalpha() for part in parts)
 
-    def _search_career_candidates(self, company_name: str, homepage_url: str):
+    def _search_career_candidates(
+        self,
+        company_name: str,
+        homepage_url: str,
+        *,
+        ats_only: bool = False,
+    ):
         original_timeout = getattr(self.fetcher, "timeout", None)
         if self.career_search_timeout and original_timeout and self.career_search_timeout > original_timeout:
             self.fetcher.timeout = self.career_search_timeout
@@ -695,7 +796,7 @@ class JobSourceAgent:
             return CareerSearchResolver(
                 self.fetcher,
                 max_queries=self.max_career_search_queries,
-            ).search(company_name, homepage_url)
+            ).search(company_name, homepage_url, ats_only=ats_only)
         finally:
             if original_timeout is not None:
                 self.fetcher.timeout = original_timeout
@@ -712,6 +813,12 @@ class JobSourceAgent:
         if link.origin == "page_link":
             candidate.score += 110
             candidate.reasons.append("homepage navigation link")
+        elif link.origin == "identity_career_root":
+            candidate.score += 600
+            candidate.reasons.append("identity-supplied career root requiring verification")
+        elif link.origin == "derived_provider_config":
+            candidate.score += 200
+            candidate.reasons.append("derived provider configuration")
         elif link.origin == "path_probe":
             join_path = path_parts[-1] if path_parts else ""
             is_brand_join_path = join_path.startswith("join-")
@@ -751,6 +858,7 @@ class JobSourceAgent:
         candidates: list[LinkCandidate],
         trace: dict,
         max_fetches: int | None = None,
+        target_title: str | None = None,
     ) -> str | None:
         fetch_attempts = 0
         fetch_limit = self.max_career_candidate_fetches if max_fetches is None else max_fetches
@@ -767,14 +875,31 @@ class JobSourceAgent:
             try:
                 page = self.fetcher.fetch(candidate.url)
             except FetchError as exc:
+                verified_provider = self._verify_provider_candidate_without_page(
+                    candidate.url,
+                    target_title,
+                )
+                if verified_provider is not None:
+                    trace.setdefault("provider_board_verification", []).append(
+                        verified_provider[1]
+                    )
+                    trace["selected"] = dataclass_to_dict(candidate)
+                    trace["selected_page_source"] = "provider_adapter"
+                    return verified_provider[0]
                 trace["candidate_fetch_errors"].append({"url": candidate.url, "error": str(exc)})
                 continue
             actual_url = page.final_url or page.url
             if self._looks_like_error_page(actual_url, page.html):
                 trace["candidate_fetch_errors"].append({"url": candidate.url, "error": f"error page: {actual_url}"})
                 continue
-            if any(reason.startswith("derived ") for reason in candidate.reasons):
-                verified, verification = self._verify_derived_provider_board(actual_url, page.html)
+            derived_reasons = [reason for reason in candidate.reasons if reason.startswith("derived ")]
+            if derived_reasons:
+                verified, verification = self._verify_derived_provider_board(
+                    actual_url,
+                    page.html,
+                    target_title=target_title,
+                    trusted_configuration="derived provider configuration" in derived_reasons,
+                )
                 trace.setdefault("provider_board_verification", []).append(verification)
                 if not verified:
                     trace["candidate_fetch_errors"].append(
@@ -787,7 +912,48 @@ class JobSourceAgent:
                 return actual_url
         return None
 
-    def _verify_derived_provider_board(self, board_url: str, html: str) -> tuple[bool, dict]:
+    def _verify_provider_candidate_without_page(
+        self,
+        url: str,
+        target_title: str | None,
+    ) -> tuple[str, dict] | None:
+        adapter = self.provider_registry.adapter_for(url)
+        board = adapter.identify_board(url) if adapter else None
+        if adapter is None or board is None or not adapter.supports_listing:
+            return None
+        try:
+            result = adapter.list_jobs(self.fetcher, board, JobQuery(title=target_title))
+        except FetchError:
+            return None
+        matches = [
+            candidate
+            for candidate in result.candidates
+            if not target_title
+            or score_title_match(candidate.title, target_title)[0] >= MIN_TITLE_MATCH_SCORE
+        ]
+        if not matches:
+            return None
+        canonical_url = self._canonical_provider_board_url(
+            adapter.name,
+            board.url,
+            board.identifier,
+        )
+        return canonical_url, {
+            "url": canonical_url,
+            "provider": adapter.name,
+            "method": "provider_adapter_without_page",
+            "candidate_count": len(result.candidates),
+            "title_match_count": len(matches),
+        }
+
+    def _verify_derived_provider_board(
+        self,
+        board_url: str,
+        html: str,
+        *,
+        target_title: str | None = None,
+        trusted_configuration: bool = False,
+    ) -> tuple[bool, dict]:
         provider = self.provider_registry.detect(board_url)
         verification = {
             "url": board_url,
@@ -804,16 +970,32 @@ class JobSourceAgent:
             candidates = provider_api_candidates(provider, page.html, board_url)
             verification["method"] = "provider_api"
             verification["candidate_count"] = len(candidates)
-            return True, verification
+            matching = [
+                title
+                for title, _url in candidates
+                if target_title
+                and score_title_match(title, target_title)[0] >= MIN_DERIVED_TENANT_TITLE_SCORE
+            ]
+            verification["title_match_count"] = len(matching)
+            return bool(matching) if target_title else trusted_configuration and bool(candidates), verification
 
         links = extract_links(Page(url=board_url, html=html, final_url=board_url))
         links.extend(structured_job_links(html, board_url))
-        has_job_detail = any(
-            is_likely_job_detail(score_job_link(link, board_url))
+        detail_links = [
+            link
             for link in links
-        )
+            if is_likely_job_detail(score_job_link(link, board_url))
+        ]
+        matching_links = [
+            link
+            for link in detail_links
+            if target_title
+            and score_title_match(link.text, target_title)[0] >= MIN_DERIVED_TENANT_TITLE_SCORE
+        ]
+        has_job_detail = bool(matching_links) if target_title else trusted_configuration and bool(detail_links)
         verification["method"] = "page_job_links" if has_job_detail else "unverified"
         verification["candidate_count"] = len(links)
+        verification["title_match_count"] = len(matching_links)
         return has_job_detail, verification
 
     def _sitemap_candidates(self, homepage_url: str) -> tuple[list[RawLink], dict]:
@@ -895,6 +1077,48 @@ class JobSourceAgent:
         text = html[:200000].lower()
         if self._has_ats_link(text):
             return True
+        page_links = extract_links(Page(url=candidate.url, html=html, final_url=candidate.url))
+        if any(
+            is_likely_job_detail(score_job_link(link, candidate.url))
+            for link in page_links
+        ):
+            return True
+        if any(
+            reason in candidate.reasons
+            for reason in (
+                "identity-supplied career root requiring verification",
+                "generated path probe",
+            )
+        ):
+            strong_employment_signals = (
+                "open roles",
+                "open positions",
+                "current openings",
+                "job openings",
+                "view open jobs",
+                "search jobs",
+                "apply now",
+                "join our team",
+                "jobs at",
+                "employment opportunities",
+            )
+            if any(signal in text for signal in strong_employment_signals):
+                return True
+            non_employment_surface_signals = (
+                "homes for sale",
+                "subreddit",
+                "zestimate",
+                "careers channel",
+                "channel videos",
+                "live streams",
+                "videos and streams",
+                "streaming channel",
+            )
+            if any(signal in text for signal in non_employment_surface_signals):
+                return False
+            title_match = re.search(r"<title\b[^>]*>(.*?)</title\s*>", text, flags=re.I | re.S)
+            title = re.sub(r"<[^>]+>", " ", title_match.group(1)) if title_match else ""
+            return re.search(r"\b(?:careers?|jobs?)\b", title, flags=re.I) is not None
         career_signals = (
             "open roles",
             "open positions",

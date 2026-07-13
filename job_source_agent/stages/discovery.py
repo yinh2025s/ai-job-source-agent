@@ -12,12 +12,22 @@ from ..web import FetchError, normalize_url
 
 
 class CareerDiscoveryService(Protocol):
-    def find_career_page(self, company_website_url: str, company_name: str | None = None) -> tuple[str, dict]:
+    def find_career_page(
+        self,
+        company_website_url: str,
+        company_name: str | None = None,
+        preferred_url: str | None = None,
+        target_title: str | None = None,
+    ) -> tuple[str, dict]:
         ...
 
 
 class JobBoardDiscoveryService(Protocol):
-    def find_job_board(self, career_page_url: str) -> tuple[str, dict]:
+    def find_job_board(
+        self,
+        career_page_url: str,
+        company_name: str | None = None,
+    ) -> tuple[str, dict]:
         ...
 
 
@@ -49,22 +59,32 @@ class CareerDiscoveryStage:
 
         started = time.perf_counter()
         try:
-            if context.career_root_url:
+            replay_trace = context.company.source_trace.get("replay")
+            replay_root = context.company.source == "replay_input" or isinstance(replay_trace, dict)
+            if context.career_root_url and not replay_root:
                 career_url = normalize_url(context.career_root_url)
                 trace = {
                     "homepage_url": context.company_website_url,
                     "selected": {
                         "url": career_url,
-                        "reason": "career root provided by company identity resolver",
+                        "reason": "trusted direct-input or identity career root",
                     },
+                    "preferred_root_validation": "trusted_provenance",
                 }
-                detail = "Career root supplied by identity resolution."
+                detail = "Career root supplied by a trusted direct input or identity rule."
             else:
                 career_url, trace = self.service.find_career_page(
                     context.company_website_url,
                     company_name=context.company.company_name,
+                    preferred_url=context.career_root_url,
+                    target_title=context.company.job_title,
                 )
-                detail = None
+                detail = (
+                    "Replay career root was revalidated."
+                    if context.career_root_url
+                    and career_url.rstrip("/") == normalize_url(context.career_root_url).rstrip("/")
+                    else None
+                )
         except FetchError as exc:
             return _failed_execution(self.name, classify_fetch_error(str(exc)), started, str(exc))
         except DiscoveryError as exc:
@@ -114,7 +134,10 @@ class JobBoardDiscoveryStage:
 
         started = time.perf_counter()
         try:
-            job_list_url, trace = self.service.find_job_board(context.career_page_url)
+            job_list_url, trace = self.service.find_job_board(
+                context.career_page_url,
+                company_name=context.company.company_name,
+            )
         except FetchError as exc:
             return _failed_execution(self.name, classify_fetch_error(str(exc)), started, str(exc))
         except DiscoveryError as exc:
