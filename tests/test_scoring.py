@@ -1,6 +1,7 @@
 import unittest
 
 from job_source_agent.scoring import (
+    is_ats_url,
     is_likely_job_detail,
     is_likely_job_listing_page,
     score_career_link,
@@ -10,6 +11,11 @@ from job_source_agent.web import RawLink
 
 
 class ScoringTests(unittest.TestCase):
+    def test_whitecarrot_hosts_are_known_ats_domains(self):
+        self.assertTrue(is_ats_url("https://app.whitecarrot.io/careers/acme"))
+        self.assertTrue(is_ats_url("https://acme.whitecarrot.ai/jobs"))
+        self.assertFalse(is_ats_url("https://whitecarrot.ai.example.com/jobs"))
+
     def test_career_link_prefers_careers_keyword(self):
         candidate = score_career_link(
             RawLink(

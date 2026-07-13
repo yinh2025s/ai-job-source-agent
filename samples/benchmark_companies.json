@@ -145,5 +145,12 @@
     "career_root_url": "https://acme-ceipal.example/careers",
     "job_title": "Data Analyst",
     "job_location": "Austin, Texas"
+  },
+  {
+    "company_name": "Acme WhiteCarrot",
+    "company_website_url": "https://app.whitecarrot.io/careers/acme",
+    "career_root_url": "https://app.whitecarrot.io/careers/acme",
+    "job_title": "Machine Learning Engineer",
+    "job_location": "Bengaluru, India"
   }
 ]

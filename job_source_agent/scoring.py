@@ -29,6 +29,8 @@ ATS_DOMAINS = (
     "eightfold.ai",
     "careers.oracle.com",
     "oraclecloud.com",
+    "whitecarrot.io",
+    "whitecarrot.ai",
 )
 
 CAREER_KEYWORDS = {
