@@ -50,6 +50,8 @@ evaluation/reporting consume versioned outputs and do not control execution.
 
 S6 的职责进一步拆成三层：provider/matcher 记录官方库存读取状态、候选数量和最佳标题分数；`opening_availability` 只根据这些证据和显式来源状态生成保守诊断；stage 将诊断写入标准 reason/evidence。搜索未命中或 provider 读取失败不能单独证明岗位已关闭，只有明确的来源状态才能产生 `OPENING_CLOSED`。
 
+S5 不把 generic career landing page 自动视作 job list。成功必须来自已知 provider、页面中的具体 job-detail evidence，或经过有界 traversal 后抵达的明确 first-party listing/search route；仅链接到下游搜索页的导航页面不能继承该搜索页的证据。
+
 ## Target Contracts
 
 Stage 只接收和返回版本化数据，不互相调用内部方法：

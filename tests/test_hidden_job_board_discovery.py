@@ -139,9 +139,8 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
             ),
         })
 
-        job_list, _trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
-
-        self.assertEqual(job_list, career)
+        with self.assertRaises(DiscoveryError):
+            JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
         self.assertEqual(fetcher.requested, [career])
 
     def test_oracle_login_link_is_not_promoted_to_listing_root(self):
@@ -152,10 +151,33 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
             career: Page(url=career, html=f'<a href="{login}">Login</a>'),
         })
 
-        job_list, _trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
-
-        self.assertEqual(job_list, career)
+        with self.assertRaises(DiscoveryError):
+            JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
         self.assertEqual(fetcher.requested, [career])
+
+    def test_generic_career_page_is_not_reported_as_job_list_without_listing_evidence(self):
+        career = "https://example.com/people"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html="<html>Meet our people and explore our culture</html>"),
+        })
+
+        with self.assertRaises(DiscoveryError) as raised:
+            JobSourceAgent(fetcher, max_job_pages=1).find_job_board(career)
+
+        self.assertEqual(raised.exception.code, "job_board_not_found")
+
+    def test_traversed_first_party_search_route_becomes_job_list(self):
+        career = "https://example.com/people"
+        search = "https://example.com/careers/career-opportunities-search"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<a href="{search}">Opportunities</a>'),
+            search: Page(url=search, html="<html>Search career opportunities</html>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, search)
+        self.assertEqual([page["url"] for page in trace["pages_visited"]], [career, search])
 
     def test_allows_company_www_to_careers_subdomain_transition(self):
         career = "https://careers.example.com/international"

@@ -281,6 +281,63 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertNotIn("LinkedIn slug confirms domain", unrelated.reasons)
         self.assertEqual(resolver._select_verified_candidate([exact, unrelated]), exact)
 
+    def test_ambiguous_non_com_search_candidate_needs_homepage_identity(self):
+        class CleraFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                if "format=rss" in url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<rss><channel><item><title>Customer dashboard</title>"
+                            "<description>Sign in to manage your account</description>"
+                            "<link>https://www.clera.uk/dashboard</link></item></channel></rss>"
+                        ),
+                    )
+                if url.rstrip("/") == "https://www.clera.uk":
+                    return Page(
+                        url=url,
+                        final_url="https://www.clera.uk/dashboard",
+                        html="<html><head><title>Dashboard</title></head><body>Sign in</body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(CleraFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "Clera",
+            "https://www.linkedin.com/company/getclera",
+        )
+
+        self.assertIsNone(website_url)
+        candidate = next(item for item in trace["candidates"] if domain_of(item["url"]) == "clera.uk")
+        self.assertEqual(candidate["score"], 30)
+        self.assertIn("LinkedIn slug confirms domain", candidate["reasons"])
+        self.assertIn("company token missing from homepage", candidate["reasons"])
+        self.assertIn("candidate source: search_evidence", candidate["reasons"])
+
+    def test_ambiguous_non_com_domain_with_homepage_identity_is_selected(self):
+        class BrandHomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html="<html><head><title>Dashboard</title></head><body>Clera account</body></html>",
+                )
+
+        resolver = CompanyWebsiteResolver(BrandHomepageFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://www.clera.uk/dashboard",
+            "Clera",
+            linkedin_company_url="https://www.linkedin.com/company/getclera",
+            verify=True,
+        )
+
+        self.assertNotIn("company token missing from homepage", candidate.reasons)
+        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
     def test_canonical_domain_confirms_short_company_identity(self):
         class CanonicalFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):

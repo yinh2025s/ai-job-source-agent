@@ -391,18 +391,16 @@ class JobSourceAgent:
                 },
             }
         _opening_url, job_list_url, trace = self._discover_job_board_legacy(career_page_url)
-        if not job_list_url:
-            raise DiscoveryError(
-                "job_board_not_found",
-                "No verified job board was found from the career page.",
-                step_name="find_job_board",
-                trace=trace,
-            )
         if (
             company_name
             and self.max_ats_board_fetches
-            and self.provider_registry.detect(job_list_url) == "generic"
-            and job_list_url.rstrip("/") == career_page_url.rstrip("/")
+            and (
+                not job_list_url
+                or (
+                    self.provider_registry.detect(job_list_url) == "generic"
+                    and job_list_url.rstrip("/") == career_page_url.rstrip("/")
+                )
+            )
         ):
             searched_url, search_trace = self._search_verified_ats_board(
                 company_name,
@@ -414,6 +412,13 @@ class JobSourceAgent:
                 trace["job_list_page_url"] = searched_url
                 trace["selected_from"] = "ats_search_fallback"
                 trace["provider"] = self.provider_registry.detect(searched_url)
+        if not job_list_url:
+            raise DiscoveryError(
+                "job_board_not_found",
+                "No verified job board was found from the career page.",
+                step_name="find_job_board",
+                trace=trace,
+            )
         trace.pop("selected", None)
         trace.pop("opening_error", None)
         trace["job_list_page_url"] = job_list_url
@@ -551,7 +556,7 @@ class JobSourceAgent:
 
         trace = {
             "career_page_url": career_page_url,
-            "job_list_page_url": career_page_url,
+            "job_list_page_url": None,
             "pages_visited": [],
             "candidates": [],
             "fetch_errors": [],
@@ -597,7 +602,12 @@ class JobSourceAgent:
                 reverse=True,
             )
             deduped = self._dedupe_candidates(scored)
-            if actual_page_url != career_page_url and self._has_job_list_evidence(actual_page_url, deduped):
+            if self._has_job_list_evidence(actual_page_url, deduped):
+                trace["job_list_page_url"] = actual_page_url
+            elif (
+                actual_page_url.rstrip("/") != career_page_url.rstrip("/")
+                and self._looks_like_generic_job_list_route(actual_page_url)
+            ):
                 trace["job_list_page_url"] = actual_page_url
             trace["pages_visited"].append(
                 {
@@ -624,7 +634,10 @@ class JobSourceAgent:
 
             for candidate in deduped[: self.max_candidates]:
                 if (
-                    is_likely_job_listing_page(candidate)
+                    (
+                        is_likely_job_listing_page(candidate)
+                        or self._looks_like_generic_job_list_route(candidate.url)
+                    )
                     and self._is_safe_traversal_target(candidate.url, actual_page_url)
                     and candidate.url.rstrip("/") not in visited
                 ):
@@ -665,9 +678,18 @@ class JobSourceAgent:
     def _has_job_list_evidence(self, page_url: str, candidates: list[LinkCandidate]) -> bool:
         if self._is_provider_job_board_url(page_url):
             return True
+        return any(is_likely_job_detail(candidate) for candidate in candidates)
+
+    def _looks_like_generic_job_list_route(self, url: str) -> bool:
+        parts = [part.casefold() for part in urlparse(url).path.split("/") if part]
+        if not parts or any(part in NON_JOB_BOARD_PATH_PARTS for part in parts):
+            return False
+        leaf = parts[-1]
+        if leaf in {"jobs", "positions", "openings", "job-openings", "search-results"}:
+            return True
         return any(
-            is_likely_job_detail(candidate) or is_likely_job_listing_page(candidate)
-            for candidate in candidates
+            marker in leaf
+            for marker in ("job-search", "jobs-search", "career-opportunities-search")
         )
 
     def _is_provider_job_board_url(self, url: str) -> bool:

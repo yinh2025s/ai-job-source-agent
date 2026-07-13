@@ -321,7 +321,7 @@ python3 scripts/live_batch_eval.py \
   --fetch-timeout 5 \
   --career-search-timeout 7 \
   --company-time-budget 45 \
-  --website-time-budget 10 \
+  --website-time-budget 20 \
   --fetch-retries 1 \
   --retry-base-delay 0.25 \
   --workers 2 \

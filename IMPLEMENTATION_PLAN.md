@@ -258,6 +258,7 @@
 - 2026-07-13 exploratory LinkedIn batch：19 unique companies, 14/19 official job-list pages, 6/19 exact openings。下游 timeout 现在会保留已完成 S1-S3，因此 5 个原始失败中 Hadrian、Multifactor、Paramount 和 Docusign 的官网解析证据不再丢失；下一主 failure cluster 是 hidden ATS/list-root discovery、structured listing 和 parent-card link semantics。
 - 2026-07-13 focused replay：S5 从 iframe/data attributes/form action/escaped state/redirect 提取 hidden ATS root；Oracle login/profile 被拒绝为公开 listing，Snowflake 进入 Phenom `search-results`。S6 用 parent-card paragraph 和 multi-assignment JSON state 命中 Plaid/Snowflake；后续 provenance-aware root validation、Greenhouse config promotion 和 verified ATS fallback 分别命中 Glean、Reddit、Zillow、Twitch。Zillow 在整组运行中仍有 search/network 波动，Uber Seattle 与 Starbucks Nashville 当前官方 inventory 未确认。
 - 2026-07-13 opening availability diagnostics：S6 现在区分 `verified_inventory_no_match`、`verified_inventory_empty`、`discovery_incomplete` 和带明确来源证据的 `source_posting_closed`。官方 provider trace 保存库存状态、候选数量和最佳标题分数；单纯搜索未命中不会被误报为岗位过期。Summary/Markdown report 可直接聚合这些 disposition。
+- 2026-07-13 fresh `AI Engineer` exploratory batch：LinkedIn 30 条去重为 26 家；10 秒旧示例参数下为 13/26 job list、6/26 exact。对 9 个 S2 timeout 使用当前默认 20 秒预算后，官网从 0/9 恢复到 8/9，4/9 到 job list、2/9 exact，证明 README 的旧 10 秒命令需要校正。该 replay 同时暴露 generic false positive：Morgan Stanley `/people` 被误记为 list、Clera dashboard 被误认官网。S5 现要求 provider/detail/listing-route evidence，focused live 将 Morgan Stanley 修正到 `/careers/career-opportunities-search`，Nuro 无 listing evidence 时诚实返回 `JOB_BOARD_NOT_FOUND`；S2 ambiguous non-`.com` 候选在首页缺品牌身份时不再仅凭 slug 入选。
 - Product Manager / Data Analyst 这类品牌和成熟公司样本成功率明显高于随机 long-tail AI Engineer 样本。
 - 2026-07-11 focused live checks: Cricut reached `https://cricut.com/careers`; Carv's public Rippling board matched `Growth Product Manager` to its exact job-detail URL. The full Carv homepage-to-board run remains sensitive to transient website timeouts.
 - Follow-up live verification: ReachMobi now maps `Product Manager` through BambooHR to `/careers/270`; MatrixSpace reaches its localized careers page and Ashby board; ONEOK retains its legitimate Workday board instead of a false `/assets/logo` URL.
@@ -962,6 +963,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - `scripts/resolver_benchmark.py` 已提供 6-case 缺官网固定离线 benchmark
 - `live_batch_eval.py` 的下游 failure result 会复用完整 S1-S3 evidence；51-company rerun 已真实验证 30 个 completion restore + 21 个 pending execution，仍为 51/51 expectations、51/51 job list、50/51 exact opening
 - S6 availability diagnostics 已将“官方库存已读取但无标题匹配”“官方空库存”“抓取证据不足”和“来源明确关闭”拆开；保持 `OPENING_NOT_FOUND` 的保守默认语义，仅在显式来源状态下使用 `OPENING_CLOSED`
+- Generic S5 success 现在要求已知 ATS、具体岗位证据或实际抵达的 first-party listing/search route；career landing page 不再自动计作 job list
+- S2/S5 evidence gate 收紧后 clean fixed live 仍为 51/51 expectations、51/51 job list、50/51 exact opening，4 workers 用时 90.6 秒；451 个测试、13/13 provider、6/6 resolver 和 architecture gate 同步通过
 
 目标：
 

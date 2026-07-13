@@ -334,16 +334,21 @@ class CompanyWebsiteResolver:
                 )
             ):
                 continue
-            if "ambiguous company name" in candidate.reasons and not any(
-                reason in candidate.reasons
-                for reason in (
-                    "LinkedIn slug confirms domain",
-                    "search result confirms company identity",
-                    "homepage title confirms company identity",
-                    "homepage canonical confirms company identity",
+            if "ambiguous company name" in candidate.reasons:
+                content_confirms_identity = any(
+                    reason in candidate.reasons
+                    for reason in (
+                        "search result confirms company identity",
+                        "homepage title confirms company identity",
+                        "homepage canonical confirms company identity",
+                    )
                 )
-            ):
-                continue
+                slug_has_support = "LinkedIn slug confirms domain" in candidate.reasons and (
+                    "company token missing from homepage" not in candidate.reasons
+                    or "preferred .com TLD" in candidate.reasons
+                )
+                if not content_confirms_identity and not slug_has_support:
+                    continue
             if require_fast_confidence and not (
                 "preferred .com TLD" in candidate.reasons
                 or "LinkedIn company slug matches domain TLD" in candidate.reasons
