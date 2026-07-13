@@ -641,7 +641,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-13）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、17 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；19/19 provider benchmark、6/6 resolver benchmark 和 51-company fixed live job-list gate 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-13）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、18 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；20/20 provider benchmark、6/6 resolver benchmark 和 51-company fixed live job-list gate 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -718,7 +718,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-13）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近主线交付 provenance-aware career-root validation、ATS-only search、provider-config priority、strict speculative-tenant title gate、bounded traversal，以及 Phenom、Paycom、RippleHire、Taleo、Eightfold、JazzHR adapter。主线 architecture validator、19/19 provider benchmark、6/6 resolver benchmark、51/51 fixed live job-list gate 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
+当前状态（2026-07-13）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近主线交付 provenance-aware career-root validation、ATS-only search、provider-config priority、strict speculative-tenant title gate、bounded traversal、regional root recovery，以及 Phenom、Paycom、RippleHire、Taleo、Eightfold、JazzHR、Avature adapter。主线 architecture validator、20/20 provider benchmark、6/6 resolver benchmark、51/51 fixed live job-list gate 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -984,6 +984,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - GitHub Actions runtime 闭环已实现：push/PR 用 3.10-3.13 matrix 验证支持范围，3.12 release job 执行 `make offline-gates`；网络型 `make live-gate` 只允许手动 workflow，使用独立 concurrency group、20 分钟 timeout，并以 `always()` 上传 14 天 results/trace/summary。首次 Linux CI run `29240521415` 全部成功，未发现跨平台/版本差异。下一步回到 live failure-cluster 排序，继续以可复用收益选择 provider 或 resolver 工作项。
 - Dynamic LinkedIn cohort resume 已补齐：`LinkedInDiscoveryManifestStore` 使用独立 discovery version、精确 keywords/location/limit/pages request、稳定 company hash、进程锁、临时文件 + fsync + atomic replace，在下游 company scheduling 前冻结 S1 输出。普通重连 restore manifest；`--no-resume` refresh；`--rerun-stage` 仍复用同一 S1 cohort。真实 smoke 从首次 3 家保存到第二次 `restored: 3, pending: 0`，证明未重新搜索。新的 30-company manifest 在多次 Codex PTY 重连中保持固定 membership/order，完整基线为 27 website、17 career、14 job list、11 exact；521 tests、18/18 provider、6/6 resolver 和 16-adapter architecture gate 通过。下一 failure cluster 优先分析 3 个已有 career 但无 job list 的 Finch、Deloitte、Waltonen，再区分 7 个 `CAREER_PAGE_NOT_FOUND` 中的真实无招聘页与 resolver 缺口。
 - Waltonen failure-cluster workstream 完成：其 first-party careers 页已有明确 `waltonen.applytojob.com/apply/jobs/` 证据，缺口是未知 JazzHR provider，而非 generic traversal。第 17 个原生 adapter 只接受 HTTPS 单租户 `*.applytojob.com`，规范化 `/apply/jobs/` board，用 JazzHR/Resumator 公开页面组合指纹读取完整 inventory，并只产生同租户 `/apply/jobs/details/{id}` URL；跨租户 redirect、credentials、非标准端口和伪 detail link 均拒绝。Focused live 在 8.0 秒内 exact 命中 `AI Programmer`，4-record capture 物化成 3 fixtures 后 0.2 秒离线重放同一结果。`ADAPTER_VERSION` 提升到 `2026-07-13.32`；527 tests、19/19 provider、6/6 resolver 和 17-adapter architecture gate 通过。稳定 30-company cohort 的下一项转向 Deloitte regional hiring resolver，再处理 Finch 品牌歧义。
+- Deloitte regional workstream 完成：S2 `WebsiteResolutionService` contract 增加可选 job location，U.S. posting 遇到已验证的外区 redirect 时拒绝误选，并在同一 brand host 上有界探测 3 个 U.S. root；搜索慢路径也携带区域意图。S4 对同域 career/sitemap candidate 继承 verified homepage locale，同区加分、跨区重罚，并处理 homepage self-link、明确 career landing root 和 executive/student audience mismatch。S5 允许同 registrable brand 的 `apply` 子域在明确 `Job search` 命令下作为官方 portal。Avature 作为第 18 个原生 page-aware adapter 接入：用 `avature.portal.id/lang/urlPath` 与同 host SearchJobs route 组合证据识别 customer domain，执行 title-filtered search，并只接受同 host/lang/portal 的 numeric JobDetail。Deloitte 从错误 Southeast Asia website 和 Australia sitemap 修正为 U.S. root，最终 exact 命中 `Agentic AI Engineer — Healthcare AI` job `355577`；skip-sitemap live 21.0 秒，完整全球 sitemap live 44.1 秒，8-record capture 0.3 秒离线 exact replay。`ADAPTER_VERSION` 提升到 `2026-07-13.33`；538 tests、20/20 provider、6/6 resolver 和 18-adapter architecture gate 通过。稳定 cohort 下一项转向 Finch 品牌歧义。
 
 目标：
 
@@ -1087,7 +1088,7 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - LinkedIn discovery 已经接入
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
-- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 17 个原生 adapter
+- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 18 个原生 adapter
 - Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR 已接 structured API
 - iCIMS、SuccessFactors、Workable、Rippling 已加入原生 structured page / embedded JSON / verified-link extraction，但还需要更多真实站点 live hardening
 - browser fallback 已经从全量渲染升级为 smart fallback + render budget
@@ -1095,4 +1096,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，17 个主要 provider（含 Google Careers、Phenom、Paycom、RippleHire、Taleo、Eightfold 和 JazzHR）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle，query pagination 与 redirect alias 已可确定性回放。固定 provider benchmark 为 19/19 exact opening，resolver benchmark 为 6/6；CPython 3.12 release baseline 下 527 tests 和最新 fixed live 51/51 官网与 job list、50/51 exact opening、51/51 expectations 通过；3.14 暂不支持。5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，18 个主要 provider（含 Google Careers、Phenom、Paycom、RippleHire、Taleo、Eightfold、JazzHR 和 Avature）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle，query pagination 与 redirect alias 已可确定性回放。固定 provider benchmark 为 20/20 exact opening，resolver benchmark 为 6/6；CPython 3.12 release baseline 下 538 tests 和最新 fixed live 51/51 官网与 job list、50/51 exact opening、51/51 expectations 通过；3.14 暂不支持。5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。

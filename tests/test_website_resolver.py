@@ -11,6 +11,49 @@ from job_source_agent.website_resolver import (
 
 
 class WebsiteResolverTests(unittest.TestCase):
+    def test_us_job_location_recovers_same_host_us_root_after_foreign_redirect(self):
+        us_root = "https://www.deloitte.com/us/en.html"
+
+        class RegionalFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                if "format=rss" in url:
+                    raise AssertionError("same-host regional recovery should run before search")
+                if url.rstrip("/") in {"https://deloitte.com", "https://www.deloitte.com"}:
+                    return Page(
+                        url=url,
+                        final_url="https://www.deloitte.com/southeast-asia/en.html",
+                        html="<html><head><title>Deloitte</title></head><body>Deloitte</body></html>",
+                    )
+                if url == us_root:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<html><head><title>Deloitte US</title></head><body>Deloitte careers</body></html>",
+                    )
+                raise FetchError(f"not this candidate: {url}")
+
+        resolver = CompanyWebsiteResolver(RegionalFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "Deloitte",
+            "https://www.linkedin.com/company/deloitte",
+            "Grand Rapids, MI",
+        )
+
+        self.assertEqual(website_url, us_root)
+        self.assertEqual(trace["target_region"], "us")
+        selected_reasons = trace["selected"]["reasons"]
+        self.assertIn("regional website matches job location: us", selected_reasons)
+        self.assertIn("verified regional root recovery", selected_reasons)
+        self.assertTrue(
+            any(
+                "regional website conflicts with job location: sea vs us" in item["reasons"]
+                for item in trace["candidates"]
+            )
+        )
+
     def test_linkedin_static_asset_domains_are_blocked(self):
         self.assertTrue(is_blocked_domain("https://media.licdn.com"))
         self.assertTrue(is_blocked_domain("https://static.licdn.com"))

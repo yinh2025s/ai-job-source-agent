@@ -226,6 +226,63 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertIn("localized career section", candidate.reasons)
         self.assertGreater(candidate.score, 240)
 
+    def test_career_candidate_preserves_verified_homepage_locale(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+        homepage = "https://example.com/us/en.html"
+
+        same_region = agent._score_career_candidate(
+            RawLink(
+                "https://example.com/us/en/careers/careers.html",
+                "Careers",
+                homepage,
+                "page_link",
+            ),
+            homepage,
+        )
+        other_region = agent._score_career_candidate(
+            RawLink(
+                "https://example.com/au/en/careers/hot-jobs.html",
+                "Hot jobs",
+                "https://example.com/au/sitemap.xml",
+                "sitemap",
+            ),
+            homepage,
+        )
+
+        self.assertGreater(same_region.score, other_region.score)
+        self.assertIn("matches homepage locale 'us'", same_region.reasons)
+        self.assertIn("conflicts with homepage locale 'us': 'au'", other_region.reasons)
+
+    def test_general_role_prefers_career_home_over_audience_page_and_self_link(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+        homepage = "https://example.com/us/en.html"
+        target = "Agentic AI Engineer"
+        links = [
+            RawLink(homepage, "Careers", homepage, "page_link"),
+            RawLink(
+                "https://example.com/us/en/careers/executive-jobs.html",
+                "Executives",
+                homepage,
+                "page_link",
+            ),
+            RawLink(
+                "https://example.com/us/en/careers/careers.html",
+                "Careers home",
+                homepage,
+                "page_link",
+            ),
+        ]
+
+        scored = [
+            agent._score_career_candidate(link, homepage, target_title=target)
+            for link in links
+        ]
+
+        self.assertEqual(max(scored, key=lambda candidate: candidate.score).url, links[2].url)
+        self.assertIn("homepage self-link", scored[0].reasons)
+        self.assertIn("career audience mismatch: executive", scored[1].reasons)
+        self.assertIn("explicit career landing root", scored[2].reasons)
+
     def test_short_career_probe_ranks_above_deep_career_jobs_probe(self):
         agent = JobSourceAgent(Fetcher(offline=True), enable_career_search=False)
 

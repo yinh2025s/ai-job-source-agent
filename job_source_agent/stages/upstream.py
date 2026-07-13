@@ -19,6 +19,7 @@ class WebsiteResolutionService(Protocol):
         self,
         company_name: str,
         linkedin_company_url: str | None = None,
+        job_location: str | None = None,
     ) -> tuple[str | None, dict]:
         ...
 
@@ -93,6 +94,7 @@ class WebsiteResolutionStage:
                 website_url, trace = self.service.resolve(
                     context.company.company_name,
                     context.company.linkedin_company_url,
+                    context.company.job_location,
                 )
                 website_url = normalize_url(website_url) if website_url else None
                 detail = None

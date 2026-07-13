@@ -41,7 +41,7 @@ from .scoring import (
     score_job_link,
 )
 from .stages import CareerDiscoveryStage, JobBoardDiscoveryStage, OpeningMatchStage, PipelineStageRunner
-from .web import FetchError, Page, RawLink, extract_links, normalize_url
+from .web import FetchError, Page, RawLink, domain_of, extract_links, normalize_url
 
 
 COMMON_CAREER_PATHS = (
@@ -319,7 +319,10 @@ class JobSourceAgent:
             trace["sitemap_discovery"] = {"skipped": True}
 
         scored = sorted(
-            [self._score_career_candidate(link) for link in raw_candidates],
+            [
+                self._score_career_candidate(link, homepage_url, target_title=target_title)
+                for link in raw_candidates
+            ],
             key=lambda candidate: candidate.score,
             reverse=True,
         )
@@ -762,11 +765,12 @@ class JobSourceAgent:
         target_label = target.hostname.split(".", 1)[0].casefold()
         text = " ".join(candidate.text.casefold().split())
         return (
-            any(marker in target_label for marker in ("jobs", "careers"))
+            any(marker in target_label for marker in ("jobs", "careers", "apply"))
             and any(
                 phrase in text
                 for phrase in (
                     "job opportunities",
+                    "job search",
                     "open positions",
                     "search jobs",
                     "staff careers",
@@ -988,9 +992,43 @@ class JobSourceAgent:
             if original_timeout is not None:
                 self.fetcher.timeout = original_timeout
 
-    def _score_career_candidate(self, link: RawLink) -> LinkCandidate:
+    def _score_career_candidate(
+        self,
+        link: RawLink,
+        homepage_url: str | None = None,
+        *,
+        target_title: str | None = None,
+    ) -> LinkCandidate:
         candidate = score_career_link(link)
         path_parts = [part.lower() for part in urlparse(link.url).path.split("/") if part]
+        normalized_text = " ".join(link.text.casefold().split())
+        if homepage_url and normalize_url(link.url) == normalize_url(homepage_url):
+            candidate.score -= 250
+            candidate.reasons.append("homepage self-link")
+        if normalized_text in {"career home", "careers home"} or urlparse(link.url).path.casefold().endswith(
+            "/careers/careers.html"
+        ):
+            candidate.score += 140
+            candidate.reasons.append("explicit career landing root")
+        audience_mismatch = _career_audience_mismatch(link.url, link.text, target_title)
+        if audience_mismatch:
+            candidate.score -= 220
+            candidate.reasons.append(f"career audience mismatch: {audience_mismatch}")
+        homepage_locale = _leading_locale_segment(homepage_url)
+        candidate_locale = _leading_locale_segment(link.url)
+        if (
+            homepage_locale
+            and candidate_locale
+            and domain_of(link.url) == domain_of(homepage_url or "")
+        ):
+            if homepage_locale == candidate_locale:
+                candidate.score += 100
+                candidate.reasons.append(f"matches homepage locale '{homepage_locale}'")
+            else:
+                candidate.score -= 500
+                candidate.reasons.append(
+                    f"conflicts with homepage locale '{homepage_locale}': '{candidate_locale}'"
+                )
         if self._is_concise_career_path(path_parts):
             candidate.score += 120
             candidate.reasons.append("concise career root path")
@@ -1470,6 +1508,40 @@ def _stage_result(
 
 def _url_evidence(field: str, url: str) -> dict[str, str]:
     return {"field": field, "url": url}
+
+
+def _leading_locale_segment(url: str | None) -> str | None:
+    if not url:
+        return None
+    try:
+        first = next((part.casefold() for part in urlparse(url).path.split("/") if part), "")
+    except (TypeError, ValueError):
+        return None
+    if len(first) == 2 and first.isalpha():
+        return first
+    if first in {"southeast-asia", "united-kingdom", "australia", "canada", "india"}:
+        return first
+    return None
+
+
+def _career_audience_mismatch(
+    url: str,
+    text: str,
+    target_title: str | None,
+) -> str | None:
+    if not target_title:
+        return None
+    candidate_text = f"{urlparse(url).path} {text}".casefold()
+    target = target_title.casefold()
+    if any(marker in candidate_text for marker in ("executive", "partner-jobs")) and not any(
+        marker in target for marker in ("executive", "partner", "principal", "director")
+    ):
+        return "executive"
+    if any(marker in candidate_text for marker in ("student", "graduate", "internship")) and not any(
+        marker in target for marker in ("student", "graduate", "intern", "apprentice")
+    ):
+        return "early-career"
+    return None
 
 
 def _legacy_step_name(stage: str) -> str:

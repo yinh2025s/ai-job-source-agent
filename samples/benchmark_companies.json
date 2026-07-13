@@ -112,5 +112,11 @@
     "company_website_url": "https://acme.applytojob.com/apply/jobs/",
     "career_root_url": "https://acme.applytojob.com/apply/jobs/",
     "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Avature",
+    "company_website_url": "https://avature.example/en_US/careers",
+    "career_root_url": "https://avature.example/en_US/careers",
+    "job_title": "Data Analyst"
   }
 ]

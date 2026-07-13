@@ -98,9 +98,20 @@ class CompanyWebsiteResolver:
         self.overrides = self._load_overrides(overrides_path)
         self.verify_limit = verify_limit
 
-    def resolve(self, company_name: str, linkedin_company_url: str | None = None) -> tuple[str | None, dict]:
+    def resolve(
+        self,
+        company_name: str,
+        linkedin_company_url: str | None = None,
+        job_location: str | None = None,
+    ) -> tuple[str | None, dict]:
         normalized_name = normalize_company_key(company_name)
-        trace = {"company_name": company_name, "linkedin_company_url": linkedin_company_url, "candidates": []}
+        trace = {
+            "company_name": company_name,
+            "linkedin_company_url": linkedin_company_url,
+            "job_location": job_location,
+            "target_region": _location_region(job_location),
+            "candidates": [],
+        }
 
         if normalized_name in self.overrides:
             url = normalize_url(self.overrides[normalized_name])
@@ -120,6 +131,7 @@ class CompanyWebsiteResolver:
             fast_candidates,
             company_name,
             linkedin_company_url,
+            job_location=job_location,
             candidate_sources=fast_sources,
         )
         trace["candidates"].extend(
@@ -135,8 +147,31 @@ class CompanyWebsiteResolver:
             }
             return fast_selected.url, trace
 
+        regional_candidates = _regional_root_candidates(fast_scored, job_location)
+        if regional_candidates:
+            regional_sources = _candidate_source_map(("regional_recovery", regional_candidates))
+            regional_scored = self._rank_and_verify_candidates(
+                regional_candidates,
+                company_name,
+                linkedin_company_url,
+                job_location=job_location,
+                candidate_sources=regional_sources,
+            )
+            trace["candidates"].extend(
+                {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
+                for candidate in regional_scored[:5]
+            )
+            regional_selected = self._select_verified_candidate(regional_scored)
+            if regional_selected:
+                trace["selected"] = {
+                    "url": regional_selected.url,
+                    "score": regional_selected.score,
+                    "reasons": regional_selected.reasons + ["verified regional root recovery"],
+                }
+                return regional_selected.url, trace
+
         linkedin_candidates = self._linkedin_company_candidates(linkedin_company_url)
-        search_evidence = self._search_candidates_with_evidence(company_name)
+        search_evidence = self._search_candidates_with_evidence(company_name, job_location)
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
         all_candidates = dedupe_urls(linkedin_candidates[:5] + search_candidates[:5] + guessed_candidates[:6])
@@ -149,6 +184,7 @@ class CompanyWebsiteResolver:
             all_candidates,
             company_name,
             linkedin_company_url,
+            job_location=job_location,
             search_evidence=evidence_by_domain,
             candidate_sources=candidate_sources,
         )
@@ -175,6 +211,7 @@ class CompanyWebsiteResolver:
         candidates: list[str],
         company_name: str,
         linkedin_company_url: str | None,
+        job_location: str | None = None,
         search_evidence: dict[str, SearchEvidence] | None = None,
         candidate_sources: dict[str, set[str]] | None = None,
     ) -> list[WebsiteCandidate]:
@@ -185,6 +222,7 @@ class CompanyWebsiteResolver:
                 candidate,
                 company_name,
                 linkedin_company_url=linkedin_company_url,
+                job_location=job_location,
                 verify=False,
                 search_evidence=search_evidence.get(domain_of(candidate)),
             )
@@ -212,6 +250,7 @@ class CompanyWebsiteResolver:
                                 candidate.url,
                                 company_name,
                                 linkedin_company_url=linkedin_company_url,
+                                job_location=job_location,
                                 verify=True,
                                 search_evidence=search_evidence.get(domain_of(candidate.url)),
                             ),
@@ -228,13 +267,20 @@ class CompanyWebsiteResolver:
         ]
         return sorted(refined, key=lambda candidate: candidate.score, reverse=True)
 
-    def _search_candidates(self, company_name: str) -> list[str]:
-        return [result.url for result in self._search_candidates_with_evidence(company_name)]
+    def _search_candidates(self, company_name: str, job_location: str | None = None) -> list[str]:
+        return [result.url for result in self._search_candidates_with_evidence(company_name, job_location)]
 
-    def _search_candidates_with_evidence(self, company_name: str) -> list[SearchEvidence]:
-        query = urlencode({"q": f"{company_name} official website", "setlang": "en-us", "cc": "us"})
+    def _search_candidates_with_evidence(
+        self,
+        company_name: str,
+        job_location: str | None = None,
+    ) -> list[SearchEvidence]:
+        region = _location_region(job_location)
+        region_query = " United States" if region == "us" else ""
+        query_text = f"{company_name}{region_query} official website"
+        query = urlencode({"q": query_text, "setlang": "en-us", "cc": "us"})
         rss_query = urlencode(
-            {"q": f"{company_name} official website", "format": "rss", "setlang": "en-us", "cc": "us"}
+            {"q": query_text, "format": "rss", "setlang": "en-us", "cc": "us"}
         )
         results: list[SearchEvidence] = []
         seen: set[str] = set()
@@ -250,7 +296,7 @@ class CompanyWebsiteResolver:
                 continue
             raw_results = extract_urls(page.html)
             for result in raw_results:
-                cleaned = clean_search_url(result.url)
+                cleaned = clean_search_url(result.url, preserve_region=region)
                 if not cleaned or is_blocked_domain(cleaned):
                     continue
                 domain = domain_of(cleaned)
@@ -363,6 +409,7 @@ class CompanyWebsiteResolver:
         url: str,
         company_name: str,
         linkedin_company_url: str | None = None,
+        job_location: str | None = None,
         verify: bool = True,
         search_evidence: SearchEvidence | None = None,
     ) -> WebsiteCandidate:
@@ -431,6 +478,17 @@ class CompanyWebsiteResolver:
             if _domain_confirms_company_identity(domain_of(canonical_url), company_tokens):
                 score += 20
                 reasons.append("homepage canonical confirms company identity")
+
+        target_region = _location_region(job_location)
+        resolved_region = _url_region(resolved_url)
+        if target_region and resolved_region and target_region != resolved_region:
+            score -= 120
+            reasons.append(
+                f"regional website conflicts with job location: {resolved_region} vs {target_region}"
+            )
+        elif target_region and resolved_region == target_region:
+            score += 25
+            reasons.append(f"regional website matches job location: {target_region}")
 
         html_head = page.html[:5000]
         homepage_title = _html_title(html_head)
@@ -867,7 +925,7 @@ def _allocate_verification_slots(
     return selected
 
 
-def clean_search_url(url: str) -> str:
+def clean_search_url(url: str, preserve_region: str | None = None) -> str:
     url = html_unescape(url)
     parsed = urlparse(url)
     if parsed.path.startswith("/ck/a"):
@@ -892,7 +950,101 @@ def clean_search_url(url: str) -> str:
     parsed = urlparse(url)
     if parsed.netloc.endswith("bing.com") or parsed.netloc.endswith("microsoft.com"):
         return ""
-    return normalize_url(f"{parsed.scheme}://{parsed.netloc}")
+    base = f"{parsed.scheme}://{parsed.netloc}"
+    if preserve_region and _url_region(url) == preserve_region:
+        return normalize_url(f"{base}{parsed.path or '/'}")
+    return normalize_url(base)
+
+
+_US_STATE_CODES = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID",
+    "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS",
+    "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK",
+    "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV",
+    "WI", "WY", "DC",
+}
+_NON_US_REGION_SEGMENTS = {
+    "africa": "africa",
+    "asia": "asia",
+    "australia": "au",
+    "au": "au",
+    "ca": "ca",
+    "canada": "ca",
+    "de": "de",
+    "fr": "fr",
+    "in": "in",
+    "india": "in",
+    "ireland": "ie",
+    "jp": "jp",
+    "japan": "jp",
+    "southeast-asia": "sea",
+    "uk": "uk",
+    "united-kingdom": "uk",
+}
+
+
+def _location_region(location: str | None) -> str | None:
+    if not location:
+        return None
+    normalized = location.casefold()
+    if re.search(r"\b(united states|u\.s\.?a?\.?|usa)\b", normalized):
+        return "us"
+    parts = [part.strip().upper() for part in location.split(",")]
+    if any(part in _US_STATE_CODES for part in parts[1:]):
+        return "us"
+    return None
+
+
+def _url_region(url: str) -> str | None:
+    try:
+        parsed = urlparse(url)
+    except (TypeError, ValueError):
+        return None
+    host_labels = (parsed.hostname or "").casefold().split(".")
+    if any(label in {"jobsus", "usjobs"} for label in host_labels):
+        return "us"
+    segments = [unquote(part).casefold() for part in parsed.path.split("/") if part]
+    if any(segment in {"us", "en-us", "en_us"} for segment in segments[:3]):
+        return "us"
+    for segment in segments[:2]:
+        if segment in _NON_US_REGION_SEGMENTS:
+            return _NON_US_REGION_SEGMENTS[segment]
+    return None
+
+
+def _regional_root_candidates(
+    scored: list[WebsiteCandidate],
+    job_location: str | None,
+) -> list[str]:
+    target_region = _location_region(job_location)
+    if target_region != "us":
+        return []
+    conflicting = next(
+        (
+            candidate
+            for candidate in scored
+            if "homepage verified" in candidate.reasons
+            and any(
+                reason.startswith("regional website conflicts with job location:")
+                for reason in candidate.reasons
+            )
+        ),
+        None,
+    )
+    if conflicting is None:
+        return []
+    try:
+        parsed = urlparse(conflicting.url)
+    except (TypeError, ValueError):
+        return []
+    if parsed.scheme != "https" or not parsed.netloc:
+        return []
+    origin = f"https://{parsed.netloc}"
+    return [
+        f"{origin}/us/en.html",
+        f"{origin}/us/en/",
+        f"{origin}/us/en/careers.html",
+    ]
 
 
 def is_blocked_domain(url: str) -> bool:

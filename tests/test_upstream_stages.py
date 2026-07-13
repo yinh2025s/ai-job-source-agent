@@ -15,7 +15,7 @@ class FakeWebsiteResolver:
         self.result = result
         self.calls = []
 
-    def resolve(self, company_name, linkedin_company_url=None):
+    def resolve(self, company_name, linkedin_company_url=None, job_location=None):
         self.calls.append((company_name, linkedin_company_url))
         return self.result, {"method": "fake-website"}
 
