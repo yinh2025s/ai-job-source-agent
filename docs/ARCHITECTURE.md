@@ -52,6 +52,16 @@ S6 的职责进一步拆成三层：provider/matcher 记录官方库存读取状
 
 S5 不把 generic career landing page 自动视作 job list。成功必须来自已知 provider、页面中的具体 job-detail evidence，或经过有界 traversal 后抵达的明确 first-party listing/search route；仅链接到下游搜索页的导航页面不能继承该搜索页的证据。
 
+## S4 Candidate Scheduling
+
+S4 将候选验证与候选调度分开。纯调度策略位于 `job_source_agent/career_candidate_scheduler.py`；`pipeline.py` 只负责编排 fetch 与验证。验证仍由页面、redirect、CMS 和 provider evidence gate 决定；调度只决定在固定 fetch budget 内先检查哪些候选，不能把猜测 URL 提升为成功。
+
+`LinkCandidate.origin` 是调度的结构化输入。证据层级固定为：identity/provider handoff、明确 first-party navigation、sitemap/search 等 discovered evidence、common path/subdomain/blind ATS 等 speculative probe；不含 career 语义的普通官网导航位于这些候选之后。Score 只在同一证据层内排序，不能让高分猜测压过明确官网导航。Legacy 手工 candidate 可以暂时从 reason 兼容推导，但生产 scorer 必须保留 `RawLink.origin`。
+
+同一 speculative 层先按 canonical host 与 locale-free route family 选择代表，再延后裸域/`www`、locale 和同族 alias。代表优先官网当前 concrete host、无 locale 的较短路径；两字母产品路径不能自动当作 locale。生产的五次 S4 fetch budget 在有足够 speculative 候选时覆盖四个 route family，并为最强 family 保留一次 concrete-host fallback。Fallback 只延后、不删除，且不能挤掉更高证据层的候选。
+
+Trace 记录 schedule policy/version、origin、evidence tier、score、canonical/concrete host、locale、route family、family role、eligible/bounded/truncated 数量以及预算耗尽后仍未尝试的候选数。Checkpoint adapter version 在调度 contract 改变时失效，避免旧 S4 成功或失败掩盖新顺序。
+
 ## Browser Extension Boundary
 
 `extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。

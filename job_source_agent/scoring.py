@@ -166,7 +166,7 @@ def is_ats_url(url: str) -> bool:
 
 def score_career_link(link: RawLink) -> LinkCandidate:
     if is_resource_url(link.url):
-        return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"])
+        return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"], link.origin)
 
     haystack = f"{urlparse(link.url).path.lower()} {link.text.lower()} {domain_of(link.url)}"
     score = 0
@@ -189,7 +189,7 @@ def score_career_link(link: RawLink) -> LinkCandidate:
             score += weight
             reasons.append(f"negative keyword '{keyword}'")
 
-    return LinkCandidate(link.url, link.text, link.source_url, score, reasons)
+    return LinkCandidate(link.url, link.text, link.source_url, score, reasons, link.origin)
 
 
 def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
@@ -203,9 +203,9 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     reasons: list[str] = []
 
     if is_resource_url(link.url):
-        return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"])
+        return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"], link.origin)
     if is_non_official_job_domain(link.url):
-        return LinkCandidate(link.url, link.text, link.source_url, -500, ["non-official job/social domain"])
+        return LinkCandidate(link.url, link.text, link.source_url, -500, ["non-official job/social domain"], link.origin)
 
     if normalize_for_compare(link.url) == normalize_for_compare(career_page_url):
         score -= 200
@@ -266,7 +266,7 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
         score += 10
         reasons.append("specific URL depth")
 
-    return LinkCandidate(link.url, link.text, link.source_url, score, reasons)
+    return LinkCandidate(link.url, link.text, link.source_url, score, reasons, link.origin)
 
 
 def is_likely_job_detail(candidate: LinkCandidate) -> bool:

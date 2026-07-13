@@ -65,6 +65,7 @@ class LinkCandidate:
     source_url: str
     score: int = 0
     reasons: list[str] = field(default_factory=list)
+    origin: str = "unknown"
 
 
 @dataclass

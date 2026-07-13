@@ -77,6 +77,8 @@
 
 ### Changed
 
+- `ADAPTER_VERSION` 提升到 `2026-07-14.54`。S4 新增独立的 evidence-first、host/route-family-diverse 有界候选调度模块：`LinkCandidate` 保留结构化 origin，identity/明确官网导航/discovered/speculative 分层严格排序，普通非 career 导航位于其后；同层先覆盖不同 canonical host 与 locale-free route family，再延后裸域/`www` 和 locale alias，并在五次 speculative budget 中为最强 route 保留一次 concrete-host fallback。`subdomain_probe` 与 blind ATS 保持 speculative，两字母产品路径不会误作 locale；trace 按 selection phase 记录调度版本、tier、score、host、locale、family role、截断与剩余候选。M|R Walls focused live 验证前五次覆盖四类 route 加一次 host fallback，真实 404/DNS 后仍保守返回 retryable budget exhaustion。826 tests、24/24 provider、6/6 resolver 和 23-adapter architecture gate 通过；真实登录态插件验收继续 deferred。
+
 - `ADAPTER_VERSION` 提升到 `2026-07-14.53`。Request identity 支持有界 text-only multipart form，以结构化字段脱敏摘要区分 page/tenant/search，并将 `Origin`/`Referer` 纳入 semantic headers；文件上传或未知 multipart 结构 fail closed。CEIPAL credential-bearing endpoint path、query、body、trace 与 snapshot 使用同一脱敏策略，离线 parser 只额外接受精确 `[REDACTED]` pagination path，host/method/page/结构验证不放宽。
 
 - S3 对 `agency_unresolved` 现在输出 terminal `COMPANY_IDENTITY_AMBIGUOUS`，S4 因招聘主体未解析而 `not_run`，不会搜索发布代理自己的官网。First-party career 页的可见明确空岗位声明输出 `NO_PUBLIC_OPENINGS`，hidden/script 文本不作为证据；候选抓取预算已耗尽时输出 retryable `FETCH_BUDGET_EXHAUSTED`，不再误报确定性的 `CAREER_PAGE_NOT_FOUND`。Focused public live 中 Centraprise 经 CEIPAL exact 成功并由 29 fixtures 在 0.3 秒离线复现；Eightpoint、Aventis Solutions、M|R Walls 分别稳定复现上述三类 outcome，0 fixture gap、0 mismatch。真实登录态 extension Scan/Run 继续 deferred。

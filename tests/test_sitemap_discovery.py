@@ -221,7 +221,9 @@ class SitemapDiscoveryTests(unittest.TestCase):
 
     def test_career_page_can_be_discovered_from_sitemap_index(self):
         agent = JobSourceAgent(
-            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True),
+            max_candidates=1,
+            max_career_candidate_fetches=1,
         )
 
         career_url, trace = agent.find_career_page("https://sitemapindex.example")

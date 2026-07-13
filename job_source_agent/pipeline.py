@@ -5,6 +5,14 @@ from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from .career_search import CareerSearchResolver
+from .career_candidate_scheduler import (
+    candidate_concrete_host,
+    candidate_evidence_tier,
+    candidate_host_family,
+    candidate_locale_key,
+    candidate_route_family,
+    schedule_career_candidates,
+)
 from .content_probe import (
     discover_first_party_career_navigation,
     probe_first_party_cms_payload,
@@ -354,6 +362,7 @@ class JobSourceAgent:
             primary_candidates,
             trace,
             target_title=target_title,
+            schedule_source="homepage_and_common_paths",
         )
         if selected_url:
             trace["sitemap_discovery"] = {
@@ -392,6 +401,7 @@ class JobSourceAgent:
                     trace,
                     max_fetches=2,
                     target_title=target_title,
+                    schedule_source="bundle_navigation",
                 )
                 if selected_url:
                     trace["sitemap_discovery"] = {
@@ -434,6 +444,7 @@ class JobSourceAgent:
                 sitemap_candidates,
                 trace,
                 target_title=target_title,
+                schedule_source="sitemap",
             )
             if selected_url:
                 trace["selected_from"] = "sitemap_discovery"
@@ -448,6 +459,7 @@ class JobSourceAgent:
                 search_result.candidates,
                 trace,
                 target_title=target_title,
+                schedule_source="search",
             )
             if selected_url:
                 trace["selected_from"] = "search_discovery"
@@ -467,6 +479,7 @@ class JobSourceAgent:
                 ats_trace,
                 max_fetches=self.max_ats_board_fetches,
                 target_title=target_title,
+                schedule_source="blind_ats",
             )
             if selected_url:
                 trace["selected"] = ats_trace["selected"]
@@ -1189,6 +1202,7 @@ class JobSourceAgent:
                     source_url=homepage_url,
                     score=180,
                     reasons=[f"derived {provider} board candidate", f"company slug '{slug}'"],
+                    origin="blind_ats_probe",
                 )
                 for url, provider in urls
             )
@@ -1387,22 +1401,52 @@ class JobSourceAgent:
         trace: dict,
         max_fetches: int | None = None,
         target_title: str | None = None,
+        schedule_source: str = "candidate_selection",
     ) -> str | None:
         fetch_attempts = 0
         fetch_limit = self.max_career_candidate_fetches if max_fetches is None else max_fetches
-        ranked_candidates = sorted(
+        scheduled_candidates, schedule_trace = schedule_career_candidates(
             candidates,
-            key=lambda candidate: -(
-                candidate.score + self._career_evidence_priority_boost(candidate)
-            ),
+            fetch_limit=fetch_limit,
         )
-        for candidate in ranked_candidates[: self.max_candidates]:
-            if candidate.score < 50:
-                continue
+        bounded_candidates = scheduled_candidates[: self.max_candidates]
+        roles_by_url = schedule_trace.pop("roles_by_url")
+        original_positions = {
+            candidate.url: position
+            for position, candidate in enumerate(candidates)
+        }
+        candidate_schedule = {
+            **schedule_trace,
+            "source": schedule_source,
+            "max_candidates": self.max_candidates,
+            "scheduled_count": len(bounded_candidates),
+            "bounded_count": len(bounded_candidates),
+            "max_candidates_truncated_count": max(0, len(scheduled_candidates) - len(bounded_candidates)),
+            "scheduled": [
+                {
+                    "url": candidate.url,
+                    "schedule_position": schedule_position,
+                    "original_position": original_positions[candidate.url],
+                    "score": candidate.score,
+                    "origin": candidate.origin,
+                    "evidence_tier": candidate_evidence_tier(candidate),
+                    "host_family": candidate_host_family(candidate),
+                    "concrete_host": candidate_concrete_host(candidate.url),
+                    "locale_key": candidate_locale_key(candidate.url),
+                    "route_family": candidate_route_family(candidate),
+                    "family_role": roles_by_url[candidate.url],
+                }
+                for schedule_position, candidate in enumerate(bounded_candidates)
+            ],
+        }
+        trace["candidate_schedule"] = candidate_schedule
+        trace.setdefault("candidate_schedules", []).append(candidate_schedule)
+        for candidate in bounded_candidates:
             if fetch_attempts >= fetch_limit:
                 trace["candidate_fetch_budget_exhausted"] = {
                     "limit": fetch_limit,
-                    "remaining_candidates": len(candidates) - fetch_attempts,
+                    "remaining_candidates": len(scheduled_candidates) - fetch_attempts,
+                    "remaining_bounded_candidates": len(bounded_candidates) - fetch_attempts,
                 }
                 return None
             fetch_attempts += 1
@@ -1509,24 +1553,6 @@ class JobSourceAgent:
                 trace["selected_page_source"] = page.source
                 return actual_url
         return None
-
-    @staticmethod
-    def _career_evidence_priority_boost(candidate: LinkCandidate) -> int:
-        if any(
-            reason.startswith("identity-supplied") or reason == "derived provider configuration"
-            for reason in candidate.reasons
-        ):
-            return 1000
-        if "homepage navigation link" in candidate.reasons and any(
-            reason.startswith("career keyword")
-            or reason in {
-                "explicit job-list route",
-                "homepage team link requiring employment evidence",
-            }
-            for reason in candidate.reasons
-        ):
-            return 500
-        return 0
 
     def _verify_derived_provider_with_adapter(
         self,
