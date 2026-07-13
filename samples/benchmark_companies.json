@@ -76,5 +76,11 @@
     "company_website_url": "https://www.google.com",
     "career_root_url": "https://www.google.com/about/careers/applications/",
     "job_title": "Product Manager, Ads"
+  },
+  {
+    "company_name": "Acme Phenom",
+    "company_website_url": "https://careers-phenom.example",
+    "career_root_url": "https://careers-phenom.example/global/en/search-results",
+    "job_title": "Data Analyst"
   }
 ]

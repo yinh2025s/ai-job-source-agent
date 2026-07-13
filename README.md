@@ -213,11 +213,11 @@ Expected summary:
 
 ```text
 benchmark summary:
-  total: 13
-  success: 13
-  with_job_list: 13
-  with_opening: 13
-  expectations: 13/13 passed
+  total: 14
+  success: 14
+  with_job_list: 14
+  with_opening: 14
+  expectations: 14/14 passed
 ```
 
 The companion [benchmark expectations](samples/benchmark_expectations.json) declares the provider, minimum successful stage, and whether an exact opening is required for each fixture. The evaluator exits nonzero if a declared expectation regresses.
@@ -299,6 +299,7 @@ Latest live checks on July 12, 2026:
 - July 13 exploratory LinkedIn batch: 19 unique companies, 14/19 official job-list pages, and 6/19 exact openings. Preserving completed S1-S3 evidence showed that the next dominant cluster is hidden ATS/list-root discovery and structured job-card association, rather than website resolution alone.
 - July 13 focused replay after that cluster: Plaid parent-card extraction and Snowflake Phenom structured state both reached exact openings. Follow-up provenance-aware root validation and verified ATS fallback separately reached exact openings for Glean, Reddit, Zillow, and Twitch. Uber remains on its first-party public list and Starbucks routes toward Eightfold, but their traced Seattle/Nashville titles are not currently confirmed; Zillow search also remains network-sensitive in the combined batch.
 - July 13 S5 traversal replay: seven former generic opening misses were first reclassified as 0/7 verified job lists under the stricter evidence gate, then improved to 3/7 job lists and 1/7 exact opening. Epistemix now canonicalizes its Ashby embed and matches the exact AI Engineer role; Quest Global and Viking reach locale-preserving Phenom search-results pages. Phenom structured inventory and ReturnPro's Paycom board remain explicit provider backlog.
+- July 13 Phenom provider replay: both Quest Global and Viking are identified from customer-owned page evidence. Quest Global's SSR keyword inventory resolves the exact Agentic AI Engineer opening; Viking returns a verified title-filtered no-match without claiming that its entire public inventory is empty. The deterministic provider benchmark now covers 14/14 exact openings.
 - Fixed JS-heavy browser cohort: five companies across five providers and five technologies (Plum, Meta, Apple Jobs, Spotify, and IIC Lakshya). The strict saved/live evidence gate requires a successful render event, structured selector evidence, optional expected URL, sufficient visible text, no loading state, and no final classified error. Saved replay and the 15-second live gate both pass 5/5 within the shared render budget; Meta exercises static HTTP 400 to browser fallback, and Meta, Apple, and IIC require exact job URLs.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.

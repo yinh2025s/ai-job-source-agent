@@ -203,10 +203,16 @@ class JobOpeningMatcher:
                                 "status": (
                                     "verified"
                                     if adapter_result.candidates
+                                    else "verified_filtered_empty"
+                                    if (
+                                        adapter_result.reason_code == "EMPTY_PROVIDER_RESPONSE"
+                                        and adapter_result.trace.get("inventory_scope") == "title_filtered"
+                                    )
                                     else "verified_empty"
                                     if adapter_result.reason_code == "EMPTY_PROVIDER_RESPONSE"
                                     else "incomplete"
                                 ),
+                                "scope": adapter_result.trace.get("inventory_scope", "full"),
                                 "candidate_count": len(adapter_result.candidates),
                                 "strongest_title_score": max(scored_titles, default=0),
                                 "reason_code": adapter_result.reason_code,

@@ -38,6 +38,25 @@ class OpeningAvailabilityTests(unittest.TestCase):
         self.assertEqual(diagnostic.disposition, "verified_inventory_empty")
         self.assertEqual(diagnostic.reason_code, "NO_PUBLIC_OPENINGS")
 
+    def test_empty_title_filtered_inventory_means_no_match_not_no_openings(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "inventory": {
+                        "source": "native_adapter",
+                        "status": "verified_filtered_empty",
+                        "scope": "title_filtered",
+                        "candidate_count": 0,
+                        "strongest_title_score": 0,
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "verified_inventory_no_match")
+        self.assertEqual(diagnostic.reason_code, "OPENING_NOT_FOUND")
+        self.assertEqual(diagnostic.evidence["inventory_scope"], "title_filtered")
+
     def test_provider_failure_remains_inconclusive(self):
         diagnostic = diagnose_opening_availability(
             {"provider_api": {"errors": [{"error": "timeout"}]}}

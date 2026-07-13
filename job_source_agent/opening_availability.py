@@ -30,7 +30,10 @@ def diagnose_opening_availability(
             evidence={"source_posting_status": source_status},
         )
 
-    if isinstance(inventory, dict) and inventory.get("status") == "verified":
+    if isinstance(inventory, dict) and inventory.get("status") in {
+        "verified",
+        "verified_filtered_empty",
+    }:
         candidate_count = _nonnegative_int(inventory.get("candidate_count"))
         strongest_score = _nonnegative_int(inventory.get("strongest_title_score"))
         return OpeningAvailabilityDiagnostic(
@@ -40,6 +43,7 @@ def diagnose_opening_availability(
             detail="The official provider inventory was read successfully, but no title met the match threshold.",
             evidence={
                 "inventory_source": inventory.get("source"),
+                "inventory_scope": inventory.get("scope", "full"),
                 "candidate_count": candidate_count,
                 "strongest_title_score": strongest_score,
             },

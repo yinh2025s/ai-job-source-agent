@@ -76,5 +76,11 @@
     "expected_minimum_stage": "opening_match",
     "require_exact_opening": true,
     "allow_job_board_fallback": false
+  },
+  "Acme Phenom": {
+    "expected_provider": "phenom",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
   }
 }

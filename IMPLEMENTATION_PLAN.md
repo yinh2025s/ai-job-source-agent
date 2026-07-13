@@ -202,6 +202,7 @@
 | iCIMS | Native structured-page/API adapter | 自动发现 hosted iCIMS URL 或 Jibe 页面指纹；解析 JSON-LD / embedded JSON，customer-owned domain 使用同源 `/api/jobs` |
 | Workday | Native CXS API adapter | 自动发现；构造 `/wday/cxs/{tenant}/{site}/jobs` 并用 title payload 搜索 |
 | SuccessFactors | Native structured-page/API adapter | 支持 legacy hosted page；支持 `*.jobs.hr.cloud.sap` CSRF/locale discovery 和同源 recruiting v1 API |
+| Phenom | Native page-aware SSR adapter | 通过 customer-owned 页面 `phApp`/`refNum` 指纹识别；读取 eager refine state，支持 keyword pagination 和同源 detail URL 重建 |
 | Rippling | Structured HTML adapter | 支持公开 board anchors、Next.js job state、metadata enrichment 和 title matching |
 | BambooHR | Native listing API adapter | 自动发现；使用公开 `/careers/list` JSON 返回职位并还原详情 URL，支持 `atsLocation` fallback |
 
@@ -299,7 +300,7 @@
 当前已完成第一轮 SOLID 拆分，但仍有兼容层需要逐步迁移：
 
 - S2-S7 已有独立 stage，通用 `ApplicationRunner` 支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- 11 个 provider 已迁移为原生 adapter，包括 Rippling 和 Google Careers；Meta Careers 和 generic fallback 仍走 compatibility path。
+- 12 个 provider 已迁移为原生 adapter，包括 Rippling、Google Careers 和 Phenom；Meta Careers 和 generic fallback 仍走 compatibility path。
 - `live_batch_eval.py` 保留公司级并发、process budget 和输出职责，七关业务执行已委托统一 `PipelineApplication`。
 - Fetcher 已有显式 protocol 和跨实现 contract suite；filesystem stage store 已接入 production CLI 和 live batch。
 - 原生 adapter 已支持包内自动发现；新 provider 不再需要修改中央 registry。
@@ -582,7 +583,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 1: Baseline, Matrix And Data-Driven Prioritization
 
-当前进度（2026-07-12）：1.1 的固定离线 benchmark 已有 13 个 provider/path fixture，新增 Rippling exact-opening 和 traditional iCIMS hosted HTML 覆盖，并由 `samples/benchmark_expectations.json` 声明 provider、最低成功关卡和 exact-opening 要求；回归不满足预期会以非零退出。固定 live benchmark 已扩展到 50 家。1.2 的 JSON 漏斗、公司七关矩阵、`provider × stage × status`、`provider × reason_code`、阶段耗时 P50/P95、跨运行 regression delta 和 Markdown summary report 已实现。
+当前进度（2026-07-13）：1.1 的固定离线 benchmark 已有 14 个 provider/path fixture，覆盖 Rippling、traditional iCIMS 和 page-aware Phenom exact opening，并由 `samples/benchmark_expectations.json` 声明 provider、最低成功关卡和 exact-opening 要求；回归不满足预期会以非零退出。固定 live benchmark 已扩展到 51 家。1.2 的 JSON 漏斗、公司七关矩阵、`provider × stage × status`、`provider × reason_code`、阶段耗时 P50/P95、跨运行 regression delta 和 Markdown summary report 已实现。
 
 #### 1.1 固定 benchmark 分层
 
@@ -640,7 +641,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-13）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、11 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；440 个单元测试、13/13 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-13）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、12 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；14/14 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -683,7 +684,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.3 Introduce Provider Adapter Registry
 
-当前状态：已完成可并行扩展的第一版。Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors、Workable、Rippling 和 Google Careers 已迁移为原生 adapter；provider module 通过导出 `ADAPTER` 自动注册。Meta Careers 和 generic fallback 暂时保留 compatibility path。
+当前状态：已完成可并行扩展的第一版。Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR、iCIMS、SuccessFactors、Workable、Rippling、Google Careers 和 Phenom 已迁移为原生 adapter；provider module 通过导出 `ADAPTER` 自动注册。Phenom 使用 page-evidence extension 识别 customer-owned tenant。Meta Careers 和 generic fallback 暂时保留 compatibility path。
 
 已完成目标：
 
@@ -717,7 +718,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-13）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近一轮并行分析剩余 live miss，主线程交付 provenance-aware career-root validation、ATS-only search、provider-config priority 和 strict speculative-tenant title gate。主线 architecture validator、440 个测试、13/13 provider benchmark、6/6 resolver benchmark、51/51 fixed live expectations 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
+当前状态（2026-07-13）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近主线交付 provenance-aware career-root validation、ATS-only search、provider-config priority、strict speculative-tenant title gate、bounded traversal 和 page-aware Phenom adapter。主线 architecture validator、14/14 provider benchmark、6/6 resolver benchmark、51/51 fixed live expectations 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -968,7 +969,8 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - Generic S5 success 现在要求已知 ATS、具体岗位证据或实际抵达的 first-party listing/search route；career landing page 不再自动计作 job list
 - S2/S5 evidence gate 收紧后 clean fixed live 仍为 51/51 expectations、51/51 job list、50/51 exact opening，4 workers 用时 90.6 秒；451 个测试、13/13 provider、6/6 resolver 和 architecture gate 同步通过
 - S4 bounded search、native-adapter-first tenant verification 和 fetch soft deadline 完成后，8-company focused live 将 7 个 hard timeout 降为 0 并保留 Mercor 成功；clean fixed live 继续达到 51/51 expectations、51/51 job list、50/51 exact opening，4 workers 在本轮网络条件下用时 121.3 秒。458 个测试、13/13 provider、6/6 resolver 和 architecture gate 同步通过
-- S5 known-ATS embed、locale-preserving traversal 和 redirect-budget 修复使 7-company focused replay 从 0/7 提升到 3/7 job list、1/7 exact opening；clean fixed live 保持 51/51 expectations、51/51 job list、50/51 exact opening，4 workers 用时 119.7 秒。462 个测试、13/13 provider、6/6 resolver 和 architecture gate 同步通过；下一 provider cluster 是 Phenom structured inventory，其后是 Paycom
+- S5 known-ATS embed、locale-preserving traversal 和 redirect-budget 修复使 7-company focused replay 从 0/7 提升到 3/7 job list、1/7 exact opening；clean fixed live 保持 51/51 expectations、51/51 job list、50/51 exact opening，4 workers 用时 119.7 秒。462 个测试、13/13 provider、6/6 resolver 和 architecture gate 同步通过
+- Phenom structured inventory 已作为第 12 个原生 adapter 接入，provider benchmark 扩展到 14/14 exact；Quest Global focused live 命中 exact opening，Viking 以 title-filtered verified no-match 返回 `OPENING_NOT_FOUND`。468 个测试、6/6 resolver、12-adapter architecture gate 和 checkpointed 51/51 fixed live expectations 同步通过；下一 provider cluster 是 ReturnPro 暴露的 Paycom
 
 目标：
 
@@ -1072,7 +1074,7 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 - LinkedIn discovery 已经接入
 - 官网解析和品牌/母公司招聘体系映射已实现
 - career page discovery 有 homepage/common path/sitemap/search fallback
-- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 11 个原生 adapter
+- provider-specific ATS 能力已迁移到自动发现的独立 registry/adapter modules，共 12 个原生 adapter
 - Greenhouse、Lever、SmartRecruiters、Workday、Ashby、BambooHR 已接 structured API
 - iCIMS、SuccessFactors、Workable、Rippling 已加入原生 structured page / embedded JSON / verified-link extraction，但还需要更多真实站点 live hardening
 - browser fallback 已经从全量渲染升级为 smart fallback + render budget
@@ -1080,4 +1082,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，11 个主要 provider（含 Rippling 和 Google Careers）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 440 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 验证；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation；5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，12 个主要 provider（含 Rippling、Google Careers 和 Phenom）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。固定 provider benchmark 为 14/14 exact opening，resolver benchmark 为 6/6；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation；5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。
