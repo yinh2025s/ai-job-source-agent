@@ -11,7 +11,7 @@ from job_source_agent.snapshot import (
     sanitize_url,
     snapshot_artifact_path_for_url,
 )
-from job_source_agent.web import Fetcher, Page
+from job_source_agent.web import FetchError, Fetcher, Page
 
 
 class SnapshotTests(unittest.TestCase):
@@ -118,9 +118,51 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(metadata[0]["artifact_paths"]["screenshot_png"], record.artifact_paths["screenshot_png"])
 
     def test_snapshot_artifact_path_uses_safe_extension(self):
-        path = snapshot_artifact_path_for_url("/tmp/artifacts", "https://example.com/jobs?token=x", "screenshot_png")
+        path = snapshot_artifact_path_for_url("/tmp/artifacts", "https://example.com/jobs", "screenshot_png")
 
         self.assertEqual(path.name, "screenshot_png.png")
+
+    def test_query_snapshots_use_distinct_paths_and_fixture_fetcher_selects_each(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            first = store.write_page(
+                Page(url="https://jobs.example.com/search?from=0", html="first", source="live")
+            )
+            second = store.write_page(
+                Page(url="https://jobs.example.com/search?from=10", html="second", source="live")
+            )
+            fetcher = Fetcher(fixtures_dir=store.fixtures_dir, offline=True)
+
+            first_page = fetcher.fetch("https://jobs.example.com/search?from=0")
+            second_page = fetcher.fetch("https://jobs.example.com/search?from=10")
+
+        self.assertNotEqual(first.path, second.path)
+        self.assertEqual(first_page.html, "first")
+        self.assertEqual(second_page.html, "second")
+
+    def test_sensitive_query_snapshot_fingerprint_uses_redacted_value(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            record = store.write_page(
+                Page(url="https://jobs.example.com/search?token=secret&from=10", html="page", source="live")
+            )
+            page = Fetcher(fixtures_dir=store.fixtures_dir, offline=True).fetch(
+                "https://jobs.example.com/search?token=different-secret&from=10"
+            )
+
+        self.assertIn(".__query_", record.path)
+        self.assertEqual(page.html, "page")
+
+    def test_missing_query_variant_does_not_fall_back_when_specific_fixtures_exist(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            store.write_page(
+                Page(url="https://jobs.example.com/search?from=0", html="first", source="live")
+            )
+            fetcher = Fetcher(fixtures_dir=store.fixtures_dir, offline=True)
+
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://jobs.example.com/search?from=10")
 
     def test_multiple_store_instances_serialize_shared_index_writes(self):
         with tempfile.TemporaryDirectory() as directory:

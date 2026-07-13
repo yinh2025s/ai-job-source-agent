@@ -73,6 +73,37 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(final_page.html, request_page.html)
         self.assertEqual(result.summary["fixture_count"], 2)
 
+    def test_redirect_alias_keeps_its_blob_when_final_url_is_recaptured(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            store = SnapshotStore(snapshots)
+            store.write_page(
+                Page(
+                    url="https://example.com",
+                    final_url="https://www.example.com/",
+                    html="<html>redirect response</html>",
+                    source="live",
+                ),
+                request_url="https://example.com",
+            )
+            store.write_page(
+                Page(
+                    url="https://www.example.com/",
+                    final_url="https://www.example.com/",
+                    html="<html>later canonical response</html>",
+                    source="live",
+                )
+            )
+
+            replay_snapshots(snapshots, root / "replay")
+            fetcher = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True)
+            alias_page = fetcher.fetch("https://example.com")
+            canonical_page = fetcher.fetch("https://www.example.com/")
+
+        self.assertEqual(alias_page.html, "<html>redirect response</html>")
+        self.assertEqual(canonical_page.html, "<html>later canonical response</html>")
+
     def test_duplicate_identical_records_are_deduplicated_deterministically(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -89,7 +120,7 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(first.summary["superseded_records"], 0)
         self.assertEqual(first.summary["fixture_count"], 1)
 
-    def test_changed_snapshot_supersedes_prior_body_and_artifact(self):
+    def test_query_variants_replay_as_distinct_pages_and_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             snapshots = root / "snapshots"
@@ -114,18 +145,23 @@ class SnapshotReplayTests(unittest.TestCase):
             )
 
             result = replay_snapshots(snapshots, root / "replay")
-            page = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True).fetch(
+            first_page = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True).fetch(
                 "https://jobs.example.com/search"
             )
-            replay_artifact = (
-                root / "replay" / result.manifest["artifacts"][0]["replay_path"]
-            ).read_bytes()
+            second_page = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True).fetch(
+                "https://jobs.example.com/search?q=data"
+            )
+            replay_artifacts = {
+                (root / "replay" / artifact["replay_path"]).read_bytes()
+                for artifact in result.manifest["artifacts"]
+            }
 
         self.assertNotEqual(first.blob_path, second.blob_path)
-        self.assertEqual(page.html, "<html>second</html>")
-        self.assertEqual(replay_artifact, b"second-image")
+        self.assertEqual(first_page.html, "<html>first</html>")
+        self.assertEqual(second_page.html, "<html>second</html>")
+        self.assertEqual(replay_artifacts, {b"first-image", b"second-image"})
         self.assertEqual(result.summary["duplicate_records"], 0)
-        self.assertEqual(result.summary["superseded_records"], 1)
+        self.assertEqual(result.summary["superseded_records"], 0)
 
     def test_rejects_directory_traversal_in_snapshot_path(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -364,6 +364,8 @@ def _validate_selected_canonical_views(
     artifacts: list[dict[str, Any]],
 ) -> None:
     for entry in entries:
+        if entry.get("alias_of"):
+            continue
         body = _read_regular_file(entry["canonical_path"], 0, "selected snapshot")
         try:
             text = body.decode("utf-8")

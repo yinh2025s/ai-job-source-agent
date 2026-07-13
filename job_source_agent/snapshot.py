@@ -12,7 +12,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import fcntl
 
-from .web import Page
+from .web import Page, fixture_path_candidates
 
 
 SENSITIVE_QUERY_KEYS = {
@@ -147,16 +147,7 @@ class SnapshottingFetcher:
 
 
 def snapshot_path_for_url(fixtures_dir: str | Path, url: str) -> Path:
-    parsed = urlparse(url)
-    host = parsed.netloc.lower()
-    parts = [part for part in parsed.path.split("/") if part]
-    base = Path(fixtures_dir) / host
-    if not parts:
-        return base / "index.html"
-    candidate = base.joinpath(*[_safe_path_part(part) for part in parts])
-    if candidate.suffix:
-        return candidate
-    return candidate / "index.html"
+    return fixture_path_candidates(fixtures_dir, url)[0]
 
 
 def snapshot_artifact_path_for_url(artifacts_dir: str | Path, url: str, artifact_name: str) -> Path:
@@ -164,7 +155,10 @@ def snapshot_artifact_path_for_url(artifacts_dir: str | Path, url: str, artifact
         "screenshot_png": "png",
     }.get(artifact_name, "bin")
     safe_name = f"{_safe_path_part(artifact_name)}.{extension}"
-    return snapshot_path_for_url(artifacts_dir, url).with_name(safe_name)
+    page_path = snapshot_path_for_url(artifacts_dir, url)
+    if ".__query_" in page_path.name:
+        safe_name = f"{page_path.stem}.{safe_name}"
+    return page_path.with_name(safe_name)
 
 
 def snapshot_blob_path(root_dir: str | Path, digest: str) -> Path:

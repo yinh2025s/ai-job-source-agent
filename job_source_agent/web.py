@@ -5,6 +5,7 @@ from html.parser import HTMLParser
 from html import unescape
 from pathlib import Path
 import gzip
+import hashlib
 import re
 import signal
 import socket
@@ -25,6 +26,24 @@ TRACKING_PARAMS = {
     "utm_content",
     "fbclid",
     "gclid",
+}
+
+_FIXTURE_SENSITIVE_QUERY_KEYS = {
+    "access_token",
+    "api_key",
+    "auth",
+    "authorization",
+    "code",
+    "id_token",
+    "key",
+    "password",
+    "refresh_token",
+    "secret",
+    "session",
+    "sig",
+    "signature",
+    "state",
+    "token",
 }
 
 MAX_EXTRACTED_LINKS = 200
@@ -361,16 +380,64 @@ class Fetcher:
     def _fixture_path_for(self, url: str) -> Path | None:
         if not self.fixtures_dir:
             return None
-        parsed = urlparse(url)
-        host = parsed.netloc.lower()
-        parts = [part for part in parsed.path.split("/") if part]
-        base = self.fixtures_dir / host
-        if not parts:
-            return base / "index.html"
-        candidate = base.joinpath(*parts)
-        if candidate.suffix:
-            return candidate
-        index_candidate = candidate / "index.html"
-        if index_candidate.exists():
-            return index_candidate
-        return candidate.with_suffix(".html")
+        candidates = fixture_path_candidates(self.fixtures_dir, url)
+        if len(candidates) > 1:
+            query_path, legacy = candidates
+            if query_path.exists():
+                return query_path
+            query_variants = list(legacy.parent.glob(f"{legacy.stem}.__query_*{legacy.suffix}"))
+            if query_variants:
+                return query_path
+            if legacy.exists():
+                return legacy
+        elif candidates[0].exists():
+            return candidates[0]
+        legacy = candidates[-1]
+        if len(candidates) == 1 and legacy.suffix:
+            query_variants = sorted(legacy.parent.glob(f"{legacy.stem}.__query_*{legacy.suffix}"))
+            if len(query_variants) == 1 and query_variants[0].is_file():
+                return query_variants[0]
+        if legacy.name == "index.html":
+            alternate = legacy.parent.with_suffix(".html")
+            if alternate.exists():
+                return alternate
+        return candidates[0]
+
+
+def fixture_path_candidates(fixtures_dir: str | Path, url: str) -> list[Path]:
+    parsed = urlparse(url)
+    host = parsed.netloc.lower()
+    parts = [part for part in parsed.path.split("/") if part]
+    base = Path(fixtures_dir) / host
+    if not parts:
+        legacy = base / "index.html"
+    else:
+        candidate = base.joinpath(*[_safe_fixture_path_part(part) for part in parts])
+        legacy = candidate if candidate.suffix else candidate / "index.html"
+    if not parsed.query:
+        return [legacy]
+    query = urlencode(
+        sorted(
+            (
+                key,
+                "[REDACTED]" if _is_fixture_sensitive_query_key(key) else value,
+            )
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+        ),
+        doseq=True,
+    )
+    fingerprint = hashlib.sha256(query.encode("utf-8")).hexdigest()[:16]
+    query_path = legacy.with_name(f"{legacy.stem}.__query_{fingerprint}{legacy.suffix}")
+    return [query_path, legacy]
+
+
+def _is_fixture_sensitive_query_key(key: str) -> bool:
+    lowered = key.casefold()
+    return lowered in _FIXTURE_SENSITIVE_QUERY_KEYS or any(
+        marker in lowered for marker in ("token", "secret", "password")
+    )
+
+
+def _safe_fixture_path_part(part: str) -> str:
+    cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", part)
+    return cleaned or "_"

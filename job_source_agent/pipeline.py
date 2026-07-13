@@ -75,6 +75,7 @@ COMMON_CAREER_PATHS = (
 )
 
 MIN_DERIVED_TENANT_TITLE_SCORE = 65
+MAX_SITEMAPS_PER_DISCOVERY = 10
 
 NON_JOB_BOARD_PATH_PARTS = {
     "api",
@@ -1251,7 +1252,13 @@ class JobSourceAgent:
         parsed = urlparse(homepage_url)
         base = f"{parsed.scheme}://{parsed.netloc}"
         sitemap_urls = [normalize_url("/sitemap.xml", base), normalize_url("/sitemap_index.xml", base)]
-        trace = {"sitemaps_checked": [], "candidate_count": 0}
+        trace = {
+            "sitemaps_checked": [],
+            "candidate_count": 0,
+            "fanout_limit": MAX_SITEMAPS_PER_DISCOVERY,
+            "fanout_limit_reached": False,
+            "sitemaps_not_scheduled": 0,
+        }
 
         try:
             robots = self.fetcher.fetch(normalize_url("/robots.txt", base))
@@ -1263,7 +1270,8 @@ class JobSourceAgent:
 
         links: list[RawLink] = []
         seen_sitemaps: set[str] = set()
-        pending_sitemaps = list(sitemap_urls)
+        pending_sitemaps = list(dict.fromkeys(sitemap_urls))[:MAX_SITEMAPS_PER_DISCOVERY]
+        scheduled_sitemaps = set(pending_sitemaps)
         while pending_sitemaps:
             sitemap_url = pending_sitemaps.pop(0)
             if sitemap_url in seen_sitemaps:
@@ -1279,8 +1287,16 @@ class JobSourceAgent:
             trace["sitemaps_checked"].append({"url": sitemap_url, "url_count": len(urls)})
             for url in urls:
                 lower_url = url.lower()
-                if lower_url.endswith(".xml") and len(seen_sitemaps) < 10:
-                    pending_sitemaps.append(normalize_url(url))
+                if lower_url.endswith(".xml"):
+                    normalized_sitemap = normalize_url(url)
+                    if normalized_sitemap in scheduled_sitemaps:
+                        continue
+                    if len(scheduled_sitemaps) >= MAX_SITEMAPS_PER_DISCOVERY:
+                        trace["fanout_limit_reached"] = True
+                        trace["sitemaps_not_scheduled"] += 1
+                        continue
+                    scheduled_sitemaps.add(normalized_sitemap)
+                    pending_sitemaps.append(normalized_sitemap)
                     continue
                 if any(
                     token in lower_url
