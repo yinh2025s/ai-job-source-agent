@@ -10,6 +10,8 @@
 
 ### Added
 
+- ADR-0008 冻结 company process deadline 的结果发布与清理契约：worker 使用独立 POSIX process group，大对象先写 attempt-local 原子 envelope，pipe 只发送小型 readiness。父进程按共享 monotonic publication time 接受截止前已完整 fsync/replace 的结果；通知延迟不会制造假 timeout，序列化越界仍保持 timeout，超时会 TERM/KILL 整个浏览器后代树。新增受约束 `AttemptArtifactTransaction`，拒绝 traversal/symlink escape，并通过 destination-local copy、file fsync、atomic replace 和 directory fsync 发布单文件。Snapshot 现在保证 blob/view/artifact/sequence 先于 durable JSONL index；batch completion 发布失败不会暴露 derived results。完整 stage checkpoint 继续按既有 execution identity 复用，不做破坏性的 whole-attempt rollback。`ADAPTER_VERSION` 提升到 `2026-07-14.56`；最终门禁为 859 tests、24/24 provider、6/6 resolver、23 adapters / 0 issues。Akkodis 在原 45 秒 focused 条件下 34.5 秒完成 exact opening，completion 1/1 restore，8-fixture schema-3 replay 1/1 reproduced、0 gap、0 mismatch。
+
 - ADR-0007 冻结 deterministic run configuration：`AgentConfig` 的候选、岗位页、career/ATS fetch、search、sitemap 与 timeout 行为被规范化为隐私安全 schema `1.0`。Result `2.1`、trace、summary 和 replay manifest 保存 canonical payload/digest；baseline 只有在 cohort、expectations 与 run configuration 均一致时才可比较。
 
 - Stage checkpoint `1.3` 与 batch completion `1.1` 改用 `input fingerprint + run configuration digest` 形成的 execution fingerprint。相同公司更换预算或 discovery policy 后会安全 miss，不再恢复语义不兼容的旧执行；result/trace 同时记录 execution provenance。

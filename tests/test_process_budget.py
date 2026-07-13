@@ -1,6 +1,8 @@
 import concurrent.futures
 import os
 import signal
+import subprocess
+import sys
 import tempfile
 import time
 import unittest
@@ -21,6 +23,16 @@ def delayed_echo(value, delay):
     return value
 
 
+class SlowToSerialize:
+    def __reduce__(self):
+        time.sleep(0.8)
+        return str, ("serialized",)
+
+
+def return_slow_to_serialize():
+    return SlowToSerialize()
+
+
 def exit_without_result(code):
     os._exit(code)
 
@@ -32,6 +44,18 @@ def write_pid_then_wait(path, ignore_sigterm=False):
         handle.write(str(os.getpid()))
         handle.flush()
         os.fsync(handle.fileno())
+    while True:
+        time.sleep(1)
+
+
+def spawn_delayed_descendant(pid_path, marker_path):
+    script = (
+        "import os, pathlib, sys, time; "
+        "pathlib.Path(sys.argv[1]).write_text(str(os.getpid()), encoding='ascii'); "
+        "time.sleep(1.2); "
+        "pathlib.Path(sys.argv[2]).write_text('survived', encoding='ascii')"
+    )
+    subprocess.Popen([sys.executable, "-c", script, pid_path, marker_path])
     while True:
         time.sleep(1)
 
@@ -58,6 +82,21 @@ def _wait_for_pid_file(path, timeout=2):
 class ProcessBudgetTests(unittest.TestCase):
     def test_worker_returns_picklable_result(self):
         self.assertEqual(run_with_process_budget(echo, ("done",), timeout=5), "done")
+
+    def test_pre_deadline_envelope_survives_late_ipc_notification(self):
+        self.assertEqual(
+            run_with_process_budget(
+                echo,
+                ("done",),
+                timeout=0.8,
+                _notification_delay=1.5,
+            ),
+            "done",
+        )
+
+    def test_serialization_must_finish_within_budget(self):
+        with self.assertRaises(ProcessBudgetExceeded):
+            run_with_process_budget(return_slow_to_serialize, (), timeout=0.2)
 
     def test_worker_is_stopped_at_hard_deadline(self):
         started = time.monotonic()
@@ -104,6 +143,28 @@ class ProcessBudgetTests(unittest.TestCase):
 
             self.assertFalse(_pid_exists(pid), f"SIGTERM-ignoring worker {pid} survived")
             self.assertLess(time.monotonic() - started, 4.5)
+
+    @unittest.skipUnless(os.name == "posix", "process groups require POSIX")
+    def test_timeout_stops_descendant_process_group(self):
+        with tempfile.TemporaryDirectory() as directory:
+            pid_path = os.path.join(directory, "descendant.pid")
+            marker_path = os.path.join(directory, "descendant-finished")
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    run_with_process_budget,
+                    spawn_delayed_descendant,
+                    (pid_path, marker_path),
+                    0.5,
+                )
+                descendant_pid = _wait_for_pid_file(pid_path)
+                with self.assertRaises(ProcessBudgetExceeded):
+                    future.result(timeout=5)
+
+            time.sleep(1.0)
+            self.assertFalse(
+                os.path.exists(marker_path),
+                f"descendant {descendant_pid} survived its worker timeout",
+            )
 
     def test_concurrent_budgets_are_independent(self):
         started = time.monotonic()

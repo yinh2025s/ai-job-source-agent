@@ -131,10 +131,7 @@ class SnapshotStore:
                 byte_count=len(encoded),
                 captured_at_epoch=round(time.time(), 3),
             )
-            with self.index_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record.__dict__, sort_keys=True) + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
+            _append_jsonl_durable(self.index_path, record.__dict__)
         return record
 
     def write_failure(
@@ -170,10 +167,7 @@ class SnapshotStore:
                 captured_at_epoch=round(time.time(), 3),
                 terminal=True,
             )
-            with self.failure_index_path.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record.__dict__, sort_keys=True) + "\n")
-                handle.flush()
-                os.fsync(handle.fileno())
+            _append_jsonl_durable(self.failure_index_path, record.__dict__)
         return record
 
     def _next_sequence(self) -> int:
@@ -347,8 +341,36 @@ def _write_bytes_atomic(path: Path, content: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_name(f".{path.name}.tmp-{os.getpid()}-{time.time_ns()}")
     try:
-        temporary.write_bytes(content)
+        with temporary.open("xb") as handle:
+            handle.write(content)
+            handle.flush()
+            os.fsync(handle.fileno())
         os.replace(temporary, path)
+        _fsync_directory(path.parent)
     finally:
-        if temporary.exists():
+        try:
             temporary.unlink()
+        except FileNotFoundError:
+            pass
+
+
+def _append_jsonl_durable(path: Path, payload: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(payload, sort_keys=True) + "\n")
+        handle.flush()
+        os.fsync(handle.fileno())
+    _fsync_directory(path.parent)
+
+
+def _fsync_directory(directory: Path) -> None:
+    try:
+        descriptor = os.open(directory, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(descriptor)
+    except OSError:
+        pass
+    finally:
+        os.close(descriptor)

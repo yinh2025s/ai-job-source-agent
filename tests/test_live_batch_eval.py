@@ -508,6 +508,47 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual([item["company_name"] for item in ordered_traces], ["A", "B"])
         self.assertEqual([item["company_name"] for item in disk_results], ["A", "B"])
 
+    def test_failed_completion_publish_does_not_expose_derived_results(self):
+        company = CompanyInput(
+            company_name="A",
+            company_website_url="https://a.example",
+        )
+        result = DiscoveryResult(
+            company_name="A",
+            company_website_url="https://a.example",
+            status="success",
+            pipeline_status="partial",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = FilesystemBatchCompletionStore(root / "completed")
+            completed = {}
+            with patch.object(
+                store,
+                "save",
+                side_effect=OSError("injected completion publish failure"),
+            ):
+                with self.assertRaisesRegex(OSError, "completion publish failure"):
+                    _record_company_completion(
+                        1,
+                        1,
+                        company,
+                        result,
+                        0.1,
+                        completed,
+                        store,
+                        root / "results.json",
+                        root / "trace.json",
+                        root / "summary.json",
+                        SimpleNamespace(expectations=None),
+                        0.0,
+                    )
+
+            self.assertEqual(completed, {})
+            self.assertFalse((root / "results.json").exists())
+            self.assertFalse((root / "trace.json").exists())
+            self.assertFalse((root / "summary.json").exists())
+
     def test_build_summary_uses_trace_records_for_checkpoint_activity(self):
         result = {
             "company_name": "A",

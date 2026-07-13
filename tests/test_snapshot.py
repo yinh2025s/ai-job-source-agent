@@ -3,7 +3,9 @@ import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from unittest.mock import patch
 
+import job_source_agent.snapshot as snapshot_module
 from job_source_agent.snapshot import (
     SnapshotStore,
     SnapshottingFetcher,
@@ -183,6 +185,50 @@ class SnapshotTests(unittest.TestCase):
 
         self.assertEqual(artifact_bytes, b"fake-png")
         self.assertEqual(metadata[0]["artifact_paths"]["screenshot_png"], record.artifact_paths["screenshot_png"])
+
+    def test_snapshot_index_is_not_published_before_page_content(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            original_write = snapshot_module._write_bytes_atomic
+
+            def fail_fixture_publish(path, content):
+                if "sites" in path.parts:
+                    raise OSError("injected fixture publication failure")
+                return original_write(path, content)
+
+            with patch(
+                "job_source_agent.snapshot._write_bytes_atomic",
+                side_effect=fail_fixture_publish,
+            ):
+                with self.assertRaisesRegex(OSError, "injected fixture"):
+                    SnapshotStore(root).write_page(
+                        Page(
+                            url="https://jobs.example.com/search",
+                            html="<html>not committed</html>",
+                            source="live",
+                        )
+                    )
+
+            self.assertFalse((root / "snapshots.jsonl").exists())
+            self.assertFalse((root / ".snapshot-sequence").exists())
+
+    def test_snapshot_publisher_fsyncs_content_and_metadata_directories(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch("job_source_agent.snapshot._fsync_directory") as fsync_directory:
+                SnapshotStore(root).write_page(
+                    Page(
+                        url="https://jobs.example.com/search",
+                        html="<html>durable</html>",
+                        source="live",
+                    )
+                )
+
+            fsynced = [call.args[0] for call in fsync_directory.call_args_list]
+
+        self.assertIn(root, fsynced)
+        self.assertTrue(any("sites" in path.parts for path in fsynced))
+        self.assertTrue(any("blobs" in path.parts for path in fsynced))
 
     def test_snapshot_artifact_path_uses_safe_extension(self):
         path = snapshot_artifact_path_for_url("/tmp/artifacts", "https://example.com/jobs", "screenshot_png")
