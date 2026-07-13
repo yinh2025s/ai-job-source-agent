@@ -104,6 +104,10 @@
 - Browser navigation 在 networkidle 提前完成后会用剩余预算等待通用 job DOM 条件，修复 Meta Relay 等客户端数据晚于 lifecycle event 的空壳截取；不增加固定 sleep，软超时后仍返回当前 DOM。
 - 严格 JS-heavy cohort 用 Spotify、IIC Lakshya 和 Meta 替换 loading/空列表/时序波动样本，达到 saved/live 5/5；覆盖 5 个 provider 和 5 类技术栈，Meta 从 static HTTP 400 fallback 到 browser，Meta、Apple、IIC 均验证精确 job URL。
 - Evaluator 修复成功 static-error fallback 被初始 HTTP error 错误标为最终失败的问题；初始错误保留在 render event，成功 browser outcome 的最终 error class 为 null。
+- Website resolver 的有界验证预算按 LinkedIn/search/slug 直接证据分配，不再被高分 speculative guesses 全部占用；同时清理 YC/funding/legal parenthetical qualifier，并在 trace 中记录 candidate source。
+- Website resolver 拒绝 parked-domain marketplace redirect；单词品牌的产品扩展域名需要 LinkedIn 精确域名或 canonical 组织证据，修复 `Paramount -> paramountplus.com` 假阳性。
+- Live batch 在 S4-S7 timeout 或 worker failure 时保留已完成的 S1-S3 stage results、官网、招聘主体、career root 和 trace，不再把下游预算耗尽误报为官网解析失败。
+- S2 resolver/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.16`；409 个测试、13/13 provider、6/6 resolver 和 51/51 fixed live expectations 均通过。
 
 ## [0.1.0] - 2026-07-12
 

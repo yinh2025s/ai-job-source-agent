@@ -255,6 +255,7 @@
 - 2026-07-11 Product Manager live batch：8 unique companies, 8/8 websites, 6/8 official job-list pages, 1/8 exact opening。
 - 2026-07-11 Data Analyst live batch after fast-domain + ATS-root routing：9 unique companies, 9/9 websites, 8/9 official job-list pages, 1/9 exact opening。唯一失败是咨询/外包发布方 YO HR，在官网解析后耗尽 career discovery budget。
 - 2026-07-11 fixed live benchmark：6 named companies, 6/6 websites, 6/6 official job-list pages, 1/6 exact opening, 6/6 expectation checks passed。覆盖 Greenhouse、Lever、Ashby、PostHog first-party careers 和 Brex first-party careers。
+- 2026-07-13 exploratory LinkedIn batch：19 unique companies, 14/19 official job-list pages, 6/19 exact openings。下游 timeout 现在会保留已完成 S1-S3，因此 5 个原始失败中 Hadrian、Multifactor、Paramount 和 Docusign 的官网解析证据不再丢失；下一主 failure cluster 是 hidden ATS/list-root discovery、structured listing 和 parent-card link semantics。
 - Product Manager / Data Analyst 这类品牌和成熟公司样本成功率明显高于随机 long-tail AI Engineer 样本。
 - 2026-07-11 focused live checks: Cricut reached `https://cricut.com/careers`; Carv's public Rippling board matched `Growth Product Manager` to its exact job-detail URL. The full Carv homepage-to-board run remains sensitive to transient website timeouts.
 - Follow-up live verification: ReachMobi now maps `Product Manager` through BambooHR to `/careers/270`; MatrixSpace reaches its localized careers page and Ashby board; ONEOK retains its legitimate Workday board instead of a false `/assets/logo` URL.
@@ -634,7 +635,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 2: SOLID Architecture Decomposition
 
-当前状态（2026-07-12）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、11 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；401 个单元测试、13/13 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
+当前状态（2026-07-13）：Phase 2.5 并行门槛已达到并完成多轮并行验证。版本化 contracts、S1-S7 独立 stage classes、通用 `ApplicationRunner`、并发安全 filesystem stage checkpoint store、provider registry、11 个原生 adapter、adapter 自动发现、composition root、architecture validator 和跨 fetcher contract suite 已实现；409 个单元测试、13/13 provider benchmark、6/6 resolver benchmark 和 51-company fixed live benchmark 均通过。Production CLI 与 live batch 均已完成接线。
 
 这一阶段不追求提高 live 命中率，目标是降低新增 provider、stage replay 和多人并行开发的修改成本。重构期间必须保持现有 CLI、result schema 和 benchmark 行为兼容。
 
@@ -672,7 +673,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 - S4、S5、S6 可以用固定 `PipelineContext` 独立运行和测试。
 - 一个 stage 的 parser/strategy 变化不要求修改其他 stage。
-- 重构后 401 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 结果一致。
+- 重构后 409 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 结果一致。
 - Stage failure 会确定性地生成下游 `not_run` 或允许的降级状态。
 
 #### 2.3 Introduce Provider Adapter Registry
@@ -711,7 +712,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 #### 2.5 Parallel Development Gate
 
-当前状态（2026-07-12）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近十轮并行交付 provider、checkpoint/replay、crash recovery、browser、discovery、evaluation history 和 retry policy。主线 architecture validator、401 个测试、13/13 provider benchmark、6/6 resolver benchmark、51/51 fixed live expectations 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
+当前状态（2026-07-13）：已通过并完成真实并行验证。多轮独立工作线在不修改中央 registry 的前提下交付 stage/provider/fetch/resolver/reporting 变化；最近一轮并行交付 resolver evidence allocation、batch evidence preservation 和 live failure-cluster analysis。主线 architecture validator、409 个测试、13/13 provider benchmark、6/6 resolver benchmark、51/51 fixed live expectations 和 5/5 strict browser live gate 全部通过；缺官网的 Mistral AI S2-S5 live smoke 也通过。
 
 完成以下条件后，才开启多个 provider 分支并行开发：
 
@@ -945,7 +946,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ### Phase 6: Evaluation And Reporting Hardening
 
-当前状态（2026-07-12）：
+当前状态（2026-07-13）：
 
 - 已建立固定离线 benchmark set
 - 已建立固定 live benchmark 第一版
@@ -957,6 +958,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - Markdown report 已增加 `provider x stage x status` 和 `provider x reason_code` 交叉表，便于定位 ATS 级可靠性问题
 - `scripts/archive_evaluation.py` 已提供原子、内容寻址、带 commit/adapter/command metadata 的时间戳 history，并自动比较 latest baseline
 - `scripts/resolver_benchmark.py` 已提供 6-case 缺官网固定离线 benchmark
+- `live_batch_eval.py` 的下游 failure result 会复用完整 S1-S3 evidence；51-company rerun 已真实验证 30 个 completion restore + 21 个 pending execution，仍为 51/51 expectations、51/51 job list、50/51 exact opening
 
 目标：
 
@@ -1068,4 +1070,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，11 个主要 provider（含 Rippling 和 Google Careers）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 401 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 验证；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation；5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 都有独立 stage class，11 个主要 provider（含 Rippling 和 Google Careers）已迁移到自动发现的原生 adapter，通用 ApplicationRunner、并发安全 filesystem stage store 和原子 company completion store 已接管 production CLI 与 live batch。失败样本会由内容寻址 snapshot 自动生成离线 replay bundle。多轮并行开发通过 409 个测试、13/13 provider benchmark 和 6/6 resolver benchmark 验证；最新固定 live benchmark 为 51/51 官网、51/51 career/job list、50/51 exact opening、51/51 expectation；5-provider/5-technology strict browser saved/live gate 为 5/5。Greenhouse、Lever、Ashby、Workday、SmartRecruiters、Workable、Rippling、BambooHR、iCIMS 和 SuccessFactors 各有 5 家固定 live 公司；Meta Careers 与 generic fallback 仍是 compatibility path。
