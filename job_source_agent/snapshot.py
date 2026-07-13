@@ -36,6 +36,7 @@ SENSITIVE_QUERY_KEYS = {
 SENSITIVE_BODY_FIELDS = SENSITIVE_QUERY_KEYS | {
     "authToken",
     "protectedSessionJWT",
+    "sessionCSRFToken",
     "sessionJWT",
 }
 

@@ -24,7 +24,8 @@ class SnapshotTests(unittest.TestCase):
     def test_sanitize_snapshot_body_redacts_tokens(self):
         body = (
             'window.cfg = {"api_key": "secret-value", "sessionJWT": "public-session-token", '
-            '"authToken": "private-auth-token", "name": "Acme"}; '
+            '"authToken": "private-auth-token", "sessionCSRFToken": "csrf-secret", '
+            '"name": "Acme"}; '
             'Authorization: Bearer abcdefghijklmnop'
         )
 
@@ -33,6 +34,7 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("secret-value", sanitized)
         self.assertNotIn("public-session-token", sanitized)
         self.assertNotIn("private-auth-token", sanitized)
+        self.assertNotIn("csrf-secret", sanitized)
         self.assertNotIn("abcdefghijklmnop", sanitized)
         self.assertIn("[REDACTED]", sanitized)
 

@@ -34,6 +34,7 @@
 - SuccessFactors adapter 支持 `*.jobs.hr.cloud.sap` 新 Career Site：解析页面 CSRF/locale，调用同源 recruiting v1 API 并还原 canonical job URL。
 - 增加 opening availability diagnostics：聚合 `verified_inventory_no_match`、`verified_inventory_empty`、`discovery_incomplete` 和显式 `source_posting_closed`，并写入 S6 evidence、summary 与 Markdown report。
 - RippleHire 作为第 14 个原生 provider 自动接入：支持稳定 board 规范化、匿名 cookie session、公开 XML inventory、单关键词 query translation、50 条有界分页、exact-title early stop、同 tenant redirect/API 校验和 detail URL 重建。
+- Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
 
@@ -130,6 +131,7 @@
 - S5 bounded BFS 增加 first-party career audience taxonomy：只遍历 career root 下最多两层的 staff/business-services/professional/student/lateral 页面，并只在官网明确使用 job-opportunity 语义时接受同 registrable domain 的 jobs/careers 子域 portal。Kirkland live 到达官方 U.S. staff jobs portal；Cloudflare challenge 和无公开目标标题证据使 `AI Engineer II` 继续保持 `OPENING_NOT_FOUND`。S5/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.26`；本轮 477 个测试、15/15 provider、6/6 resolver、13-adapter architecture gate 和 clean 51/51 fixed live expectations 均通过，fixed live 保持 51/51 job list、50/51 exact opening。
 - Fetcher 改为每个 worker thread 复用仅驻内存的 cookie-aware opener，在保持 batch 并发的同时支持匿名多请求 provider session；cookie 不进入 snapshot 或 trace。Snapshot 正文增加 hidden-input token 脱敏，replay 会为 redirect 的 sanitized request URL 物化可消费 alias，并按记录顺序解决路径冲突。
 - Mphasis focused live 从失效的旧 career URL 修正为当前官网证据链，成功导航到 RippleHire board；91 个 provider-filtered 候选中未确认已过期的 LinkedIn 标题，因此保守返回 `OPENING_NOT_FOUND`。真实 12-record capture 可离线重放同一 S5/S6 结果。Provider/S5/replay 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.27`；本轮 487 个测试、16/16 provider、6/6 resolver、14-adapter architecture gate 和 clean 51/51 fixed live expectations 均通过，fixed live 为 51/51 job list、50/51 exact opening，4 workers 用时 97.5 秒。
+- Kforce focused live 从 first-party careers 页面进入 custom-domain Taleo board，当前 `AI Engineer` 官方过滤库存为 0，结果保持 verified `OPENING_NOT_FOUND`。Snapshot 脱敏增加 `sessionCSRFToken`，真实 capture 未脱敏字段为 0，并可离线重放。Ashby API fetch/parser 失败且 embedded fallback 空时改为 retryable `PROVIDER_FETCH_FAILED`，不再误报官方空库存。Provider/replay 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.28`；495 tests、17/17 provider、6/6 resolver 和 15-adapter architecture gate 通过。两次 51-company no-resume live 均保持 51/51 job list，轮换网络 timeout 均由 focused exact recovery 验证，未降低 expectations。
 
 ## [0.1.0] - 2026-07-12
 

@@ -178,6 +178,20 @@ class AshbyAdapterTests(unittest.TestCase):
         self.assertEqual(result.candidates, [])
         self.assertEqual(result.trace["candidate_count"], 0)
 
+    def test_api_failure_and_empty_embedded_container_remains_incomplete(self):
+        board = self.adapter.identify_board("https://jobs.ashbyhq.com/acme")
+        html = '<script type="application/json">{"props":{"jobs":[]}}</script>'
+
+        result = self.adapter.list_jobs(
+            StubFetcher([FetchError("api timeout"), html]),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(result.reason_code, "PROVIDER_FETCH_FAILED")
+        self.assertTrue(result.retryable)
+        self.assertEqual(result.candidates, [])
+
     def test_api_and_fallback_fetch_failures_are_retryable(self):
         board = self.adapter.identify_board("https://jobs.ashbyhq.com/acme")
 

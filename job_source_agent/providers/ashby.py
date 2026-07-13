@@ -118,9 +118,14 @@ class AshbyAdapter:
                 seen_urls.add(candidate.url)
                 candidates.append(candidate)
 
-        reason_code = None if candidates else (
-            "EMPTY_PROVIDER_RESPONSE" if found_jobs_container else "INVALID_STRUCTURED_DATA"
-        )
+        if candidates:
+            reason_code = None
+        elif found_jobs_container and api_error:
+            reason_code = "PROVIDER_FETCH_FAILED"
+        elif found_jobs_container:
+            reason_code = "EMPTY_PROVIDER_RESPONSE"
+        else:
+            reason_code = "INVALID_STRUCTURED_DATA"
         trace = {
             "adapter": self.name,
             "api_urls": [api_url],
@@ -138,6 +143,7 @@ class AshbyAdapter:
             board=board,
             candidates=candidates,
             reason_code=reason_code,
+            retryable=reason_code == "PROVIDER_FETCH_FAILED",
             trace=trace,
         )
 

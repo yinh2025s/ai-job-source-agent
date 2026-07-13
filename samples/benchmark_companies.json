@@ -94,5 +94,11 @@
     "company_website_url": "https://acme.ripplehire.com/ripplehire/careers",
     "career_root_url": "https://acme.ripplehire.com/ripplehire/careers",
     "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Taleo",
+    "company_website_url": "https://jobs.example.com/careersection/ex/jobsearch.ftl",
+    "career_root_url": "https://jobs.example.com/careersection/ex/jobsearch.ftl",
+    "job_title": "Data Analyst"
   }
 ]
