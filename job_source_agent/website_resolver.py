@@ -376,6 +376,7 @@ class CompanyWebsiteResolver:
                 reason in candidate.reasons
                 for reason in (
                     "LinkedIn slug confirms domain",
+                    "LinkedIn slug exactly matches domain",
                     "homepage canonical confirms company identity",
                 )
             ):
@@ -444,6 +445,10 @@ class CompanyWebsiteResolver:
         if _linkedin_slug_confirms_domain(domain, company_tokens, linkedin_company_url):
             score += 30
             reasons.append("LinkedIn slug confirms domain")
+
+        if _linkedin_slug_exactly_matches_domain(domain, company_tokens, linkedin_company_url):
+            score += 75
+            reasons.append("LinkedIn slug exactly matches domain")
 
         if search_evidence and _text_confirms_company_identity(
             f"{search_evidence.title} {search_evidence.snippet}", company_tokens
@@ -783,6 +788,30 @@ def _linkedin_slug_confirms_domain(
         f"join{compact_name}",
     }
     return slug in accepted
+
+
+def _linkedin_slug_exactly_matches_domain(
+    domain: str,
+    company_tokens: list[str],
+    linkedin_company_url: str | None,
+) -> bool:
+    if not linkedin_company_url or not _is_ambiguous_company_name(company_tokens):
+        return False
+    path_parts = [part for part in urlparse(linkedin_company_url).path.split("/") if part]
+    if len(path_parts) < 2 or path_parts[0].casefold() != "company":
+        return False
+    slug = re.sub(r"[^a-z0-9]", "", path_parts[1].casefold())
+    domain_parts = domain.casefold().split(".")
+    if len(domain_parts) < 2:
+        return False
+    domain_label = re.sub(r"[^a-z0-9]", "", domain_parts[-2])
+    compact_name = "".join(company_tokens)
+    return bool(
+        slug
+        and slug == domain_label
+        and domain_label != compact_name
+        and compact_name in domain_label
+    )
 
 
 def _html_title(html: str) -> str:

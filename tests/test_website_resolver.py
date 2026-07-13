@@ -86,6 +86,44 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertIn("https://brex.com", candidates)
 
+    def test_exact_linkedin_slug_domain_wins_for_ambiguous_brand(self):
+        class FinchFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com" in url or "bing.com" in url or "duckduckgo.com" in url:
+                    raise FetchError("external source unavailable")
+                if domain_of(url) == "finch.com":
+                    return Page(
+                        url=url,
+                        final_url="https://finch.com/",
+                        html=(
+                            '<html><head><title>Finch</title>'
+                            '<link rel="canonical" href="https://finch.com/"></head>'
+                            '<body>Finch</body></html>'
+                        ),
+                    )
+                if domain_of(url) == "finchlegal.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.finchlegal.com/",
+                        html="<html><head><title>Finch | Legal intelligence</title></head></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(FinchFetcher(offline=True), verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "Finch",
+            "https://www.linkedin.com/company/finchlegal",
+            "New York, NY",
+        )
+
+        self.assertEqual(website_url, "https://www.finchlegal.com/")
+        self.assertIn("LinkedIn slug exactly matches domain", trace["selected"]["reasons"])
+        wrong_brand = next(
+            candidate for candidate in trace["candidates"] if domain_of(candidate["url"]) == "finch.com"
+        )
+        self.assertNotIn("LinkedIn slug exactly matches domain", wrong_brand["reasons"])
+
     def test_fast_verified_domain_is_selected_before_search(self):
         class FastDomainFetcher(Fetcher):
             def __init__(self):
