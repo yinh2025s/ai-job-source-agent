@@ -17,6 +17,18 @@ The project supports two flows:
 - `--linkedin-keywords`: search public LinkedIn job results, extract hiring companies, resolve official websites from LinkedIn company pages/search/domain hints, map brands to parent hiring systems when needed, and find official job-list pages.
 - `--input`: run the downstream website-to-careers pipeline from pre-extracted company records.
 
+## Python Runtime
+
+The supported range is CPython 3.10 through 3.13. Release gates are pinned to CPython 3.12; the repository includes `.python-version` and defaults `make` targets to `python3.12`. Homebrew Python 3.14.2 produced reproducible native crashes during long live batches and is intentionally excluded until that runtime is validated.
+
+```bash
+python3.12 scripts/check_runtime.py --release
+make offline-gates
+make live-gate
+```
+
+Set `PYTHON=/path/to/python3.12` when `python3.12` is not on `PATH`.
+
 ## What It Returns
 
 For each input record:
