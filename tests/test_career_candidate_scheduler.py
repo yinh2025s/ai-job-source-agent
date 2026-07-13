@@ -120,7 +120,7 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
         self.assertEqual(scheduled[0].url, "https://example.com/careers")
         self.assertEqual(len(scheduled), 2)
 
-    def test_fetch_budget_bounds_scheduler_without_eliminating_deferred_candidates(self):
+    def test_speculative_truncation_does_not_report_fetch_budget_exhaustion(self):
         fetcher = RecordingFailureFetcher()
         agent = JobSourceAgent(
             fetcher,
@@ -142,13 +142,85 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
             fetcher.calls,
             ["https://example.com/careers", "https://example.com/jobs"],
         )
+        self.assertNotIn("candidate_fetch_budget_exhausted", trace)
+        self.assertEqual(trace["candidate_schedule"]["bounded_count"], 2)
+
+    def test_evidence_backed_candidate_outside_fetch_set_reports_exhaustion(self):
+        fetcher = RecordingFailureFetcher()
+        agent = JobSourceAgent(
+            fetcher,
+            max_candidates=6,
+            max_career_candidate_fetches=1,
+        )
+        trace = {"candidate_fetch_errors": []}
+        candidates = [
+            candidate(
+                "https://example.com/careers",
+                500,
+                ["generated path probe"],
+            ),
+            candidate(
+                "https://example.com/team",
+                100,
+                [
+                    "homepage navigation link",
+                    "homepage team link requiring employment evidence",
+                ],
+                text="Team",
+                origin="page_link",
+            ),
+            candidate(
+                "https://example.com/jobs-from-sitemap",
+                90,
+                [],
+                origin="sitemap",
+            ),
+        ]
+
+        selected = agent._select_verified_career_candidate(candidates, trace)
+
+        self.assertIsNone(selected)
+        self.assertEqual(fetcher.calls, ["https://example.com/team"])
         self.assertEqual(
             trace["candidate_fetch_budget_exhausted"],
             {
-                "limit": 2,
+                "limit": 1,
                 "remaining_candidates": 2,
-                "remaining_bounded_candidates": 2,
+                "remaining_bounded_candidates": 0,
+                "untried_evidence_backed_count": 1,
             },
+        )
+
+    def test_later_speculative_schedule_preserves_untried_evidence_exhaustion(self):
+        fetcher = RecordingFailureFetcher()
+        agent = JobSourceAgent(
+            fetcher,
+            max_candidates=6,
+            max_career_candidate_fetches=1,
+        )
+        trace = {"candidate_fetch_errors": []}
+        evidence_candidates = [
+            candidate(
+                f"https://example.com/careers-{index}",
+                100 - index,
+                ["career keyword 'careers'"],
+                text="Careers",
+                origin="page_link",
+            )
+            for index in range(2)
+        ]
+
+        agent._select_verified_career_candidate(evidence_candidates, trace)
+        self.assertIn("candidate_fetch_budget_exhausted", trace)
+
+        agent._select_verified_career_candidate(
+            [candidate("https://example.com/jobs", 100, ["generated path probe"])],
+            trace,
+        )
+
+        self.assertEqual(
+            trace["candidate_fetch_budget_exhausted"]["untried_evidence_backed_count"],
+            1,
         )
 
     def test_generated_subdomain_probe_stays_in_speculative_tier(self):

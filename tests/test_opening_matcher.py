@@ -24,6 +24,58 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OpeningMatcherTests(unittest.TestCase):
+    def test_generic_same_page_job_query_matches_exact_opening(self):
+        job_list_url = "https://zello.com/careers/"
+        job_url = (
+            job_list_url
+            + "job/?jid=f8f40e9f-4c49-4a3d-9d89-750fc2409835"
+        )
+
+        class StaticFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=job_list_url,
+                    html=f'<a href="{job_url}">Machine Learning Engineer</a>',
+                    source="fixture",
+                )
+
+        matcher = JobOpeningMatcher(StaticFetcher())
+
+        match, _trace = matcher.match(job_list_url, "Machine Learning Engineer")
+        missing, missing_trace = matcher.match(job_list_url, "Quantum Archaeologist")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, job_url)
+        self.assertIsNone(missing)
+        self.assertNotIn("inventory", missing_trace["provider_api"])
+
+    def test_nested_anchor_title_matches_workable_detail(self):
+        job_list_url = "https://awesomemotive.com/careers/"
+        job_url = "https://apply.workable.com/awesomemotive/j/ABC123/"
+
+        class StaticFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=job_list_url,
+                    html=(
+                        f'<a href="{job_url}">'
+                        "<h4>AI Developer</h4><span>Remote</span>"
+                        "</a>"
+                    ),
+                    source="fixture",
+                )
+
+        match, _trace = JobOpeningMatcher(StaticFetcher()).match(
+            job_list_url,
+            "AI Developer",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, job_url)
+        self.assertEqual(match.title, "AI Developer Remote")
+
     def test_title_match_scores_relevant_title_higher(self):
         good_score, _ = score_title_match("Product Manager, Ads", "Product Manager, Ads")
         weak_score, _ = score_title_match("Software Engineer", "Product Manager, Ads")
@@ -302,6 +354,11 @@ class OpeningMatcherTests(unittest.TestCase):
             trace["provider_api"]["inventory"]["strongest_title_score"],
             45,
         )
+        self.assertEqual(trace["search_plan"], [])
+        self.assertEqual(
+            trace["search_skipped"],
+            "verified_native_inventory_no_match",
+        )
 
     def test_partial_provider_inventory_allows_positive_match_without_verified_no_match(self):
         class PartialAdapter:
@@ -360,6 +417,7 @@ class OpeningMatcherTests(unittest.TestCase):
             "incomplete",
         )
         self.assertFalse(missing_trace["provider_api"]["inventory"]["complete"])
+        self.assertNotIn("search_skipped", missing_trace)
 
     def test_native_adapter_rejects_generic_role_token_as_exact_opening(self):
         class BroadSearchAdapter:

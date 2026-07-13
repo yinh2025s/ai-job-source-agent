@@ -70,7 +70,7 @@ class StageResultTests(unittest.TestCase):
             "medium",
         )
 
-    def test_career_discovery_failure_marks_later_stages_not_run(self):
+    def test_speculative_career_miss_marks_later_stages_not_run(self):
         result = self.agent.discover(
             CompanyInput(
                 company_name="Missing Company",
@@ -81,11 +81,11 @@ class StageResultTests(unittest.TestCase):
         stages = {stage.stage: stage for stage in result.stage_results}
 
         self.assertEqual(result.pipeline_status, "failed")
-        self.assertEqual(result.error, "fetch_budget_exhausted")
-        self.assertEqual(result.error_code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertEqual(result.error, "career_page_not_found")
+        self.assertEqual(result.error_code, "CAREER_PAGE_NOT_FOUND")
         self.assertEqual(stages[STAGE_CAREER_DISCOVERY].status, "failed")
-        self.assertEqual(stages[STAGE_CAREER_DISCOVERY].reason_code, "FETCH_BUDGET_EXHAUSTED")
-        self.assertTrue(stages[STAGE_CAREER_DISCOVERY].retryable)
+        self.assertEqual(stages[STAGE_CAREER_DISCOVERY].reason_code, "CAREER_PAGE_NOT_FOUND")
+        self.assertFalse(stages[STAGE_CAREER_DISCOVERY].retryable)
         self.assertEqual(stages[STAGE_JOB_BOARD_DISCOVERY].status, "not_run")
         self.assertEqual(stages[STAGE_OPENING_MATCH].status, "not_run")
         self.assertEqual(stages[STAGE_RESULT_VALIDATION].status, "success")

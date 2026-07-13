@@ -4,6 +4,21 @@ from job_source_agent.web import MAX_EXTRACTED_LINKS, Page, extract_links
 
 
 class LinkExtractionTests(unittest.TestCase):
+    def test_nested_anchor_text_preserves_clean_node_boundaries(self):
+        page = Page(
+            url="https://awesomemotive.com/careers/",
+            html='''
+                <a href="https://apply.workable.com/awesomemotive/j/ABC123/">
+                  <h4>AI Developer</h4><span>Remote</span>
+                </a>
+            ''',
+        )
+
+        links = extract_links(page)
+
+        self.assertEqual(len(links), 1)
+        self.assertEqual(links[0].text, "AI Developer Remote")
+
     def test_extracts_typed_hidden_and_redirect_urls(self):
         page = Page(
             url="https://example.com/careers",

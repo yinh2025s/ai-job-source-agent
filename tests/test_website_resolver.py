@@ -593,6 +593,31 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertIn("parked domain rejected", candidate.reasons)
         self.assertNotIn("homepage verified", candidate.reasons)
 
+    def test_spaceship_domain_sale_template_is_rejected(self):
+        class ParkingFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=(
+                        "<html><head><title>general-motors.com for sale | Spaceship.com</title>"
+                        '<meta name="description" content="general-motors.com is for sale on '
+                        'Spaceship. Secure checkout and quick transfer."></head>'
+                        "<body>Own general-motors.com today.</body></html>"
+                    ),
+                )
+
+        candidate = CompanyWebsiteResolver(
+            ParkingFetcher(offline=True)
+        )._score_candidate(
+            "https://general-motors.com",
+            "General Motors",
+            verify=True,
+        )
+
+        self.assertIn("parked domain rejected", candidate.reasons)
+        self.assertNotIn("homepage verified", candidate.reasons)
+
     def test_us_job_location_recovers_same_host_us_root_after_foreign_redirect(self):
         us_root = "https://www.deloitte.com/us/en.html"
 
@@ -855,6 +880,67 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertTrue(any("linkedin.com" in call for call in fetcher.calls))
         self.assertIn("LinkedIn official evidence unavailable", trace["selected"]["reasons"])
         self.assertIn("fast verified domain", trace["selected"]["reasons"])
+
+    def test_verified_non_apex_guess_defers_to_linkedin_official_evidence(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class ProductSubdomainFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme",'
+                            '"sameAs":"https://acme.com"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "acme.com":
+                    raise FetchError("apex temporarily unavailable")
+                if domain_of(url) in {"acme.ai", "acme.io"}:
+                    return Page(
+                        url=url,
+                        final_url="https://developer.acme.com/",
+                        html=(
+                            "<html><head><title>Acme Developer Platform</title>"
+                            '<link rel="canonical" href="https://developer.acme.com/">'
+                            "</head>"
+                            "<body>Acme developer APIs</body></html>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = ProductSubdomainFetcher()
+        website_url, trace = CompanyWebsiteResolver(
+            fetcher,
+            verify_limit=3,
+        ).resolve("Acme", linkedin_url)
+
+        self.assertEqual(website_url, "https://acme.com")
+        self.assertTrue(any("linkedin.com" in call for call in fetcher.calls))
+        non_apex = [
+            item
+            for item in trace["candidates"]
+            if domain_of(item["url"]) == "developer.acme.com"
+        ]
+        self.assertTrue(
+            any(
+                "fast selection deferred for LinkedIn official evidence: "
+                "verified non-apex domain" in item["reasons"]
+                for item in non_apex
+            ),
+            non_apex,
+        )
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
 
     def test_verified_candidate_uses_company_canonical_domain(self):
         class CanonicalFetcher(Fetcher):

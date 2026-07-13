@@ -196,6 +196,31 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
         self.assertEqual(fetcher.requested, [career])
 
+    def test_visible_taleo_board_outside_candidate_cap_is_handed_to_provider(self):
+        career = "https://example.com/careers"
+        board = "https://jobs.example.net/careersection/percepta/jobsearch.ftl"
+        low_ranked_links = "".join(
+            f'<a href="https://example.com/jobs/{index}">Software Engineer {index}</a>'
+            for index in range(8)
+        )
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=low_ranked_links + f'<a href="{board}">Percepta opportunities</a>',
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(
+            fetcher,
+            max_candidates=2,
+            max_job_pages=1,
+        ).find_job_board(career)
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(trace["provider"], "taleo")
+        self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
+        self.assertEqual(fetcher.requested, [career])
+
     def test_follows_registry_backed_paycom_board_outside_static_ats_domains(self):
         career = "https://example.com/careers"
         client_key = "AA674B442E9B6A1284BD7F78CB0C3E73"

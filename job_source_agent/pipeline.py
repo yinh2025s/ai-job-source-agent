@@ -905,7 +905,27 @@ class JobSourceAgent:
                 trace["selected_page_source"] = page.source
                 return None, actual_page_url, trace, None
 
-            linked_provider_board = next(
+            visible_provider_boards = [
+                (adapter, board, candidate)
+                for candidate in deduped
+                if candidate.origin == "page_link" and candidate.text
+                if not is_likely_job_detail(candidate)
+                if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
+                and adapter.supports_listing
+                and (board := adapter.identify_board(candidate.url)) is not None
+                and normalize_url(candidate.url)
+                == normalize_url(
+                    self._canonical_provider_board_url(
+                        adapter.name,
+                        board.url,
+                        board.identifier,
+                    )
+                )
+            ]
+            visible_linked_provider_board = (
+                visible_provider_boards[0] if visible_provider_boards else None
+            )
+            linked_provider_board = visible_linked_provider_board or next(
                 (
                     (adapter, board, candidate)
                     for candidate in deduped
@@ -927,8 +947,13 @@ class JobSourceAgent:
                     "provider": adapter.name,
                     "url": board.url,
                 }
-                trace["job_list_page_url"] = board.url
-                return None, board.url, trace, None
+                canonical_board_url = self._canonical_provider_board_url(
+                    adapter.name,
+                    board.url,
+                    board.identifier,
+                )
+                trace["job_list_page_url"] = canonical_board_url
+                return None, canonical_board_url, trace, None
 
             official_portal = next(
                 (
@@ -1426,11 +1451,18 @@ class JobSourceAgent:
     ) -> str | None:
         fetch_attempts = 0
         fetch_limit = self.max_career_candidate_fetches if max_fetches is None else max_fetches
+        scheduled_fetch_limit = min(self.max_candidates, fetch_limit)
         scheduled_candidates, schedule_trace = schedule_career_candidates(
             candidates,
-            fetch_limit=fetch_limit,
+            fetch_limit=scheduled_fetch_limit,
         )
-        bounded_candidates = scheduled_candidates[: self.max_candidates]
+        bounded_candidates = scheduled_candidates[:scheduled_fetch_limit]
+        untried_candidates = scheduled_candidates[len(bounded_candidates):]
+        untried_evidence_backed = [
+            candidate
+            for candidate in untried_candidates
+            if candidate_evidence_tier(candidate) <= 2
+        ]
         roles_by_url = schedule_trace.pop("roles_by_url")
         original_positions = {
             candidate.url: position
@@ -1463,13 +1495,6 @@ class JobSourceAgent:
         trace["candidate_schedule"] = candidate_schedule
         trace.setdefault("candidate_schedules", []).append(candidate_schedule)
         for candidate in bounded_candidates:
-            if fetch_attempts >= fetch_limit:
-                trace["candidate_fetch_budget_exhausted"] = {
-                    "limit": fetch_limit,
-                    "remaining_candidates": len(scheduled_candidates) - fetch_attempts,
-                    "remaining_bounded_candidates": len(bounded_candidates) - fetch_attempts,
-                }
-                return None
             fetch_attempts += 1
             derived_reasons = [reason for reason in candidate.reasons if reason.startswith("derived ")]
             if derived_reasons:
@@ -1573,6 +1598,13 @@ class JobSourceAgent:
                 trace["selected"] = dataclass_to_dict(candidate)
                 trace["selected_page_source"] = page.source
                 return actual_url
+        if untried_evidence_backed:
+            trace["candidate_fetch_budget_exhausted"] = {
+                "limit": scheduled_fetch_limit,
+                "remaining_candidates": len(untried_candidates),
+                "remaining_bounded_candidates": 0,
+                "untried_evidence_backed_count": len(untried_evidence_backed),
+            }
         return None
 
     def _verify_derived_provider_with_adapter(
@@ -2046,7 +2078,12 @@ def _legacy_step_name(stage: str) -> str:
 
 
 def _trace_has_fetch_budget_exhaustion(value: object, key: str = "") -> bool:
-    if key in {"candidate_fetch_budget_exhausted", "fetch_budget_exhausted"}:
+    if key == "candidate_fetch_budget_exhausted":
+        if not isinstance(value, dict):
+            return False
+        evidence_count = value.get("untried_evidence_backed_count")
+        return bool(value) if evidence_count is None else evidence_count > 0
+    if key == "fetch_budget_exhausted":
         return value not in (None, "", [], {})
     if isinstance(value, dict):
         return any(

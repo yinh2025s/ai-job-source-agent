@@ -202,7 +202,7 @@ class _LinkParser(HTMLParser):
     def handle_endtag(self, tag: str) -> None:
         if tag.lower() != "a" or self._active_href is None:
             return
-        text = " ".join("".join(self._active_text).split())
+        text = " ".join(" ".join(self._active_text).split())
         normalized_href = safe_normalize_url(self._active_href, self.base_url)
         if normalized_href and len(self.links) < MAX_EXTRACTED_LINKS:
             self.links.append(

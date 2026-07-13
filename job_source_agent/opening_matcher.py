@@ -107,6 +107,16 @@ class JobOpeningMatcher:
             }
             return api_match, trace
 
+        inventory = api_trace.get("inventory")
+        if (
+            isinstance(inventory, dict)
+            and inventory.get("source") == "native_adapter"
+            and inventory.get("complete") is True
+        ):
+            trace["search_plan"] = []
+            trace["search_skipped"] = "verified_native_inventory_no_match"
+            return None, trace
+
         search_plan = _build_search_plan(job_list_url, target_title, landing_page)
         trace["search_plan"] = [
             {"url": search_url, "source": source}

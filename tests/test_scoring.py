@@ -56,6 +56,51 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(is_likely_job_detail(candidate))
         self.assertTrue(is_likely_job_listing_page(candidate))
 
+    def test_same_page_job_route_with_allowlisted_stable_id_is_detail(self):
+        source_url = "https://zello.com/careers/"
+        for key, job_id in (
+            ("jid", "f8f40e9f-4c49-4a3d-9d89-750fc2409835"),
+            ("jobId", "123456"),
+            ("job_id", "engineering-7f3a9c"),
+        ):
+            with self.subTest(key=key, job_id=job_id):
+                candidate = score_job_link(
+                    RawLink(
+                        url=f"{source_url}job/?{key}={job_id}",
+                        text="Machine Learning Engineer",
+                        source_url=source_url,
+                    ),
+                    career_page_url=source_url,
+                )
+
+                self.assertTrue(is_likely_job_detail(candidate))
+                self.assertIn("job-detail query pattern", candidate.reasons)
+                self.assertNotIn("same as career page", candidate.reasons)
+
+    def test_job_query_detail_requires_strict_same_origin_child_path_and_allowlisted_id(self):
+        source_url = "https://zello.com/careers/"
+        invalid_urls = (
+            "https://zello.com/careers/jobs?jid=123",
+            source_url + "job/?jid=",
+            source_url + "job/?q=engineer",
+            source_url + "job/?search=engineer",
+            source_url + "job/?filter=remote",
+            source_url + "job/?posting=123",
+            source_url + "job/?jid=123&q=engineer",
+            source_url + "job/?jid=" + "1" * 25,
+            "https://zello.com/about/job/?jid=123",
+            "https://jobs.zello.com/careers/job/?jid=123",
+        )
+
+        for url in invalid_urls:
+            with self.subTest(url=url):
+                candidate = score_job_link(
+                    RawLink(url=url, text="Engineer", source_url=source_url),
+                    career_page_url=source_url,
+                )
+
+                self.assertFalse(is_likely_job_detail(candidate))
+
     def test_article_about_jobs_is_not_career_link(self):
         candidate = score_career_link(
             RawLink(

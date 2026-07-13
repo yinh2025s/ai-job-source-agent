@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from urllib.parse import urlparse
+import re
+from urllib.parse import parse_qsl, urlparse
 
 from .models import LinkCandidate
 from .web import RawLink, domain_of, path_depth
@@ -158,6 +159,12 @@ GENERIC_JOB_LISTING_PARTS = {
     "candidateexperience",
 }
 
+_DETAIL_QUERY_KEYS = {"jid", "jobid", "job_id"}
+_UUID_DETAIL_ID = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+_OPAQUE_DETAIL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._~-]{5,127}")
+
 
 def is_ats_url(url: str) -> bool:
     host = urlparse(url).netloc.lower()
@@ -201,13 +208,20 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     leaf = path_parts[-1] if path_parts else ""
     score = 0
     reasons: list[str] = []
+    same_page_detail_query = _looks_like_same_page_detail_query(
+        link.url,
+        link.source_url,
+    )
 
     if is_resource_url(link.url):
         return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"], link.origin)
     if is_non_official_job_domain(link.url):
         return LinkCandidate(link.url, link.text, link.source_url, -500, ["non-official job/social domain"], link.origin)
 
-    if normalize_for_compare(link.url) == normalize_for_compare(career_page_url):
+    if (
+        normalize_for_compare(link.url) == normalize_for_compare(career_page_url)
+        and not same_page_detail_query
+    ):
         score -= 200
         reasons.append("same as career page")
 
@@ -221,7 +235,10 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
             score += 25
             reasons.append("ATS board/listing candidate")
 
-    if _looks_like_generic_listing_leaf(leaf):
+    if same_page_detail_query:
+        score += 90
+        reasons.append("job-detail query pattern")
+    elif _looks_like_generic_listing_leaf(leaf):
         score += 80
         reasons.append("job-listing route name")
     elif any(token in path for token in ("/jobs/", "/job/", "/positions/", "/openings/", "/job-openings/")):
@@ -274,6 +291,8 @@ def is_likely_job_detail(candidate: LinkCandidate) -> bool:
         return False
     if is_non_official_job_domain(candidate.url):
         return False
+    if _looks_like_same_page_detail_query(candidate.url, candidate.source_url):
+        return True
     if normalize_for_compare(candidate.url) == normalize_for_compare(candidate.source_url):
         return False
     path_parts = [part.lower() for part in urlparse(candidate.url).path.split("/") if part]
@@ -324,6 +343,34 @@ def is_likely_job_listing_page(candidate: LinkCandidate) -> bool:
 def normalize_for_compare(url: str) -> str:
     parsed = urlparse(url)
     return parsed._replace(query="", fragment="", path=parsed.path.rstrip("/")).geturl()
+
+
+def _looks_like_same_page_detail_query(url: str, source_url: str) -> bool:
+    parsed = urlparse(url)
+    source = urlparse(source_url)
+    detail_path = parsed.path.rstrip("/")
+    source_path = source.path.rstrip("/")
+    if (
+        parsed.scheme.lower() != source.scheme.lower()
+        or parsed.netloc.lower() != source.netloc.lower()
+        or detail_path.split("/")[-1].lower() != "job"
+        or detail_path not in {source_path, f"{source_path}/job"}
+    ):
+        return False
+
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    if len(query) != 1:
+        return False
+    key, value = query[0]
+    if key.lower() not in _DETAIL_QUERY_KEYS or not value:
+        return False
+    if _UUID_DETAIL_ID.fullmatch(value) or (value.isdigit() and len(value) <= 24):
+        return True
+    return bool(
+        _OPAQUE_DETAIL_ID.fullmatch(value)
+        and any(character.isalpha() for character in value)
+        and any(character.isdigit() for character in value)
+    )
 
 
 def _looks_like_generic_listing_leaf(leaf: str) -> bool:

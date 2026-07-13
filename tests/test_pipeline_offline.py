@@ -107,6 +107,69 @@ class OfflinePipelineTests(unittest.TestCase):
             raised.exception.trace["candidate_fetch_budget_exhausted"]["limit"],
             0,
         )
+
+    def test_speculative_candidate_truncation_reports_career_page_not_found(self):
+        homepage = "https://speculative.example"
+
+        class SpeculativeFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(url=url, final_url=homepage, html="<html>Company</html>")
+                raise FetchError(f"fixture miss: {url}")
+
+        agent = JobSourceAgent(
+            SpeculativeFetcher(offline=True),
+            max_candidates=6,
+            max_career_candidate_fetches=5,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(raised.exception.code, "career_page_not_found")
+        self.assertNotIn("candidate_fetch_budget_exhausted", raised.exception.trace)
+
+    def test_untried_page_link_reports_fetch_budget_exhausted(self):
+        homepage = "https://evidence-budget.example"
+        first = f"{homepage}/careers-primary"
+        second = f"{homepage}/careers-secondary"
+
+        class EvidenceBudgetFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=(
+                            f'<a href="{first}">Careers</a>'
+                            f'<a href="{second}">Careers</a>'
+                        ),
+                    )
+                raise FetchError(f"fixture miss: {url}")
+
+        agent = JobSourceAgent(
+            EvidenceBudgetFetcher(offline=True),
+            max_candidates=6,
+            max_career_candidate_fetches=1,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(raised.exception.code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertEqual(
+            raised.exception.trace["candidate_fetch_budget_exhausted"][
+                "untried_evidence_backed_count"
+            ],
+            1,
+        )
+
     def test_labeled_first_party_bundle_navigation_recovers_career_without_sitemap(self):
         homepage = "https://bundle.example"
         asset = homepage + "/assets/index-app.js"

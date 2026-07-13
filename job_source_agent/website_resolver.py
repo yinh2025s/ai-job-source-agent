@@ -79,6 +79,8 @@ PARKED_DOMAIN_TEXT_MARKERS = (
     "buy this domain",
     "domain is for sale",
     "domain marketplace",
+    " for sale | spaceship.com",
+    " is for sale on spaceship",
     "make an offer on this domain",
     "purchase this domain",
 )
@@ -203,18 +205,24 @@ class CompanyWebsiteResolver:
             if "homepage verified" in candidate.reasons
             and self._select_verified_candidate([candidate])
         }
-        fast_selection_deferred = bool(
-            fast_selected
-            and linkedin_company_url
-            and not linkedin_evidence_loaded
-            and len(selectable_fast_domains) >= 2
-        )
+        fast_selection_defer_reason: str | None = None
+        if fast_selected and linkedin_company_url and not linkedin_evidence_loaded:
+            if len(selectable_fast_domains) >= 2:
+                fast_selection_defer_reason = "multiple verified same-brand domains"
+            elif _has_non_www_subdomain(fast_selected.url) and not _has_direct_identity_source(
+                fast_selected
+            ):
+                fast_selection_defer_reason = "verified non-apex domain"
+        fast_selection_deferred = fast_selection_defer_reason is not None
         if fast_selection_deferred:
+            deferred_domains = set(selectable_fast_domains)
+            if fast_selected:
+                deferred_domains.add(domain_of(fast_selected.url))
             for candidate in fast_scored:
-                if domain_of(candidate.url) in selectable_fast_domains:
+                if domain_of(candidate.url) in deferred_domains:
                     candidate.reasons.append(
                         "fast selection deferred for LinkedIn official evidence: "
-                        "multiple verified same-brand domains"
+                        f"{fast_selection_defer_reason}"
                     )
         trace["candidates"].extend(
             {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
@@ -1186,6 +1194,30 @@ def _is_parked_domain_page(html: str, resolved_url: str) -> bool:
     visible_head = re.sub(r"<[^>]+>", " ", html_head, flags=re.S)
     normalized = " ".join(html_unescape(visible_head).casefold().split())
     return any(marker in normalized for marker in PARKED_DOMAIN_TEXT_MARKERS)
+
+
+def _has_non_www_subdomain(url: str) -> bool:
+    try:
+        host = (urlparse(url).hostname or "").casefold().strip(".")
+    except (TypeError, ValueError):
+        return False
+    if host.startswith("www."):
+        host = host[4:]
+    labels = [label for label in host.split(".") if label]
+    if len(labels) <= 2:
+        return False
+    two_level_suffixes = {"co.jp", "co.nz", "co.uk", "com.au", "com.br", "com.sg"}
+    apex_label_count = 3 if ".".join(labels[-2:]) in two_level_suffixes else 2
+    return len(labels) > apex_label_count
+
+
+def _has_direct_identity_source(candidate: WebsiteCandidate) -> bool:
+    direct_sources = {
+        "candidate source: linkedin_official_website",
+        "candidate source: linkedin_cached_official_website",
+        "candidate source: preferred_input",
+    }
+    return any(reason in direct_sources for reason in candidate.reasons)
 
 
 def _candidate_source_map(*groups: tuple[str, list[str]]) -> dict[str, set[str]]:
