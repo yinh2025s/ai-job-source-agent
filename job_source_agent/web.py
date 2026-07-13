@@ -205,14 +205,18 @@ def extract_links(page: Page) -> list[RawLink]:
     embedded = re.sub(r"\\u00(?:2f|2F)", "/", embedded)
     embedded = embedded.replace(r"\/", "/")
     embedded = unescape(embedded)
+    configured_board_urls = (
+        _greenhouse_template_board_urls(embedded)
+        + _lever_embed_board_urls(embedded)
+    )
     provider_config_links = [
-            RawLink(
-                url=board_url,
-                text="",
-                source_url=source_url,
-                origin="derived_provider_config",
-            )
-        for board_url in _greenhouse_template_board_urls(embedded)
+        RawLink(
+            url=board_url,
+            text="",
+            source_url=source_url,
+            origin="derived_provider_config",
+        )
+        for board_url in dict.fromkeys(configured_board_urls)
     ]
     if provider_config_links:
         configured_urls = {link.url for link in provider_config_links}
@@ -271,6 +275,18 @@ def _greenhouse_template_board_urls(text: str) -> list[str]:
         for name in sorted(flattened_names)
         if name in assignments
     ]
+
+
+def _lever_embed_board_urls(text: str) -> list[str]:
+    if not re.search(r"(?:lever-jobs-embed|\blever-job(?:s|-)\b)", text, re.I):
+        return []
+    identifiers = re.findall(
+        r"\bleverJobsOptions\s*=\s*\{[^{}]{0,2000}?[\"']?accountName[\"']?\s*:\s*"
+        r"([\"'])([A-Za-z0-9][A-Za-z0-9_-]{0,99})\1",
+        text,
+        re.I | re.S,
+    )
+    return [f"https://jobs.lever.co/{identifier}" for _quote, identifier in identifiers]
 
 
 class Fetcher:

@@ -291,7 +291,7 @@
 
 当前测试数量：
 
-- 473 unit tests passing
+- 475 unit tests passing
 
 ## 当前主要短板
 
@@ -972,6 +972,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - S5 known-ATS embed、locale-preserving traversal 和 redirect-budget 修复使 7-company focused replay 从 0/7 提升到 3/7 job list、1/7 exact opening；clean fixed live 保持 51/51 expectations、51/51 job list、50/51 exact opening，4 workers 用时 119.7 秒。462 个测试、13/13 provider、6/6 resolver 和 architecture gate 同步通过
 - Phenom structured inventory 已作为第 12 个原生 adapter 接入，provider benchmark 扩展到 14/14 exact；Quest Global focused live 命中 exact opening，Viking 以 title-filtered verified no-match 返回 `OPENING_NOT_FOUND`。
 - Paycom 已作为第 13 个原生 adapter 接入：稳定 canonical portal、页面临时 session config、公开 title-filtered POST inventory、有界分页、tenant/redirect/detail URL 校验和 token-free trace 已完成。S5 跨站 traversal 现在接受 registry-backed board，同时继续拒绝未知域、credentials 和异常端口。ReturnPro focused live 从 `JOB_BOARD_NOT_FOUND` 提升为 exact `AI/ML Engineer` opening；473 个测试、15/15 provider、6/6 resolver、13-adapter architecture gate 和 checkpointed 51/51 fixed live expectations 同步通过。下一 provider 工作项继续由 live failure cluster 排序决定。
+- Lever embed config discovery 已加入 bounded link extraction：仅在同时存在 embed 指纹和合法 `leverJobsOptions.accountName` 时派生 board，并优先进入现有 Lever adapter 的 tenant/title 验证。Influur focused live 从 `JOB_BOARD_NOT_FOUND` 提升为 exact `AI Engineer` opening；475 个测试、15/15 provider、6/6 resolver、13-adapter architecture gate 和 clean `.25` 51/51 fixed live expectations 同步通过。旧 7-case cluster 目前为 5 exact、1 verified no-match、2 个独立 unresolved；Kirkland 是 Cloudflare/多层 taxonomy，Nashville 当前只暴露申请表，后续按新证据分别处理。
 
 目标：
 

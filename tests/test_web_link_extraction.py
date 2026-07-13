@@ -65,6 +65,34 @@ class LinkExtractionTests(unittest.TestCase):
             [(link.origin, link.url) for link in links],
         )
 
+    def test_derives_lever_board_from_embed_configuration(self):
+        page = Page(
+            url="https://example.com/careers",
+            html="""
+                <div id="lever-jobs-container"></div>
+                <script>window.leverJobsOptions = { accountName: 'influur', includeCss: true };</script>
+                <script src="https://cdn.example/lever-jobs-embed/index.js"></script>
+            """,
+        )
+
+        links = extract_links(page)
+
+        self.assertIn(
+            ("derived_provider_config", "https://jobs.lever.co/influur"),
+            [(link.origin, link.url) for link in links],
+        )
+
+    def test_does_not_derive_lever_board_without_embed_evidence(self):
+        page = Page(
+            url="https://example.com/account",
+            html="<script>window.leverJobsOptions = { accountName: 'untrusted' };</script>",
+        )
+
+        self.assertNotIn(
+            "https://jobs.lever.co/untrusted",
+            [link.url for link in extract_links(page)],
+        )
+
     def test_provider_configuration_has_priority_when_page_link_budget_is_full(self):
         anchors = "".join(
             f'<a href="/docs/{index}">Doc {index}</a>'
