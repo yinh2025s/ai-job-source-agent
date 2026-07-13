@@ -2,15 +2,19 @@ from __future__ import annotations
 
 from html.parser import HTMLParser
 import json
+import re
 from typing import Any, Iterator
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
-from ..web import Page, safe_normalize_url
+from ..web import FetchError, Page, safe_normalize_url
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _CUSTOM_PREFIX = "custom:"
+_NUXT_PREFIX = "nuxt:"
 _GREENHOUSE_RECORD_MARKERS = {"data_compliance", "requisition_id", "first_published"}
+_JS_STRING = r'"(?:\\.|[^"\\])*"'
+_MAX_NUXT_PAYLOAD_CHARS = 5_000_000
 
 
 class GreenhouseAdapter:
@@ -49,6 +53,27 @@ class GreenhouseAdapter:
             identifier=f"{_CUSTOM_PREFIX}{(parsed.hostname or '').casefold()}",
         )
 
+    def probe_board(self, fetcher, page: Page) -> JobBoard | None:
+        page_url = page.final_url or page.url
+        payload_url = _nuxt_payload_url(page.html, page_url)
+        if payload_url is None:
+            return None
+        try:
+            payload = fetcher.fetch(payload_url)
+        except (FetchError, OSError, TimeoutError):
+            return None
+        if not _same_safe_host(payload.final_url or payload.url, urlparse(page_url).hostname or ""):
+            return None
+        records = _nuxt_greenhouse_records(payload.html, page_url)
+        if not records:
+            return None
+        host = (urlparse(page_url).hostname or "").casefold()
+        return JobBoard(
+            url=page_url,
+            provider=self.name,
+            identifier=f"{_NUXT_PREFIX}{host}|{payload_url}",
+        )
+
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
         if not board.identifier:
             return AdapterResult(
@@ -59,6 +84,8 @@ class GreenhouseAdapter:
             )
         if board.identifier.startswith(_CUSTOM_PREFIX):
             return self._list_custom_frontend(fetcher, board)
+        if board.identifier.startswith(_NUXT_PREFIX):
+            return self._list_nuxt_payload(fetcher, board)
         api_url = self.api_url(board.identifier)
         page = fetcher.fetch(api_url)
         try:
@@ -92,6 +119,58 @@ class GreenhouseAdapter:
                 "api_urls": [api_url],
                 "response_source": page.source,
                 "candidate_count": len(candidates),
+            },
+        )
+
+    def _list_nuxt_payload(self, fetcher, board: JobBoard) -> AdapterResult:
+        identity = _nuxt_board_identity(board)
+        if identity is None:
+            return AdapterResult(
+                provider=self.name,
+                board=board,
+                reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                trace={"adapter": self.name, "variant": "nuxt_static_payload", "error": "invalid Nuxt board"},
+            )
+        expected_host, payload_url = identity
+        try:
+            page = fetcher.fetch(payload_url)
+        except (FetchError, OSError, TimeoutError):
+            raise
+        if not _same_safe_host(page.final_url or page.url, expected_host):
+            return AdapterResult(
+                provider=self.name,
+                board=board,
+                reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                trace={"adapter": self.name, "variant": "nuxt_static_payload", "error": "payload redirected outside origin"},
+            )
+        records = _nuxt_greenhouse_records(page.html, board.url)
+        candidates = []
+        for record in records:
+            detail_url = _safe_custom_url(record.get("absolute_url"), board.url)
+            if not detail_url or not _same_safe_www_host(detail_url, expected_host):
+                continue
+            candidates.append(
+                JobCandidate(
+                    title=str(record.get("title") or "").strip(),
+                    url=detail_url,
+                    provider=self.name,
+                    raw={"id": record.get("id")},
+                )
+            )
+        candidates = _dedupe_candidates(candidates)
+        return AdapterResult(
+            provider=self.name,
+            board=board,
+            candidates=candidates,
+            reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            trace={
+                "adapter": self.name,
+                "variant": "nuxt_static_payload",
+                "board_urls": [board.url],
+                "payload_urls": [payload_url],
+                "response_source": page.source,
+                "candidate_count": len(candidates),
+                "inventory_scope": "full",
             },
         )
 
@@ -161,9 +240,17 @@ class _NextDataParser(HTMLParser):
         self.payloads: list[str] = []
         self._capturing = False
         self._content: list[str] = []
+        self.nuxt_payload_hrefs: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = {key.casefold(): value or "" for key, value in attrs}
+        if (
+            tag.casefold() == "link"
+            and attributes.get("rel", "").casefold() == "preload"
+            and attributes.get("as", "").casefold() == "script"
+            and attributes.get("href", "").split("?", 1)[0].endswith("/careers/payload.js")
+        ):
+            self.nuxt_payload_hrefs.append(attributes["href"])
         if (
             tag.casefold() == "script"
             and attributes.get("id") == "__NEXT_DATA__"
@@ -197,6 +284,63 @@ def _greenhouse_records(html: str) -> list[dict[str, Any]]:
             continue
         records.extend(_walk_greenhouse_records(payload))
     return _dedupe_records(records)
+
+
+def _nuxt_payload_url(html: str, page_url: str) -> str | None:
+    if "Loading open roles" not in (html or ""):
+        return None
+    parser = _NextDataParser()
+    try:
+        parser.feed(html or "")
+    except (TypeError, ValueError):
+        return None
+    expected_host = (urlparse(page_url).hostname or "").casefold()
+    for href in parser.nuxt_payload_hrefs:
+        payload_url = safe_normalize_url(href, page_url)
+        if payload_url and _same_safe_host(payload_url, expected_host):
+            return payload_url
+    return None
+
+
+def _nuxt_greenhouse_records(payload: str, board_url: str) -> list[dict[str, Any]]:
+    text = (payload or "")[:_MAX_NUXT_PAYLOAD_CHARS]
+    expected_host = (urlparse(board_url).hostname or "").casefold()
+    records = []
+    pattern = re.compile(rf"\babsolute_url:(?P<url>{_JS_STRING})")
+    title_pattern = re.compile(rf"\btitle:(?P<title>{_JS_STRING}),company_name:")
+    for match in pattern.finditer(text):
+        segment = text[match.end() : match.end() + 12_000]
+        title_match = title_pattern.search(segment)
+        if title_match is None:
+            continue
+        try:
+            detail_url = json.loads(match.group("url"))
+            title = json.loads(title_match.group("title"))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        normalized = _safe_custom_url(detail_url, board_url)
+        if not normalized or not _same_safe_www_host(normalized, expected_host):
+            continue
+        parsed = urlparse(normalized)
+        ids = parse_qs(parsed.query).get("gh_jid") or []
+        if parsed.path.rstrip("/").casefold() != "/careersitem" or len(ids) != 1 or not ids[0].isdigit():
+            continue
+        if not str(title).strip():
+            continue
+        records.append({"id": int(ids[0]), "title": str(title).strip(), "absolute_url": normalized})
+    return _dedupe_records(records)
+
+
+def _nuxt_board_identity(board: JobBoard) -> tuple[str, str] | None:
+    identifier = board.identifier or ""
+    if board.provider != "greenhouse" or not identifier.startswith(_NUXT_PREFIX) or "|" not in identifier:
+        return None
+    host, payload_url = identifier.removeprefix(_NUXT_PREFIX).split("|", 1)
+    if not host or not _same_safe_host(board.url, host) or not _same_safe_host(payload_url, host):
+        return None
+    if not urlparse(payload_url).path.endswith("/careers/payload.js"):
+        return None
+    return host, payload_url
 
 
 def _walk_greenhouse_records(value: Any) -> Iterator[dict[str, Any]]:
@@ -261,6 +405,18 @@ def _same_safe_host(url: str, expected_host: str) -> bool:
     except (TypeError, ValueError):
         return False
     return _is_safe_web_origin(parsed) and (parsed.hostname or "").casefold() == expected_host
+
+
+def _same_safe_www_host(url: str, expected_host: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except (TypeError, ValueError):
+        return False
+    if not _is_safe_web_origin(parsed):
+        return False
+    actual_host = (parsed.hostname or "").casefold()
+    expected_host = expected_host.casefold()
+    return actual_host == expected_host or actual_host.removeprefix("www.") == expected_host.removeprefix("www.")
 
 
 def _safe_custom_url(value: Any, base_url: str) -> str | None:

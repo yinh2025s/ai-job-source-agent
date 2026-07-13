@@ -28,14 +28,17 @@ def greenhouse_job(job_id, title, url, **extra):
 
 
 class MappingFetcher:
-    def __init__(self, board_url, html, final_url=None):
+    def __init__(self, board_url, html, final_url=None, pages=None):
         self.board_url = board_url
         self.html = html
         self.final_url = final_url
         self.urls = []
+        self.pages = pages
 
     def fetch(self, url, data=None, headers=None):
         self.urls.append(url)
+        if self.pages is not None:
+            return self.pages[url]
         return Page(
             url=url,
             final_url=self.final_url or url,
@@ -134,6 +137,62 @@ class GreenhouseAdapterTests(unittest.TestCase):
         self.assertEqual(match.provider, "greenhouse")
         self.assertEqual(trace["provider"], "greenhouse")
         self.assertEqual(trace["provider_api"]["adapter_trace"]["variant"], "custom_frontend")
+
+    def test_probes_and_lists_greenhouse_jobs_from_nuxt_static_payload(self):
+        board_url = "https://www.example.org/careers"
+        payload_url = "https://www.example.org/_nuxt/static/123/careers/payload.js"
+        shell = (
+            f'<link rel="preload" as="script" href="{payload_url}">'
+            "<h3>Loading open roles...</h3>"
+        )
+        payload = (
+            'window.__NUXT__=(function(){return {jobs:[{absolute_url:'
+            '"https:\\u002F\\u002Fexample.org\\u002Fcareersitem?gh_jid=7351066",'
+            'data_compliance:[],internal_job_id:1,metadata:[],id:7351066,'
+            'requisition_id:"R-1",title:"Software Engineer, AI Platform - New Grad",'
+            'company_name:"Example",first_published:"2026-01-01"}]}}());'
+        )
+        pages = {
+            payload_url: Page(url=payload_url, html=payload, source="nuxt-payload"),
+            board_url: Page(url=board_url, html=shell),
+        }
+        fetcher = MappingFetcher(board_url, shell, pages=pages)
+
+        board = self.adapter.probe_board(fetcher, Page(url=board_url, html=shell))
+        result = self.adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual(board.provider, "greenhouse")
+        self.assertEqual(result.trace["variant"], "nuxt_static_payload")
+        self.assertEqual(result.candidates[0].title, "Software Engineer, AI Platform - New Grad")
+        self.assertEqual(
+            result.candidates[0].url,
+            "https://example.org/careersitem?gh_jid=7351066",
+        )
+
+    def test_nuxt_probe_rejects_unverified_payload_and_cross_origin_jobs(self):
+        board_url = "https://careers.example.org/careers"
+        payload_url = "https://careers.example.org/_nuxt/static/123/careers/payload.js"
+        shell = f'<link rel="preload" as="script" href="{payload_url}"><p>Loading open roles</p>'
+        payload = (
+            'absolute_url:"https://evil.example/careersitem?gh_jid=1",'
+            'title:"Data Analyst",company_name:"Other"'
+        )
+        fetcher = MappingFetcher(
+            board_url,
+            shell,
+            pages={payload_url: Page(url=payload_url, html=payload)},
+        )
+
+        self.assertIsNone(self.adapter.probe_board(fetcher, Page(url=board_url, html=shell)))
+        self.assertIsNone(
+            self.adapter.probe_board(
+                fetcher,
+                Page(
+                    url=board_url,
+                    html=f'<link rel="preload" as="script" href="https://evil.example/careers/payload.js">Loading open roles',
+                ),
+            )
+        )
 
 
 if __name__ == "__main__":

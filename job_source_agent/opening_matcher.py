@@ -157,7 +157,7 @@ class JobOpeningMatcher:
             except FetchError as exc:
                 page_detection = {"method": "page_evidence", "error": str(exc)}
             else:
-                identified = self.provider_registry.board_for_page(page)
+                identified = self.provider_registry.board_for_page(page, self.fetcher)
                 if identified is not None:
                     adapter, board = identified
                     provider = adapter.name

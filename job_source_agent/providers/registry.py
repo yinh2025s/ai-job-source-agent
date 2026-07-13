@@ -5,7 +5,7 @@ import importlib
 import pkgutil
 
 from ..web import Page
-from .base import JobBoard, PageAwareProviderAdapter, ProviderAdapter
+from .base import JobBoard, PageAwareProviderAdapter, PageProbeProviderAdapter, ProviderAdapter
 from .domain import DomainProviderAdapter
 
 
@@ -27,7 +27,7 @@ class ProviderRegistry:
         adapter = self.adapter_for(url)
         return adapter.name if adapter else "generic"
 
-    def board_for_page(self, page: Page) -> tuple[ProviderAdapter, JobBoard] | None:
+    def board_for_page(self, page: Page, fetcher=None) -> tuple[ProviderAdapter, JobBoard] | None:
         """Identify a provider from fetched page evidence when its URL is opaque."""
         for adapter in self._adapters:
             if not isinstance(adapter, PageAwareProviderAdapter):
@@ -35,6 +35,13 @@ class ProviderRegistry:
             board = adapter.identify_board_from_page(page)
             if board is not None:
                 return adapter, board
+        if fetcher is not None:
+            for adapter in self._adapters:
+                if not isinstance(adapter, PageProbeProviderAdapter):
+                    continue
+                board = adapter.probe_board(fetcher, page)
+                if board is not None:
+                    return adapter, board
         return None
 
     @property

@@ -65,3 +65,11 @@ class PageAwareProviderAdapter(Protocol):
 
     def identify_board_from_page(self, page: Page) -> JobBoard | None:
         ...
+
+
+@runtime_checkable
+class PageProbeProviderAdapter(Protocol):
+    """Optional extension for provider evidence stored in a linked public payload."""
+
+    def probe_board(self, fetcher: FetchClient, page: Page) -> JobBoard | None:
+        ...

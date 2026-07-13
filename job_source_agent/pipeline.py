@@ -594,7 +594,7 @@ class JobSourceAgent:
                 )
                 continue
             visited.add(normalized_actual_url)
-            page_board = self.provider_registry.board_for_page(page)
+            page_board = self.provider_registry.board_for_page(page, self.fetcher)
             if page_board is not None:
                 adapter, board = page_board
                 trace["provider"] = adapter.name
