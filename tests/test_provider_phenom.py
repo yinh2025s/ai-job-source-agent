@@ -104,6 +104,8 @@ class PhenomAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["variant"], "ssr_eager_refine_search")
         self.assertEqual(result.trace["inventory_scope"], "title_filtered")
         self.assertEqual(result.trace["rejected_job_ids"], ["bad/id"])
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["inventory_complete"])
 
     def test_paginates_with_bound_and_stops_on_exact_title(self):
         first_url = self.board_url + "?keywords=AI+Engineer"
@@ -126,6 +128,8 @@ class PhenomAdapterTests(unittest.TestCase):
 
         self.assertEqual(fetcher.requested_urls, [first_url, second_url])
         self.assertEqual(result.candidates[-1].title, "AI Engineer")
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
 
     def test_rejects_tenant_mismatch_cross_origin_and_reports_fetch_failure(self):
         board = JobBoard(self.board_url, "phenom", "ACMEGLOBAL")

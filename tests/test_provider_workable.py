@@ -155,6 +155,7 @@ class WorkableAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["pagination"]["totalPages"], 3)
         self.assertEqual(result.trace["pagination"]["hasNextPage"], True)
         self.assertEqual(result.trace["public_link_count"], 3)
+        self.assertFalse(result.inventory_complete)
 
     def test_rejects_cross_account_and_unsafe_explicit_urls_without_shortcode_bypass(self):
         fetcher = StubFetcher(
@@ -231,6 +232,7 @@ class WorkableAdapterTests(unittest.TestCase):
         self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
         self.assertEqual(result.candidates, [])
         self.assertEqual(result.trace["candidate_count"], 0)
+        self.assertTrue(result.inventory_complete)
 
     def test_client_rendered_shell_uses_public_cursor_api_and_stops_on_exact_title(self):
         shell = (LIVE_SHAPE_FIXTURES / "public-shell.html").read_text(encoding="utf-8")
@@ -267,6 +269,7 @@ class WorkableAdapterTests(unittest.TestCase):
         self.assertTrue(result.trace["exact_title_found"])
         self.assertEqual(result.trace["api_page_count"], 2)
         self.assertEqual(result.trace["total_found"], 516)
+        self.assertFalse(result.inventory_complete)
 
     def test_cursor_api_is_bounded_and_repeated_token_stops_pagination(self):
         shell = (LIVE_SHAPE_FIXTURES / "public-shell.html").read_text(encoding="utf-8")
@@ -306,6 +309,8 @@ class WorkableAdapterTests(unittest.TestCase):
         self.assertEqual(len(fetcher.requests), 6)
         self.assertEqual(result.trace["api_page_count"], 5)
         self.assertEqual(len(result.candidates), 5)
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
 
     def test_rejects_cross_account_board_and_api_redirects(self):
         board = self.adapter.identify_board("https://apply.workable.com/huzzle/")
@@ -350,6 +355,8 @@ class WorkableAdapterTests(unittest.TestCase):
         self.assertEqual([candidate.title for candidate in result.candidates], ["Operations Associate"])
         self.assertEqual(result.trace["api_page_count"], 1)
         self.assertEqual(len(result.trace["errors"]), 1)
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
 
 
 if __name__ == "__main__":

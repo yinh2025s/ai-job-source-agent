@@ -124,5 +124,11 @@
     "expected_minimum_stage": "opening_match",
     "require_exact_opening": true,
     "allow_job_board_fallback": false
+  },
+  "Meta": {
+    "expected_provider": "meta_careers",
+    "expected_minimum_stage": "opening_match",
+    "require_exact_opening": true,
+    "allow_job_board_fallback": false
   }
 }

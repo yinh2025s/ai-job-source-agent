@@ -84,13 +84,17 @@ class EightfoldAdapter:
         pages_fetched = 1
         _append_candidates(state.get("positions"), board, candidates, seen, rejected_urls)
         target = _normalized_title(query.title)
+        inventory_scope = "title_filtered" if query.title else "full"
+        inventory_complete = False
 
         for page_index in range(1, _MAX_PAGES):
-            if target and any(_normalized_title(item.title) == target for item in candidates):
-                break
             if total_found is not None and page_index * _PAGE_SIZE >= total_found:
+                inventory_complete = True
                 break
-            if len(state.get("positions") or []) < _PAGE_SIZE:
+            if total_found is None and len(state.get("positions") or []) < _PAGE_SIZE:
+                inventory_complete = True
+                break
+            if target and any(_normalized_title(item.title) == target for item in candidates):
                 break
             api_url = _api_url(board.url, active_domain, query, page_index * _PAGE_SIZE)
             api_urls.append(api_url)
@@ -115,14 +119,23 @@ class EightfoldAdapter:
             total_found = _nonnegative_int(state.get("count"), total_found)
             records = state.get("positions")
             _append_candidates(records, board, candidates, seen, rejected_urls)
-            if len(records) < _PAGE_SIZE:
+            if total_found is not None and page_index * _PAGE_SIZE + len(records) >= total_found:
+                inventory_complete = True
                 break
+            if total_found is None and len(records) < _PAGE_SIZE:
+                inventory_complete = True
+                break
+
+        if total_found is not None and len(candidates) >= total_found:
+            inventory_complete = True
 
         return AdapterResult(
             provider=self.name,
             board=board,
             candidates=candidates,
             reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "variant": "smart_apply_public_jobs_v2",
@@ -132,7 +145,8 @@ class EightfoldAdapter:
                 "candidate_count": len(candidates),
                 "pages_fetched": pages_fetched,
                 "total_found": total_found,
-                "inventory_scope": "title_filtered" if query.title else "full",
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
                 "rejected_job_urls": list(dict.fromkeys(rejected_urls)),
             },
         )

@@ -355,12 +355,17 @@ def _navigate_with_settle(
     remaining_ms = int((deadline - clock()) * 1000)
     if remaining_ms <= 0:
         return
+    network_idle_ms = (
+        min(2000, max(1, remaining_ms // 4))
+        if _has_job_context(url, "")
+        else remaining_ms
+    )
     try:
-        page.wait_for_load_state("networkidle", timeout=remaining_ms)
+        page.wait_for_load_state("networkidle", timeout=network_idle_ms)
     except timeout_error_type:
         # Analytics, long polling, and streaming requests can keep a useful job
-        # page permanently non-idle. DOM readiness remains the hard boundary.
-        return
+        # page permanently non-idle. Keep the reserved tail for real job DOM.
+        pass
     remaining_ms = int((deadline - clock()) * 1000)
     if remaining_ms > 0:
         _wait_for_job_dom(page, url, remaining_ms, timeout_error_type)
@@ -375,13 +380,24 @@ def _wait_for_job_dom(page, url: str, timeout_ms: int, timeout_error_type) -> No
     expression = """() => {
       const body = document.body;
       if (!body) return false;
-      const text = (body.innerText || '').replace(/\\s+/g, ' ').trim().toLowerCase();
-      const hasJobLink = Array.from(document.querySelectorAll('a[href]')).some((link) =>
-        /(?:career|job|opening|position|vacanc)/i.test(link.href || '')
-      );
-      const hasJobText = text.length >= 120 &&
-        /(?:career|job|open role|open position|join our team|vacanc|we are hiring|we're hiring)/i.test(text);
-      return hasJobLink || hasJobText;
+      return Array.from(document.querySelectorAll('a[href]')).some((link) => {
+        let target;
+        try {
+          target = new URL(link.href, window.location.href);
+        } catch (_error) {
+          return false;
+        }
+        const host = target.hostname.toLowerCase();
+        const path = target.pathname;
+        if (/\\/profile\\/job_details\\/\\d+\\/?$/i.test(path)) return true;
+        if (host === 'jobs.lever.co' && /^\\/[^/]+\\/[0-9a-z-]+\\/?$/i.test(path)) return true;
+        if (host === 'jobs.ashbyhq.com' && /^\\/[^/]+\\/[^/]+\\/?$/i.test(path)) return true;
+        if (host === 'apply.workable.com' && /^\\/[^/]+\\/j\\/[^/]+\\/?$/i.test(path)) return true;
+        if (host === 'jobs.smartrecruiters.com' && /^\\/[^/]+\\/[^/]+\\/?$/i.test(path)) return true;
+        if (target.href === window.location.href) return false;
+        return /\\/(?:jobs?|openings?|positions?|vacanc(?:y|ies))\\/(?!search(?:\\/|$)|results?(?:\\/|$))[^/]+/i
+          .test(target.pathname);
+      });
     }"""
     try:
         wait_for_function(expression, timeout=max(1, timeout_ms))

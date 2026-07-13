@@ -16,7 +16,7 @@ from job_source_agent.listing_extraction import (
     validate_output_url,
 )
 from job_source_agent.web import Fetcher, Page
-from job_source_agent.providers.base import AdapterResult, JobBoard
+from job_source_agent.providers.base import AdapterResult, JobBoard, JobCandidate
 from job_source_agent.providers.registry import ProviderRegistry
 
 
@@ -280,6 +280,149 @@ class OpeningMatcherTests(unittest.TestCase):
             trace["provider_api"]["inventory"]["strongest_title_score"],
             45,
         )
+
+    def test_partial_provider_inventory_allows_positive_match_without_verified_no_match(self):
+        class PartialAdapter:
+            name = "partial_test"
+            supports_listing = True
+
+            def __init__(self):
+                self.query = None
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                self.query = query
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Product Manager",
+                            location="Remote, US",
+                            url="https://jobs.example.com/1",
+                            provider=self.name,
+                        )
+                    ],
+                    inventory_scope="visible_page",
+                    inventory_complete=False,
+                )
+
+        adapter = PartialAdapter()
+        matcher = JobOpeningMatcher(Fetcher(offline=True), ProviderRegistry([adapter]))
+
+        match, matched_trace = matcher.match(
+            "https://jobs.example.com",
+            "Product Manager",
+            "Remote, US",
+        )
+        missing, missing_trace = matcher.match(
+            "https://jobs.example.com",
+            "Quantum Archaeologist",
+            "Remote, US",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertIsNone(missing)
+        self.assertEqual(adapter.query.location, "Remote, US")
+        self.assertEqual(
+            matched_trace["provider_api"]["inventory"]["status"],
+            "incomplete",
+        )
+        self.assertEqual(
+            missing_trace["provider_api"]["inventory"]["status"],
+            "incomplete",
+        )
+        self.assertFalse(missing_trace["provider_api"]["inventory"]["complete"])
+
+    def test_native_adapter_uses_location_to_break_exact_title_tie(self):
+        class LocationAdapter:
+            name = "location_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Product Manager",
+                            location="London, United Kingdom",
+                            url="https://jobs.example.com/uk",
+                            provider=self.name,
+                        ),
+                        JobCandidate(
+                            title="Product Manager",
+                            location="Remote, US",
+                            url="https://jobs.example.com/us",
+                            provider=self.name,
+                        ),
+                    ],
+                )
+
+        matcher = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([LocationAdapter()]),
+        )
+
+        match, trace = matcher.match(
+            "https://jobs.example.com",
+            "Product Manager",
+            "Remote, US",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, "https://jobs.example.com/us")
+        self.assertIn("exact location match", trace["selected"]["reasons"])
+
+    def test_adapter_errors_override_legacy_complete_default(self):
+        class PartialFailureAdapter:
+            name = "partial_failure"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Software Engineer",
+                            url="https://jobs.example.com/1",
+                            provider=self.name,
+                        )
+                    ],
+                    trace={"page_errors": [{"error": "page 2 timed out"}]},
+                )
+
+        matcher = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([PartialFailureAdapter()]),
+        )
+
+        match, trace = matcher.match(
+            "https://jobs.example.com",
+            "Quantum Archaeologist",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(trace["provider_api"]["inventory"]["status"], "incomplete")
+        self.assertFalse(trace["provider_api"]["inventory"]["complete"])
 
     def test_provider_api_urls_are_built_from_job_board_urls(self):
         cases = {

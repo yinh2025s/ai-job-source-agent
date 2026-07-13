@@ -396,7 +396,7 @@ class SmartRenderedFetcherTests(unittest.TestCase):
                 self.calls.append(("wait", state, kwargs))
                 raise NavigationTimeout("analytics connection remains open")
 
-        times = iter((10.0, 10.4))
+        times = iter((10.0, 10.4, 11.9))
         page = FakePage()
 
         _navigate_with_settle(
@@ -409,7 +409,7 @@ class SmartRenderedFetcherTests(unittest.TestCase):
 
         self.assertEqual(page.calls[0][2], {"wait_until": "domcontentloaded", "timeout": 2000})
         self.assertEqual(page.calls[1][0:2], ("wait", "networkidle"))
-        self.assertLessEqual(page.calls[1][2]["timeout"], 1600)
+        self.assertLess(page.calls[1][2]["timeout"], 1600)
 
     def test_domcontentloaded_timeout_salvages_usable_job_dom_without_more_waiting(self):
         class NavigationTimeout(Exception):
@@ -571,6 +571,45 @@ class SmartRenderedFetcherTests(unittest.TestCase):
         self.assertEqual([call[0] for call in page.calls], ["goto", "wait", "function"])
         self.assertLessEqual(page.calls[2][2]["timeout"], 1100)
         self.assertIn("querySelectorAll('a[href]')", page.calls[2][1])
+        self.assertIn("profile\\/job_details", page.calls[2][1])
+        self.assertIn("jobs.lever.co", page.calls[2][1])
+        self.assertIn("jobs.ashbyhq.com", page.calls[2][1])
+        self.assertIn("apply.workable.com", page.calls[2][1])
+        self.assertIn("jobs.smartrecruiters.com", page.calls[2][1])
+        self.assertNotIn("hasJobText", page.calls[2][1])
+
+    def test_networkidle_timeout_preserves_reserved_job_dom_wait(self):
+        class NavigationTimeout(Exception):
+            pass
+
+        class FakePage:
+            def __init__(self):
+                self.calls = []
+
+            def goto(self, url, **kwargs):
+                self.calls.append(("goto", url, kwargs))
+
+            def wait_for_load_state(self, state, **kwargs):
+                self.calls.append(("wait", state, kwargs))
+                raise NavigationTimeout("stream remains open")
+
+            def wait_for_function(self, expression, **kwargs):
+                self.calls.append(("function", expression, kwargs))
+
+        times = iter((50.0, 50.2, 51.4))
+        page = FakePage()
+
+        _navigate_with_settle(
+            page,
+            "https://example.com/jobs",
+            timeout_seconds=2,
+            timeout_error_type=NavigationTimeout,
+            clock=lambda: next(times),
+        )
+
+        self.assertEqual([call[0] for call in page.calls], ["goto", "wait", "function"])
+        self.assertLess(page.calls[1][2]["timeout"], 1800)
+        self.assertLessEqual(page.calls[2][2]["timeout"], 600)
 
     def test_client_job_dom_wait_timeout_is_soft(self):
         class NavigationTimeout(Exception):

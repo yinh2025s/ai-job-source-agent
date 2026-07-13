@@ -163,24 +163,60 @@ class CareerSearchTests(unittest.TestCase):
 
         self.assertEqual(result.candidates, [])
 
-    def test_nonempty_rss_drift_skips_duplicate_html_sources_for_that_query(self):
+    def test_nonempty_rss_drift_skips_bing_html_but_uses_duckduckgo(self):
         rss = "<rss><channel><item><link>https://unrelated.example/careers</link></item></channel></rss>"
-        fetcher = MappingFetcher(
-            lambda url: Page(url, rss, final_url=url)
-            if "format=rss" in url
-            else (_ for _ in ()).throw(AssertionError(url))
-        )
+
+        def handler(url):
+            if "format=rss" in url:
+                return Page(url, rss, final_url=url)
+            if "duckduckgo.com" in url:
+                return Page(url, fixture("duckduckgo_results.html"), final_url=url)
+            raise AssertionError(url)
+
+        fetcher = MappingFetcher(handler)
 
         result = CareerSearchResolver(fetcher, max_queries=1).search(
             "Acme Co", "https://acme.example"
         )
 
-        self.assertEqual(result.candidates, [])
-        self.assertEqual(len(fetcher.calls), 1)
         self.assertEqual(
-            result.trace["queries"][0]["fallback_skipped"],
-            "rss_returned_results_without_valid_candidate",
+            [item.url for item in result.candidates],
+            ["https://acme.example/careers"],
         )
+        self.assertEqual(len(fetcher.calls), 2)
+        self.assertFalse(any("bing.com" in url and "format=rss" not in url for url in fetcher.calls))
+        self.assertEqual(
+            [item["source"] for item in result.trace["queries"]],
+            ["bing_rss", "duckduckgo_html"],
+        )
+        self.assertEqual(
+            result.trace["queries"][0]["skipped_sources"],
+            [
+                {
+                    "source": "bing_html",
+                    "reason": "rss_returned_results_without_valid_candidate",
+                }
+            ],
+        )
+
+    def test_nonempty_rss_drift_and_empty_duckduckgo_stay_bounded(self):
+        rss = "<rss><channel><item><link>https://unrelated.example/careers</link></item></channel></rss>"
+
+        def handler(url):
+            body = rss if "format=rss" in url else "<html></html>"
+            return Page(url, body, final_url=url)
+
+        fetcher = MappingFetcher(handler)
+        result = CareerSearchResolver(
+            fetcher,
+            max_queries=3,
+            max_source_fetches=3,
+        ).search("Acme Co", "https://acme.example")
+
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(len(fetcher.calls), 3)
+        self.assertTrue(result.trace["source_fetch_budget_exhausted"])
+        self.assertFalse(any("bing.com" in url and "format=rss" not in url for url in fetcher.calls))
 
     def test_generic_search_caps_redundant_queries_but_ats_search_keeps_provider_sweep(self):
         fetcher = MappingFetcher(
@@ -195,8 +231,9 @@ class CareerSearchTests(unittest.TestCase):
             "Acme Co", "https://acme.example"
         )
 
-        self.assertEqual(len(generic.trace["queries"]), 3)
+        self.assertEqual(len(generic.trace["queries"]), 6)
         self.assertEqual(generic.trace["effective_query_limit"], 3)
+        self.assertFalse(any("bing.com" in url and "format=rss" not in url for url in fetcher.calls))
 
         fetcher.calls.clear()
         ats = CareerSearchResolver(fetcher, max_queries=5, max_source_fetches=6).search(

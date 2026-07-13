@@ -82,6 +82,7 @@ class ICIMSAdapter:
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
+        inventory_scope = "title_filtered" if query.title else "full"
         if board.identifier and not _ICIMS_HOST.fullmatch(board.identifier):
             return self._list_jibe_jobs(fetcher, board, query)
         if (
@@ -93,7 +94,14 @@ class ICIMSAdapter:
                 provider=self.name,
                 board=board,
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-                trace={"adapter": self.name, "error": "missing iCIMS careers board identifier"},
+                inventory_scope=inventory_scope,
+                inventory_complete=False,
+                trace={
+                    "adapter": self.name,
+                    "error": "missing iCIMS careers board identifier",
+                    "inventory_scope": inventory_scope,
+                    "inventory_complete": False,
+                },
             )
 
         candidates: list[JobCandidate] = []
@@ -166,12 +174,19 @@ class ICIMSAdapter:
             reason_code = "PROVIDER_FETCH_FAILED"
         else:
             reason_code = None if candidates else "EMPTY_PROVIDER_RESPONSE"
+        inventory_complete = bool(
+            not pending
+            and not page_errors
+            and reason_code not in {"PROVIDER_VARIANT_UNSUPPORTED", "PROVIDER_FETCH_FAILED"}
+        )
         return AdapterResult(
             provider=self.name,
             board=board,
             candidates=candidates,
             reason_code=reason_code,
             retryable=reason_code == "PROVIDER_FETCH_FAILED",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "board_urls": page_urls or [board.url],
@@ -182,12 +197,19 @@ class ICIMSAdapter:
                 "page_count": len(page_urls),
                 "page_errors": page_errors,
                 "rejected_pagination_urls": list(dict.fromkeys(rejected_pagination_urls)),
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
             },
         )
 
     def _list_jibe_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
+        inventory_scope = "title_filtered" if query.title else "full"
         if not board.identifier or not _is_same_safe_origin(board.url, board.identifier):
-            return _unsupported_jibe_result(board, "invalid customer-owned board origin")
+            return _unsupported_jibe_result(
+                board,
+                "invalid customer-owned board origin",
+                inventory_scope,
+            )
 
         try:
             page = fetcher.fetch(board.url)
@@ -197,15 +219,31 @@ class ICIMSAdapter:
                 board=board,
                 reason_code="PROVIDER_FETCH_FAILED",
                 retryable=True,
-                trace={"adapter": self.name, "variant": "jibe", "error": str(error)},
+                inventory_scope=inventory_scope,
+                inventory_complete=False,
+                trace={
+                    "adapter": self.name,
+                    "variant": "jibe",
+                    "error": str(error),
+                    "inventory_scope": inventory_scope,
+                    "inventory_complete": False,
+                },
             )
         final_url = page.final_url or page.url
         if not _is_same_safe_origin(final_url, board.identifier) or not _is_jibe_page(page.html):
-            return _unsupported_jibe_result(board, "board response lacked same-origin Jibe evidence")
+            return _unsupported_jibe_result(
+                board,
+                "board response lacked same-origin Jibe evidence",
+                inventory_scope,
+            )
 
         config = _jibe_search_config(page.html)
         if config is None:
-            return _unsupported_jibe_result(board, "missing valid window.searchConfig")
+            return _unsupported_jibe_result(
+                board,
+                "missing valid window.searchConfig",
+                inventory_scope,
+            )
         search_override = config.get("searchOverride")
         params = _safe_jibe_query(search_override)
         if query.title:
@@ -218,6 +256,8 @@ class ICIMSAdapter:
         api_urls: list[str] = []
         errors: list[dict[str, str]] = []
         total_count: int | None = None
+        inventory_complete = False
+        records_seen = 0
 
         for page_number in range(1, _MAX_PAGES + 1):
             params["page"] = str(page_number)
@@ -230,18 +270,35 @@ class ICIMSAdapter:
                 break
             response_url = response.final_url or response.url
             if not _is_same_safe_origin(response_url, board.identifier, expected_path="/api/jobs"):
-                return _unsupported_jibe_result(board, "Jibe API redirected outside the board origin")
+                return _unsupported_jibe_result(
+                    board,
+                    "Jibe API redirected outside the board origin",
+                    inventory_scope,
+                )
             try:
                 payload = json.loads(response.html)
             except (json.JSONDecodeError, TypeError) as error:
                 errors.append({"url": api_url, "error": str(error)})
                 break
             if not isinstance(payload, dict) or not isinstance(payload.get("jobs"), list):
-                return _unsupported_jibe_result(board, "Jibe API returned an unsupported schema")
+                return _unsupported_jibe_result(
+                    board,
+                    "Jibe API returned an unsupported schema",
+                    inventory_scope,
+                )
             jobs = payload["jobs"]
+            records_seen += len(jobs)
             candidates.extend(_jibe_candidates(jobs, final_url, board.identifier))
-            total_count = _nonnegative_int(payload.get("totalCount") or payload.get("count"))
-            if not jobs or total_count is None or page_number * _JIBE_PAGE_SIZE >= total_count:
+            page_total = _nonnegative_int(payload.get("totalCount") or payload.get("count"))
+            if page_total is not None:
+                total_count = max(total_count or 0, page_total)
+            if not jobs:
+                inventory_complete = True
+                break
+            if total_count is not None and records_seen >= total_count:
+                inventory_complete = True
+                break
+            if total_count is None:
                 break
 
         candidates = _dedupe_candidates(candidates)
@@ -252,6 +309,8 @@ class ICIMSAdapter:
             candidates=candidates,
             reason_code=reason_code,
             retryable=reason_code == "PROVIDER_FETCH_FAILED",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "variant": "jibe",
@@ -261,6 +320,8 @@ class ICIMSAdapter:
                 "total_count": total_count,
                 "search_override_keys": sorted(params.keys() - {"keywords", "limit", "page"}),
                 "errors": errors,
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
             },
         )
 
@@ -690,12 +751,24 @@ def _nonnegative_int(value: Any) -> int | None:
     return result if result >= 0 else None
 
 
-def _unsupported_jibe_result(board: JobBoard, error: str) -> AdapterResult:
+def _unsupported_jibe_result(
+    board: JobBoard,
+    error: str,
+    inventory_scope: str,
+) -> AdapterResult:
     return AdapterResult(
         provider="icims",
         board=board,
         reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-        trace={"adapter": "icims", "variant": "jibe", "error": error},
+        inventory_scope=inventory_scope,
+        inventory_complete=False,
+        trace={
+            "adapter": "icims",
+            "variant": "jibe",
+            "error": error,
+            "inventory_scope": inventory_scope,
+            "inventory_complete": False,
+        },
     )
 
 

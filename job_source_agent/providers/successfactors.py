@@ -182,6 +182,8 @@ class SuccessFactorsAdapter:
         response_source: str | None = None
         normalized_target = _normalized_title(query.title)
         exact_title_found = False
+        inventory_scope = "title_filtered" if query.title else "full"
+        inventory_complete = False
         for page_number in range(_CLOUD_MAX_PAGES):
             payload = {
                 "locale": locale,
@@ -262,6 +264,9 @@ class SuccessFactorsAdapter:
                 or total_jobs is None
                 or len(candidates) >= total_jobs
             ):
+                inventory_complete = bool(
+                    not results or (total_jobs is not None and len(candidates) >= total_jobs)
+                )
                 break
 
         candidates = _dedupe_candidates(candidates)
@@ -270,6 +275,8 @@ class SuccessFactorsAdapter:
             board=board,
             candidates=candidates,
             reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "variant": "cloud_sap",
@@ -281,6 +288,8 @@ class SuccessFactorsAdapter:
                 "total_jobs": total_jobs,
                 "locale": locale,
                 "exact_title_found": exact_title_found,
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
             },
         )
 

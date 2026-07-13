@@ -54,6 +54,8 @@ class PhenomAdapter:
         board_urls: list[str] = []
         rejected_urls: list[str] = []
         total_hits = None
+        inventory_scope = "title_filtered" if query.title else "full"
+        inventory_complete = False
         for page_index in range(_MAX_PAGES):
             search_url = _search_url(board.url, query.title, page_index * 10)
             try:
@@ -65,13 +67,16 @@ class PhenomAdapter:
                     candidates=candidates,
                     reason_code=None if candidates else "PROVIDER_FETCH_FAILED",
                     retryable=not candidates,
+                    inventory_scope=inventory_scope,
+                    inventory_complete=False,
                     trace={
                         "adapter": self.name,
                         "variant": "ssr_eager_refine_search",
                         "board_urls": board_urls + [search_url],
                         "errors": [{"url": search_url, "error": str(error)}],
                         "candidate_count": len(candidates),
-                        "inventory_scope": "title_filtered" if query.title else "full",
+                        "inventory_scope": inventory_scope,
+                        "inventory_complete": False,
                     },
                 )
 
@@ -120,14 +125,19 @@ class PhenomAdapter:
                 seen.add(candidate.url)
                 candidates.append(candidate)
 
+            consumed = page_index * 10 + len(jobs)
+            if isinstance(total_hits, int) and consumed >= total_hits:
+                inventory_complete = True
+                break
+            if total_hits is None and (not jobs or len(jobs) < 10):
+                inventory_complete = True
+                break
+            if not jobs:
+                break
             if query.title and any(
                 candidate.title.casefold().strip() == query.title.casefold().strip()
                 for candidate in candidates
             ):
-                break
-            if not jobs or len(jobs) < 10:
-                break
-            if isinstance(total_hits, int) and (page_index + 1) * 10 >= total_hits:
                 break
 
         return AdapterResult(
@@ -135,13 +145,16 @@ class PhenomAdapter:
             board=board,
             candidates=candidates,
             reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "variant": "ssr_eager_refine_search",
                 "board_urls": board_urls,
                 "candidate_count": len(candidates),
                 "total_hits": total_hits,
-                "inventory_scope": "title_filtered" if query.title else "full",
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
                 "rejected_job_ids": list(dict.fromkeys(rejected_urls)),
             },
         )

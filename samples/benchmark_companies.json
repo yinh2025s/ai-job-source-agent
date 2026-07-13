@@ -124,5 +124,12 @@
     "company_website_url": "https://acme.breezy.hr/",
     "career_root_url": "https://acme.breezy.hr/",
     "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Meta",
+    "company_website_url": "https://www.metacareers.com/",
+    "career_root_url": "https://www.metacareers.com/jobsearch/",
+    "job_title": "Product Manager",
+    "job_location": "Remote, US"
   }
 ]

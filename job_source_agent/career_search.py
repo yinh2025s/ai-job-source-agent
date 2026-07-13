@@ -96,7 +96,10 @@ class CareerSearchResolver:
             sources = _search_sources(query_text)
             if ats_only:
                 sources = sources[:1]
+            skip_bing_html = False
             for source in sources:
+                if source.name == "bing_html" and skip_bing_html:
+                    continue
                 if source_fetches >= self.max_source_fetches:
                     trace["source_fetch_budget_exhausted"] = True
                     break
@@ -136,8 +139,13 @@ class CareerSearchResolver:
                     trace["stopped_reason"] = "search_candidate_found"
                     break
                 if source.name == "bing_rss" and raw_urls:
-                    query_trace["fallback_skipped"] = "rss_returned_results_without_valid_candidate"
-                    break
+                    skip_bing_html = True
+                    query_trace["skipped_sources"] = [
+                        {
+                            "source": "bing_html",
+                            "reason": "rss_returned_results_without_valid_candidate",
+                        }
+                    ]
             if candidates:
                 break
             if trace["source_fetch_budget_exhausted"]:

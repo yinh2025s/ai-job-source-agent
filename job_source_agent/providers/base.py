@@ -36,6 +36,8 @@ class AdapterResult:
     candidates: list[JobCandidate] = field(default_factory=list)
     reason_code: str | None = None
     retryable: bool = False
+    inventory_scope: str = "full"
+    inventory_complete: bool = True
     trace: dict[str, Any] = field(default_factory=dict)
 
 

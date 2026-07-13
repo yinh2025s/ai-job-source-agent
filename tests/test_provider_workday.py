@@ -3,7 +3,7 @@ import unittest
 
 from job_source_agent.providers.base import JobBoard, JobQuery, ProviderAdapter
 from job_source_agent.providers.workday import ADAPTER, WorkdayAdapter
-from job_source_agent.web import Page
+from job_source_agent.web import FetchError, Page
 
 
 class RecordingFetcher:
@@ -104,6 +104,10 @@ class WorkdayAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result.candidates[0].location, "New York, NY")
         self.assertEqual(result.trace["candidate_count"], 2)
+        self.assertEqual(result.inventory_scope, "title_filtered")
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.trace["inventory_scope"], result.inventory_scope)
+        self.assertEqual(result.trace["inventory_complete"], result.inventory_complete)
 
     def test_paginates_with_tenant_compatible_page_size(self):
         adapter = WorkdayAdapter()
@@ -140,6 +144,64 @@ class WorkdayAdapterTests(unittest.TestCase):
         self.assertEqual(len(result.candidates), 21)
         self.assertEqual(result.trace["page_count"], 2)
         self.assertEqual(result.trace["total"], 21)
+        self.assertTrue(result.inventory_complete)
+
+    def test_keeps_candidates_but_marks_inventory_incomplete_on_later_fetch_failure(self):
+        adapter = WorkdayAdapter()
+        board = adapter.identify_board("https://company.wd5.myworkdayjobs.com/en-US/acme")
+
+        class PartialFetcher:
+            def __init__(self):
+                self.calls = 0
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls += 1
+                if self.calls == 2:
+                    raise FetchError("page two unavailable")
+                postings = [
+                    {"title": f"Role {index}", "externalPath": f"/job/Role-{index}_R{index}"}
+                    for index in range(20)
+                ]
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=json.dumps({"total": 40, "jobPostings": postings}),
+                )
+
+        result = adapter.list_jobs(PartialFetcher(), board, JobQuery(title="Role"))
+
+        self.assertEqual(len(result.candidates), 20)
+        self.assertIsNone(result.reason_code)
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
+        self.assertEqual(len(result.trace["errors"]), 1)
+
+    def test_page_cap_with_uncovered_total_is_incomplete(self):
+        adapter = WorkdayAdapter()
+        board = adapter.identify_board("https://company.wd5.myworkdayjobs.com/en-US/acme")
+
+        class CappedFetcher:
+            def fetch(self, url, data=None, headers=None):
+                offset = json.loads(data)["offset"]
+                postings = [
+                    {
+                        "title": f"Role {offset + index}",
+                        "externalPath": f"/job/Role-{offset + index}_R{offset + index}",
+                    }
+                    for index in range(20)
+                ]
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=json.dumps({"total": 101, "jobPostings": postings}),
+                )
+
+        result = adapter.list_jobs(CappedFetcher(), board, JobQuery())
+
+        self.assertEqual(result.trace["page_count"], 5)
+        self.assertEqual(len(result.candidates), 100)
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
 
     def test_normalizes_absolute_and_site_root_detail_urls(self):
         adapter = WorkdayAdapter()
@@ -225,6 +287,7 @@ class WorkdayAdapterTests(unittest.TestCase):
         self.assertEqual(malformed.reason_code, "INVALID_STRUCTURED_DATA")
         self.assertEqual(empty.reason_code, "EMPTY_PROVIDER_RESPONSE")
         self.assertEqual(empty.candidates, [])
+        self.assertTrue(empty.inventory_complete)
 
 
 if __name__ == "__main__":

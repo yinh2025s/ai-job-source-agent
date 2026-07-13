@@ -353,6 +353,83 @@ class WebsiteResolverTests(unittest.TestCase):
         )
         self.assertEqual(store.loaded, ("M|R Walls", linkedin_url))
 
+    def test_identity_separator_loads_official_website_before_single_fast_domain_wins(self):
+        linkedin_url = "https://www.linkedin.com/company/m-r-walls"
+
+        class SeparatorAmbiguityFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"M|R Walls",'
+                            '"sameAs":"https://mrwalls.io"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "mrwalls.com":
+                    return Page(
+                        url=url,
+                        final_url="https://mrwalls.com/",
+                        html="<html><title>M R Walls</title><body>M R Walls</body></html>",
+                    )
+                if domain_of(url) == "mrwalls.io":
+                    return Page(
+                        url=url,
+                        final_url="https://mrwalls.io/",
+                        html="<html><title>M|R Walls</title><body>M|R Walls</body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = SeparatorAmbiguityFetcher()
+        website_url, trace = CompanyWebsiteResolver(fetcher, verify_limit=1).resolve(
+            "M|R Walls",
+            linkedin_url,
+            "Santa Monica, CA",
+        )
+
+        self.assertEqual(website_url, "https://mrwalls.io/")
+        self.assertTrue(any("linkedin.com" in call for call in fetcher.calls))
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
+
+    def test_plain_company_name_keeps_fast_path_without_linkedin_fetch(self):
+        linkedin_url = "https://www.linkedin.com/company/ordinary-systems"
+
+        class PlainNameFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if "linkedin.com" in url:
+                    raise AssertionError("plain company should keep the fast path")
+                if domain_of(url) == "ordinarysystems.com":
+                    return Page(
+                        url=url,
+                        final_url="https://ordinarysystems.com/",
+                        html="<html><title>Ordinary Systems</title></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = PlainNameFetcher()
+        website_url, _trace = CompanyWebsiteResolver(fetcher, verify_limit=3).resolve(
+            "Ordinary Systems",
+            linkedin_url,
+        )
+
+        self.assertEqual(website_url, "https://ordinarysystems.com/")
+        self.assertFalse(any("linkedin.com" in call for call in fetcher.calls))
+
     def test_live_linkedin_official_website_is_saved_for_future_runs(self):
         linkedin_url = "https://www.linkedin.com/company/acme"
 
@@ -688,7 +765,96 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertEqual(website_url, "https://www.lyft.com/")
         self.assertIn("fast verified domain", trace["selected"]["reasons"])
+        self.assertFalse(any("linkedin.com" in call for call in fetcher.calls))
         self.assertFalse(any("bing.com" in call for call in fetcher.calls))
+
+    def test_linkedin_official_evidence_breaks_verified_fast_domain_tie(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class AmbiguousFastDomainsFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme",'
+                            '"sameAs":"https://acme.io"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "acme.com":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.com/",
+                        html="<html><head><title>Acme</title></head><body>Acme</body></html>",
+                    )
+                if domain_of(url) == "acme.io":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.io/",
+                        html="<html><head><title>Acme</title></head><body>Acme</body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            AmbiguousFastDomainsFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Acme", linkedin_url)
+
+        self.assertEqual(website_url, "https://acme.io/")
+        dot_com = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "acme.com"
+        )
+        dot_io = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "acme.io"
+        )
+        self.assertGreater(dot_com["score"], dot_io["score"])
+        self.assertIn(
+            "fast selection deferred for LinkedIn official evidence: "
+            "multiple verified same-brand domains",
+            dot_com["reasons"],
+        )
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
+
+    def test_ambiguous_fast_domains_fall_back_when_linkedin_has_no_official_evidence(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class NoOfficialEvidenceFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html="<html><head><title>Acme | LinkedIn</title></head></html>",
+                    )
+                if domain_of(url) in {"acme.com", "acme.io"}:
+                    return Page(
+                        url=url,
+                        final_url=f"https://{domain_of(url)}/",
+                        html="<html><head><title>Acme</title></head><body>Acme</body></html>",
+                    )
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    raise AssertionError(f"search fallback should not run: {url}")
+                raise FetchError("not this candidate")
+
+        fetcher = NoOfficialEvidenceFetcher()
+        website_url, trace = CompanyWebsiteResolver(
+            fetcher,
+            verify_limit=3,
+        ).resolve("Acme", linkedin_url)
+
+        self.assertEqual(website_url, "https://acme.com/")
+        self.assertTrue(any("linkedin.com" in call for call in fetcher.calls))
+        self.assertIn("LinkedIn official evidence unavailable", trace["selected"]["reasons"])
+        self.assertIn("fast verified domain", trace["selected"]["reasons"])
 
     def test_verified_candidate_uses_company_canonical_domain(self):
         class CanonicalFetcher(Fetcher):

@@ -155,7 +155,11 @@ class CompanyWebsiteResolver:
         linkedin_candidates: list[str] = []
         linkedin_official_source: str | None = None
         linkedin_evidence_loaded = False
-        if (preferred_url or _linkedin_slug_uses_marketing_prefix(linkedin_company_url)) and linkedin_company_url:
+        if (
+            preferred_url
+            or _linkedin_slug_uses_marketing_prefix(linkedin_company_url)
+            or _company_name_loses_identity_separator(company_name)
+        ) and linkedin_company_url:
             linkedin_evidence = self._linkedin_company_candidates(
                 linkedin_company_url,
                 company_name,
@@ -189,12 +193,34 @@ class CompanyWebsiteResolver:
             job_location=job_location,
             candidate_sources=fast_sources,
         )
+        fast_selected = self._select_verified_candidate(
+            fast_scored,
+            require_fast_confidence=True,
+        )
+        selectable_fast_domains = {
+            domain_of(candidate.url)
+            for candidate in fast_scored
+            if "homepage verified" in candidate.reasons
+            and self._select_verified_candidate([candidate])
+        }
+        fast_selection_deferred = bool(
+            fast_selected
+            and linkedin_company_url
+            and not linkedin_evidence_loaded
+            and len(selectable_fast_domains) >= 2
+        )
+        if fast_selection_deferred:
+            for candidate in fast_scored:
+                if domain_of(candidate.url) in selectable_fast_domains:
+                    candidate.reasons.append(
+                        "fast selection deferred for LinkedIn official evidence: "
+                        "multiple verified same-brand domains"
+                    )
         trace["candidates"].extend(
             {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
             for candidate in fast_scored[:10]
         )
-        fast_selected = self._select_verified_candidate(fast_scored, require_fast_confidence=True)
-        if fast_selected:
+        if fast_selected and not fast_selection_deferred:
             trace["selected"] = {
                 "url": fast_selected.url,
                 "score": fast_selected.score,
@@ -202,7 +228,11 @@ class CompanyWebsiteResolver:
             }
             return fast_selected.url, trace
 
-        regional_candidates = _regional_root_candidates(fast_scored, job_location)
+        regional_candidates = (
+            []
+            if fast_selection_deferred
+            else _regional_root_candidates(fast_scored, job_location)
+        )
         if regional_candidates:
             regional_sources = _candidate_source_map(("regional_recovery", regional_candidates))
             regional_scored = self._rank_and_verify_candidates(
@@ -290,6 +320,14 @@ class CompanyWebsiteResolver:
                     "reasons": official_selected.reasons,
                 }
                 return official_selected.url, trace
+        if fast_selection_deferred and fast_selected:
+            trace["selected"] = {
+                "url": fast_selected.url,
+                "score": fast_selected.score,
+                "reasons": fast_selected.reasons
+                + ["fast verified domain", "LinkedIn official evidence unavailable"],
+            }
+            return fast_selected.url, trace
         search_evidence = self._search_candidates_with_evidence(company_name, job_location)
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
@@ -943,6 +981,10 @@ class _CanonicalLinkParser(HTMLParser):
 
 def _is_ambiguous_company_name(company_tokens: list[str]) -> bool:
     return len(company_tokens) == 1 and len(company_tokens[0]) <= 5
+
+
+def _company_name_loses_identity_separator(company_name: str) -> bool:
+    return re.search(r"[a-z0-9]\s*[|+/]\s*[a-z0-9]", company_name, flags=re.I) is not None
 
 
 def _company_abbreviation(company_tokens: list[str]) -> str | None:

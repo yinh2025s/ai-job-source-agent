@@ -10,6 +10,8 @@
 
 ### Added
 
+- 新增第 20 个原生 provider `MetaCareersAdapter`：仅消费 visible-page positive evidence，可验证页面中明确出现的具体岗位；结果始终标记 `inventory_complete=false`，因此不能据此宣布 no-match。匿名 live hydration 仍不稳定，当前 exact 保证仅来自离线 fixture/provider benchmark，不声称 live stable。
+
 - 增加 ADR-0004 source-posting availability contract：public LinkedIn search card 只能输出 `listed + unknown`，认证详情 DOM 仅在 visible/enabled Apply 或明确 closed banner 时输出 apply/availability evidence；S5 用 typed `source_posting_availability` evidence 和独立 evaluation counter 记录该来源状态，不把 LinkedIn URL 当作官网 job list/opening。
 
 - 增加 ADR-0003 LinkedIn official-website evidence cache：以规范化 company name 与 LinkedIn company URL 的组合身份为 key，默认 TTL 30 天；只保存公开公司级官网 URL 和观测时间，不保存个人资料、职位 HTML、cookie、token、header、browser storage 或认证 LinkedIn payload。CLI 支持 `--linkedin-evidence-cache` 显式路径，checkpoint 默认使用 `<checkpoint_dir>/linkedin-website-evidence.json`，extension output 目录复用稳定文件。
@@ -58,6 +60,8 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- S6 provider contract 新增 `inventory_scope`/`inventory_complete` 并向 adapter 传递 `target_location`，不完整库存即使未命中也不会被解释为权威 no-match。10 个有界分页 adapter 对中途错误、未覆盖 total、cap、重复 cursor 和 exact 提前停止显式返回 incomplete；location 只作为同标题 tie-break，不会因地点缺失拒绝岗位。Rendered fetcher 在 `networkidle` timeout 后继续使用保留的 DOM settle budget 等待强 detail links，并识别 Lever、Ashby、Workable、SmartRecruiters detail path；generic career search 在 Bing RSS 有原始结果但全部无效时继续 DuckDuckGo fallback；S2 面对多个已验证的同品牌 fast domain，或公司名包含域名会丢失的 identity separator 时，优先 LinkedIn authoritative `sameAs`/cache evidence。`ADAPTER_VERSION` 提升到 `2026-07-14.48`；CPython 3.12 全量门禁为 702 tests、22/22 provider、6/6 resolver 和 architecture validation 20 adapters / 0 issues。冻结 30-company live 为 30/30 website、29/30 career、27/30 verified job list、22/30 exact opening，较上一 frozen run 为 +0/+2/+1/+2，failed -2、success +2，8 个 failure bundle 全部成功。真实登录态 LinkedIn Scan/Run 继续 deferred；CEIPAL 因 bot block 保持无 adapter。
 
 - S6 generic opening discovery 复用已抓取的 landing page，并优先提交页面声明的同主机 HTTPS GET 搜索表单；跨站、POST、凭证、非标准端口和敏感 query action 全部拒绝，provider variant unsupported 继续保留 typed trace。S4 验证顺序优先强 homepage navigation evidence，并拒绝未被原生 URL/page evidence 证明的跨站 redirect，Quest Global 不再把 TimesJobs 内容页误报为招聘页并恢复 Phenom exact，GPTZero 恢复 Ashby verified no-match。Failure replay 只合并稳定、脱敏的 source-posting evidence，不再丢失 `LINKEDIN_NATIVE_ONLY` 或显式关闭状态。Evaluation history 与 live/baseline CLI 绑定实际 company/expectations cohort identity，不兼容样本返回 `no_compatible_baseline`，终端可安全显示而不生成伪 delta。冻结 30-company S4+ 回归为 30 website、27 career、26 job list、20 exact；整批超时的 Deloitte 与 Direct Supply 随后用最终代码串行 2/2 exact recovery，Kirkland HTTP 403 保持 partial。`ADAPTER_VERSION` 提升到 `2026-07-14.47`；统一门禁为 680 tests、21/21 provider、6/6 resolver 和 architecture validation 19 adapters / 0 issues。真实登录态插件验收继续 deferred。
 

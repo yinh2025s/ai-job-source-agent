@@ -61,12 +61,20 @@ class WorkableAdapter:
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
+        inventory_scope = "title_filtered" if query.title else "full"
         if not board.identifier or not _IDENTIFIER_PATTERN.fullmatch(board.identifier):
             return AdapterResult(
                 provider=self.name,
                 board=board,
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-                trace={"adapter": self.name, "error": "missing Workable account identifier"},
+                inventory_scope=inventory_scope,
+                inventory_complete=False,
+                trace={
+                    "adapter": self.name,
+                    "error": "missing Workable account identifier",
+                    "inventory_scope": inventory_scope,
+                    "inventory_complete": False,
+                },
             )
 
         board_url = f"https://{_HOST}/{quote(board.identifier, safe='-_')}/"
@@ -78,7 +86,15 @@ class WorkableAdapter:
                 board=board,
                 reason_code="PROVIDER_FETCH_FAILED",
                 retryable=True,
-                trace={"adapter": self.name, "board_urls": [board_url], "error": str(error)},
+                inventory_scope=inventory_scope,
+                inventory_complete=False,
+                trace={
+                    "adapter": self.name,
+                    "board_urls": [board_url],
+                    "error": str(error),
+                    "inventory_scope": inventory_scope,
+                    "inventory_complete": False,
+                },
             )
 
         final_board_url = page.final_url or page.url
@@ -87,11 +103,15 @@ class WorkableAdapter:
                 provider=self.name,
                 board=board,
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                inventory_scope=inventory_scope,
+                inventory_complete=False,
                 trace={
                     "adapter": self.name,
                     "board_urls": [board_url],
                     "error": "Workable board redirected outside the account",
                     "rejected_final_url": final_board_url,
+                    "inventory_scope": inventory_scope,
+                    "inventory_complete": False,
                 },
             )
 
@@ -123,13 +143,19 @@ class WorkableAdapter:
             normalized_target
             and any(_normalized_title(candidate.title) == normalized_target for candidate in candidates)
         )
+        inventory_complete = found_jobs_container and not _pagination_has_more(
+            pagination,
+            len(candidates),
+        )
 
         # Current public Workable boards are client-rendered shells. Their own
         # frontend reads this public cursor API; retain HTML parsing above for
         # older/static variants and use the API only when the shell has no jobs.
         if not candidates and not found_jobs_container:
+            inventory_complete = False
             token: str | None = None
             seen_tokens: set[str] = set()
+            records_seen = 0
             for _ in range(_MAX_API_PAGES):
                 api_url = _api_url(board.identifier)
                 api_urls.append(api_url)
@@ -154,26 +180,45 @@ class WorkableAdapter:
                         provider=self.name,
                         board=board,
                         reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                        inventory_scope=inventory_scope,
+                        inventory_complete=False,
                         trace={
                             "adapter": self.name,
                             "board_urls": [board_url],
                             "api_urls": api_urls,
                             "error": "Workable API redirected outside the account endpoint",
                             "rejected_final_url": response_url,
+                            "inventory_scope": inventory_scope,
+                            "inventory_complete": False,
                         },
                     )
 
                 try:
                     payload = json.loads(response.html)
                 except (json.JSONDecodeError, TypeError):
-                    return _invalid_api_response(board, board_url, api_urls)
+                    return _invalid_api_response(
+                        board,
+                        board_url,
+                        api_urls,
+                        inventory_scope,
+                        candidates,
+                    )
                 records = payload.get("results") if isinstance(payload, dict) else None
                 if not isinstance(records, list):
-                    return _invalid_api_response(board, board_url, api_urls)
+                    return _invalid_api_response(
+                        board,
+                        board_url,
+                        api_urls,
+                        inventory_scope,
+                        candidates,
+                    )
 
                 api_page_count += 1
+                records_seen += len(records)
                 found_jobs_container = True
-                total_found = _nonnegative_int(payload.get("total"))
+                page_total = _nonnegative_int(payload.get("total"))
+                if page_total is not None:
+                    total_found = max(total_found or 0, page_total)
                 for record in records:
                     if not isinstance(record, dict):
                         continue
@@ -185,13 +230,14 @@ class WorkableAdapter:
                 candidates = _dedupe_candidates(candidates)
 
                 next_token = payload.get("nextPage")
-                if (
-                    exact_title_found
-                    or not records
-                    or not isinstance(next_token, str)
-                    or not next_token.strip()
-                    or next_token in seen_tokens
-                ):
+                has_next_token = isinstance(next_token, str) and bool(next_token.strip())
+                inventory_complete = bool(
+                    not records
+                    or (total_found is not None and records_seen >= total_found)
+                    or not has_next_token
+                )
+                repeated_token = has_next_token and next_token in seen_tokens
+                if exact_title_found or inventory_complete or repeated_token:
                     break
                 seen_tokens.add(next_token)
                 token = next_token
@@ -209,6 +255,8 @@ class WorkableAdapter:
             board=board,
             candidates=candidates,
             reason_code=reason_code,
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "board_urls": [board_url],
@@ -222,6 +270,8 @@ class WorkableAdapter:
                 "total_found": total_found,
                 "exact_title_found": exact_title_found,
                 "errors": api_errors,
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
             },
             retryable=reason_code == "PROVIDER_FETCH_FAILED",
         )
@@ -290,13 +340,51 @@ def _invalid_api_response(
     board: JobBoard,
     board_url: str,
     api_urls: list[str],
+    inventory_scope: str,
+    candidates: list[JobCandidate],
 ) -> AdapterResult:
     return AdapterResult(
         provider="workable",
         board=board,
-        reason_code="INVALID_STRUCTURED_DATA",
-        trace={"adapter": "workable", "board_urls": [board_url], "api_urls": api_urls},
+        candidates=candidates,
+        reason_code=None if candidates else "INVALID_STRUCTURED_DATA",
+        inventory_scope=inventory_scope,
+        inventory_complete=False,
+        trace={
+            "adapter": "workable",
+            "board_urls": [board_url],
+            "api_urls": api_urls,
+            "candidate_count": len(candidates),
+            "inventory_scope": inventory_scope,
+            "inventory_complete": False,
+        },
     )
+
+
+def _pagination_has_more(pagination: dict[str, object], candidate_count: int) -> bool:
+    normalized = {key.casefold(): value for key, value in pagination.items()}
+    for key in ("hasnextpage", "has_next_page"):
+        if normalized.get(key) is True:
+            return True
+    for key in ("next", "nextpage", "next_page", "nexturl", "next_url"):
+        value = normalized.get(key)
+        if isinstance(value, str) and value.strip():
+            return True
+    item_total = _nonnegative_int(
+        normalized.get("total")
+        or normalized.get("totalcount")
+        or normalized.get("total_count")
+    )
+    if item_total is not None and candidate_count < item_total:
+        return True
+    current = _nonnegative_int(normalized.get("currentpage") or normalized.get("current_page"))
+    total = _nonnegative_int(
+        normalized.get("totalpages")
+        or normalized.get("total_pages")
+        or normalized.get("pagecount")
+        or normalized.get("page_count")
+    )
+    return current is not None and total is not None and current < total
 
 
 class _WorkableHTMLParser(HTMLParser):

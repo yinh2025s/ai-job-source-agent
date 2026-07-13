@@ -74,6 +74,8 @@ class TaleoAdapter:
         pages_fetched = 0
         total_found: int | None = None
         target = _normalized_title(query.title)
+        inventory_scope = "title_filtered" if query.title else "full"
+        inventory_complete = False
 
         for page_no in range(1, _MAX_PAGES + 1):
             api_urls.append(api_url)
@@ -113,12 +115,17 @@ class TaleoAdapter:
                     continue
                 seen.add(candidate.url)
                 candidates.append(candidate)
-            if target and any(_normalized_title(item.title) == target for item in candidates):
-                break
             page_size = _positive_int(paging.get("pageSize"), _PAGE_SIZE)
-            if not records or len(records) < page_size:
+            consumed = (page_no - 1) * page_size + len(records)
+            if total_found is not None and consumed >= total_found:
+                inventory_complete = True
                 break
-            if total_found is not None and page_no * page_size >= total_found:
+            if total_found is None and (not records or len(records) < page_size):
+                inventory_complete = True
+                break
+            if not records:
+                break
+            if target and any(_normalized_title(item.title) == target for item in candidates):
                 break
 
         return AdapterResult(
@@ -126,6 +133,8 @@ class TaleoAdapter:
             board=board,
             candidates=candidates,
             reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "variant": "faceted_search_rest",
@@ -135,7 +144,8 @@ class TaleoAdapter:
                 "candidate_count": len(candidates),
                 "pages_fetched": pages_fetched,
                 "total_found": total_found,
-                "inventory_scope": "title_filtered" if query.title else "full",
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
             },
         )
 

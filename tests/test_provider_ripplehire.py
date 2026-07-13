@@ -108,6 +108,8 @@ class RippleHireAdapterTests(unittest.TestCase):
         self.assertEqual(fetcher.requests[1][2]["Content-Type"], "application/x-www-form-urlencoded; charset=UTF-8")
         self.assertNotIn(TOKEN, json.dumps(result.trace))
         self.assertEqual(result.trace["inventory_scope"], "title_filtered")
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["inventory_complete"])
 
     def test_normalizes_provider_search_syntax_without_changing_match_title(self):
         fetcher = RecordingFetcher({

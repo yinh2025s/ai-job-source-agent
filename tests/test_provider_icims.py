@@ -161,6 +161,9 @@ class ICIMSAdapterTests(unittest.TestCase):
         self.assertEqual(params["state"], ["New Mexico|NM"])
         self.assertEqual(result.trace["variant"], "jibe")
         self.assertEqual(result.trace["search_override_keys"], ["brand", "state"])
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.trace["inventory_scope"], "title_filtered")
+        self.assertTrue(result.trace["inventory_complete"])
 
     def test_govcio_live_contract_finds_exact_opening_and_rejects_mismatched_job_ids(self):
         fixture_root = ROOT / "samples" / "sites" / "icims.example" / "govcio"
@@ -373,6 +376,7 @@ class ICIMSAdapterTests(unittest.TestCase):
             result.trace["rejected_pagination_urls"],
         )
         self.assertIsNone(result.reason_code)
+        self.assertTrue(result.inventory_complete)
 
     def test_keeps_first_page_candidates_when_a_later_page_fetch_fails(self):
         fixture = (
@@ -400,6 +404,8 @@ class ICIMSAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["page_errors"], [
             {"url": second_url, "error": "page two blocked"},
         ])
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
 
     def test_rejects_cross_tenant_initial_redirect(self):
         class RedirectFetcher:

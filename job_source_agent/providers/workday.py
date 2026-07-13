@@ -4,7 +4,7 @@ import json
 import re
 from urllib.parse import urlparse, urlunparse
 
-from ..web import safe_normalize_url
+from ..web import FetchError, safe_normalize_url
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
@@ -48,13 +48,21 @@ class WorkdayAdapter:
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
+        inventory_scope = "title_filtered" if query.title else "full"
         identifiers = _split_identifier(board.identifier)
         if identifiers is None:
             return AdapterResult(
                 provider=self.name,
                 board=board,
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-                trace={"adapter": self.name, "error": "missing Workday tenant/site identifier"},
+                inventory_scope=inventory_scope,
+                inventory_complete=False,
+                trace={
+                    "adapter": self.name,
+                    "error": "missing Workday tenant/site identifier",
+                    "inventory_scope": inventory_scope,
+                    "inventory_complete": False,
+                },
             )
 
         tenant, site = identifiers
@@ -64,13 +72,24 @@ class WorkdayAdapter:
                 provider=self.name,
                 board=board,
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-                trace={"adapter": self.name, "error": "Workday board tenant did not match host"},
+                inventory_scope=inventory_scope,
+                inventory_complete=False,
+                trace={
+                    "adapter": self.name,
+                    "error": "Workday board tenant did not match host",
+                    "inventory_scope": inventory_scope,
+                    "inventory_complete": False,
+                },
             )
         api_url = self.api_url(board.url, tenant, site)
         candidates = []
         api_urls = []
         response_source = None
         total = None
+        errors: list[dict[str, str]] = []
+        failure_reason_code: str | None = None
+        inventory_complete = False
+        records_seen = 0
         for page_number in range(_MAX_PAGES):
             offset = page_number * _PAGE_SIZE
             payload = {
@@ -80,16 +99,21 @@ class WorkdayAdapter:
                 "searchText": query.title or "",
             }
             api_urls.append(api_url)
-            page = fetcher.fetch(
-                api_url,
-                data=json.dumps(payload).encode("utf-8"),
-                headers={
-                    "Accept": "application/json",
-                    "Content-Type": "application/json",
-                    "Origin": _origin(board.url),
-                    "Referer": board.url,
-                },
-            )
+            try:
+                page = fetcher.fetch(
+                    api_url,
+                    data=json.dumps(payload).encode("utf-8"),
+                    headers={
+                        "Accept": "application/json",
+                        "Content-Type": "application/json",
+                        "Origin": _origin(board.url),
+                        "Referer": board.url,
+                    },
+                )
+            except (FetchError, OSError, TimeoutError) as error:
+                errors.append({"url": api_url, "error": str(error)})
+                failure_reason_code = "PROVIDER_FETCH_FAILED"
+                break
             response_source = response_source or page.source
             response_url = page.final_url or page.url
             if not _is_same_workday_host(response_url, board_host):
@@ -97,26 +121,28 @@ class WorkdayAdapter:
                     provider=self.name,
                     board=board,
                     reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-                    trace={"adapter": self.name, "error": "Workday API redirected outside board host"},
+                    inventory_scope=inventory_scope,
+                    inventory_complete=False,
+                    trace={
+                        "adapter": self.name,
+                        "error": "Workday API redirected outside board host",
+                        "inventory_scope": inventory_scope,
+                        "inventory_complete": False,
+                    },
                 )
             try:
                 data = json.loads(page.html)
             except (json.JSONDecodeError, TypeError):
-                return AdapterResult(
-                    provider=self.name,
-                    board=board,
-                    reason_code="INVALID_STRUCTURED_DATA",
-                    trace={"adapter": self.name, "api_urls": api_urls},
-                )
+                errors.append({"url": api_url, "error": "invalid Workday JSON response"})
+                failure_reason_code = "INVALID_STRUCTURED_DATA"
+                break
 
             postings = data.get("jobPostings") if isinstance(data, dict) else None
             if not isinstance(postings, list):
-                return AdapterResult(
-                    provider=self.name,
-                    board=board,
-                    reason_code="INVALID_STRUCTURED_DATA",
-                    trace={"adapter": self.name, "api_urls": api_urls},
-                )
+                errors.append({"url": api_url, "error": "missing Workday jobPostings list"})
+                failure_reason_code = "INVALID_STRUCTURED_DATA"
+                break
+            records_seen += len(postings)
             page_total = _nonnegative_int(data.get("total"))
             if page_total is not None:
                 total = max(total or 0, page_total)
@@ -140,14 +166,22 @@ class WorkdayAdapter:
                         },
                     )
                 )
-            if len(postings) < _PAGE_SIZE or total is None or offset + len(postings) >= total:
+            if not postings or (total is None and len(postings) < _PAGE_SIZE):
+                inventory_complete = True
+                break
+            if total is not None and records_seen >= total:
+                inventory_complete = True
                 break
 
+        reason_code = None if candidates else failure_reason_code or "EMPTY_PROVIDER_RESPONSE"
         return AdapterResult(
             provider=self.name,
             board=board,
             candidates=candidates,
-            reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            reason_code=reason_code,
+            retryable=reason_code == "PROVIDER_FETCH_FAILED",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "api_urls": api_urls,
@@ -157,6 +191,9 @@ class WorkdayAdapter:
                 "total": total,
                 "tenant": tenant,
                 "site": site,
+                "errors": errors,
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
             },
         )
 

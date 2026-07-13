@@ -84,6 +84,8 @@ class PaycomAdapter:
         total_found: int | None = None
         pages_fetched = 0
         target = _normalized_title(query.title)
+        inventory_scope = "title_filtered" if query.title else "full"
+        inventory_complete = False
         for page_index in range(_MAX_PAGES):
             payload = _search_payload(query, page_index * _PAGE_SIZE)
             api_urls.append(api_url)
@@ -138,11 +140,16 @@ class PaycomAdapter:
                 seen.add(candidate.url)
                 candidates.append(candidate)
 
+            consumed = page_index * _PAGE_SIZE + len(records)
+            if total_found is not None and consumed >= total_found:
+                inventory_complete = True
+                break
+            if total_found is None and (not records or len(records) < _PAGE_SIZE):
+                inventory_complete = True
+                break
+            if not records:
+                break
             if target and any(_normalized_title(item.title) == target for item in candidates):
-                break
-            if not records or len(records) < _PAGE_SIZE:
-                break
-            if total_found is not None and (page_index + 1) * _PAGE_SIZE >= total_found:
                 break
 
         return AdapterResult(
@@ -150,6 +157,8 @@ class PaycomAdapter:
             board=board,
             candidates=candidates,
             reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "variant": "public_portal_session_api",
@@ -159,7 +168,8 @@ class PaycomAdapter:
                 "candidate_count": len(candidates),
                 "pages_fetched": pages_fetched,
                 "total_found": total_found,
-                "inventory_scope": "title_filtered" if query.title else "full",
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
             },
         )
 

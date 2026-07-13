@@ -11,6 +11,7 @@ from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
 from .listing_extraction import extract_listing_candidates, validate_output_url
 from .scoring import is_likely_job_detail, score_job_link
 from .web import FetchError, Fetcher, Page, RawLink, extract_links, safe_normalize_url
+from .website_resolver import location_region
 
 
 STOPWORDS = {
@@ -52,6 +53,7 @@ class OpeningMatch:
     provider: str
     reasons: list[str]
     job_list_page_url: str | None = None
+    location_score: int = 0
 
 
 @dataclass
@@ -83,7 +85,11 @@ class JobOpeningMatcher:
         if not target_title:
             return None, trace
 
-        api_match, api_trace, landing_page = self._match_provider_api(job_list_url, target_title)
+        api_match, api_trace, landing_page = self._match_provider_api(
+            job_list_url,
+            target_title,
+            target_location,
+        )
         trace["provider_api"] = api_trace
         if api_trace.get("provider") and api_trace["provider"] != "generic":
             trace["provider"] = api_trace["provider"]
@@ -171,6 +177,7 @@ class JobOpeningMatcher:
         self,
         job_list_url: str,
         target_title: str,
+        target_location: str | None = None,
     ) -> tuple[OpeningMatch | None, dict, Page | None]:
         provider = self.provider_registry.detect(job_list_url)
         adapter = self.provider_registry.adapter_for(job_list_url)
@@ -198,7 +205,7 @@ class JobOpeningMatcher:
                     adapter_result = adapter.list_jobs(
                         self.fetcher,
                         board,
-                        JobQuery(title=target_title),
+                        JobQuery(title=target_title, location=target_location),
                     )
                 except FetchError as exc:
                     if adapter.supports_listing:
@@ -223,7 +230,11 @@ class JobOpeningMatcher:
                             "inventory": {
                                 "source": "native_adapter",
                                 "status": "incomplete",
-                                "scope": adapter_result.trace.get("inventory_scope", "unknown"),
+                                "scope": adapter_result.trace.get(
+                                    "inventory_scope",
+                                    adapter_result.inventory_scope,
+                                ),
+                                "complete": False,
                                 "candidate_count": 0,
                                 "strongest_title_score": 0,
                                 "reason_code": adapter_result.reason_code,
@@ -233,6 +244,21 @@ class JobOpeningMatcher:
                             unsupported_trace["provider_detection"] = page_detection
                         return None, unsupported_trace, landing_page
                     else:
+                        inventory_scope = adapter_result.trace.get(
+                            "inventory_scope",
+                            adapter_result.inventory_scope,
+                        )
+                        adapter_errors = any(
+                            isinstance(adapter_result.trace.get(key), list)
+                            and bool(adapter_result.trace[key])
+                            for key in ("errors", "page_errors")
+                        )
+                        inventory_complete = bool(
+                            adapter_result.inventory_complete
+                            and not adapter_result.retryable
+                            and adapter_result.reason_code in {None, "EMPTY_PROVIDER_RESPONSE"}
+                            and not adapter_errors
+                        )
                         scored_titles = [
                             score_title_match(candidate.title, target_title)[0]
                             for candidate in adapter_result.candidates
@@ -246,18 +272,22 @@ class JobOpeningMatcher:
                             "inventory": {
                                 "source": "native_adapter",
                                 "status": (
+                                    "incomplete"
+                                    if not inventory_complete
+                                    else
                                     "verified"
                                     if adapter_result.candidates
                                     else "verified_filtered_empty"
                                     if (
                                         adapter_result.reason_code == "EMPTY_PROVIDER_RESPONSE"
-                                        and adapter_result.trace.get("inventory_scope") == "title_filtered"
+                                        and inventory_scope == "title_filtered"
                                     )
                                     else "verified_empty"
                                     if adapter_result.reason_code == "EMPTY_PROVIDER_RESPONSE"
                                     else "incomplete"
                                 ),
-                                "scope": adapter_result.trace.get("inventory_scope", "full"),
+                                "scope": inventory_scope,
+                                "complete": inventory_complete,
                                 "candidate_count": len(adapter_result.candidates),
                                 "strongest_title_score": max(scored_titles, default=0),
                                 "reason_code": adapter_result.reason_code,
@@ -270,17 +300,29 @@ class JobOpeningMatcher:
                             title_score, title_reasons = score_title_match(candidate.title, target_title)
                             if title_score < MIN_TITLE_MATCH_SCORE:
                                 continue
+                            location_score, location_reasons = score_location_match(
+                                candidate.location,
+                                target_location,
+                            )
                             scored.append(
                                 OpeningMatch(
                                     url=candidate.url,
                                     title=candidate.title,
                                     score=title_score + 100,
                                     provider=candidate.provider,
-                                    reasons=["provider adapter result"] + title_reasons,
+                                    reasons=(
+                                        ["provider adapter result"]
+                                        + title_reasons
+                                        + location_reasons
+                                    ),
                                     job_list_page_url=job_list_url,
+                                    location_score=location_score,
                                 )
                             )
-                        scored.sort(key=lambda candidate: candidate.score, reverse=True)
+                        scored.sort(
+                            key=lambda candidate: (candidate.score, candidate.location_score),
+                            reverse=True,
+                        )
                         trace["candidates"] = [
                             {
                                 "url": candidate.url,
@@ -476,6 +518,38 @@ def _build_search_plan(
 
 def detect_provider(url: str) -> str:
     return DEFAULT_PROVIDER_REGISTRY.detect(url)
+
+
+def score_location_match(
+    candidate_location: str | None,
+    target_location: str | None,
+) -> tuple[int, list[str]]:
+    """Use location only to break title ties; missing location never rejects a job."""
+
+    if not candidate_location or not target_location:
+        return 0, []
+    candidate_normalized = " ".join(re.findall(r"[a-z0-9]+", candidate_location.casefold()))
+    target_normalized = " ".join(re.findall(r"[a-z0-9]+", target_location.casefold()))
+    if not candidate_normalized or not target_normalized:
+        return 0, []
+
+    score = 0
+    reasons: list[str] = []
+    if candidate_normalized == target_normalized:
+        score += 20
+        reasons.append("exact location match")
+    else:
+        overlap = set(candidate_normalized.split()) & set(target_normalized.split())
+        if overlap:
+            score += min(12, 4 * len(overlap))
+            reasons.append("location token overlap")
+
+    candidate_region = location_region(candidate_location)
+    target_region = location_region(target_location)
+    if candidate_region and candidate_region == target_region:
+        score += 8
+        reasons.append(f"location region match '{target_region}'")
+    return score, reasons
 
 
 def build_provider_search_urls(job_list_url: str, target_title: str) -> list[str]:

@@ -5,7 +5,7 @@ from urllib.parse import parse_qs, urlparse
 
 from job_source_agent.providers.base import JobQuery
 from job_source_agent.providers.smartrecruiters import SmartRecruitersAdapter
-from job_source_agent.web import Fetcher, Page
+from job_source_agent.web import FetchError, Fetcher, Page
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -121,6 +121,8 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["total_found"], 2)
         self.assertFalse(result.trace["exact_title_found"])
         self.assertEqual(len(result.candidates), 2)
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.trace["inventory_complete"], result.inventory_complete)
 
     def test_stops_pagination_after_exact_normalized_title(self):
         adapter = SmartRecruitersAdapter()
@@ -149,6 +151,62 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
         self.assertEqual(len(fetcher.requested_urls), 1)
         self.assertTrue(result.trace["exact_title_found"])
         self.assertEqual(result.candidates[0].title, "Data   Analyst")
+        self.assertFalse(result.inventory_complete)
+
+    def test_later_fetch_failure_keeps_candidate_and_is_incomplete(self):
+        adapter = SmartRecruitersAdapter()
+        board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
+
+        class PartialFetcher:
+            def __init__(self):
+                self.calls = 0
+
+            def fetch(self, url):
+                self.calls += 1
+                if self.calls == 2:
+                    raise FetchError("page two unavailable")
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=json.dumps({
+                        "totalFound": 2,
+                        "limit": 1,
+                        "offset": 0,
+                        "content": [{"name": "First Role", "id": "job-1"}],
+                    }),
+                )
+
+        result = adapter.list_jobs(PartialFetcher(), board, JobQuery(title="Missing Role"))
+
+        self.assertEqual([candidate.title for candidate in result.candidates], ["First Role"])
+        self.assertIsNone(result.reason_code)
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
+
+    def test_page_cap_with_remaining_total_is_incomplete(self):
+        adapter = SmartRecruitersAdapter()
+        board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
+
+        class CappedFetcher:
+            def fetch(self, url):
+                offset = int(parse_qs(urlparse(url).query).get("offset", ["0"])[0])
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=json.dumps({
+                        "totalFound": 6,
+                        "limit": 1,
+                        "offset": offset,
+                        "content": [{"name": f"Role {offset}", "id": f"job-{offset}"}],
+                    }),
+                )
+
+        result = adapter.list_jobs(CappedFetcher(), board, JobQuery())
+
+        self.assertEqual(result.trace["page_count"], 5)
+        self.assertEqual(len(result.candidates), 5)
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
 
     def test_rejects_cross_company_api_redirect(self):
         adapter = SmartRecruitersAdapter()

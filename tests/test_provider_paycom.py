@@ -101,6 +101,8 @@ class PaycomAdapterTests(unittest.TestCase):
         self.assertEqual(fetcher.requests[1][2]["Authorization"], "fixture-session-token")
         self.assertNotIn("fixture-session-token", json.dumps(result.trace))
         self.assertEqual(result.trace["inventory_scope"], "title_filtered")
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["inventory_complete"])
 
     def test_paginates_with_bound_and_stops_on_exact_title(self):
         first = [{"jobId": index + 1, "jobTitle": f"Engineer {index}"} for index in range(20)]
@@ -121,6 +123,8 @@ class PaycomAdapterTests(unittest.TestCase):
         self.assertEqual([json.loads(item[1])["skip"] for item in fetcher.requests[1:]], [0, 20])
         self.assertEqual(result.candidates[-1].title, "AI/ML Engineer")
         self.assertEqual(result.trace["pages_fetched"], 2)
+        self.assertFalse(result.inventory_complete)
+        self.assertFalse(result.trace["inventory_complete"])
 
     def test_rejects_unsafe_config_redirects_and_invalid_responses(self):
         unsafe = self.adapter.list_jobs(

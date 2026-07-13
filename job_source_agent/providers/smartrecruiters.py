@@ -46,12 +46,20 @@ class SmartRecruitersAdapter:
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
+        inventory_scope = "title_filtered" if query.title else "full"
         if not board.identifier:
             return AdapterResult(
                 provider=self.name,
                 board=board,
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-                trace={"adapter": self.name, "error": "missing SmartRecruiters company identifier"},
+                inventory_scope=inventory_scope,
+                inventory_complete=False,
+                trace={
+                    "adapter": self.name,
+                    "error": "missing SmartRecruiters company identifier",
+                    "inventory_scope": inventory_scope,
+                    "inventory_complete": False,
+                },
             )
 
         candidates: list[JobCandidate] = []
@@ -61,6 +69,7 @@ class SmartRecruitersAdapter:
         total_found: int | None = None
         offset = 0
         exact_title_found = False
+        inventory_complete = False
         normalized_target = _normalized_title(query.title)
 
         for _ in range(_MAX_PAGES):
@@ -77,19 +86,23 @@ class SmartRecruitersAdapter:
                     provider=self.name,
                     board=board,
                     reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                    inventory_scope=inventory_scope,
+                    inventory_complete=False,
                     trace={
                         "adapter": self.name,
                         "api_urls": api_urls,
                         "error": "SmartRecruiters API redirected outside the company endpoint",
+                        "inventory_scope": inventory_scope,
+                        "inventory_complete": False,
                     },
                 )
             try:
                 data = json.loads(page.html)
             except (json.JSONDecodeError, TypeError):
-                return self._invalid_response(board, api_urls)
+                return self._invalid_response(board, api_urls, inventory_scope, candidates)
             postings = data.get("content") if isinstance(data, dict) else None
             if not isinstance(postings, list):
-                return self._invalid_response(board, api_urls)
+                return self._invalid_response(board, api_urls, inventory_scope, candidates)
 
             for posting in postings:
                 if not isinstance(posting, dict):
@@ -115,17 +128,18 @@ class SmartRecruitersAdapter:
                 if normalized_target and _normalized_title(title) == normalized_target:
                     exact_title_found = True
 
-            total_found = _nonnegative_int(data.get("totalFound"))
+            page_total = _nonnegative_int(data.get("totalFound"))
+            if page_total is not None:
+                total_found = max(total_found or 0, page_total)
             response_offset = _nonnegative_int(data.get("offset"))
             response_limit = _positive_int(data.get("limit")) or _PAGE_SIZE
             next_offset = (response_offset if response_offset is not None else offset) + len(postings)
-            if (
-                exact_title_found
-                or not postings
-                or len(postings) < response_limit
-                or total_found is None
-                or next_offset >= total_found
-            ):
+            inventory_complete = bool(
+                not postings
+                or (total_found is None and len(postings) < response_limit)
+                or (total_found is not None and next_offset >= total_found)
+            )
+            if exact_title_found or inventory_complete:
                 break
             offset = next_offset
 
@@ -143,6 +157,8 @@ class SmartRecruitersAdapter:
             candidates=candidates,
             reason_code=reason_code,
             retryable=reason_code == "PROVIDER_FETCH_FAILED",
+            inventory_scope=inventory_scope,
+            inventory_complete=inventory_complete,
             trace={
                 "adapter": self.name,
                 "api_urls": api_urls,
@@ -152,15 +168,32 @@ class SmartRecruitersAdapter:
                 "exact_title_found": exact_title_found,
                 "tenant_identity_verified": tenant_identity_verified,
                 "errors": errors,
+                "inventory_scope": inventory_scope,
+                "inventory_complete": inventory_complete,
             },
         )
 
-    def _invalid_response(self, board: JobBoard, api_urls: list[str]) -> AdapterResult:
+    def _invalid_response(
+        self,
+        board: JobBoard,
+        api_urls: list[str],
+        inventory_scope: str,
+        candidates: list[JobCandidate],
+    ) -> AdapterResult:
         return AdapterResult(
             provider=self.name,
             board=board,
-            reason_code="INVALID_STRUCTURED_DATA",
-            trace={"adapter": self.name, "api_urls": api_urls},
+            candidates=candidates,
+            reason_code=None if candidates else "INVALID_STRUCTURED_DATA",
+            inventory_scope=inventory_scope,
+            inventory_complete=False,
+            trace={
+                "adapter": self.name,
+                "api_urls": api_urls,
+                "candidate_count": len(candidates),
+                "inventory_scope": inventory_scope,
+                "inventory_complete": False,
+            },
         )
 
     @staticmethod

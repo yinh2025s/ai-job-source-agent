@@ -90,6 +90,8 @@ class EightfoldAdapterTests(unittest.TestCase):
         self.assertEqual(result.candidates[0].url, "https://careers.example.com/careers/job/101")
         self.assertEqual(result.trace["inventory_scope"], "title_filtered")
         self.assertEqual(result.trace["pages_fetched"], 1)
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["inventory_complete"])
 
     def test_hosted_board_resolves_customer_domain_from_verified_state(self):
         board_url = "https://acme.eightfold.ai/careers"

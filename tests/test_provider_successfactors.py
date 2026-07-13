@@ -117,6 +117,8 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
         self.assertEqual(result.candidates[0].location, "Chillicothe, USA, 64601")
         self.assertEqual(result.trace["variant"], "cloud_sap")
         self.assertEqual(result.trace["page_count"], 2)
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["inventory_complete"])
         api_calls = fetcher.calls[1:]
         self.assertEqual([json.loads(call["data"])["pageNumber"] for call in api_calls], [0, 1])
         self.assertEqual(json.loads(api_calls[0]["data"])["keywords"], "Engineer")

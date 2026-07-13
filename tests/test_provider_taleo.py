@@ -83,6 +83,8 @@ class TaleoAdapterTests(unittest.TestCase):
         self.assertEqual(payload["fieldData"]["fields"], {"KEYWORD": "AI Engineer", "LOCATION": "Tampa"})
         self.assertEqual(result.trace["inventory_scope"], "title_filtered")
         self.assertNotIn("csrftoken", json.dumps(result.trace))
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["inventory_complete"])
 
     def test_paginates_and_stops_on_exact_title(self):
         first = [job(str(index + 1), f"Engineer {index}") for index in range(25)]
