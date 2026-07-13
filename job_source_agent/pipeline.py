@@ -5,6 +5,7 @@ from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from .career_search import CareerSearchResolver
+from .content_probe import probe_first_party_cms_payload
 from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
 from .models import (
@@ -595,6 +596,9 @@ class JobSourceAgent:
             except FetchError as exc:
                 trace["fetch_errors"].append({"url": page_url, "error": str(exc)})
                 continue
+            page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
+            if content_probe:
+                trace.setdefault("content_payload_probes", []).append(content_probe)
             actual_page_url = page.final_url or page.url
             normalized_actual_url = actual_page_url.rstrip("/")
             if normalized_actual_url != normalized_page_url and normalized_actual_url in visited:
@@ -1095,6 +1099,9 @@ class JobSourceAgent:
             if is_brand_join_path and join_path not in {"join-us", "join-our-team"}:
                 candidate.score += 100
                 candidate.reasons.append("brand-specific join path")
+        if link.origin == "page_link" and path_parts == ["team"]:
+            candidate.score += 200
+            candidate.reasons.append("homepage team link requiring employment evidence")
         source_path = urlparse(link.source_url).path.lower()
         if "sitemap" in source_path or source_path.endswith(".xml"):
             candidate.score += 150
@@ -1178,6 +1185,9 @@ class JobSourceAgent:
             if self._looks_like_error_page(actual_url, page.html):
                 trace["candidate_fetch_errors"].append({"url": candidate.url, "error": f"error page: {actual_url}"})
                 continue
+            page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
+            if content_probe:
+                trace.setdefault("content_payload_probes", []).append(content_probe)
             if derived_reasons:
                 verified, verification = self._verify_derived_provider_board(
                     actual_url,

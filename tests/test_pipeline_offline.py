@@ -1,6 +1,8 @@
 import unittest
 from pathlib import Path
 
+from job_source_agent.content_probe import probe_first_party_cms_payload
+from job_source_agent.errors import DiscoveryError
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import CompanyInput, LinkCandidate
 from job_source_agent.pipeline import JobSourceAgent
@@ -190,6 +192,140 @@ class OfflinePipelineTests(unittest.TestCase):
 
         self.assertEqual(career_url, "https://www.wwwvariant.example/careers")
         self.assertEqual(trace["selected"]["url"], "https://www.wwwvariant.example/careers")
+
+    def test_team_path_requires_strong_employment_evidence(self):
+        homepage = "https://startup.example"
+        team = f"{homepage}/team"
+
+        class TeamFetcher(Fetcher):
+            def __init__(self, team_html):
+                super().__init__(offline=True)
+                self.team_html = team_html
+
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html='<html><title>Startup</title><a href="/team">Team</a></html>',
+                    )
+                if url.rstrip("/") == team:
+                    return Page(url=url, final_url=team, html=self.team_html)
+                raise FetchError("not this route")
+
+        accepted, trace = JobSourceAgent(
+            TeamFetcher(
+                '<html><title>Our Team</title><body>Join our team to build useful products. '
+                '<a href="https://jobs.ashbyhq.com/startup">View Job Openings</a></body></html>'
+            ),
+            max_career_candidate_fetches=3,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        ).find_career_page(homepage, company_name="Startup")
+        with self.assertRaises(DiscoveryError):
+            JobSourceAgent(
+                TeamFetcher(
+                    "<html><title>Our Team</title><body>Meet our leadership team.</body></html>"
+                ),
+                max_career_candidate_fetches=3,
+                enable_sitemap_discovery=False,
+                enable_career_search=False,
+            ).find_career_page(homepage, company_name="Startup")
+
+        self.assertEqual(accepted, team)
+        self.assertIn(
+            "homepage team link requiring employment evidence",
+            trace["selected"]["reasons"],
+        )
+
+    def test_magnolia_spa_payload_exposes_career_page_and_provider_board(self):
+        homepage = "https://magnolia.example"
+        career = f"{homepage}/company/careers"
+        asset = f"{homepage}/js/index.js"
+        payload = (
+            "https://magnolia-public.example.cloud/.rest/delivery/marketing-pages/v1"
+            "/example-site/company/careers"
+        )
+        workday = "https://acme.wd5.myworkdayjobs.com/en-US/acme"
+
+        class MagnoliaFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                normalized = url.rstrip("/")
+                if normalized == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html='<html><a href="/company/careers">Careers</a></html>',
+                    )
+                if normalized == career:
+                    return Page(
+                        url=url,
+                        final_url=career,
+                        html=(
+                            '<html><div id="root"></div><script type="module" '
+                            'src="/js/index.js"></script></html>'
+                        ),
+                    )
+                if normalized == asset:
+                    return Page(
+                        url=url,
+                        final_url=asset,
+                        html=(
+                            'production:{base:"https://magnolia-public.example.cloud"};'
+                            'const endpoint="/.rest/delivery/marketing-pages/v1";'
+                            'sessionStorage.getItem("appBase")||"/example-site"'
+                        ),
+                    )
+                if normalized == payload:
+                    return Page(
+                        url=url,
+                        final_url=payload,
+                        html=f'{{"label":"Open positions","url":"{workday}"}}',
+                    )
+                if normalized == workday:
+                    return Page(url=url, final_url=workday, html="<html>Workday jobs</html>")
+                raise FetchError(f"not this route: {url}")
+
+        agent = JobSourceAgent(
+            MagnoliaFetcher(offline=True),
+            max_career_candidate_fetches=3,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        career_url, career_trace = agent.find_career_page(homepage, company_name="Acme")
+        board_url, board_trace = agent.find_job_board(career_url, company_name="Acme")
+
+        self.assertEqual(career_url, career)
+        self.assertEqual(board_url, workday)
+        self.assertEqual(
+            career_trace["content_payload_probes"][0]["method"],
+            "magnolia_delivery",
+        )
+        self.assertEqual(board_trace["content_payload_probes"][0]["payload_url"], payload)
+
+    def test_magnolia_probe_rejects_cross_site_module_asset(self):
+        class CrossSiteAssetFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.requested = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested.append(url)
+                raise AssertionError("cross-site module asset must not be fetched")
+
+        fetcher = CrossSiteAssetFetcher()
+        page = Page(
+            url="https://acme.example/careers",
+            final_url="https://acme.example/careers",
+            html='<script type="module" src="https://cdn.unrelated.example/app.js"></script>',
+        )
+
+        enriched, trace = probe_first_party_cms_payload(fetcher, page)
+
+        self.assertIs(enriched, page)
+        self.assertIsNone(trace)
+        self.assertEqual(fetcher.requested, [])
 
     def test_common_path_candidates_include_localized_us_paths(self):
         agent = JobSourceAgent(
