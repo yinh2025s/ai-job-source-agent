@@ -1,5 +1,7 @@
 import json
+from itertools import combinations
 import unittest
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from job_source_agent.providers.base import JobBoard, JobQuery, ProviderAdapter
 from job_source_agent.providers.ceipal import ADAPTER, CeipalAdapter
@@ -182,6 +184,82 @@ class CeipalAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["inventory_scope"], "unknown")
         self.assertNotIn(API_KEY, json.dumps(result.trace))
         self.assertFalse(result.trace["inventory_complete"])
+
+    def test_accepts_only_omission_of_empty_presentation_params(self):
+        parts = urlsplit(API_URL)
+        query = parse_qsl(parts.query, keep_blank_values=True)
+        optional_names = ("themeid", "bgcolor", "job_id")
+
+        for omitted_count in range(len(optional_names) + 1):
+            for omitted in combinations(optional_names, omitted_count):
+                response_query = [pair for pair in query if pair[0] not in omitted]
+                response_url = urlunsplit(
+                    parts._replace(query=urlencode(response_query))
+                )
+                with self.subTest(omitted=omitted):
+                    result = self.adapter.list_jobs(
+                        RecordingFetcher(
+                            page=Page(
+                                url=API_URL,
+                                final_url=response_url,
+                                html=json.dumps(
+                                    {
+                                        "status": 400,
+                                        "message": "Bot access is not allowed",
+                                    }
+                                ),
+                            )
+                        ),
+                        self.board,
+                        JobQuery(),
+                    )
+
+                    self.assertEqual(result.reason_code, "BOT_PROTECTION")
+
+    def test_rejects_semantically_changed_response_urls(self):
+        changed_urls = {
+            "scheme": API_URL.replace("https://", "http://", 1),
+            "host": API_URL.replace("careerapi.ceipal.com", "other.ceipal.com", 1),
+            "path": API_URL.replace("careerPortalWidget/", "otherWidget/", 1),
+            "credential": API_URL.replace(
+                "apikey=tenant-api-key", "apikey=other-key", 1
+            ),
+            "tenant": API_URL.replace(
+                "cp_id=tenant-career-portal", "cp_id=other-portal", 1
+            ),
+            "missing_credential": API_URL.replace("&apikey=tenant-api-key", "", 1),
+            "missing_tenant": API_URL.replace("&cp_id=tenant-career-portal", "", 1),
+            "nonempty_theme": API_URL.replace("themeid=", "themeid=dark", 1),
+            "extra_param": API_URL + "&page=2",
+            "duplicate_param": API_URL + "&apikey=tenant-api-key",
+            "duplicate_empty_param": API_URL + "&themeid=",
+            "fragment": API_URL + "#jobs",
+            "empty_fragment": API_URL + "#",
+        }
+
+        for change, response_url in changed_urls.items():
+            with self.subTest(change=change):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(
+                        page=Page(
+                            url=API_URL,
+                            final_url=response_url,
+                            html=json.dumps(
+                                {
+                                    "status": 400,
+                                    "message": "Bot access is not allowed",
+                                }
+                            ),
+                        )
+                    ),
+                    self.board,
+                    JobQuery(),
+                )
+
+                self.assertEqual(
+                    result.reason_code,
+                    "PROVIDER_VARIANT_UNSUPPORTED",
+                )
 
     def test_unknown_success_schema_is_unsupported_and_never_constructs_jobs(self):
         response = Page(

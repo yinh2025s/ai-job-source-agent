@@ -10,6 +10,12 @@
 
 ### Added
 
+- ADR-0006 冻结 request-aware snapshot outcome contract：统一脱敏 URL、HTTP method、结构化 JSON/form body digest 与 allowlist semantic headers 形成版本化 request identity；`api_key`、`api-key`、`apikey` 等拼写共享 punctuation-insensitive 敏感键策略。Opaque body 只记录 privacy exclusion，不保存原文或未脱敏 credential digest。
+
+- Snapshot v2 在 `snapshots.jsonl` 为成功页面记录 request identity/sequence，并在独立 `fetch-failures.jsonl` 保存 terminal status、canonical reason、retryability 与安全消息；replay 物化 request-specific POST fixture 和结构化 `fetch-failures.json`。同 URL 的 Sitecore/Next 分页不再坍缩为最后一页，成功后发生的 403 可在 failure-focused replay 中复现；legacy v1 success snapshot 继续读取，未知版本与损坏 failure manifest fail closed。
+
+- Failure bundle v2 从首个 non-success stage 开始执行，并把此前成功 stage 的 typed outputs 作为 authoritative checkpoint handoff；历史官网、招聘主体、career 与 typed board 不再重新降级为 resolver candidate。Aventis 类同名实体 replay 因此不会从已验证 `.co.uk` 漂移到另一家 `.com`。
+
 - ADR-0005 冻结 S5→S6 page-derived job-board handoff：新增类型化 `DiscoveredJobBoard`，保留 provider-owned public locator、检测方式和 evidence URL；S6 可按 provider 名直接复用 board identity。所有 locator 默认 runtime-only，只有 adapter 明确标记 replay-safe 才进入 checkpoint；CEIPAL API-key-shaped widget identity 不落盘，raw HTML、cookie、header、request body、token 和认证内容均被禁止。
 
 - Failure replay 增加 outcome gate：逐公司比较原始与离线 replay 的 pipeline/failure-stage signature，输出 `reproduced`、显式声明的跨阶段 `expected_transition`、`fixture_gap` 和 `mismatch`；未声明的结果变化或 fixture gap 都会使 CLI 非零退出。复用 output directory 时先清理工具管理的 fixture 与 stage checkpoint，旧批次不能掩盖当前 capture gap。Evaluation/Markdown report 增加按规模排序的 `stage x provider x reason_code` actionable failure cluster、retryable 数量、inventory disposition 和有界公司样例。
@@ -70,6 +76,10 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- `ADAPTER_VERSION` 提升到 `2026-07-14.52`，snapshot replay 与 failure bundle schema 提升到 v2，checkpoint schema 保持 `1.2`。CEIPAL response URL 改按 HTTPS origin/path、`apikey`/`cp_id` tenant identity 与参数集合验证，仅允许服务端省略已知空 presentation 参数；host/path/tenant/新增参数/fragment/scheme 变化仍拒绝。URL normalization 保留 response-affecting empty query values。
+
+- `.52` 最终门禁为 791 tests、23/23 provider benchmark、6/6 resolver benchmark、23-adapter architecture validation / 0 issues。同一 frozen-30 cohort 从 `.51` 的 30/28/26/20 提升为 30 website、29 career、27 verified job list、21 exact opening；pipeline 从 20 success / 8 partial / 2 failed 改善为 21 / 8 / 1。9 个 non-success failure bundle 全部 reproduced，0 fixture gap、0 mismatch；真实登录态 extension Scan/Run 继续 deferred。
 
 - `CONTRACT_SCHEMA_VERSION` 保持 `1.1`，`CHECKPOINT_SCHEMA_VERSION` 提升到 `1.2`，`ADAPTER_VERSION` 提升到 `2026-07-14.51`。replay-safe locator 现在必须通过七个已注册 provider 的 hostname/path/identifier policy；未知 provider、跨 origin evidence、敏感 query key、控制字符、HTML/私钥/JWT/auth 形态内容和越界 locator 在 checkpoint decode 前拒绝。旧 stage checkpoint 安全 miss；runtime-only board handoff 在持久化时被省略。
 

@@ -97,6 +97,7 @@ class StageResultTests(unittest.TestCase):
         self.assertEqual(classify_fetch_error("HTTP status 599"), "SERVER_ERROR")
         self.assertEqual(classify_fetch_error("Temporary failure in name resolution"), "DNS_FAILED")
         self.assertEqual(classify_fetch_error("parser mismatch"), "PARSING_FAILED")
+        self.assertEqual(classify_fetch_error("DNS_FAILED"), "DNS_FAILED")
         self.assertEqual(
             classify_fetch_error("No fixture found for https://jobs.example.test/search"),
             "OFFLINE_FIXTURE_MISSING",

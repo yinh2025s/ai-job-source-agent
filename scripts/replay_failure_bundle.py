@@ -5,21 +5,33 @@ import json
 import os
 import shutil
 import sys
+from dataclasses import asdict, fields
 from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from job_source_agent.checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
+from job_source_agent.checkpoint import (
+    ADAPTER_VERSION,
+    CHECKPOINT_SCHEMA_VERSION,
+    input_fingerprint,
+)
 from job_source_agent.composition import FetcherConfig, build_application
+from job_source_agent.contracts import StageExecution
 from job_source_agent.evaluation import summarize_results
 from job_source_agent.linkedin import load_company_inputs
-from job_source_agent.models import PIPELINE_STAGES, RESULT_SCHEMA_VERSION, dataclass_to_dict
+from job_source_agent.models import (
+    PIPELINE_STAGES,
+    RESULT_SCHEMA_VERSION,
+    StageResult,
+    dataclass_to_dict,
+)
 from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
+from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from scripts.export_replay_input import export_replay_records
 
 
-BUNDLE_SCHEMA_VERSION = 1
+BUNDLE_SCHEMA_VERSION = 2
 
 
 class FailureReplayError(ValueError):
@@ -79,7 +91,10 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         limit=args.limit,
         include_missing_website=args.include_missing_website,
     )
-    replay_records = export_replay_records(records, export_args)
+    replay_records, source_records = _export_replay_records_with_sources(
+        records,
+        export_args,
+    )
     if not replay_records:
         if allow_empty:
             manifest = _empty_bundle_manifest(args)
@@ -92,11 +107,20 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
     input_path = output_root / "replay-input.json"
     _write_json_atomic(input_path, replay_records)
     companies = load_company_inputs(input_path)
+    resume_stages = _seed_authoritative_handoffs(
+        companies,
+        replay_records,
+        source_records,
+        output_root / "checkpoints",
+    )
     application = build_application(
         FetcherConfig(fixtures_dir=output_root / "offline" / "sites", offline=True),
         checkpoint_dir=output_root / "checkpoints",
     )
-    discoveries = [application.pipeline.discover(company) for company in companies]
+    discoveries = [
+        application.pipeline.discover(company, start_at=resume_stage)
+        for company, resume_stage in zip(companies, resume_stages, strict=True)
+    ]
     result_records = [result.result_record() for result in discoveries]
     trace_records = [dataclass_to_dict(result.trace_record()) for result in discoveries]
     summary = summarize_results(trace_records)
@@ -115,6 +139,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             "input": "replay-input.json",
             "fixtures": "offline/sites",
             "snapshot_manifest": "offline/replay-manifest.json",
+            "fetch_failures": "offline/fetch-failures.json",
             "results": "replay-results.json",
             "trace": "replay-trace.json",
             "summary": "replay-summary.json",
@@ -173,6 +198,144 @@ def _reset_checkpoint_output(path: Path) -> None:
         raise FailureReplayError(f"Unsafe replay checkpoint output: {path}")
     if path.exists():
         shutil.rmtree(path)
+
+
+def _export_replay_records_with_sources(
+    records: list[dict],
+    export_args: SimpleNamespace,
+) -> tuple[list[dict], list[dict]]:
+    replay_records: list[dict] = []
+    source_records: list[dict] = []
+    per_record_args = SimpleNamespace(**vars(export_args))
+    per_record_args.limit = None
+    for record in records:
+        exported = export_replay_records([record], per_record_args)
+        if not exported:
+            continue
+        replay_records.append(exported[0])
+        source_records.append(record)
+        if export_args.limit and len(replay_records) >= export_args.limit:
+            break
+    return replay_records, source_records
+
+
+def _seed_authoritative_handoffs(
+    companies: list,
+    replay_records: list[dict],
+    source_records: list[dict],
+    checkpoint_root: Path,
+) -> list[str | None]:
+    store = FilesystemCheckpointStore(checkpoint_root)
+    resume_stages: list[str | None] = []
+    for company, replay_record, source_record in zip(
+        companies,
+        replay_records,
+        source_records,
+        strict=True,
+    ):
+        resume_stage = _first_non_success_stage_name(replay_record)
+        executions = _authoritative_upstream_executions(source_record, resume_stage)
+        if executions is None:
+            resume_stages.append(None)
+            continue
+        fingerprint = input_fingerprint(asdict(company))
+        for execution in executions:
+            store.save(fingerprint, execution)
+        resume_stages.append(resume_stage)
+    return resume_stages
+
+
+def _first_non_success_stage_name(replay_record: dict) -> str | None:
+    source_trace = replay_record.get("source_trace")
+    replay = source_trace.get("replay") if isinstance(source_trace, dict) else None
+    stage = replay.get("first_non_success_stage") if isinstance(replay, dict) else None
+    stage_name = stage.get("stage") if isinstance(stage, dict) else None
+    return stage_name if stage_name in PIPELINE_STAGES else None
+
+
+def _authoritative_upstream_executions(
+    source_record: dict,
+    resume_stage: str | None,
+) -> list[StageExecution] | None:
+    if resume_stage is None:
+        return None
+    resume_index = PIPELINE_STAGES.index(resume_stage)
+    stages = source_record.get("stages")
+    if not isinstance(stages, list):
+        return None
+    stage_by_name = {
+        stage.get("stage"): stage
+        for stage in stages
+        if isinstance(stage, dict) and stage.get("stage") in PIPELINE_STAGES
+    }
+    upstream = PIPELINE_STAGES[:resume_index]
+    if any(
+        stage_name not in stage_by_name
+        or stage_by_name[stage_name].get("status") not in {"success", "not_applicable"}
+        for stage_name in upstream
+    ):
+        return None
+
+    result_fields = {field.name for field in fields(StageResult)}
+    executions = [
+        StageExecution(
+            result=StageResult(
+                **{
+                    key: value
+                    for key, value in stage_by_name[stage_name].items()
+                    if key in result_fields
+                }
+            ),
+            updates=_authoritative_stage_updates(stage_name, source_record),
+            trace={},
+        )
+        for stage_name in upstream
+    ]
+    required_update_by_stage = {
+        "website_resolution": "company_website_url",
+        "career_discovery": "career_page_url",
+        "job_board_discovery": "job_list_page_url",
+        "opening_match": "open_position_url",
+    }
+    if any(
+        execution.result.status == "success"
+        and (required := required_update_by_stage.get(execution.result.stage)) is not None
+        and required not in execution.updates
+        for execution in executions
+    ):
+        return None
+    return executions
+
+
+def _authoritative_stage_updates(stage: str, source_record: dict) -> dict:
+    fields_by_stage = {
+        "website_resolution": ("company_website_url",),
+        "hiring_identity_resolution": (
+            "company_website_url",
+            "hiring_entity_name",
+            "career_root_url",
+        ),
+        "career_discovery": ("career_page_url",),
+        "job_board_discovery": ("job_list_page_url",),
+        "opening_match": ("job_list_page_url", "open_position_url"),
+    }
+    updates = {
+        field: source_record[field]
+        for field in fields_by_stage.get(stage, ())
+        if source_record.get(field) not in (None, "")
+    }
+    if stage == "job_board_discovery":
+        result = next(
+            (
+                item
+                for item in source_record.get("stages", [])
+                if isinstance(item, dict) and item.get("stage") == stage
+            ),
+            {},
+        )
+        if result.get("provider"):
+            updates["provider"] = result["provider"]
+    return updates
 
 
 def _build_outcome_gate(replay_records: list[dict], result_records: list[dict]) -> dict:

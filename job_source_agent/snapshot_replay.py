@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 from dataclasses import dataclass
@@ -9,6 +10,8 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .reasons import REASON_SPECS, reason_spec
+from .request_identity import RequestIdentity, request_identity_from_dict
 from .snapshot import (
     sanitize_snapshot_body,
     sanitize_url,
@@ -19,7 +22,7 @@ from .snapshot import (
 )
 
 
-REPLAY_SCHEMA_VERSION = 1
+REPLAY_SCHEMA_VERSION = 2
 REQUIRED_RECORD_FIELDS = {
     "request_url",
     "page_url",
@@ -60,17 +63,23 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         raise SnapshotReplayError("Replay output must not be the snapshot directory or one of its children")
 
     records, skipped_corrupt_tail = _read_records(index_path)
+    failure_records, skipped_failure_tail = _read_optional_records(
+        source_root / "fetch-failures.jsonl"
+    )
     selected_by_path: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     selected_by_request_path: dict[str, dict[str, Any]] = {}
     duplicate_count = 0
     superseded_count = 0
+    seen_sequences: set[int] = set()
 
     for line_number, record in records:
         entry = _validate_record(source_root, record, line_number)
+        _validate_unique_sequence(entry.get("sequence"), seen_sequences, "snapshot", line_number)
         artifacts = _validate_artifacts(source_root, record, line_number)
         request_fixture_path = snapshot_path_for_url(
             Path("sites"),
             entry["request_urls"][0],
+            request_identity=entry.get("request_identity"),
         ).as_posix()
         if request_fixture_path != entry["fixture_path"]:
             selected_by_request_path[request_fixture_path] = {
@@ -88,6 +97,22 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
             entry["request_urls"] = sorted(set(existing["request_urls"] + entry["request_urls"]))
             entry["page_urls"] = sorted(set(existing["page_urls"] + entry["page_urls"]))
         selected_by_path[entry["fixture_path"]] = (entry, artifacts)
+
+    failures = []
+    privacy_exclusions = 0
+    for line_number, record in failure_records:
+        failure_entry = _validate_failure_record(record, line_number)
+        _validate_unique_sequence(
+            failure_entry["sequence"],
+            seen_sequences,
+            "fetch failure",
+            line_number,
+        )
+        if not failure_entry["request"]["replayable"]:
+            privacy_exclusions += 1
+            continue
+        failures.append(failure_entry)
+    failures.sort(key=lambda item: item["sequence"])
 
     selected_fixture_entries: dict[str, dict[str, Any]] = {}
     for entry in [selected[0] for selected in selected_by_path.values()] + list(
@@ -119,7 +144,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         {
             key: value
             for key, value in entry.items()
-            if key not in {"source_path", "canonical_path", "record_index"}
+            if key not in {"source_path", "canonical_path", "record_index", "request_identity"}
         }
         for entry in fixture_entries_internal
     ]
@@ -137,6 +162,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         "fixtures_dir": "sites",
         "entries": fixture_entries,
         "artifacts": public_artifacts,
+        "failure_entries": failures,
     }
     summary = {
         "schema_version": REPLAY_SCHEMA_VERSION,
@@ -147,12 +173,20 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         "superseded_records": superseded_count,
         "skipped_records": skipped_corrupt_tail,
         "corrupt_tail_records": skipped_corrupt_tail,
+        "failure_records": len(failure_records),
+        "replayable_failures": len(failures),
+        "privacy_exclusions": privacy_exclusions,
+        "corrupt_failure_tail_records": skipped_failure_tail,
         "status": "success",
     }
     manifest_path = destination_root / "replay-manifest.json"
     summary_path = destination_root / "replay-summary.json"
     _write_json_atomic(manifest_path, manifest)
     _write_json_atomic(summary_path, summary)
+    _write_json_atomic(
+        destination_root / "fetch-failures.json",
+        {"schema_version": REPLAY_SCHEMA_VERSION, "entries": failures},
+    )
     return ReplayResult(manifest, summary, manifest_path, summary_path)
 
 
@@ -183,6 +217,14 @@ def _read_records(index_path: Path) -> tuple[list[tuple[int, dict[str, Any]]], i
     return records, skipped_corrupt_tail
 
 
+def _read_optional_records(index_path: Path) -> tuple[list[tuple[int, dict[str, Any]]], int]:
+    if not index_path.exists():
+        return [], 0
+    if not index_path.is_file() or index_path.is_symlink():
+        raise SnapshotReplayError(f"Snapshot failure index is unsafe: {index_path}")
+    return _read_records(index_path)
+
+
 def _is_incomplete_json_tail(raw_line: str, error: json.JSONDecodeError) -> bool:
     """Return true only when valid JSON could be formed by appending at EOF."""
     stripped = raw_line.rstrip()
@@ -196,6 +238,26 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
     if missing:
         raise SnapshotReplayError(f"Line {line_number}: missing metadata fields: {', '.join(missing)}")
 
+    schema_version = record.get("schema_version", 1)
+    if schema_version not in {1, 2}:
+        raise SnapshotReplayError(f"Line {line_number}: unsupported snapshot schema version")
+    request_identity: RequestIdentity | None = None
+    sequence = None
+    if schema_version == 2:
+        if record.get("kind") != "page":
+            raise SnapshotReplayError(f"Line {line_number}: invalid snapshot record kind")
+        sequence = record.get("sequence")
+        if type(sequence) is not int or sequence <= 0:
+            raise SnapshotReplayError(f"Line {line_number}: sequence must be a positive integer")
+        try:
+            request_identity = request_identity_from_dict(record.get("request"))
+        except ValueError as exc:
+            raise SnapshotReplayError(f"Line {line_number}: invalid request identity: {exc}") from exc
+        if not request_identity.replayable:
+            raise SnapshotReplayError(
+                f"Line {line_number}: page snapshot has non-replayable request identity"
+            )
+
     urls = {}
     for field in ("request_url", "page_url", "final_url", "sanitized_url"):
         value = record[field]
@@ -205,10 +267,16 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
         urls[field] = value
     if urls["final_url"] != urls["sanitized_url"]:
         raise SnapshotReplayError(f"Line {line_number}: final_url and sanitized_url must match")
+    if request_identity and request_identity.sanitized_url != urls["request_url"]:
+        raise SnapshotReplayError(f"Line {line_number}: request identity does not match request_url")
 
     relative_path = _validated_relative_path(record["path"], "path", line_number, "sites")
     canonical_path = _resolve_member(source_root, relative_path, line_number)
-    expected_path = snapshot_path_for_url(source_root / "sites", urls["sanitized_url"])
+    expected_path = snapshot_path_for_url(
+        source_root / "sites",
+        urls["sanitized_url"],
+        request_identity=request_identity,
+    )
     if canonical_path != expected_path.resolve():
         raise SnapshotReplayError(f"Line {line_number}: path does not match sanitized_url")
     blob_path_value = record.get("blob_path")
@@ -235,7 +303,11 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
         raise SnapshotReplayError(f"Line {line_number}: byte_count does not match snapshot body")
     if not isinstance(record["source"], str) or not record["source"]:
         raise SnapshotReplayError(f"Line {line_number}: source must be a non-empty string")
-    if not isinstance(record["captured_at_epoch"], (int, float)) or isinstance(record["captured_at_epoch"], bool):
+    if (
+        not isinstance(record["captured_at_epoch"], (int, float))
+        or isinstance(record["captured_at_epoch"], bool)
+        or not math.isfinite(record["captured_at_epoch"])
+    ):
         raise SnapshotReplayError(f"Line {line_number}: captured_at_epoch must be numeric")
     if not isinstance(record["artifact_paths"], dict):
         raise SnapshotReplayError(f"Line {line_number}: artifact_paths must be an object")
@@ -250,7 +322,89 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
         "source_path": source_path,
         "canonical_path": canonical_path,
         "record_index": line_number,
+        "sequence": sequence,
+        "request": request_identity.as_dict() if request_identity else None,
+        "request_identity": request_identity,
     }
+
+
+def _validate_failure_record(record: dict[str, Any], line_number: int) -> dict[str, Any]:
+    expected_fields = {
+        "schema_version",
+        "kind",
+        "sequence",
+        "request",
+        "failure",
+        "captured_at_epoch",
+        "terminal",
+    }
+    if not isinstance(record, dict) or set(record) != expected_fields:
+        raise SnapshotReplayError(f"Failure line {line_number}: fields do not match schema")
+    if record["schema_version"] != 2 or record["kind"] != "fetch_failure":
+        raise SnapshotReplayError(f"Failure line {line_number}: unsupported record schema")
+    sequence = record["sequence"]
+    if type(sequence) is not int or sequence <= 0:
+        raise SnapshotReplayError(f"Failure line {line_number}: invalid sequence")
+    if record["terminal"] is not True:
+        raise SnapshotReplayError(f"Failure line {line_number}: failure must be terminal")
+    try:
+        identity = request_identity_from_dict(record["request"])
+    except ValueError as exc:
+        raise SnapshotReplayError(
+            f"Failure line {line_number}: invalid request identity: {exc}"
+        ) from exc
+    failure = record["failure"]
+    if not isinstance(failure, dict) or set(failure) != {
+        "status",
+        "reason_code",
+        "retryable",
+        "message",
+        "taxonomy_version",
+    }:
+        raise SnapshotReplayError(f"Failure line {line_number}: invalid failure fields")
+    status = failure["status"]
+    if status is not None and (type(status) is not int or not 100 <= status <= 599):
+        raise SnapshotReplayError(f"Failure line {line_number}: invalid HTTP status")
+    reason_code = failure["reason_code"]
+    if reason_code not in REASON_SPECS:
+        raise SnapshotReplayError(f"Failure line {line_number}: unknown reason code")
+    if type(failure["retryable"]) is not bool:
+        raise SnapshotReplayError(f"Failure line {line_number}: retryable must be boolean")
+    if failure["retryable"] != reason_spec(reason_code).retryable:
+        raise SnapshotReplayError(f"Failure line {line_number}: retryability mismatch")
+    if failure["taxonomy_version"] != 1:
+        raise SnapshotReplayError(f"Failure line {line_number}: unsupported taxonomy version")
+    message = failure["message"]
+    if not isinstance(message, str) or not message or len(message) > 500:
+        raise SnapshotReplayError(f"Failure line {line_number}: invalid failure message")
+    if sanitize_snapshot_body(message) != message:
+        raise SnapshotReplayError(f"Failure line {line_number}: unsanitized failure message")
+    captured = record["captured_at_epoch"]
+    if (
+        not isinstance(captured, (int, float))
+        or isinstance(captured, bool)
+        or not math.isfinite(captured)
+    ):
+        raise SnapshotReplayError(f"Failure line {line_number}: invalid capture time")
+    return {
+        "sequence": sequence,
+        "request": identity.as_dict(),
+        "failure": failure,
+        "captured_at_epoch": captured,
+    }
+
+
+def _validate_unique_sequence(
+    sequence: int | None,
+    seen: set[int],
+    label: str,
+    line_number: int,
+) -> None:
+    if sequence is None:
+        return
+    if sequence in seen:
+        raise SnapshotReplayError(f"{label.title()} line {line_number}: duplicate sequence")
+    seen.add(sequence)
 
 
 def _validate_artifacts(
@@ -370,7 +524,7 @@ def _reset_managed_outputs(destination_root: Path) -> None:
             raise SnapshotReplayError(f"Unsafe replay output path: {path}")
         if path.exists():
             shutil.rmtree(path)
-    for filename in ("replay-manifest.json", "replay-summary.json"):
+    for filename in ("replay-manifest.json", "replay-summary.json", "fetch-failures.json"):
         path = destination_root / filename
         if path.is_symlink() or (path.exists() and not path.is_file()):
             raise SnapshotReplayError(f"Unsafe replay output path: {path}")

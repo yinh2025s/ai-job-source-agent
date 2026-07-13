@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+from collections import Counter
 from html.parser import HTMLParser
 import json
-from urllib.parse import urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 from ..reasons import classify_fetch_error, reason_spec
 from ..web import FetchError, Page
@@ -14,6 +15,7 @@ _CAREER_API_URL = "https://careerapi.ceipal.com/careerPortalWidget/"
 _REFERER_HOST = "https://jobsapi.ceipal.com/"
 _MAX_HTML_CHARS = 2_000_000
 _INVENTORY_SCOPE = "unknown"
+_OMITTABLE_EMPTY_RESPONSE_PARAMS = frozenset({"themeid", "bgcolor", "job_id"})
 
 
 class CeipalAdapter:
@@ -61,7 +63,7 @@ class CeipalAdapter:
             return _fetch_failure(board, error)
 
         response_url = response.final_url or response.url
-        if response_url != request_url:
+        if not _response_url_matches_request(response_url, request_url):
             return _unsupported(
                 board,
                 "CEIPAL API response URL did not match the frozen widget endpoint",
@@ -212,6 +214,45 @@ def _career_api_url(api_key: str, career_portal_id: str) -> str:
         ]
     )
     return f"{_CAREER_API_URL}?{query}"
+
+
+def _response_url_matches_request(response_url: str, request_url: str) -> bool:
+    try:
+        response = urlparse(response_url)
+        request = urlparse(request_url)
+        response_port = response.port
+        request_port = request.port
+        response_query = Counter(
+            parse_qsl(response.query, keep_blank_values=True, strict_parsing=True)
+        )
+        request_query = Counter(
+            parse_qsl(request.query, keep_blank_values=True, strict_parsing=True)
+        )
+    except (TypeError, ValueError):
+        return False
+
+    if (
+        "#" in response_url
+        or response.scheme != "https"
+        or response.username is not None
+        or response.password is not None
+        or response.hostname is None
+        or response.hostname.casefold() != (request.hostname or "").casefold()
+        or (response_port or 443) != (request_port or 443)
+        or response.path != request.path
+        or response.params != request.params
+    ):
+        return False
+
+    for pair, count in request_query.items():
+        name, value = pair
+        response_count = response_query.pop(pair, 0)
+        if name in _OMITTABLE_EMPTY_RESPONSE_PARAMS and value == "":
+            if response_count not in {0, count}:
+                return False
+        elif response_count != count:
+            return False
+    return not response_query
 
 
 def _unsupported(

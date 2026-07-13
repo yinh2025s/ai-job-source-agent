@@ -190,6 +190,106 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(result.summary["duplicate_records"], 0)
         self.assertEqual(result.summary["superseded_records"], 0)
 
+    def test_post_pagination_replays_each_request_body(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            store = SnapshotStore(snapshots)
+            headers = {"Content-Type": "application/json"}
+            for page_range, body in ((0, "first"), (10, "second"), (20, "third")):
+                data = json.dumps({"range": page_range}).encode("utf-8")
+                store.write_page(
+                    Page(url="https://jobs.example.com/api", html=body, source="live"),
+                    data=data,
+                    headers=headers,
+                )
+
+            result = replay_snapshots(snapshots, root / "replay")
+            fetcher = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True)
+            pages = [
+                fetcher.fetch(
+                    "https://jobs.example.com/api",
+                    data=json.dumps({"range": page_range}).encode("utf-8"),
+                    headers=headers,
+                ).html
+                for page_range in (0, 10, 20)
+            ]
+
+        self.assertEqual(pages, ["first", "second", "third"])
+        self.assertEqual(result.summary["fixture_count"], 3)
+
+    def test_terminal_failure_replays_over_earlier_success_for_same_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            store = SnapshotStore(snapshots)
+            url = "https://jobs.example.com/"
+            store.write_page(Page(url=url, html="earlier success", source="live"))
+            store.write_failure(
+                FetchError(
+                    "HTTP Error 403: Forbidden",
+                    status=403,
+                    reason_code="HTTP_FORBIDDEN",
+                    retryable=False,
+                ),
+                url,
+            )
+
+            result = replay_snapshots(snapshots, root / "replay")
+            fetcher = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True)
+
+            with self.assertRaises(FetchError) as raised:
+                fetcher.fetch(url)
+
+        self.assertEqual(raised.exception.status, 403)
+        self.assertEqual(raised.exception.reason_code, "HTTP_FORBIDDEN")
+        self.assertFalse(raised.exception.retryable)
+        self.assertEqual(result.summary["replayable_failures"], 1)
+
+    def test_rejects_unknown_snapshot_schema_version(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._write_snapshot(snapshots)
+            index = snapshots / "snapshots.jsonl"
+            record = json.loads(index.read_text(encoding="utf-8"))
+            record["schema_version"] = 99
+            index.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(SnapshotReplayError, "unsupported snapshot schema"):
+                replay_snapshots(snapshots, root / "replay")
+
+    def test_rejects_request_identity_that_does_not_match_request_url(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._write_snapshot(snapshots)
+            index = snapshots / "snapshots.jsonl"
+            record = json.loads(index.read_text(encoding="utf-8"))
+            record["request_url"] = "https://other.example.test/jobs"
+            index.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+            with self.assertRaisesRegex(SnapshotReplayError, "request identity does not match"):
+                replay_snapshots(snapshots, root / "replay")
+
+    def test_fixture_fetcher_fails_closed_on_unknown_failure_manifest_schema(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._write_snapshot(snapshots)
+            replay_snapshots(snapshots, root / "replay")
+            failure_manifest = root / "replay" / "fetch-failures.json"
+            failure_manifest.write_text(
+                json.dumps({"schema_version": 99, "entries": []}),
+                encoding="utf-8",
+            )
+            fetcher = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True)
+
+            with self.assertRaises(FetchError) as raised:
+                fetcher.fetch("https://jobs.example.com/search")
+
+        self.assertEqual(raised.exception.reason_code, "OFFLINE_FIXTURE_MISSING")
+
     def test_rejects_directory_traversal_in_snapshot_path(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

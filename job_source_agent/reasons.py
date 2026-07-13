@@ -74,6 +74,9 @@ def canonical_reason_code(value: str | None) -> str:
 
 
 def classify_fetch_error(detail: str) -> str:
+    canonical_detail = detail.strip().upper()
+    if canonical_detail in REASON_SPECS:
+        return canonical_detail
     text = detail.lower()
     if "no fixture found for" in text:
         return "OFFLINE_FIXTURE_MISSING"

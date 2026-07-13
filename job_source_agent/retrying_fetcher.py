@@ -75,8 +75,12 @@ class RetryingFetcher:
                     if bounded_timeout is not None:
                         self.fetcher.timeout = original_timeout
             except FetchError as exc:
-                reason_code = classify_fetch_error(str(exc))
-                retryable = reason_spec(reason_code).retryable
+                reason_code = exc.reason_code or classify_fetch_error(str(exc))
+                retryable = (
+                    exc.retryable
+                    if exc.retryable is not None
+                    else reason_spec(reason_code).retryable
+                )
                 event = RetryEvent(
                     url=url,
                     attempt=attempt,

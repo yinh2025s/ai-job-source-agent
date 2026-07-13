@@ -117,6 +117,90 @@ class FailureReplayBundleTests(unittest.TestCase):
 
             self.assertFalse(stale.exists())
 
+    def test_replay_restores_successful_upstream_handoffs_before_first_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            board_url = "https://jobs.example.test/jobs"
+            results = [{
+                "company_name": "Shared Name",
+                "company_website_url": "https://authoritative.example.test",
+                "hiring_entity_name": "Authoritative Hiring Entity",
+                "career_root_url": "https://authoritative.example.test/careers",
+                "career_page_url": "https://authoritative.example.test/careers",
+                "job_list_page_url": board_url,
+                "linkedin_job_title": "Missing Role",
+                "pipeline_status": "partial",
+                "trace": {"stages": {"website_resolution": {"private": "do-not-copy"}}},
+                "stages": [
+                    {"stage": "linkedin_discovery", "status": "not_applicable"},
+                    {"stage": "website_resolution", "status": "success"},
+                    {"stage": "hiring_identity_resolution", "status": "success"},
+                    {"stage": "career_discovery", "status": "success"},
+                    {"stage": "job_board_discovery", "status": "success"},
+                    {
+                        "stage": "opening_match",
+                        "status": "partial",
+                        "reason_code": "OPENING_NOT_FOUND",
+                    },
+                    {"stage": "result_validation", "status": "success"},
+                ],
+            }]
+            (root / "results.json").write_text(json.dumps(results), encoding="utf-8")
+            SnapshotStore(root / "snapshots").write_page(
+                Page(
+                    url=board_url,
+                    final_url=board_url,
+                    html="<html><body><p>No matching role.</p></body></html>",
+                    source="live",
+                ),
+                request_url=board_url,
+            )
+
+            with patch(
+                "job_source_agent.stages.upstream.WebsiteResolutionStage.run",
+                side_effect=AssertionError("website resolution must not rerun"),
+            ), patch(
+                "job_source_agent.stages.upstream.HiringIdentityResolutionStage.run",
+                side_effect=AssertionError("entity resolution must not rerun"),
+            ):
+                manifest = replay_failure_bundle(self._args(root))
+            replay_results = json.loads(
+                (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
+            )
+            replay_trace = json.loads(
+                (root / "bundle" / "replay-trace.json").read_text(encoding="utf-8")
+            )
+            checkpoint_text = "".join(
+                path.read_text(encoding="utf-8")
+                for path in (root / "bundle" / "checkpoints").rglob("*.json")
+            )
+
+        self.assertEqual(
+            replay_results[0]["company_website_url"],
+            "https://authoritative.example.test",
+        )
+        self.assertEqual(
+            replay_results[0]["hiring_entity_name"],
+            "Authoritative Hiring Entity",
+        )
+        self.assertEqual(
+            [
+                event["stage"]
+                for event in replay_trace[0]["trace"]["checkpoint_events"]
+                if event["action"] == "restore"
+            ],
+            [
+                "linkedin_discovery",
+                "website_resolution",
+                "hiring_identity_resolution",
+                "career_discovery",
+                "job_board_discovery",
+            ],
+        )
+        self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["save"], 2)
+        self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["restore"], 5)
+        self.assertNotIn("do-not-copy", checkpoint_text)
+
     def test_improved_replay_is_mismatch_and_cli_exits_nonzero(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

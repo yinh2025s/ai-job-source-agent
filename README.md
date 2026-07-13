@@ -428,7 +428,7 @@ python3 scripts/export_replay_input.py \
   --reason-code OPENING_NOT_FOUND
 ```
 
-The exported records preserve the verified website, career root, LinkedIn title, and replay metadata, so the next run can start from known-good upstream evidence instead of rediscovering everything. Each replay record also includes checkpoint metadata with schema versions, adapter version, and a stable input fingerprint for later resume/cache compatibility checks.
+The exported records preserve the verified website, career root, LinkedIn title, and replay metadata. Failure bundle v2 seeds successful upstream stages as authoritative typed checkpoints and starts at the first non-success stage, so a replay does not reinterpret a verified website or job board as a lower-trust resolver candidate. Each replay record also includes checkpoint metadata with schema versions, adapter version, and a stable input fingerprint for later resume/cache compatibility checks.
 
 Validate replay compatibility before reusing an old replay file:
 
@@ -478,7 +478,7 @@ python3 -m job_source_agent \
   --trace-output /tmp/replay-trace.json
 ```
 
-Replay conversion verifies metadata, hashes, byte counts, URL sanitization and path containment before copying files. Snapshot bodies and browser artifacts are also stored as immutable content-addressed blobs, so repeated requests that share a fixture path cannot invalidate earlier manifest hashes. Replay selects the last complete version for each fixture path, reports identical duplicates and superseded versions separately, and rejects missing artifacts, symlink/path escapes or a canonical view that does not match the selected blob.
+Replay conversion verifies metadata, request identity, hashes, byte counts, URL sanitization and path containment before copying files. Request-aware v2 fixtures distinguish HTTP method, sanitized URL, structured JSON/form body digest and allowlisted semantic headers, so POST pagination to one endpoint remains deterministic. Snapshot bodies and browser artifacts are stored as immutable content-addressed blobs. Terminal fetch failures are validated separately and materialized as structured failure evidence rather than fake HTML. Legacy v1 success snapshots remain readable; unknown schema versions, unsafe paths, inconsistent identities and damaged failure manifests fail closed.
 
 Build and execute a focused offline bundle directly from failed results and their snapshots:
 
@@ -492,9 +492,9 @@ python3 scripts/replay_failure_bundle.py \
   --reason-code OPENING_NOT_FOUND
 ```
 
-The bundle contains filtered replay input, verified fixtures, stage checkpoints, offline results/trace/summary and a relative-path manifest. Summary reports also include checkpoint save/restore/miss/invalidate activity.
+The bundle contains filtered replay input, verified request-specific fixtures, structured terminal failures, authoritative upstream stage checkpoints, offline results/trace/summary and a relative-path manifest. Its outcome gate requires each original pipeline/failure-stage signature to be reproduced or explicitly declared as an expected transition; fixture gaps and mismatches return a nonzero exit. Summary reports also include checkpoint save/restore/miss/invalidate activity.
 
-Snapshots are written under `/tmp/job-source-snapshots/sites` using the same layout as offline fixtures, plus `/tmp/job-source-snapshots/snapshots.jsonl` metadata. Rendered screenshots are written under `/tmp/job-source-snapshots/artifacts` and referenced from the same metadata file. Sensitive query values and common token-like values are redacted before writing.
+Snapshots are written under `/tmp/job-source-snapshots/sites` using the same layout as offline fixtures, plus `/tmp/job-source-snapshots/snapshots.jsonl` metadata and an optional `/tmp/job-source-snapshots/fetch-failures.jsonl` terminal-failure log. Rendered screenshots are written under `/tmp/job-source-snapshots/artifacts` and referenced from page metadata. Sensitive query/body fields use one punctuation-insensitive policy, so forms such as `api_key`, `api-key`, and `apikey` are redacted consistently; raw bodies, cookies and authorization headers are not persisted.
 
 `--fetch-retries` retries only retryable fetch failures such as timeouts, DNS failures, rate limits, and server errors. Non-retryable external blockers such as HTTP 403, login walls, bot protection, and parser/title-match failures are not retried.
 

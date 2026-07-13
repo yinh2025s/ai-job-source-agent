@@ -8,16 +8,19 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
 import fcntl
 
-from .web import Page, fixture_path_candidates
+from .reasons import classify_fetch_error, reason_spec
+from .request_identity import build_request_identity, is_sensitive_key, sanitize_url
+from .web import FetchError, Page, fixture_path_candidates
 
 
 SENSITIVE_QUERY_KEYS = {
     "access_token",
     "api_key",
+    "api-key",
+    "apikey",
     "auth",
     "authorization",
     "code",
@@ -44,6 +47,10 @@ SENSITIVE_BODY_FIELDS = SENSITIVE_QUERY_KEYS | {
 
 @dataclass
 class SnapshotRecord:
+    schema_version: int
+    kind: str
+    sequence: int
+    request: dict
     request_url: str
     page_url: str
     final_url: str
@@ -58,6 +65,17 @@ class SnapshotRecord:
     captured_at_epoch: float
 
 
+@dataclass
+class FetchFailureRecord:
+    schema_version: int
+    kind: str
+    sequence: int
+    request: dict
+    failure: dict
+    captured_at_epoch: float
+    terminal: bool
+
+
 class SnapshotStore:
     """Persist fetched pages as sanitized, fixture-compatible snapshots."""
 
@@ -65,20 +83,41 @@ class SnapshotStore:
         self.root_dir = Path(root_dir)
         self.fixtures_dir = self.root_dir / "sites"
         self.index_path = self.root_dir / "snapshots.jsonl"
+        self.failure_index_path = self.root_dir / "fetch-failures.jsonl"
+        self.sequence_path = self.root_dir / ".snapshot-sequence"
 
-    def write_page(self, page: Page, request_url: str | None = None) -> SnapshotRecord:
+    def write_page(
+        self,
+        page: Page,
+        request_url: str | None = None,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> SnapshotRecord:
+        request_identity = build_request_identity(
+            request_url or page.url,
+            data=data,
+            headers=headers,
+        )
         sanitized_final_url = sanitize_url(page.final_url or page.url)
         html = sanitize_snapshot_body(page.html)
         encoded = html.encode("utf-8")
         self.root_dir.mkdir(parents=True, exist_ok=True)
         digest = hashlib.sha256(encoded).hexdigest()
-        path = snapshot_path_for_url(self.fixtures_dir, sanitized_final_url)
+        path = snapshot_path_for_url(
+            self.fixtures_dir,
+            sanitized_final_url,
+            request_identity=request_identity,
+        )
         blob_path = snapshot_blob_path(self.root_dir, digest)
         with self._write_lock():
             _write_immutable_blob(blob_path, encoded, digest)
             _write_bytes_atomic(path, encoded)
             artifact_paths, artifact_blob_paths = self._write_artifacts(page, sanitized_final_url)
             record = SnapshotRecord(
+                schema_version=2,
+                kind="page",
+                sequence=self._next_sequence(),
+                request=request_identity.as_dict(),
                 request_url=sanitize_url(request_url or page.url),
                 page_url=sanitize_url(page.url),
                 final_url=sanitized_final_url,
@@ -97,6 +136,54 @@ class SnapshotStore:
                 handle.flush()
                 os.fsync(handle.fileno())
         return record
+
+    def write_failure(
+        self,
+        error: FetchError,
+        request_url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> FetchFailureRecord:
+        request_identity = build_request_identity(request_url, data=data, headers=headers)
+        reason_code = error.reason_code or classify_fetch_error(str(error))
+        retryable = (
+            error.retryable
+            if error.retryable is not None
+            else reason_spec(reason_code).retryable
+        )
+        status = error.status if isinstance(error.status, int) else None
+        safe_message = f"HTTP {status} {reason_code}" if status is not None else reason_code
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        with self._write_lock():
+            record = FetchFailureRecord(
+                schema_version=2,
+                kind="fetch_failure",
+                sequence=self._next_sequence(),
+                request=request_identity.as_dict(),
+                failure={
+                    "status": status,
+                    "reason_code": reason_code,
+                    "retryable": retryable,
+                    "message": safe_message,
+                    "taxonomy_version": 1,
+                },
+                captured_at_epoch=round(time.time(), 3),
+                terminal=True,
+            )
+            with self.failure_index_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record.__dict__, sort_keys=True) + "\n")
+                handle.flush()
+                os.fsync(handle.fileno())
+        return record
+
+    def _next_sequence(self) -> int:
+        try:
+            current = int(self.sequence_path.read_text(encoding="ascii"))
+        except (FileNotFoundError, OSError, ValueError):
+            current = 0
+        next_value = current + 1
+        _write_bytes_atomic(self.sequence_path, f"{next_value}\n".encode("ascii"))
+        return next_value
 
     def _write_artifacts(
         self,
@@ -129,7 +216,7 @@ class SnapshotStore:
 
 
 class SnapshottingFetcher:
-    """Wrap a fetcher and record every successful response as a snapshot."""
+    """Wrap a fetcher and record terminal fetch outcomes as snapshots."""
 
     def __init__(self, fetcher, snapshot_dir: str | Path) -> None:
         self.fetcher = fetcher
@@ -137,8 +224,17 @@ class SnapshottingFetcher:
         self.timeout = getattr(fetcher, "timeout", None)
 
     def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
-        page = self.fetcher.fetch(url, data=data, headers=headers)
-        record = self.snapshot_store.write_page(page, request_url=url)
+        try:
+            page = self.fetcher.fetch(url, data=data, headers=headers)
+        except FetchError as error:
+            self.snapshot_store.write_failure(error, url, data=data, headers=headers)
+            raise
+        record = self.snapshot_store.write_page(
+            page,
+            request_url=url,
+            data=data,
+            headers=headers,
+        )
         page.source = f"{page.source}|snapshot:{record.path}"
         return page
 
@@ -146,8 +242,17 @@ class SnapshottingFetcher:
         return getattr(self.fetcher, name)
 
 
-def snapshot_path_for_url(fixtures_dir: str | Path, url: str) -> Path:
-    return fixture_path_candidates(fixtures_dir, url)[0]
+def snapshot_path_for_url(
+    fixtures_dir: str | Path,
+    url: str,
+    *,
+    request_identity=None,
+) -> Path:
+    return fixture_path_candidates(
+        fixtures_dir,
+        url,
+        request_identity=request_identity,
+    )[0]
 
 
 def snapshot_artifact_path_for_url(artifacts_dir: str | Path, url: str, artifact_name: str) -> Path:
@@ -168,18 +273,6 @@ def snapshot_blob_path(root_dir: str | Path, digest: str) -> Path:
 def snapshot_artifact_blob_path(root_dir: str | Path, digest: str, artifact_name: str) -> Path:
     extension = {"screenshot_png": "png"}.get(artifact_name, "bin")
     return Path(root_dir) / "blobs" / "artifacts" / f"{digest}.{extension}"
-
-
-def sanitize_url(url: str) -> str:
-    parsed = urlparse(url)
-    query = urlencode(
-        [
-            (key, _redacted_value(value) if _is_sensitive_key(key) else value)
-            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        ],
-        doseq=True,
-    )
-    return urlunparse(parsed._replace(query=query, fragment=""))
 
 
 def sanitize_snapshot_body(body: str) -> str:
@@ -228,12 +321,7 @@ def sanitize_snapshot_body(body: str) -> str:
 
 
 def _is_sensitive_key(key: str) -> bool:
-    lowered = key.lower()
-    return lowered in SENSITIVE_QUERY_KEYS or any(marker in lowered for marker in ("token", "secret", "password"))
-
-
-def _redacted_value(value: str) -> str:
-    return "[REDACTED]" if value else value
+    return is_sensitive_key(key)
 
 
 def _safe_path_part(part: str) -> str:

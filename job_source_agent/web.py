@@ -6,6 +6,7 @@ from html import unescape
 from pathlib import Path
 import gzip
 import hashlib
+import json
 import re
 import signal
 import socket
@@ -17,6 +18,15 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
+from .reasons import REASON_SPECS, classify_fetch_error, reason_spec
+from .request_identity import (
+    RequestIdentity,
+    build_request_identity,
+    is_sensitive_key,
+    request_identity_from_dict,
+    sanitize_url as sanitize_request_url,
+)
+
 
 TRACKING_PARAMS = {
     "utm_source",
@@ -26,24 +36,6 @@ TRACKING_PARAMS = {
     "utm_content",
     "fbclid",
     "gclid",
-}
-
-_FIXTURE_SENSITIVE_QUERY_KEYS = {
-    "access_token",
-    "api_key",
-    "auth",
-    "authorization",
-    "code",
-    "id_token",
-    "key",
-    "password",
-    "refresh_token",
-    "secret",
-    "session",
-    "sig",
-    "signature",
-    "state",
-    "token",
 }
 
 MAX_EXTRACTED_LINKS = 200
@@ -77,7 +69,20 @@ class Page:
 
 
 class FetchError(RuntimeError):
-    pass
+    def __init__(
+        self,
+        message: str,
+        *,
+        status: int | None = None,
+        reason_code: str | None = None,
+        retryable: bool | None = None,
+        request_identity: dict | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.status = status
+        self.reason_code = reason_code
+        self.retryable = retryable
+        self.request_identity = request_identity
 
 
 class TimeBudgetExceeded(RuntimeError):
@@ -121,7 +126,11 @@ def normalize_url(url: str, base_url: str | None = None) -> str:
     if not parsed.scheme:
         parsed = urlparse("https://" + url)
     query = urlencode(
-        [(key, value) for key, value in parse_qsl(parsed.query) if key not in TRACKING_PARAMS],
+        [
+            (key, value)
+            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            if key not in TRACKING_PARAMS
+        ],
         doseq=True,
     )
     normalized = parsed._replace(fragment="", query=query)
@@ -324,7 +333,17 @@ class Fetcher:
 
     def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
         normalized = normalize_url(url)
-        fixture_path = self._fixture_path_for(normalized)
+        identity = build_request_identity(normalized, data=data, headers=headers)
+        failure = self._failure_for(identity)
+        if failure is not None:
+            raise FetchError(
+                failure["message"],
+                status=failure.get("status"),
+                reason_code=failure["reason_code"],
+                retryable=failure["retryable"],
+                request_identity=identity.as_dict(),
+            )
+        fixture_path = self._fixture_path_for(normalized, identity=identity)
         if fixture_path and fixture_path.exists():
             return Page(
                 url=normalized,
@@ -368,7 +387,15 @@ class Fetcher:
                     html = raw.decode(charset, errors="replace")
                     final_url = response.geturl()
         except (HTTPError, URLError, TimeoutError, socket.timeout, OSError) as exc:
-            raise FetchError(str(exc)) from exc
+            detail = str(exc)
+            reason_code = classify_fetch_error(detail)
+            raise FetchError(
+                detail,
+                status=exc.code if isinstance(exc, HTTPError) else None,
+                reason_code=reason_code,
+                retryable=reason_spec(reason_code).retryable,
+                request_identity=build_request_identity(url, data=data, headers=headers).as_dict(),
+            ) from exc
         return Page(url=url, html=html, final_url=final_url, source="live")
 
     def _thread_opener(self):
@@ -378,10 +405,25 @@ class Fetcher:
             self._http_sessions.opener = opener
         return opener
 
-    def _fixture_path_for(self, url: str) -> Path | None:
+    def _fixture_path_for(
+        self,
+        url: str,
+        *,
+        identity: RequestIdentity | None = None,
+    ) -> Path | None:
         if not self.fixtures_dir:
             return None
-        candidates = fixture_path_candidates(self.fixtures_dir, url)
+        candidates = fixture_path_candidates(self.fixtures_dir, url, request_identity=identity)
+        if identity and identity.requires_fixture_suffix:
+            request_path = candidates[0]
+            if request_path.exists():
+                return request_path
+            request_variants = list(
+                request_path.parent.glob(_request_variant_glob(request_path))
+            )
+            if request_variants:
+                return request_path
+            candidates = candidates[1:]
         if len(candidates) > 1:
             query_path, legacy = candidates
             if query_path.exists():
@@ -404,9 +446,67 @@ class Fetcher:
                 return alternate
         return candidates[0]
 
+    def _failure_for(self, identity: RequestIdentity) -> dict | None:
+        if not self.fixtures_dir:
+            return None
+        path = self.fixtures_dir.parent / "fetch-failures.json"
+        if not path.exists():
+            return None
+        if not path.is_file() or path.is_symlink():
+            raise _invalid_failure_fixture()
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raise _invalid_failure_fixture()
+        if not isinstance(payload, dict) or payload.get("schema_version") != 2:
+            raise _invalid_failure_fixture()
+        entries = payload.get("entries")
+        if not isinstance(entries, list):
+            raise _invalid_failure_fixture()
+        expected = identity.as_dict()
+        selected = None
+        for entry in entries:
+            if not isinstance(entry, dict):
+                raise _invalid_failure_fixture()
+            try:
+                recorded_identity = request_identity_from_dict(entry.get("request"))
+            except ValueError:
+                raise _invalid_failure_fixture()
+            failure = entry.get("failure")
+            if not isinstance(failure, dict):
+                raise _invalid_failure_fixture()
+            reason_code = failure.get("reason_code")
+            retryable = failure.get("retryable")
+            message = failure.get("message")
+            status = failure.get("status")
+            if (
+                reason_code not in REASON_SPECS
+                or type(retryable) is not bool
+                or not isinstance(message, str)
+                or not message
+                or (status is not None and (type(status) is not int or not 100 <= status <= 599))
+            ):
+                raise _invalid_failure_fixture()
+            if recorded_identity.as_dict() != expected:
+                continue
+            selected = failure
+        return selected
 
-def fixture_path_candidates(fixtures_dir: str | Path, url: str) -> list[Path]:
-    parsed = urlparse(url)
+
+def fixture_path_candidates(
+    fixtures_dir: str | Path,
+    url: str,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+    *,
+    request_identity: RequestIdentity | dict | None = None,
+) -> list[Path]:
+    identity = (
+        request_identity_from_dict(request_identity)
+        if isinstance(request_identity, dict)
+        else request_identity
+    ) or build_request_identity(url, data=data, headers=headers)
+    parsed = urlparse(sanitize_request_url(url))
     host = parsed.netloc.lower()
     parts = [part for part in parsed.path.split("/") if part]
     base = Path(fixtures_dir) / host
@@ -415,27 +515,45 @@ def fixture_path_candidates(fixtures_dir: str | Path, url: str) -> list[Path]:
     else:
         candidate = base.joinpath(*[_safe_fixture_path_part(part) for part in parts])
         legacy = candidate if candidate.suffix else candidate / "index.html"
-    if not parsed.query:
-        return [legacy]
-    query = urlencode(
-        sorted(
-            (
-                key,
-                "[REDACTED]" if _is_fixture_sensitive_query_key(key) else value,
-            )
-            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
-        ),
-        doseq=True,
-    )
-    fingerprint = hashlib.sha256(query.encode("utf-8")).hexdigest()[:16]
-    query_path = legacy.with_name(f"{legacy.stem}.__query_{fingerprint}{legacy.suffix}")
-    return [query_path, legacy]
+    canonical_path = legacy
+    if parsed.query:
+        query = urlencode(
+            sorted(
+                (
+                    key,
+                    "[REDACTED]" if is_sensitive_key(key) else value,
+                )
+                for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            ),
+            doseq=True,
+        )
+        fingerprint = hashlib.sha256(query.encode("utf-8")).hexdigest()[:16]
+        canonical_path = legacy.with_name(
+            f"{legacy.stem}.__query_{fingerprint}{legacy.suffix}"
+        )
+    candidates = [canonical_path]
+    if canonical_path != legacy:
+        candidates.append(legacy)
+    if identity.requires_fixture_suffix:
+        request_path = canonical_path.with_name(
+            f"{canonical_path.stem}.__request_{identity.fingerprint()}{canonical_path.suffix}"
+        )
+        candidates.insert(0, request_path)
+    return candidates
 
 
-def _is_fixture_sensitive_query_key(key: str) -> bool:
-    lowered = key.casefold()
-    return lowered in _FIXTURE_SENSITIVE_QUERY_KEYS or any(
-        marker in lowered for marker in ("token", "secret", "password")
+def _request_variant_glob(path: Path) -> str:
+    marker = ".__request_"
+    stem = path.stem
+    prefix = stem.split(marker, 1)[0]
+    return f"{prefix}{marker}*{path.suffix}"
+
+
+def _invalid_failure_fixture() -> FetchError:
+    return FetchError(
+        "Invalid offline fetch failure manifest",
+        reason_code="OFFLINE_FIXTURE_MISSING",
+        retryable=False,
     )
 
 

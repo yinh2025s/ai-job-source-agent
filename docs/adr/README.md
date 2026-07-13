@@ -17,3 +17,4 @@ NNNN-short-decision-title.md
 - [ADR-0003: Cache Verified LinkedIn Website Evidence](0003-cache-linkedin-website-evidence.md)
 - [ADR-0004: Classify LinkedIn-Native Source Postings Without Inventing Official URLs](0004-classify-linkedin-native-source-postings.md)
 - [ADR-0005: Persist Replay-Safe Page-Derived Job Board Locators](0005-persist-page-derived-job-board-locators.md)
+- [ADR-0006: Record Request-Aware Snapshot Outcomes](0006-record-request-aware-snapshot-outcomes.md)

@@ -21,6 +21,13 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("access_token=%5BREDACTED%5D", sanitized)
         self.assertIn("query=data", sanitized)
 
+    def test_sanitize_url_redacts_apikey_spelling_variants(self):
+        for key in ("apikey", "api_key", "api-key"):
+            with self.subTest(key=key):
+                sanitized = sanitize_url(f"https://example.com/jobs?{key}=abc123")
+                self.assertNotIn("abc123", sanitized)
+                self.assertIn("%5BREDACTED%5D", sanitized)
+
     def test_sanitize_snapshot_body_redacts_tokens(self):
         body = (
             'window.cfg = {"api_key": "secret-value", "sessionJWT": "public-session-token", '
@@ -139,6 +146,64 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotEqual(first.path, second.path)
         self.assertEqual(first_page.html, "first")
         self.assertEqual(second_page.html, "second")
+
+    def test_post_body_snapshots_use_distinct_request_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            headers = {"Content-Type": "application/json"}
+            first_data = b'{"range": 0, "api_key": "secret-one"}'
+            second_data = b'{"range": 10, "api_key": "secret-two"}'
+            first = store.write_page(
+                Page(url="https://jobs.example.com/api", html="first", source="live"),
+                data=first_data,
+                headers=headers,
+            )
+            second = store.write_page(
+                Page(url="https://jobs.example.com/api", html="second", source="live"),
+                data=second_data,
+                headers=headers,
+            )
+            fetcher = Fetcher(fixtures_dir=store.fixtures_dir, offline=True)
+
+            first_page = fetcher.fetch(
+                "https://jobs.example.com/api", data=first_data, headers=headers
+            )
+            second_page = fetcher.fetch(
+                "https://jobs.example.com/api", data=second_data, headers=headers
+            )
+            metadata = Path(store.index_path).read_text(encoding="utf-8")
+
+        self.assertNotEqual(first.path, second.path)
+        self.assertIn(".__request_", first.path)
+        self.assertEqual(first_page.html, "first")
+        self.assertEqual(second_page.html, "second")
+        self.assertNotIn("secret-one", metadata)
+        self.assertNotIn("secret-two", metadata)
+
+    def test_snapshotting_fetcher_records_structured_terminal_failure(self):
+        class FailingFetcher:
+            timeout = 1
+
+            def fetch(self, url, data=None, headers=None):
+                raise FetchError(
+                    "HTTP Error 403: Forbidden",
+                    status=403,
+                    reason_code="HTTP_FORBIDDEN",
+                    retryable=False,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            fetcher = SnapshottingFetcher(FailingFetcher(), directory)
+
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://jobs.example.com/?apikey=private")
+            failure_text = (Path(directory) / "fetch-failures.jsonl").read_text(
+                encoding="utf-8"
+            )
+
+        self.assertIn('"reason_code": "HTTP_FORBIDDEN"', failure_text)
+        self.assertIn('"status": 403', failure_text)
+        self.assertNotIn("private", failure_text)
 
     def test_sensitive_query_snapshot_fingerprint_uses_redacted_value(self):
         with tempfile.TemporaryDirectory() as directory:
