@@ -61,6 +61,14 @@ class StageResultTests(unittest.TestCase):
         self.assertEqual(stages[STAGE_OPENING_MATCH].reason_code, "OPENING_NOT_FOUND")
         self.assertFalse(stages[STAGE_OPENING_MATCH].retryable)
         self.assertEqual(stages[STAGE_OPENING_MATCH].owner, "matcher")
+        self.assertEqual(
+            stages[STAGE_OPENING_MATCH].evidence[0]["disposition"],
+            "discovery_incomplete",
+        )
+        self.assertEqual(
+            stages[STAGE_OPENING_MATCH].evidence[0]["confidence"],
+            "low",
+        )
 
     def test_career_discovery_failure_marks_later_stages_not_run(self):
         result = self.agent.discover(

@@ -126,6 +126,46 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(summary["checkpoint_action_counts"], {})
         self.assertEqual(summary["checkpoint_stage_counts"], {})
 
+    def test_summary_groups_opening_availability_diagnostics(self):
+        results = [
+            {
+                "stages": [
+                    {
+                        "stage": "opening_match",
+                        "status": "partial",
+                        "reason_code": "OPENING_NOT_FOUND",
+                        "evidence": [
+                            {
+                                "type": "availability_diagnostic",
+                                "disposition": "verified_inventory_no_match",
+                            }
+                        ],
+                    }
+                ]
+            },
+            {
+                "stages": [
+                    {
+                        "stage": "opening_match",
+                        "status": "partial",
+                        "evidence": [
+                            {
+                                "type": "availability_diagnostic",
+                                "disposition": "discovery_incomplete",
+                            }
+                        ],
+                    }
+                ]
+            },
+        ]
+
+        summary = summarize_results(results)
+
+        self.assertEqual(
+            summary["availability_diagnostic_counts"],
+            {"verified_inventory_no_match": 1, "discovery_incomplete": 1},
+        )
+
     def test_stage_provider_takes_precedence_over_external_apply_url_host(self):
         result = {
             "open_position_url": "https://app.careerpuck.com/job-board/lyft/job/123",

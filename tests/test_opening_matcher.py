@@ -174,6 +174,24 @@ class OpeningMatcherTests(unittest.TestCase):
                 self.assertEqual(match.url, expected)
                 self.assertTrue(trace["provider_api"]["candidates"])
 
+    def test_native_adapter_records_verified_inventory_when_title_does_not_match(self):
+        matcher = JobOpeningMatcher(
+            Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
+        )
+
+        match, trace = matcher.match(
+            "https://jobs.lever.co/apiacme",
+            "Quantum Archaeologist",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(trace["provider_api"]["inventory"]["status"], "verified")
+        self.assertGreater(trace["provider_api"]["inventory"]["candidate_count"], 0)
+        self.assertLess(
+            trace["provider_api"]["inventory"]["strongest_title_score"],
+            45,
+        )
+
     def test_provider_api_urls_are_built_from_job_board_urls(self):
         cases = {
             "https://boards.greenhouse.io/acme": "https://boards-api.greenhouse.io/v1/boards/acme/jobs?content=true",

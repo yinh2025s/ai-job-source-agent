@@ -61,6 +61,13 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines.extend(_provider_stage_reliability(summary))
     lines.extend(_provider_reason_codes(summary))
     lines.extend(_simple_count_table("Reason Codes", summary.get("reason_code_counts", {}), "Reason"))
+    lines.extend(
+        _simple_count_table(
+            "Opening Availability Diagnostics",
+            summary.get("availability_diagnostic_counts", {}),
+            "Disposition",
+        )
+    )
     lines.extend(_checkpoint_activity(summary))
     lines.extend(_expectations(summary))
     lines.extend(_company_matrix(summary, max_rows=max_matrix_rows))

@@ -23,6 +23,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
     provider_reason_code_counts = _provider_reason_code_counts(results)
     stage_duration_ms = _stage_duration_ms(results)
     checkpoint_action_counts, checkpoint_stage_counts = _checkpoint_activity_counts(results)
+    availability_diagnostic_counts = _availability_diagnostic_counts(results)
 
     summary = {
         "total": total,
@@ -50,6 +51,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
         "stage_duration_ms": stage_duration_ms,
         "checkpoint_action_counts": checkpoint_action_counts,
         "checkpoint_stage_counts": checkpoint_stage_counts,
+        "availability_diagnostic_counts": availability_diagnostic_counts,
         "company_stage_matrix": _company_stage_matrix(results),
     }
     if elapsed_sec is not None:
@@ -189,6 +191,23 @@ def _checkpoint_activity_counts(results: list[dict]) -> tuple[dict[str, int], di
             if isinstance(stage, str) and stage:
                 stage_counts[stage] += 1
     return dict(action_counts), dict(stage_counts)
+
+
+def _availability_diagnostic_counts(results: list[dict]) -> dict[str, int]:
+    counts: Counter[str] = Counter()
+    for result in results:
+        opening_stage = _stage_by_name(result).get("opening_match", {})
+        evidence = opening_stage.get("evidence")
+        if not isinstance(evidence, list):
+            continue
+        for item in evidence:
+            if not isinstance(item, dict) or item.get("type") != "availability_diagnostic":
+                continue
+            disposition = item.get("disposition")
+            if isinstance(disposition, str) and disposition:
+                counts[disposition] += 1
+                break
+    return dict(counts)
 
 
 def _company_stage_matrix(results: list[dict]) -> list[dict]:

@@ -6,6 +6,7 @@ from typing import Protocol
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
 from ..models import STAGE_CAREER_DISCOVERY, STAGE_JOB_BOARD_DISCOVERY, STAGE_OPENING_MATCH
+from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
 from ..reasons import canonical_reason_code, classify_fetch_error, make_stage_result
 from ..web import FetchError, normalize_url
@@ -239,15 +240,30 @@ class OpeningMatchStage:
                 trace=trace,
             )
 
+        diagnostic = diagnose_opening_availability(trace, context.company.source_trace)
+        trace["availability_diagnostic"] = {
+            "disposition": diagnostic.disposition,
+            "confidence": diagnostic.confidence,
+            "reason_code": diagnostic.reason_code,
+            **diagnostic.evidence,
+        }
         return StageExecution(
             result=make_stage_result(
                 self.name,
                 "partial",
-                reason_code="OPENING_NOT_FOUND",
+                reason_code=diagnostic.reason_code,
                 provider=context.provider,
                 duration_ms=_elapsed_ms(started),
                 input_count=1,
-                detail=trace.get("opening_error") or "No verified opening matched the requested title.",
+                evidence=[
+                    {
+                        "type": "availability_diagnostic",
+                        "disposition": diagnostic.disposition,
+                        "confidence": diagnostic.confidence,
+                        **diagnostic.evidence,
+                    }
+                ],
+                detail=diagnostic.detail,
             ),
             updates=updates,
             trace=trace,

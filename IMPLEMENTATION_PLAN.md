@@ -257,6 +257,7 @@
 - 2026-07-11 fixed live benchmark：6 named companies, 6/6 websites, 6/6 official job-list pages, 1/6 exact opening, 6/6 expectation checks passed。覆盖 Greenhouse、Lever、Ashby、PostHog first-party careers 和 Brex first-party careers。
 - 2026-07-13 exploratory LinkedIn batch：19 unique companies, 14/19 official job-list pages, 6/19 exact openings。下游 timeout 现在会保留已完成 S1-S3，因此 5 个原始失败中 Hadrian、Multifactor、Paramount 和 Docusign 的官网解析证据不再丢失；下一主 failure cluster 是 hidden ATS/list-root discovery、structured listing 和 parent-card link semantics。
 - 2026-07-13 focused replay：S5 从 iframe/data attributes/form action/escaped state/redirect 提取 hidden ATS root；Oracle login/profile 被拒绝为公开 listing，Snowflake 进入 Phenom `search-results`。S6 用 parent-card paragraph 和 multi-assignment JSON state 命中 Plaid/Snowflake；后续 provenance-aware root validation、Greenhouse config promotion 和 verified ATS fallback 分别命中 Glean、Reddit、Zillow、Twitch。Zillow 在整组运行中仍有 search/network 波动，Uber Seattle 与 Starbucks Nashville 当前官方 inventory 未确认。
+- 2026-07-13 opening availability diagnostics：S6 现在区分 `verified_inventory_no_match`、`verified_inventory_empty`、`discovery_incomplete` 和带明确来源证据的 `source_posting_closed`。官方 provider trace 保存库存状态、候选数量和最佳标题分数；单纯搜索未命中不会被误报为岗位过期。Summary/Markdown report 可直接聚合这些 disposition。
 - Product Manager / Data Analyst 这类品牌和成熟公司样本成功率明显高于随机 long-tail AI Engineer 样本。
 - 2026-07-11 focused live checks: Cricut reached `https://cricut.com/careers`; Carv's public Rippling board matched `Growth Product Manager` to its exact job-detail URL. The full Carv homepage-to-board run remains sensitive to transient website timeouts.
 - Follow-up live verification: ReachMobi now maps `Product Manager` through BambooHR to `/careers/270`; MatrixSpace reaches its localized careers page and Ashby board; ONEOK retains its legitimate Workday board instead of a false `/assets/logo` URL.
@@ -960,6 +961,7 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 - `scripts/archive_evaluation.py` 已提供原子、内容寻址、带 commit/adapter/command metadata 的时间戳 history，并自动比较 latest baseline
 - `scripts/resolver_benchmark.py` 已提供 6-case 缺官网固定离线 benchmark
 - `live_batch_eval.py` 的下游 failure result 会复用完整 S1-S3 evidence；51-company rerun 已真实验证 30 个 completion restore + 21 个 pending execution，仍为 51/51 expectations、51/51 job list、50/51 exact opening
+- S6 availability diagnostics 已将“官方库存已读取但无标题匹配”“官方空库存”“抓取证据不足”和“来源明确关闭”拆开；保持 `OPENING_NOT_FOUND` 的保守默认语义，仅在显式来源状态下使用 `OPENING_CLOSED`
 
 目标：
 

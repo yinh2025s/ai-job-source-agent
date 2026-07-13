@@ -48,6 +48,8 @@ evaluation/reporting consume versioned outputs and do not control execution.
 
 同一家公司的 hard dependencies 顺序执行；不同公司可以 bounded parallel。S4 内的独立 probe 可以受预算约束并发，但第一个结果仍需通过统一验证。
 
+S6 的职责进一步拆成三层：provider/matcher 记录官方库存读取状态、候选数量和最佳标题分数；`opening_availability` 只根据这些证据和显式来源状态生成保守诊断；stage 将诊断写入标准 reason/evidence。搜索未命中或 provider 读取失败不能单独证明岗位已关闭，只有明确的来源状态才能产生 `OPENING_CLOSED`。
+
 ## Target Contracts
 
 Stage 只接收和返回版本化数据，不互相调用内部方法：
@@ -100,6 +102,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 - Adapter 只负责一个 provider family。
 - Runner 只负责调度、预算和 checkpoint，不做页面解析。
 - Evaluation 只消费结果，不发网络请求。
+- Opening availability diagnosis 只解释既有证据，不抓取页面或选择 provider。
 
 ### Open/Closed
 

@@ -188,12 +188,29 @@ class JobOpeningMatcher:
                         return None, failure_trace
                 else:
                     if adapter_result.reason_code != "PROVIDER_VARIANT_UNSUPPORTED":
+                        scored_titles = [
+                            score_title_match(candidate.title, target_title)[0]
+                            for candidate in adapter_result.candidates
+                        ]
                         trace = {
                             "provider": provider,
                             "adapter": adapter.name,
                             "api_urls": list(adapter_result.trace.get("api_urls", [])),
                             "candidates": [],
                             "adapter_trace": adapter_result.trace,
+                            "inventory": {
+                                "source": "native_adapter",
+                                "status": (
+                                    "verified"
+                                    if adapter_result.candidates
+                                    else "verified_empty"
+                                    if adapter_result.reason_code == "EMPTY_PROVIDER_RESPONSE"
+                                    else "incomplete"
+                                ),
+                                "candidate_count": len(adapter_result.candidates),
+                                "strongest_title_score": max(scored_titles, default=0),
+                                "reason_code": adapter_result.reason_code,
+                            },
                         }
                         if page_detection is not None:
                             trace["provider_detection"] = page_detection
@@ -226,16 +243,22 @@ class JobOpeningMatcher:
 
         api_requests = build_provider_api_requests(job_list_url, target_title)
         trace = {"provider": provider, "api_urls": [request.url for request in api_requests], "candidates": []}
+        successful_api_fetches = 0
+        inventory_candidate_count = 0
+        strongest_title_score = 0
         for api_request in api_requests:
             try:
                 page = self.fetcher.fetch(api_request.url, data=api_request.data, headers=api_request.headers)
             except FetchError as exc:
                 trace.setdefault("errors", []).append({"url": api_request.url, "error": str(exc)})
                 continue
+            successful_api_fetches += 1
             candidates = provider_api_candidates(provider, page.html, job_list_url)
+            inventory_candidate_count += len(candidates)
             scored = []
             for title, url in candidates:
                 title_score, title_reasons = score_title_match(title, target_title)
+                strongest_title_score = max(strongest_title_score, title_score)
                 if title_score < MIN_TITLE_MATCH_SCORE:
                     continue
                 scored.append(
@@ -261,7 +284,20 @@ class JobOpeningMatcher:
                 ]
             )
             if scored:
+                trace["inventory"] = {
+                    "source": "provider_api",
+                    "status": "verified",
+                    "candidate_count": inventory_candidate_count,
+                    "strongest_title_score": strongest_title_score,
+                }
                 return scored[0], trace
+        if successful_api_fetches:
+            trace["inventory"] = {
+                "source": "provider_api",
+                "status": "verified" if inventory_candidate_count else "verified_empty",
+                "candidate_count": inventory_candidate_count,
+                "strongest_title_score": strongest_title_score,
+            }
         return None, trace
 
 

@@ -32,6 +32,7 @@
 - Provider registry 增加可选 page-evidence adapter 扩展；iCIMS 支持 Jibe customer-owned career domains、页面 search override 隔离和同源 `/api/jobs` structured listing。
 - Greenhouse adapter 支持从 first-party `__NEXT_DATA__` 中识别完整 Greenhouse job schema，并对 custom frontend canonical URL 做同源校验。
 - SuccessFactors adapter 支持 `*.jobs.hr.cloud.sap` 新 Career Site：解析页面 CSRF/locale，调用同源 recruiting v1 API 并还原 canonical job URL。
+- 增加 opening availability diagnostics：聚合 `verified_inventory_no_match`、`verified_inventory_empty`、`discovery_incomplete` 和显式 `source_posting_closed`，并写入 S6 evidence、summary 与 Markdown report。
 
 ### Changed
 
@@ -118,6 +119,7 @@
 - Link extraction 增加 form action、Greenhouse embed canonicalization 和 JS template assignment 解析；provider config 优先占用候选预算，真实 Glean 页面可稳定提取 `gleanwork`，Twitch embed 可直接提升为 Greenhouse board。
 - Glean、Reddit、Zillow、Twitch 均分别通过 focused exact-opening live；Plaid、Snowflake 保持 exact。Uber Seattle 与 Starbucks Nashville 标题未在当前官方 inventory 中确认，继续报告 partial。
 - S4/S5 provenance、search 与 tenant verification 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.18`；440 个测试、13/13 provider、6/6 resolver 和 clean 51/51 fixed live expectations 通过。
+- Native provider opening trace 现在记录库存读取状态、候选数量和最佳标题分数；只有明确的来源 posting 状态才报告 `OPENING_CLOSED`，网络/解析不足继续诚实标记为 `discovery_incomplete`。S6/checkpoint 语义更新后将 `ADAPTER_VERSION` 提升到 `2026-07-13.19`；447 个测试、13/13 provider、6/6 resolver 和 architecture gate 通过。
 
 ## [0.1.0] - 2026-07-12
 
