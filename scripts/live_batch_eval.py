@@ -13,6 +13,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.company_identity import CompanyIdentityResolver
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
+from job_source_agent.batch_discovery import LinkedInDiscoveryManifestStore
 from job_source_agent.checkpoint import input_fingerprint
 from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
 from job_source_agent.contracts import FetchClient
@@ -119,9 +120,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Atomic company-completion directory; defaults beside the result output.",
     )
     parser.add_argument(
+        "--linkedin-manifest",
+        help="Versioned dynamic LinkedIn cohort manifest; defaults inside the batch checkpoint directory.",
+    )
+    parser.add_argument(
         "--no-resume",
         action="store_true",
-        help="Ignore compatible company-completion records and run every input again.",
+        help="Run every input again; dynamic LinkedIn mode also refreshes the frozen cohort.",
     )
     parser.add_argument(
         "--require-all-expectations",
@@ -270,13 +275,33 @@ def load_batch_companies(args: argparse.Namespace, linkedin_fetcher: FetchClient
         return load_company_inputs(args.input)[: args.limit]
     if not args.linkedin_keywords:
         raise SystemExit("Provide either --input or --linkedin-keywords.")
-    postings = LinkedInJobsDiscoverer(linkedin_fetcher).search(
-        keywords=args.linkedin_keywords,
-        location=args.linkedin_location,
-        limit=args.limit,
-        pages=args.linkedin_pages,
+    request = {
+        "keywords": args.linkedin_keywords,
+        "location": args.linkedin_location,
+        "limit": args.limit,
+        "pages": args.linkedin_pages,
+    }
+    manifest_path = _linkedin_manifest_path(args)
+    store = LinkedInDiscoveryManifestStore(manifest_path)
+
+    def discover() -> list[dict]:
+        postings = LinkedInJobsDiscoverer(linkedin_fetcher).search(
+            keywords=args.linkedin_keywords,
+            location=args.linkedin_location,
+            limit=args.limit,
+            pages=args.linkedin_pages,
+        )
+        companies = linkedin_postings_to_company_inputs(postings)[: args.limit]
+        return [dataclass_to_dict(company) for company in companies]
+
+    records, action = store.resolve(
+        request,
+        discover,
+        refresh=bool(getattr(args, "no_resume", False)),
     )
-    return linkedin_postings_to_company_inputs(postings)[: args.limit]
+    args.linkedin_manifest_action = action
+    args.linkedin_manifest_resolved_path = str(manifest_path)
+    return [CompanyInput(**record) for record in records]
 
 
 def build_summary(
@@ -287,6 +312,12 @@ def build_summary(
 ) -> dict:
     summary_records = traces if traces is not None else results
     summary = summarize_results(summary_records, elapsed_sec=elapsed_sec)
+    manifest_action = getattr(args, "linkedin_manifest_action", None)
+    if manifest_action:
+        summary["linkedin_discovery_manifest"] = {
+            "action": manifest_action,
+            "path": getattr(args, "linkedin_manifest_resolved_path", None),
+        }
     if args.expectations:
         expectations = json.loads(Path(args.expectations).read_text(encoding="utf-8"))
         if not getattr(args, "require_all_expectations", False):
@@ -781,6 +812,13 @@ def _batch_checkpoint_dir(args: argparse.Namespace) -> str:
         return str(configured)
     output = getattr(args, "output", "/tmp/live-batch-results.json")
     return str(Path(output).with_suffix(".batch-completions"))
+
+
+def _linkedin_manifest_path(args: argparse.Namespace) -> Path:
+    configured = getattr(args, "linkedin_manifest", None)
+    if configured:
+        return Path(configured)
+    return Path(_batch_checkpoint_dir(args)) / "linkedin-discovery.json"
 
 
 def failure_result(

@@ -37,6 +37,7 @@
 - Snapshot fixture 路径加入脱敏 query fingerprint，分页/筛选响应不再互相覆盖；redirect request alias 使用当次 immutable blob，仍保持 hash、路径和正文脱敏验证。
 - 增加版本化 runtime policy、`.python-version`、runtime checker 和 `make offline-gates/live-gate`；release 自动化固定 CPython 3.12，项目安装暂时排除已实测 native crash 的 Python 3.14。
 - 增加 GitHub Actions：push/PR 在 CPython 3.10-3.13 运行测试并在 3.12 重跑全部 offline gates；51-company live gate 仅手动触发，始终上传 results/trace/summary artifacts。
+- Live LinkedIn batch 增加独立版本、查询参数绑定、公司列表 hash、文件锁和原子发布的 discovery manifest；恢复默认复用同一 cohort，`--no-resume` 显式刷新，summary 记录 manifest action/path。
 - SuccessFactors adapter 支持 `*.jobs.hr.cloud.sap` 新 Career Site：解析页面 CSRF/locale，调用同源 recruiting v1 API 并还原 canonical job URL。
 - 增加 opening availability diagnostics：聚合 `verified_inventory_no_match`、`verified_inventory_empty`、`discovery_incomplete` 和显式 `source_posting_closed`，并写入 S6 evidence、summary 与 Markdown report。
 - RippleHire 作为第 14 个原生 provider 自动接入：支持稳定 board 规范化、匿名 cookie session、公开 XML inventory、单关键词 query translation、50 条有界分页、exact-title early stop、同 tenant redirect/API 校验和 detail URL 重建。
@@ -143,6 +144,7 @@
 - Cisco replay 将下一个通用缺口定位为 sitemap fan-out 和 query snapshot collision，而不是新 ATS：现有 Phenom adapter 可读取五页、50 条 title-filtered candidates，当前 LinkedIn 标题未达到匹配阈值，因此稳定返回 verified `OPENING_NOT_FOUND`。11-record focused capture 物化为 9 个 query-aware fixtures，0.3 秒离线重放与 live 的 candidate count、total hits 和 board URLs 完全一致。`ADAPTER_VERSION` 提升到 `2026-07-13.31`；513 tests、18/18 provider、6/6 resolver 和 16-adapter architecture gate 通过。51-company gate 因 Homebrew Python 3.14.2 多次 native termination 只能由 completion fragments 完成，碎片汇总为 49/51 job list、39/51 exact、40/51 displayed expectations；其 3 个严格失败 Ardent Health、Datadog、Airbnb 随后全新 focused 3/3 exact recovery。下一 release 工程优先迁移到稳定 Python 运行基线并保留 crash-safe checkpoint。
 - Release runtime 固定为 CPython 3.12：`pyproject.toml` 声明 `>=3.10,<3.14`，可测试 policy 区分 supported runtime 与 release baseline，Makefile 将 runtime check、517 tests、18/18 provider、6/6 resolver、16-adapter architecture 和 51-company live 统一到同一解释器。Homebrew 3.14.2 会被明确拒绝，3.12.6 offline gates 全绿；首次 3.12 `--no-resume` live run 实际发布 51/51 completion、51/51 job list、50/51 exact 和 51/51 expectations，且 macOS 未生成新的 Python crash report。Codex PTY 提前停止显示输出，但重新连接确认 `restored: 51, pending: 0`。
 - CI/runtime 闭环接入 GitHub Actions：supported matrix 覆盖 3.10、3.11、3.12、3.13，release-offline job 固定 3.12 执行 Makefile contract；手动 live workflow 使用 20 分钟 job timeout、禁止并发取消，并在成功或失败时保留 14 天证据 artifacts。首次 Linux CI run `29240521415` 全部成功。
+- Dynamic LinkedIn S1 resume 闭环完成：旧 runner 在重连时重新搜索，真实 cohort 从 30 漂移为 25 并导致 completion 无法对应；新 manifest 在 downstream 前同步发布并与 ATS adapter version 解耦。真实 3-company smoke 第二次为 `restored: 3, pending: 0`，没有重新搜索。随后冻结的 30-company AI Engineer cohort 经多次 PTY 重连始终保持 30 家，最终基线为 27/30 官网、17/30 career、14/30 job list、11/30 exact。CPython 3.12 下 521 tests、18/18 provider、6/6 resolver 和 16-adapter architecture gate 通过。
 
 ## [0.1.0] - 2026-07-12
 

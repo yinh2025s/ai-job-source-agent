@@ -3,6 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 from job_source_agent.models import CompanyInput, DiscoveryResult, StageResult
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
@@ -183,6 +184,38 @@ class LiveBatchEvalTests(unittest.TestCase):
 
         self.assertEqual(len(companies), 1)
         self.assertEqual(companies[0].company_name, "A")
+
+    def test_linkedin_mode_freezes_and_restores_dynamic_cohort(self):
+        with tempfile.TemporaryDirectory() as directory:
+            args = SimpleNamespace(
+                input=None,
+                limit=30,
+                linkedin_keywords="AI Engineer",
+                linkedin_location="United States",
+                linkedin_pages=5,
+                batch_checkpoint_dir=str(Path(directory) / "batch"),
+                linkedin_manifest=None,
+                no_resume=False,
+            )
+            with (
+                patch("scripts.live_batch_eval.LinkedInJobsDiscoverer") as discoverer,
+                patch("scripts.live_batch_eval.linkedin_postings_to_company_inputs") as convert,
+            ):
+                discoverer.return_value.search.return_value = [object()]
+                convert.return_value = [
+                    CompanyInput(
+                        company_name="Stable Cohort",
+                        linkedin_company_url="https://www.linkedin.com/company/stable-cohort",
+                    )
+                ]
+
+                first = load_batch_companies(args, Fetcher(offline=True))
+                second = load_batch_companies(args, Fetcher(offline=True))
+
+        self.assertEqual([company.company_name for company in first], ["Stable Cohort"])
+        self.assertEqual([company.company_name for company in second], ["Stable Cohort"])
+        discoverer.return_value.search.assert_called_once()
+        self.assertEqual(args.linkedin_manifest_action, "restored")
 
     def test_live_expectations_default_to_present_companies_only(self):
         result = {
