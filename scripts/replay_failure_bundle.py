@@ -258,7 +258,10 @@ def _seed_authoritative_handoffs(
         source_records,
         strict=True,
     ):
-        resume_stage = _first_non_success_stage_name(replay_record)
+        resume_stage = _replay_resume_stage(
+            source_record,
+            _first_non_success_stage_name(replay_record),
+        )
         executions = _authoritative_upstream_executions(source_record, resume_stage)
         if executions is None:
             resume_stages.append(None)
@@ -305,6 +308,31 @@ def _first_non_success_stage_name(replay_record: dict) -> str | None:
     stage = replay.get("first_non_success_stage") if isinstance(replay, dict) else None
     stage_name = stage.get("stage") if isinstance(stage, dict) else None
     return stage_name if stage_name in PIPELINE_STAGES else None
+
+
+def _replay_resume_stage(source_record: dict, failure_stage: str | None) -> str | None:
+    if failure_stage != "opening_match":
+        return failure_stage
+    trace = source_record.get("trace")
+    stage_traces = trace.get("stages") if isinstance(trace, dict) else None
+    job_board_trace = (
+        stage_traces.get("job_board_discovery")
+        if isinstance(stage_traces, dict)
+        else None
+    )
+    provider_detection = (
+        job_board_trace.get("provider_detection")
+        if isinstance(job_board_trace, dict)
+        else None
+    )
+    method = (
+        provider_detection.get("method")
+        if isinstance(provider_detection, dict)
+        else None
+    )
+    if method in {"page_evidence", "page_probe"}:
+        return "job_board_discovery"
+    return failure_stage
 
 
 def _authoritative_upstream_executions(

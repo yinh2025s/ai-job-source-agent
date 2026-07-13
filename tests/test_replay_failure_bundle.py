@@ -13,6 +13,7 @@ from job_source_agent.web import Page
 from scripts.replay_failure_bundle import (
     FailureReplayError,
     _build_outcome_gate,
+    _replay_resume_stage,
     main,
     replay_failure_bundle,
 )
@@ -257,6 +258,145 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["save"], 2)
         self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["restore"], 5)
         self.assertNotIn("do-not-copy", checkpoint_text)
+
+    def test_page_aware_provider_replay_reruns_job_board_discovery_from_snapshot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            board_url = "https://careers.example.com/global/en/search-results"
+            search_url = board_url + "?keywords=Missing+Role"
+
+            def phenom_html(*, total_hits: int) -> str:
+                config = {
+                    "cdnUrl": "https://cdn.phenompeople.com/CareerConnectResources",
+                    "pageName": "search-results",
+                    "refNum": "ACMEGLOBAL",
+                    "baseUrl": "https://careers.example.com/global/en/",
+                }
+                ddo = {
+                    "eagerLoadRefineSearch": {
+                        "hits": 0,
+                        "totalHits": total_hits,
+                        "data": {"jobs": []},
+                    }
+                }
+                return (
+                    "<html><body><script>"
+                    f"var phApp = {json.dumps(config)};"
+                    f"phApp.ddo = {json.dumps(ddo)};"
+                    "</script></body></html>"
+                )
+
+            results = [{
+                "company_name": "Page Aware Example",
+                "company_website_url": "https://example.com",
+                "career_root_url": board_url,
+                "career_page_url": board_url,
+                "job_list_page_url": board_url,
+                "linkedin_job_title": "Missing Role",
+                "pipeline_status": "partial",
+                "stages": [
+                    {"stage": "linkedin_discovery", "status": "not_applicable"},
+                    {"stage": "website_resolution", "status": "success"},
+                    {"stage": "hiring_identity_resolution", "status": "success"},
+                    {"stage": "career_discovery", "status": "success"},
+                    {
+                        "stage": "job_board_discovery",
+                        "status": "success",
+                        "provider": "phenom",
+                    },
+                    {
+                        "stage": "opening_match",
+                        "status": "partial",
+                        "reason_code": "OPENING_NOT_FOUND",
+                    },
+                    {"stage": "result_validation", "status": "success"},
+                ],
+                "trace": {"stages": {"job_board_discovery": {
+                    "provider_detection": {
+                        "method": "page_evidence",
+                        "provider": "phenom",
+                    }
+                }}},
+            }]
+            (root / "results.json").write_text(json.dumps(results), encoding="utf-8")
+            snapshots = SnapshotStore(root / "snapshots")
+            snapshots.write_page(
+                Page(url=board_url, html=phenom_html(total_hits=0), source="live"),
+                request_url=board_url,
+            )
+            snapshots.write_page(
+                Page(url=search_url, html=phenom_html(total_hits=0), source="live"),
+                request_url=search_url,
+            )
+
+            manifest = replay_failure_bundle(self._args(root))
+            replay_input = json.loads(
+                (root / "bundle" / "replay-input.json").read_text(encoding="utf-8")
+            )
+            replay_results = json.loads(
+                (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
+            )
+            replay_trace = json.loads(
+                (root / "bundle" / "replay-trace.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(manifest["outcome_gate"]["status"], "passed")
+        self.assertEqual(
+            manifest["outcome_gate"]["records"][0]["classification"],
+            "reproduced",
+        )
+        self.assertEqual(replay_results[0]["pipeline_status"], "partial")
+        self.assertEqual(
+            next(
+                stage["reason_code"]
+                for stage in replay_results[0]["stages"]
+                if stage["stage"] == "opening_match"
+            ),
+            "OPENING_NOT_FOUND",
+        )
+        self.assertNotIn("OFFLINE_FIXTURE_MISSING", json.dumps(replay_results))
+        self.assertNotIn("provider_detection", json.dumps(replay_input))
+        self.assertEqual(
+            replay_trace[0]["trace"]["stages"]["opening_match"]["provider_api"]
+            ["provider_detection"],
+            {
+                "method": "typed_stage_handoff",
+                "source_method": "page_evidence",
+                "provider": "phenom",
+                "url": board_url,
+                "evidence_url": board_url,
+            },
+        )
+        checkpoint_events = replay_trace[0]["trace"]["checkpoint_events"]
+        self.assertIn(
+            {"stage": "job_board_discovery", "action": "save"},
+            [
+                {"stage": event["stage"], "action": event["action"]}
+                for event in checkpoint_events
+            ],
+        )
+        self.assertNotIn(
+            {"stage": "job_board_discovery", "action": "restore"},
+            [
+                {"stage": event["stage"], "action": event["action"]}
+                for event in checkpoint_events
+            ],
+        )
+
+    def test_url_native_provider_handoff_resumes_at_opening_match(self):
+        source_record = {
+            "trace": {"stages": {"job_board_discovery": {
+                "provider_detection": {
+                    "method": "linked_url_evidence",
+                    "provider": "greenhouse",
+                }
+            }}}
+        }
+
+        self.assertEqual(
+            _replay_resume_stage(source_record, "opening_match"),
+            "opening_match",
+        )
 
     def test_improved_replay_is_mismatch_and_cli_exits_nonzero(self):
         with tempfile.TemporaryDirectory() as directory:

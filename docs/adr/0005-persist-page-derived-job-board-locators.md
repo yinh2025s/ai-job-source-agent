@@ -51,6 +51,10 @@ dependency.
 6. CEIPAL remains runtime-only because its current page-derived identity includes
    an API-key-shaped widget value. Public visibility alone is not enough to make a
    credential-like value checkpoint-safe.
+7. A failure bundle is not a stage-checkpoint export. If its first failed stage is
+   S6 and the successful S5 board required page evidence, replay starts at S5 and
+   revalidates the locator from sanitized snapshots. It never reconstructs a
+   typed locator from diagnostic trace. URL-native handoffs may continue at S6.
 
 ### Compatibility And Recovery
 
@@ -102,3 +106,6 @@ Costs and limits:
   frozen-30 live rates of 30 websites, 28 career pages, 26 verified job lists,
   and 20 exact openings. The non-success replay gate reported 6 reproduced,
   2 fixture gaps, and 2 mismatches and exited nonzero as required.
+- Iteration `.61` adds page-evidence S5 replay and URL-native S6 boundary tests.
+  The `.59` capture improves from 5 reproduced / 2 fixture gaps to 6 reproduced /
+  1 fixture gap without weakening the Akkodis hard-timeout evidence gate.
