@@ -703,7 +703,11 @@ class JobSourceAgent:
         source_host = urlparse(source_url).hostname or ""
         if not target_host or not source_host:
             return False
-        return is_ats_url(url) or self._same_site_host(target_host, source_host)
+        return (
+            self._is_provider_job_board_url(url)
+            or is_ats_url(url)
+            or self._same_site_host(target_host, source_host)
+        )
 
     def _same_site_host(self, first: str, second: str) -> bool:
         if first == second or first.endswith("." + second) or second.endswith("." + first):

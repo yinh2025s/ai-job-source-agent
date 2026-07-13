@@ -33,6 +33,12 @@ SENSITIVE_QUERY_KEYS = {
     "token",
 }
 
+SENSITIVE_BODY_FIELDS = SENSITIVE_QUERY_KEYS | {
+    "authToken",
+    "protectedSessionJWT",
+    "sessionJWT",
+}
+
 
 @dataclass
 class SnapshotRecord:
@@ -186,7 +192,7 @@ def sanitize_snapshot_body(body: str) -> str:
         r"\1[REDACTED]",
         body,
     )
-    for key in sorted(SENSITIVE_QUERY_KEYS):
+    for key in sorted(SENSITIVE_BODY_FIELDS):
         redacted = re.sub(
             rf"(?i)([\"']{re.escape(key)}[\"']\s*:\s*)([\"'])[^\"']*(\2)",
             rf"\1\2[REDACTED]\3",

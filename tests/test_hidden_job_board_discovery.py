@@ -134,6 +134,28 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
 
         self.assertEqual(job_list, "https://jobs.ashbyhq.com/Acme")
 
+    def test_follows_registry_backed_paycom_board_outside_static_ats_domains(self):
+        career = "https://example.com/careers"
+        client_key = "AA674B442E9B6A1284BD7F78CB0C3E73"
+        legacy = (
+            "https://www.paycomonline.net/v4/ats/web.php/jobs"
+            f"?clientkey={client_key}&session_nonce=ephemeral"
+        )
+        canonical = (
+            "https://www.paycomonline.net/v4/ats/web.php/portal/"
+            f"{client_key}/career-page"
+        )
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<a href="{legacy}">Explore opportunities</a>'),
+            legacy: Page(url=legacy, final_url=canonical, html="<html>Paycom portal</html>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, canonical)
+        self.assertEqual(trace["provider"], "paycom")
+        self.assertEqual(fetcher.requested, [career, legacy])
+
     def test_listing_traversal_prefers_route_that_preserves_locale_prefix(self):
         career = "https://careers.example.com/world/en"
         alias = "https://careers.example.com/world/search-results"

@@ -82,5 +82,11 @@
     "company_website_url": "https://careers-phenom.example",
     "career_root_url": "https://careers-phenom.example/global/en/search-results",
     "job_title": "Data Analyst"
+  },
+  {
+    "company_name": "Acme Paycom",
+    "company_website_url": "https://www.paycomonline.net/v4/ats/web.php/portal/AA674B442E9B6A1284BD7F78CB0C3E73/career-page",
+    "career_root_url": "https://www.paycomonline.net/v4/ats/web.php/portal/AA674B442E9B6A1284BD7F78CB0C3E73/career-page",
+    "job_title": "Data Analyst"
   }
 ]

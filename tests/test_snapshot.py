@@ -22,11 +22,17 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("query=data", sanitized)
 
     def test_sanitize_snapshot_body_redacts_tokens(self):
-        body = 'window.cfg = {"api_key": "secret-value", "name": "Acme"}; Authorization: Bearer abcdefghijklmnop'
+        body = (
+            'window.cfg = {"api_key": "secret-value", "sessionJWT": "public-session-token", '
+            '"authToken": "private-auth-token", "name": "Acme"}; '
+            'Authorization: Bearer abcdefghijklmnop'
+        )
 
         sanitized = sanitize_snapshot_body(body)
 
         self.assertNotIn("secret-value", sanitized)
+        self.assertNotIn("public-session-token", sanitized)
+        self.assertNotIn("private-auth-token", sanitized)
         self.assertNotIn("abcdefghijklmnop", sanitized)
         self.assertIn("[REDACTED]", sanitized)
 

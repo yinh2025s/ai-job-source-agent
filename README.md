@@ -213,11 +213,11 @@ Expected summary:
 
 ```text
 benchmark summary:
-  total: 14
-  success: 14
-  with_job_list: 14
-  with_opening: 14
-  expectations: 14/14 passed
+  total: 15
+  success: 15
+  with_job_list: 15
+  with_opening: 15
+  expectations: 15/15 passed
 ```
 
 The companion [benchmark expectations](samples/benchmark_expectations.json) declares the provider, minimum successful stage, and whether an exact opening is required for each fixture. The evaluator exits nonzero if a declared expectation regresses.
@@ -295,11 +295,12 @@ Latest live checks on July 12, 2026:
 - Fixed live benchmark: 6 named companies, 6/6 official websites, 6/6 official job-list pages, 1/6 exact opening, and 6/6 expectation checks passed. Providers covered in that small set are Greenhouse, Lever, Ashby, PostHog's first-party careers page, and Brex's first-party careers page.
 - July 12 rerun after the stage-runner migration: 6/6 official websites, 6/6 job-list pages, 5/6 exact openings, and 6/6 expectation checks. Provider attribution now follows stage evidence, so Greenhouse roles with an external CareerPuck apply URL remain classified as Greenhouse.
 - Expanded July 12 fixed live benchmark: 9/9 official websites, 9/9 job-list pages, 7/9 exact openings, and 9/9 expectation checks in 17.6 seconds. The added samples cover SanDisk/SmartRecruiters, ONEOK/Workday, and Carv/Rippling.
-- Current fixed live benchmark: 51/51 official websites, 51/51 career/job-list pages, 50/51 exact openings, and 51/51 expectation checks. The latest clean four-worker run completed in 119.7 seconds under the current network conditions. Greenhouse, Ashby, Lever, Workday, SmartRecruiters, Workable, Rippling, BambooHR, iCIMS, and SuccessFactors each have five fixed live companies.
+- Current fixed live benchmark: 51/51 official websites, 51/51 career/job-list pages, 50/51 exact openings, and 51/51 expectation checks. The `.24` four-worker run completed all 51 companies through a 30-company clean pass plus a checkpointed 21-company continuation. Greenhouse, Ashby, Lever, Workday, SmartRecruiters, Workable, Rippling, BambooHR, iCIMS, and SuccessFactors each have five fixed live companies.
 - July 13 exploratory LinkedIn batch: 19 unique companies, 14/19 official job-list pages, and 6/19 exact openings. Preserving completed S1-S3 evidence showed that the next dominant cluster is hidden ATS/list-root discovery and structured job-card association, rather than website resolution alone.
 - July 13 focused replay after that cluster: Plaid parent-card extraction and Snowflake Phenom structured state both reached exact openings. Follow-up provenance-aware root validation and verified ATS fallback separately reached exact openings for Glean, Reddit, Zillow, and Twitch. Uber remains on its first-party public list and Starbucks routes toward Eightfold, but their traced Seattle/Nashville titles are not currently confirmed; Zillow search also remains network-sensitive in the combined batch.
-- July 13 S5 traversal replay: seven former generic opening misses were first reclassified as 0/7 verified job lists under the stricter evidence gate, then improved to 3/7 job lists and 1/7 exact opening. Epistemix now canonicalizes its Ashby embed and matches the exact AI Engineer role; Quest Global and Viking reach locale-preserving Phenom search-results pages. Phenom structured inventory and ReturnPro's Paycom board remain explicit provider backlog.
+- July 13 S5 traversal replay: seven former generic opening misses were first reclassified as 0/7 verified job lists under the stricter evidence gate, then improved to 3/7 job lists and 1/7 exact opening. Epistemix now canonicalizes its Ashby embed and matches the exact AI Engineer role; Quest Global and Viking reach locale-preserving Phenom search-results pages.
 - July 13 Phenom provider replay: both Quest Global and Viking are identified from customer-owned page evidence. Quest Global's SSR keyword inventory resolves the exact Agentic AI Engineer opening; Viking returns a verified title-filtered no-match without claiming that its entire public inventory is empty. The deterministic provider benchmark now covers 14/14 exact openings.
+- July 13 Paycom provider replay: ReturnPro traverses from its first-party careers page to the canonical Paycom portal and resolves the live AI/ML Engineer detail URL. The adapter uses Paycom's public portal-session API with bounded title-filtered pagination, tenant/redirect validation, and token-free trace output. The deterministic provider benchmark now covers 15/15 exact openings; 473 tests, the 13-adapter architecture gate, 6/6 resolver benchmark, and checkpointed 51/51 fixed live expectations also pass.
 - Fixed JS-heavy browser cohort: five companies across five providers and five technologies (Plum, Meta, Apple Jobs, Spotify, and IIC Lakshya). The strict saved/live evidence gate requires a successful render event, structured selector evidence, optional expected URL, sufficient visible text, no loading state, and no final classified error. Saved replay and the 15-second live gate both pass 5/5 within the shared render budget; Meta exercises static HTTP 400 to browser fallback, and Meta, Apple, and IIC require exact job URLs.
 
 The live evaluator intentionally reports exact openings separately from job-list success. For many websites, the reliable product outcome is the official job board plus trace evidence; exact job-detail matching is only marked `success` when the LinkedIn title can be matched confidently.
