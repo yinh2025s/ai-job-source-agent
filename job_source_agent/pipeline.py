@@ -1254,7 +1254,13 @@ class JobSourceAgent:
     ) -> str | None:
         fetch_attempts = 0
         fetch_limit = self.max_career_candidate_fetches if max_fetches is None else max_fetches
-        for candidate in candidates[: self.max_candidates]:
+        ranked_candidates = sorted(
+            candidates,
+            key=lambda candidate: -(
+                candidate.score + self._career_evidence_priority_boost(candidate)
+            ),
+        )
+        for candidate in ranked_candidates[: self.max_candidates]:
             if candidate.score < 50:
                 continue
             if fetch_attempts >= fetch_limit:
@@ -1302,6 +1308,39 @@ class JobSourceAgent:
             if self._looks_like_error_page(actual_url, page.html):
                 trace["candidate_fetch_errors"].append({"url": candidate.url, "error": f"error page: {actual_url}"})
                 continue
+            if not self._same_site_host(
+                urlparse(actual_url).hostname or "",
+                urlparse(candidate.url).hostname or "",
+            ):
+                url_adapter = self.provider_registry.adapter_for(actual_url)
+                url_board = url_adapter.identify_board(actual_url) if url_adapter else None
+                page_board = self.provider_registry.board_for_page(page)
+                if url_board is not None and url_adapter is not None and url_adapter.supports_listing:
+                    trace["selected"] = dataclass_to_dict(candidate)
+                    trace["selected_page_source"] = "provider_adapter"
+                    trace["redirect_provider_detection"] = {
+                        "method": "url_evidence",
+                        "provider": url_adapter.name,
+                        "url": url_board.url,
+                    }
+                    return url_board.url
+                if page_board is not None and page_board[0].supports_listing:
+                    adapter, board = page_board
+                    trace["selected"] = dataclass_to_dict(candidate)
+                    trace["selected_page_source"] = "provider_adapter"
+                    trace["redirect_provider_detection"] = {
+                        "method": "page_evidence",
+                        "provider": adapter.name,
+                        "url": board.url,
+                    }
+                    return board.url
+                trace["candidate_fetch_errors"].append(
+                    {
+                        "url": candidate.url,
+                        "error": f"unverified cross-site redirect: {actual_url}",
+                    }
+                )
+                continue
             page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
             if content_probe:
                 trace.setdefault("content_payload_probes", []).append(content_probe)
@@ -1334,6 +1373,24 @@ class JobSourceAgent:
                 trace["selected_page_source"] = page.source
                 return actual_url
         return None
+
+    @staticmethod
+    def _career_evidence_priority_boost(candidate: LinkCandidate) -> int:
+        if any(
+            reason.startswith("identity-supplied") or reason == "derived provider configuration"
+            for reason in candidate.reasons
+        ):
+            return 1000
+        if "homepage navigation link" in candidate.reasons and any(
+            reason.startswith("career keyword")
+            or reason in {
+                "explicit job-list route",
+                "homepage team link requiring employment evidence",
+            }
+            for reason in candidate.reasons
+        ):
+            return 500
+        return 0
 
     def _verify_derived_provider_with_adapter(
         self,

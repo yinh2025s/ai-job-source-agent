@@ -41,6 +41,10 @@ class EvaluationRun:
     label: str | None
     metadata: dict[str, str]
 
+    @property
+    def cohort_identity(self) -> dict[str, str] | None:
+        return derive_cohort_identity(self.summary, metadata=self.metadata)
+
 
 @dataclass(frozen=True)
 class HistoryScan:
@@ -72,8 +76,17 @@ class EvaluationHistory:
 
         with self._lock():
             manifest = self._load_manifest(allow_missing=True)
-            baseline = self._load_run(manifest["latest_run_id"]) if compare_with_latest and manifest["latest_run_id"] else None
-            regression = compare_summaries(archived_summary, baseline.summary) if baseline else None
+            validated_metadata = _validate_metadata(metadata)
+            cohort_identity = derive_cohort_identity(archived_summary, metadata=validated_metadata)
+            baseline = None
+            if compare_with_latest:
+                baseline = self._latest_compatible_run(manifest["runs"], cohort_identity)
+            if baseline is not None:
+                regression = compare_summaries(archived_summary, baseline.summary)
+            elif compare_with_latest and manifest["runs"]:
+                regression = {"comparison_status": "no_compatible_baseline"}
+            else:
+                regression = None
             run = EvaluationRun(
                 run_id=run_id,
                 created_at=created_at,
@@ -82,7 +95,7 @@ class EvaluationHistory:
                 baseline_run_id=baseline.run_id if baseline else None,
                 regression=regression,
                 label=_validate_label(label),
-                metadata=_validate_metadata(metadata),
+                metadata=validated_metadata,
             )
             self._publish_object(digest, summary_bytes)
             _write_json_atomic(self._managed_path("runs", f"{run_id}.json"), _run_payload(run, include_summary=False))
@@ -90,6 +103,17 @@ class EvaluationHistory:
             manifest["latest_run_id"] = run_id
             _write_json_atomic(self._managed_path("manifest.json"), manifest)
             return run
+
+    def _latest_compatible_run(
+        self,
+        run_ids: list[str],
+        cohort_identity: dict[str, str] | None,
+    ) -> EvaluationRun | None:
+        for run_id in reversed(run_ids):
+            candidate = self._load_run(run_id)
+            if cohort_identities_compatible(candidate.cohort_identity, cohort_identity):
+                return candidate
+        return None
 
     def latest(self) -> EvaluationRun | None:
         with self._lock():
@@ -251,7 +275,101 @@ def _run_payload(run: EvaluationRun, *, include_summary: bool) -> dict[str, Any]
 
 
 def run_record(run: EvaluationRun) -> dict[str, Any]:
-    return _run_payload(run, include_summary=True)
+    payload = _run_payload(run, include_summary=True)
+    payload["cohort_identity"] = run.cohort_identity
+    return payload
+
+
+def derive_cohort_identity(
+    summary: dict[str, Any],
+    *,
+    metadata: dict[str, str] | None = None,
+) -> dict[str, str] | None:
+    """Return stable comparison identity without relying on machine-local paths."""
+    manifest = _summary_manifest(summary)
+    identity: dict[str, str] = {}
+    companies_identity = _identity_value(manifest, "companies_sha256")
+    identity_key = "companies_sha256"
+    if companies_identity is None:
+        companies_identity = _identity_value(manifest, "input_identity", "input_sha256")
+        identity_key = "input_identity"
+    if companies_identity is None:
+        companies_identity = _nested_identity_value(manifest, "input")
+        identity_key = "input_identity"
+    if companies_identity is None:
+        companies_identity = _first_metadata_value(metadata, "cohort_companies_sha256")
+    if companies_identity is None:
+        companies_identity = _first_metadata_value(metadata, "cohort_input_sha256")
+        identity_key = "input_identity"
+    if companies_identity is not None:
+        identity[identity_key] = companies_identity
+
+    expectations_identity = _identity_value(manifest, "expectations_identity", "expectations_sha256")
+    if expectations_identity is None:
+        expectations_identity = _nested_identity_value(manifest, "expectations")
+    if expectations_identity is None:
+        expectations_identity = _first_metadata_value(metadata, "cohort_expectations_sha256")
+    if expectations_identity is not None:
+        identity["expectations_identity"] = expectations_identity
+    return identity or None
+
+
+def _summary_manifest(summary: dict[str, Any]) -> dict[str, Any]:
+    for key in ("evaluation_manifest", "summary_manifest", "cohort_manifest", "manifest"):
+        value = summary.get(key)
+        if isinstance(value, dict):
+            return value
+    cohort_identity = summary.get("cohort_identity")
+    return cohort_identity if isinstance(cohort_identity, dict) else {}
+
+
+def _identity_value(container: dict[str, Any], *keys: str) -> str | None:
+    for key in keys:
+        value = container.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def _nested_identity_value(container: dict[str, Any], key: str) -> str | None:
+    value = container.get(key)
+    if isinstance(value, str) and value.strip():
+        return value.strip()
+    if not isinstance(value, dict):
+        return None
+    direct = _identity_value(value, "identity", "sha256", "content_sha256", "fingerprint")
+    if direct is not None:
+        return direct
+    try:
+        encoded = _canonical_json(value)
+    except ValueError:
+        return None
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _first_metadata_value(metadata: dict[str, str] | None, *keys: str) -> str | None:
+    if metadata is None:
+        return None
+    for key in keys:
+        value = metadata.get(key)
+        if value:
+            return value
+    return None
+
+
+def cohort_identities_compatible(
+    left: dict[str, str] | None,
+    right: dict[str, str] | None,
+) -> bool:
+    if left is None or right is None:
+        return left is right
+    left_primary = left.get("companies_sha256") or left.get("input_identity")
+    right_primary = right.get("companies_sha256") or right.get("input_identity")
+    return (
+        left_primary is not None
+        and left_primary == right_primary
+        and left.get("expectations_identity") == right.get("expectations_identity")
+    )
 
 
 def _canonical_json(value: Any) -> bytes:

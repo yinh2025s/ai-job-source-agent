@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-13.46`. The frozen `.45` 30-company run reached 30 websites, 27 career pages, 26 verified job lists, and 21 exact openings, improving the same `.43` manifest by 1/4/3/3. Regional sitemap scheduling now counts files when fetched, prioritizes nested job and target-region indexes, and distinguishes language-only locale paths from regions. Explicit first-party `job-results` routes survive same-site redirects and are reused by S5 after page-aware providers get first refusal; careers taxonomy pages are no longer treated as job details, while structured parent-card titles remain valid evidence. Missing Playwright capability is detected once and degrades to static fetch without consuming render budget, and opening diagnostics aggregate provider/generic errors with provenance. Akkodis focused live now preserves its U.S. `en-us/careers/job-results` URL and reports S6 network incompleteness instead of inventing a no-match. Offline validation passes 661 tests, 21/21 provider cases, 6/6 resolver cases, and architecture validation with 19 adapters / 0 issues. The unpacked extension is installed, while authenticated scan/result acceptance is intentionally deferred.
+Current adapter iteration: `2026-07-14.47`. The frozen `.45` 30-company run reached 30 websites, 27 career pages, 26 verified job lists, and 21 exact openings. Generic S6 opening discovery now reuses its fetched landing page and submits safe same-host GET search forms before speculative query variants; unsupported provider variants remain typed. S4 prioritizes explicit homepage navigation over speculative paths and rejects unverified cross-site redirects, restoring Quest Global exact and GPTZero's verified Ashby no-match without accepting a TimesJobs content page. Failure replay preserves only allowlisted source-posting evidence, while live summaries and evaluation history bind comparisons to the actual company and expectations cohort. The final frozen S4+ rerun reached 30 websites, 27 career pages, 26 verified job lists, and 20 exact openings; Deloitte and Direct Supply then recovered exact 2/2 in a final serial check, while Kirkland's HTTP 403 remained an explicit partial without an invented URL. Offline validation passes 680 tests, 21/21 provider cases, 6/6 resolver cases, and architecture validation with 19 adapters / 0 issues. The unpacked extension is installed, while authenticated scan/result acceptance is intentionally deferred.
 
 ## What It Returns
 
@@ -282,13 +282,15 @@ The companion [benchmark expectations](samples/benchmark_expectations.json) decl
 
 Pass `--baseline-summary previous-summary.json` to either evaluator to add rate, pipeline-status, and per-stage success deltas to its summary. Each stage also reports duration count, P50, and P95 in milliseconds.
 
-Archive summaries into an atomic, content-addressed history and compare each run with the latest baseline:
+Archive summaries into an atomic, content-addressed history and compare each run with the latest compatible cohort baseline:
 
 ```bash
 python3 scripts/archive_evaluation.py \
   --summary /tmp/live-batch-summary.json \
   --history-dir /tmp/job-source-evaluation-history \
-  --label "live-46" \
+  --input samples/live_benchmark_companies.json \
+  --expectations samples/live_benchmark_expectations.json \
+  --label "live-47" \
   --benchmark-command "python3 scripts/live_batch_eval.py --input samples/live_benchmark_companies.json --workers 4"
 ```
 

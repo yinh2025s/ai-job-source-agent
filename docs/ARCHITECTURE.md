@@ -173,6 +173,8 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。
 - Stage store 通过 fingerprint 级进程锁和原子替换保证并发安全；checkpoint trace 明确记录 save、restore、miss 和 invalidate。
 - Sanitized live snapshots 使用跨进程发布锁和内容寻址的不可变 page/artifact blobs；canonical fixture view 保持 Fetcher 兼容。`scripts/replay_snapshots.py` 会验证 blob 与最终 canonical view，并把重复 URL 的最后一个完整版本转换成 deterministic fixture tree。
 - `scripts/replay_failure_bundle.py` 将结果筛选、snapshot replay 和离线 `PipelineApplication` 串成自包含失败复现 bundle；live batch 可在运行结束后自动调用该边界生成常规 regression artifact，reporting 可汇总 checkpoint action/stage activity 和 bundle 状态。
+- S4 career candidate verification 对明确 homepage navigation evidence 增加执行优先级，但仍保留原 score 作为同层排序；generated path 不再先耗尽强证据预算。Candidate 发生跨站 redirect 时，只有 registry URL adapter 或无额外网络探测的 page-aware provider evidence 才能确认，普通内容/媒体站被拒绝。S6 generic matcher 在一次调用内复用已抓取 landing page，并只把同主机 HTTPS GET form 的白名单关键词字段加入 bounded search plan；页面声明 action 先于推测 query，跨站/POST/敏感 query 不进入 fetch。Native adapter 的 unsupported variant 保留 adapter trace 和 incomplete inventory，不再退化成无类型 generic miss。
+- Failure replay 以 allowlist 合并稳定 source-posting evidence，排除 cookie、token、原始认证 HTML 和任意 payload。Live summary 写入实际 company 与有效 expectations digest；evaluation history 和直接 `--baseline-summary` 只比较兼容 cohort，旧无 identity history 仅与旧无 identity history 比较。
 
 当前结构已经达到 provider/resolver/fetch/evaluation 并行开发门槛；剩余债务按 ownership workstream 继续收缩。
 

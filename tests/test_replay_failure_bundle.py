@@ -75,6 +75,95 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertNotIn(str(root), json.dumps(manifest))
         self.assertEqual(manifest["paths"]["fixtures"], "offline/sites")
 
+    def test_replay_preserves_linkedin_native_only_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            career_url = "https://native.example/careers"
+            job_url = "https://www.linkedin.com/jobs/view/808"
+            results = [{
+                "company_name": "Native Apply",
+                "company_website_url": "https://native.example",
+                "career_root_url": career_url,
+                "linkedin_job_url": job_url,
+                "linkedin_job_title": "AI Engineer",
+                "pipeline_status": "partial",
+                "stages": [{
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                }],
+                "trace": {"source_trace": {"linkedin_posting": {
+                    "availability": "active",
+                    "apply_mode": "linkedin_native",
+                    "evidence_source": "authenticated_detail_dom",
+                    "job_url": job_url,
+                    "observed_at": "2026-07-14T00:00:00Z",
+                }}},
+            }]
+            (root / "results.json").write_text(json.dumps(results), encoding="utf-8")
+            SnapshotStore(root / "snapshots").write_page(
+                Page(
+                    url=career_url,
+                    final_url=career_url,
+                    html="<html><body><h1>Careers</h1><p>No public board.</p></body></html>",
+                    source="live",
+                ),
+                request_url=career_url,
+            )
+
+            replay_failure_bundle(self._args(root))
+            replay_input = json.loads(
+                (root / "bundle" / "replay-input.json").read_text(encoding="utf-8")
+            )
+            replay_results = json.loads(
+                (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
+            )
+
+        job_board_stage = next(
+            stage for stage in replay_results[0]["stages"]
+            if stage["stage"] == "job_board_discovery"
+        )
+        self.assertEqual(job_board_stage["reason_code"], "LINKEDIN_NATIVE_ONLY")
+        self.assertEqual(
+            replay_input[0]["source_trace"]["linkedin_posting"]["apply_mode"],
+            "linkedin_native",
+        )
+        self.assertNotIn("observed_at", replay_input[0]["source_trace"]["linkedin_posting"])
+
+    def test_replay_preserves_explicitly_closed_posting_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+            results_path = root / "results.json"
+            results = json.loads(results_path.read_text(encoding="utf-8"))
+            results[0]["linkedin_job_title"] = "Missing Role"
+            results[0]["trace"] = {
+                "source_trace": {
+                    "linkedin_posting": {
+                        "availability": "closed",
+                        "apply_mode": "unknown",
+                        "evidence_source": "authenticated_detail_dom",
+                        "job_url": "https://www.linkedin.com/jobs/view/909",
+                    }
+                }
+            }
+            results_path.write_text(json.dumps(results), encoding="utf-8")
+
+            replay_failure_bundle(self._args(root))
+            replay_results = json.loads(
+                (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
+            )
+
+        opening_stage = next(
+            stage for stage in replay_results[0]["stages"]
+            if stage["stage"] == "opening_match"
+        )
+        self.assertEqual(opening_stage["reason_code"], "OPENING_CLOSED")
+        self.assertEqual(
+            opening_stage["evidence"][0]["source_posting_status"],
+            "closed",
+        )
+
     def test_rejects_empty_filter_selection(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -561,6 +561,36 @@ class OfflinePipelineTests(unittest.TestCase):
             Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
         )
 
+    def test_career_candidate_rejects_unverified_cross_site_redirect(self):
+        class RedirectFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://content.example.net/job-search-tips",
+                    html="<html><body>Careers jobs and open roles</body></html>",
+                    source="fixture",
+                )
+
+        agent = JobSourceAgent(RedirectFetcher(offline=True))
+        trace = {"candidate_fetch_errors": []}
+
+        selected = agent._select_verified_career_candidate(
+            [
+                LinkCandidate(
+                    "https://company.example/news/timesjobs-career-advice",
+                    "timesjobs career advice",
+                    "https://company.example/sitemap.xml",
+                    200,
+                    ["sitemap source"],
+                )
+            ],
+            trace,
+            max_fetches=1,
+        )
+
+        self.assertIsNone(selected)
+        self.assertIn("unverified cross-site redirect", trace["candidate_fetch_errors"][0]["error"])
+
         self.assertTrue(
             agent._looks_like_error_page(
                 "https://example.com/errors/404/",
@@ -593,6 +623,47 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertIsNone(selected)
         self.assertEqual(len(trace["candidate_fetch_errors"]), 1)
         self.assertEqual(trace["candidate_fetch_budget_exhausted"]["limit"], 1)
+
+    def test_homepage_navigation_evidence_precedes_higher_scored_path_probe(self):
+        explicit_url = "https://company.example/team"
+
+        class EvidenceFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url != explicit_url:
+                    raise AssertionError(f"speculative path fetched before homepage evidence: {url}")
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html="<html><body>Join our team. Browse careers and open roles.</body></html>",
+                    source="fixture",
+                )
+
+        agent = JobSourceAgent(EvidenceFetcher(offline=True), max_career_candidate_fetches=1)
+        trace = {"candidate_fetch_errors": []}
+
+        selected = agent._select_verified_career_candidate(
+            [
+                LinkCandidate(
+                    "https://company.example/en-us/careers",
+                    "",
+                    "https://company.example",
+                    420,
+                    ["generated path probe"],
+                ),
+                LinkCandidate(
+                    explicit_url,
+                    "Team",
+                    "https://company.example",
+                    310,
+                    ["homepage navigation link", "homepage team link requiring employment evidence"],
+                ),
+            ],
+            trace,
+            max_fetches=1,
+        )
+
+        self.assertEqual(selected, explicit_url)
+        self.assertEqual(trace["selected"]["url"], explicit_url)
 
     def test_zero_career_candidate_fetch_budget_skips_candidates(self):
         agent = JobSourceAgent(Fetcher(offline=True), max_career_candidate_fetches=0)

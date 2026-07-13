@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import platform
 import subprocess
@@ -22,6 +23,8 @@ def main() -> None:
     parser.add_argument("--no-baseline", action="store_true", help="Archive without comparing to the latest run.")
     parser.add_argument("--commit-sha", help="Commit SHA for the evaluated code; defaults to the current Git HEAD.")
     parser.add_argument("--benchmark-command", help="Original benchmark command that produced the summary.")
+    parser.add_argument("--input", help="Original cohort input JSON, used as an identity fallback.")
+    parser.add_argument("--expectations", help="Original expectations JSON, used as an identity fallback.")
     args = parser.parse_args()
 
     summary = json.loads(Path(args.summary).read_text(encoding="utf-8"))
@@ -33,6 +36,10 @@ def main() -> None:
     }
     if args.benchmark_command:
         metadata["benchmark_command"] = args.benchmark_command
+    if args.input:
+        metadata["cohort_input_sha256"] = _json_identity(Path(args.input))
+    if args.expectations:
+        metadata["cohort_expectations_sha256"] = _json_identity(Path(args.expectations))
     run = EvaluationHistory(args.history_dir).archive(
         summary,
         label=args.label,
@@ -54,6 +61,18 @@ def _current_commit() -> str:
     except (OSError, subprocess.SubprocessError):
         return "unknown"
     return completed.stdout.strip() or "unknown"
+
+
+def _json_identity(path: Path) -> str:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 if __name__ == "__main__":

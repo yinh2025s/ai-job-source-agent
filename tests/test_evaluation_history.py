@@ -19,13 +19,16 @@ from job_source_agent.evaluation_history import (
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _summary(opening: float, successes: int) -> dict:
-    return {
+def _summary(opening: float, successes: int, *, companies_sha256: str | None = None) -> dict:
+    summary = {
         "total": 10,
         "rates": {"opening": opening, "job_list": 1.0},
         "pipeline_status_counts": {"success": successes, "failed": 10 - successes},
         "stage_funnel": {"opening_match": {"success": successes}},
     }
+    if companies_sha256 is not None:
+        summary["evaluation_manifest"] = {"companies_sha256": companies_sha256}
+    return summary
 
 
 class EvaluationHistoryTests(unittest.TestCase):
@@ -87,6 +90,75 @@ class EvaluationHistoryTests(unittest.TestCase):
             self.assertIsNone(run.baseline_run_id)
             self.assertIsNone(run.regression)
             self.assertNotIn("regression", run.summary)
+
+    def test_selects_latest_baseline_from_same_cohort(self):
+        with tempfile.TemporaryDirectory() as directory:
+            history = EvaluationHistory(directory)
+            same_cohort = history.archive(_summary(0.5, 5, companies_sha256="a" * 64))
+            history.archive(_summary(0.2, 2, companies_sha256="b" * 64))
+            current = history.archive(_summary(0.8, 8, companies_sha256="a" * 64))
+
+            self.assertEqual(current.baseline_run_id, same_cohort.run_id)
+            self.assertEqual(current.regression["rates_delta"]["opening"], 0.3)
+            self.assertEqual(current.cohort_identity, {"companies_sha256": "a" * 64})
+
+    def test_different_cohort_has_explicit_no_compatible_baseline(self):
+        with tempfile.TemporaryDirectory() as directory:
+            history = EvaluationHistory(directory)
+            history.archive(_summary(0.5, 5, companies_sha256="a" * 64))
+            current = history.archive(_summary(0.9, 9, companies_sha256="b" * 64))
+
+            self.assertIsNone(current.baseline_run_id)
+            self.assertEqual(current.regression, {"comparison_status": "no_compatible_baseline"})
+            self.assertNotIn("rates_delta", current.regression)
+
+    def test_legacy_rows_match_only_other_identity_less_rows(self):
+        with tempfile.TemporaryDirectory() as directory:
+            history = EvaluationHistory(directory)
+            legacy = history.archive(_summary(0.5, 5))
+            identified = history.archive(_summary(0.8, 8, companies_sha256="a" * 64))
+            second_legacy = history.archive(_summary(0.6, 6))
+
+            self.assertIsNone(identified.baseline_run_id)
+            self.assertEqual(identified.regression, {"comparison_status": "no_compatible_baseline"})
+            self.assertEqual(second_legacy.baseline_run_id, legacy.run_id)
+            self.assertEqual(second_legacy.regression["rates_delta"]["opening"], 0.1)
+
+    def test_expectations_identity_is_part_of_cohort_when_available(self):
+        with tempfile.TemporaryDirectory() as directory:
+            first_summary = _summary(0.5, 5, companies_sha256="a" * 64)
+            first_summary["evaluation_manifest"]["expectations_sha256"] = "b" * 64
+            second_summary = _summary(0.9, 9, companies_sha256="a" * 64)
+            second_summary["evaluation_manifest"]["expectations_sha256"] = "c" * 64
+            history = EvaluationHistory(directory)
+            history.archive(first_summary)
+            current = history.archive(second_summary)
+
+            self.assertIsNone(current.baseline_run_id)
+            self.assertEqual(current.regression["comparison_status"], "no_compatible_baseline")
+
+    def test_manifest_input_identity_precedes_metadata_fallback(self):
+        with tempfile.TemporaryDirectory() as directory:
+            summary = _summary(0.5, 5)
+            summary["summary_manifest"] = {"input_identity": "manifest-input"}
+            run = EvaluationHistory(directory).archive(
+                summary,
+                metadata={"cohort_input_sha256": "fallback-input"},
+            )
+
+            self.assertEqual(run.cohort_identity, {"input_identity": "manifest-input"})
+
+    def test_equivalent_companies_and_input_identity_sources_match(self):
+        with tempfile.TemporaryDirectory() as directory:
+            digest = "a" * 64
+            history = EvaluationHistory(directory)
+            first = history.archive(_summary(0.5, 5, companies_sha256=digest))
+            current_summary = _summary(0.7, 7)
+            current_summary["summary_manifest"] = {"input_sha256": digest}
+            current = history.archive(current_summary)
+
+            self.assertEqual(current.baseline_run_id, first.run_id)
+            self.assertEqual(current.regression["rates_delta"]["opening"], 0.2)
 
     def test_rejects_non_json_and_non_finite_summary_values(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -178,6 +250,41 @@ class EvaluationHistoryTests(unittest.TestCase):
             self.assertEqual(output["metadata"]["commit_sha"], "deadbeef")
             self.assertEqual(output["metadata"]["adapter_version"], __import__("job_source_agent.checkpoint", fromlist=["ADAPTER_VERSION"]).ADAPTER_VERSION)
             self.assertIn("live_batch_eval.py", output["metadata"]["benchmark_command"])
+            self.assertIsNone(output["cohort_identity"])
+
+    def test_cli_derives_identity_from_canonical_input_and_expectations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            summary_path = root / "summary.json"
+            input_path = root / "input.json"
+            expectations_path = root / "expectations.json"
+            summary_path.write_text(json.dumps(_summary(0.9, 9)), encoding="utf-8")
+            input_path.write_text('[{"name": "Example"}]', encoding="utf-8")
+            expectations_path.write_text('{"Example": {"opening": true}}', encoding="utf-8")
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "archive_evaluation.py"),
+                    "--summary", str(summary_path),
+                    "--history-dir", str(root / "history"),
+                    "--input", str(input_path),
+                    "--expectations", str(expectations_path),
+                    "--commit-sha", "deadbeef",
+                ],
+                cwd=ROOT,
+                text=True,
+                capture_output=True,
+                check=True,
+            )
+
+            output = json.loads(completed.stdout)
+            self.assertEqual(
+                output["cohort_identity"],
+                {
+                    "input_identity": output["metadata"]["cohort_input_sha256"],
+                    "expectations_identity": output["metadata"]["cohort_expectations_sha256"],
+                },
+            )
 
 
 if __name__ == "__main__":

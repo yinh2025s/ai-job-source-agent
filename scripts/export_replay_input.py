@@ -27,6 +27,14 @@ REPLAY_FIELDS = (
     "checkpoint",
 )
 
+_SOURCE_POSTING_FIELDS = ("status", "availability")
+_LINKEDIN_POSTING_FIELDS = (
+    "availability",
+    "apply_mode",
+    "evidence_source",
+    "job_url",
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export prior results into clean replay input records.")
@@ -107,6 +115,13 @@ def _matches_filters(record: dict, args: argparse.Namespace) -> bool:
 
 
 def _to_replay_record(record: dict, source_path: str) -> dict:
+    source_trace = _stable_source_trace(record)
+    source_trace["replay"] = {
+        "source_result_file": source_path,
+        "pipeline_status": record.get("pipeline_status") or record.get("status"),
+        "provider": _result_provider(record),
+        "first_non_success_stage": _first_non_success_stage(record),
+    }
     replay_record = {
         "company_name": record.get("company_name") or "",
         "company_website_url": record.get("company_website_url") or "",
@@ -118,17 +133,56 @@ def _to_replay_record(record: dict, source_path: str) -> dict:
         "job_title": record.get("job_title") or record.get("linkedin_job_title"),
         "job_location": record.get("job_location") or record.get("linkedin_job_location"),
         "source": "replay_input",
-        "source_trace": {
-            "replay": {
-                "source_result_file": source_path,
-                "pipeline_status": record.get("pipeline_status") or record.get("status"),
-                "provider": _result_provider(record),
-                "first_non_success_stage": _first_non_success_stage(record),
-            }
-        },
+        "source_trace": source_trace,
     }
     replay_record["checkpoint"] = checkpoint_metadata(replay_record)
     return {key: value for key, value in replay_record.items() if key in REPLAY_FIELDS and value is not None}
+
+
+def _stable_source_trace(record: dict) -> dict:
+    source_trace = record.get("source_trace")
+    if not isinstance(source_trace, dict):
+        trace = record.get("trace")
+        source_trace = trace.get("source_trace") if isinstance(trace, dict) else None
+    if not isinstance(source_trace, dict):
+        return {}
+
+    stable: dict = {}
+    posting_status = _nonempty_string(source_trace.get("posting_status"))
+    if posting_status:
+        stable["posting_status"] = posting_status
+
+    source_posting = _stable_string_fields(
+        source_trace.get("source_posting"),
+        _SOURCE_POSTING_FIELDS,
+    )
+    if source_posting:
+        stable["source_posting"] = source_posting
+
+    linkedin_posting = _stable_string_fields(
+        source_trace.get("linkedin_posting"),
+        _LINKEDIN_POSTING_FIELDS,
+    )
+    if linkedin_posting:
+        stable["linkedin_posting"] = linkedin_posting
+    return stable
+
+
+def _stable_string_fields(value: object, fields: tuple[str, ...]) -> dict[str, str]:
+    if not isinstance(value, dict):
+        return {}
+    return {
+        field: normalized
+        for field in fields
+        if (normalized := _nonempty_string(value.get(field))) is not None
+    }
+
+
+def _nonempty_string(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    normalized = value.strip()
+    return normalized or None
 
 
 def _has_required_source(record: dict, include_missing_website: bool) -> bool:

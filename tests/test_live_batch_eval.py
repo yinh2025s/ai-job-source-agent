@@ -1,6 +1,8 @@
 import json
+import io
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -21,6 +23,7 @@ from scripts.live_batch_eval import (
     load_batch_companies,
     prepare_replay_company_for_resume,
     prepare_company,
+    print_summary,
     record_checkpoint,
     resume_uses_replay_upstream,
     run_company,
@@ -30,6 +33,27 @@ from scripts.live_batch_eval import (
 
 
 class LiveBatchEvalTests(unittest.TestCase):
+    def test_print_summary_handles_incompatible_baseline(self):
+        summary = {
+            "total": 1,
+            "success": 1,
+            "pipeline_status_counts": {"success": 1},
+            "with_job_list": 1,
+            "with_opening": 1,
+            "elapsed_sec": 1.0,
+            "rates": {"opening": 1.0},
+            "error_counts": {"none": 1},
+            "reason_code_counts": {},
+            "provider_counts": {"ashby": 1},
+            "regression": {"comparison_status": "no_compatible_baseline"},
+        }
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            print_summary(summary)
+
+        self.assertIn("baseline_comparison: no_compatible_baseline", output.getvalue())
+
     def test_inner_deadline_leaves_bounded_checkpoint_reserve(self):
         self.assertEqual(_inner_deadline_budget(45), 44)
         self.assertEqual(_inner_deadline_budget(10), 9.5)
@@ -242,6 +266,36 @@ class LiveBatchEvalTests(unittest.TestCase):
 
         self.assertEqual(summary["expectation_checks"]["total"], 1)
         self.assertEqual(summary["expectation_checks"]["failed"], 0)
+
+    def test_summary_binds_evaluation_to_effective_cohort_and_expectations(self):
+        result = {
+            "company_name": "A",
+            "pipeline_status": "partial",
+            "status": "success",
+            "stages": [],
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "expectations.json"
+            path.write_text(
+                json.dumps({"A": {"expected_minimum_stage": "career_discovery"}}),
+                encoding="utf-8",
+            )
+            args = SimpleNamespace(
+                expectations=str(path),
+                require_all_expectations=False,
+                cohort_companies_sha256="a" * 64,
+            )
+
+            summary = build_summary([result], args, elapsed_sec=1.0)
+
+        self.assertEqual(
+            summary["evaluation_manifest"]["companies_sha256"],
+            "a" * 64,
+        )
+        self.assertRegex(
+            summary["evaluation_manifest"]["expectations_sha256"],
+            r"^[0-9a-f]{64}$",
+        )
 
     def test_live_expectations_can_require_all_companies(self):
         result = {

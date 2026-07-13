@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -18,6 +19,7 @@ from job_source_agent.checkpoint import input_fingerprint
 from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
 from job_source_agent.contracts import FetchClient
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
+from job_source_agent.evaluation_history import cohort_identities_compatible, derive_cohort_identity
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.linkedin_discovery import (
     LinkedInJobsDiscoverer,
@@ -143,6 +145,9 @@ def main() -> None:
         args.checkpoint_dir = str(Path(args.output).with_suffix(".checkpoints"))
     linkedin_fetcher = build_fetcher(FetcherConfig(timeout=max(args.fetch_timeout, 6)))
     companies = load_batch_companies(args, linkedin_fetcher)
+    args.cohort_companies_sha256 = _json_digest(
+        [dataclass_to_dict(company) for company in companies]
+    )
 
     output_path = Path(args.output)
     trace_path = Path(args.trace_output)
@@ -225,7 +230,13 @@ def main() -> None:
     )
     if args.baseline_summary:
         baseline_summary = json.loads(Path(args.baseline_summary).read_text(encoding="utf-8"))
-        summary["regression"] = compare_summaries(summary, baseline_summary)
+        if cohort_identities_compatible(
+            derive_cohort_identity(summary),
+            derive_cohort_identity(baseline_summary),
+        ):
+            summary["regression"] = compare_summaries(summary, baseline_summary)
+        else:
+            summary["regression"] = {"comparison_status": "no_compatible_baseline"}
     bundle_manifest = build_automatic_failure_bundle(args, trace_path)
     if bundle_manifest is not None:
         summary["failure_bundle"] = {
@@ -312,6 +323,10 @@ def build_summary(
 ) -> dict:
     summary_records = traces if traces is not None else results
     summary = summarize_results(summary_records, elapsed_sec=elapsed_sec)
+    evaluation_manifest = {}
+    companies_sha256 = getattr(args, "cohort_companies_sha256", None)
+    if companies_sha256:
+        evaluation_manifest["companies_sha256"] = companies_sha256
     manifest_action = getattr(args, "linkedin_manifest_action", None)
     if manifest_action:
         summary["linkedin_discovery_manifest"] = {
@@ -328,7 +343,21 @@ def build_summary(
                 if company_name in present_companies
             }
         summary["expectation_checks"] = evaluate_expectations(results, expectations)
+        evaluation_manifest["expectations_sha256"] = _json_digest(expectations)
+    if evaluation_manifest:
+        summary["evaluation_manifest"] = evaluation_manifest
     return summary
+
+
+def _json_digest(value) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def run_company_timed(index: int, company: CompanyInput, args: argparse.Namespace) -> tuple[int, DiscoveryResult, float]:
@@ -959,8 +988,11 @@ def print_summary(summary: dict) -> None:
     print(f"  errors: {summary['error_counts']}", flush=True)
     print(f"  reason_codes: {summary['reason_code_counts']}", flush=True)
     print(f"  providers: {summary['provider_counts']}", flush=True)
-    if summary.get("regression"):
-        print(f"  rate_delta: {summary['regression']['rates_delta']}", flush=True)
+    regression = summary.get("regression")
+    if regression and "rates_delta" in regression:
+        print(f"  rate_delta: {regression['rates_delta']}", flush=True)
+    elif regression and regression.get("comparison_status"):
+        print(f"  baseline_comparison: {regression['comparison_status']}", flush=True)
     expectation_checks = summary.get("expectation_checks")
     if expectation_checks:
         print(

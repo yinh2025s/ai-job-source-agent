@@ -4,12 +4,13 @@ import json
 import re
 from dataclasses import dataclass
 from html import unescape
+from html.parser import HTMLParser
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
 from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
 from .listing_extraction import extract_listing_candidates, validate_output_url
 from .scoring import is_likely_job_detail, score_job_link
-from .web import FetchError, Fetcher, RawLink, extract_links, safe_normalize_url
+from .web import FetchError, Fetcher, Page, RawLink, extract_links, safe_normalize_url
 
 
 STOPWORDS = {
@@ -28,6 +29,19 @@ STOPWORDS = {
 }
 
 MIN_TITLE_MATCH_SCORE = 45
+SEARCH_FIELD_NAMES = {"q", "query", "keyword", "keywords", "search", "searchkeyword"}
+MAX_DISCOVERED_SEARCH_FORMS = 4
+SENSITIVE_FORM_QUERY_NAMES = {
+    "access_token",
+    "auth",
+    "authorization",
+    "code",
+    "key",
+    "password",
+    "session",
+    "state",
+    "token",
+}
 
 
 @dataclass
@@ -69,7 +83,7 @@ class JobOpeningMatcher:
         if not target_title:
             return None, trace
 
-        api_match, api_trace = self._match_provider_api(job_list_url, target_title)
+        api_match, api_trace, landing_page = self._match_provider_api(job_list_url, target_title)
         trace["provider_api"] = api_trace
         if api_trace.get("provider") and api_trace["provider"] != "generic":
             trace["provider"] = api_trace["provider"]
@@ -82,14 +96,21 @@ class JobOpeningMatcher:
             }
             return api_match, trace
 
-        search_urls = build_provider_search_urls(job_list_url, target_title)
-        for search_url in search_urls:
+        search_plan = _build_search_plan(job_list_url, target_title, landing_page)
+        trace["search_plan"] = [
+            {"url": search_url, "source": source}
+            for search_url, _page, source in search_plan
+        ]
+        for search_url, reusable_page, _source in search_plan:
             trace["searched_urls"].append(search_url)
-            try:
-                page = self.fetcher.fetch(search_url)
-            except FetchError as exc:
-                trace.setdefault("errors", []).append({"url": search_url, "error": str(exc)})
-                continue
+            if reusable_page is not None:
+                page = reusable_page
+            else:
+                try:
+                    page = self.fetcher.fetch(search_url)
+                except FetchError as exc:
+                    trace.setdefault("errors", []).append({"url": search_url, "error": str(exc)})
+                    continue
 
             page_url = page.final_url or page.url
             candidates = []
@@ -146,18 +167,23 @@ class JobOpeningMatcher:
             trace["fallback_search_url"] = fallback_url
         return None, trace
 
-    def _match_provider_api(self, job_list_url: str, target_title: str) -> tuple[OpeningMatch | None, dict]:
+    def _match_provider_api(
+        self,
+        job_list_url: str,
+        target_title: str,
+    ) -> tuple[OpeningMatch | None, dict, Page | None]:
         provider = self.provider_registry.detect(job_list_url)
         adapter = self.provider_registry.adapter_for(job_list_url)
         board = adapter.identify_board(job_list_url) if adapter else None
         page_detection = None
+        landing_page = None
         if adapter is None:
             try:
-                page = self.fetcher.fetch(job_list_url)
+                landing_page = self.fetcher.fetch(job_list_url)
             except FetchError as exc:
                 page_detection = {"method": "page_evidence", "error": str(exc)}
             else:
-                identified = self.provider_registry.board_for_page(page, self.fetcher)
+                identified = self.provider_registry.board_for_page(landing_page, self.fetcher)
                 if identified is not None:
                     adapter, board = identified
                     provider = adapter.name
@@ -185,9 +211,28 @@ class JobOpeningMatcher:
                         }
                         if page_detection is not None:
                             failure_trace["provider_detection"] = page_detection
-                        return None, failure_trace
+                        return None, failure_trace, landing_page
                 else:
-                    if adapter_result.reason_code != "PROVIDER_VARIANT_UNSUPPORTED":
+                    if adapter_result.reason_code == "PROVIDER_VARIANT_UNSUPPORTED":
+                        unsupported_trace = {
+                            "provider": provider,
+                            "adapter": adapter.name,
+                            "api_urls": list(adapter_result.trace.get("api_urls", [])),
+                            "candidates": [],
+                            "adapter_trace": adapter_result.trace,
+                            "inventory": {
+                                "source": "native_adapter",
+                                "status": "incomplete",
+                                "scope": adapter_result.trace.get("inventory_scope", "unknown"),
+                                "candidate_count": 0,
+                                "strongest_title_score": 0,
+                                "reason_code": adapter_result.reason_code,
+                            },
+                        }
+                        if page_detection is not None:
+                            unsupported_trace["provider_detection"] = page_detection
+                        return None, unsupported_trace, landing_page
+                    else:
                         scored_titles = [
                             score_title_match(candidate.title, target_title)[0]
                             for candidate in adapter_result.candidates
@@ -245,7 +290,7 @@ class JobOpeningMatcher:
                             }
                             for candidate in scored[:8]
                         ]
-                        return (scored[0] if scored else None), trace
+                        return (scored[0] if scored else None), trace, landing_page
 
         api_requests = build_provider_api_requests(job_list_url, target_title)
         trace = {"provider": provider, "api_urls": [request.url for request in api_requests], "candidates": []}
@@ -296,7 +341,7 @@ class JobOpeningMatcher:
                     "candidate_count": inventory_candidate_count,
                     "strongest_title_score": strongest_title_score,
                 }
-                return scored[0], trace
+                return scored[0], trace, landing_page
         if successful_api_fetches:
             trace["inventory"] = {
                 "source": "provider_api",
@@ -304,7 +349,129 @@ class JobOpeningMatcher:
                 "candidate_count": inventory_candidate_count,
                 "strongest_title_score": strongest_title_score,
             }
-        return None, trace
+        return None, trace, landing_page
+
+
+@dataclass(frozen=True)
+class _SearchForm:
+    action: str
+    method: str
+    field_name: str
+
+
+class _SearchFormParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.forms: list[_SearchForm] = []
+        self._action: str | None = None
+        self._method = "get"
+        self._field_name: str | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag_name = tag.casefold()
+        attributes = {key.casefold(): value or "" for key, value in attrs}
+        if tag_name == "form":
+            self._action = attributes.get("action", "")
+            self._method = attributes.get("method", "get").casefold()
+            self._field_name = None
+            return
+        if tag_name != "input" or self._action is None or self._field_name is not None:
+            return
+        input_type = attributes.get("type", "text").casefold()
+        field_name = attributes.get("name", "")
+        if input_type in {"", "search", "text"} and field_name.casefold() in SEARCH_FIELD_NAMES:
+            self._field_name = field_name
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() != "form" or self._action is None:
+            return
+        if self._field_name and len(self.forms) < MAX_DISCOVERED_SEARCH_FORMS:
+            self.forms.append(_SearchForm(self._action, self._method, self._field_name))
+        self._action = None
+        self._method = "get"
+        self._field_name = None
+
+
+def build_search_form_urls(page: Page, target_title: str) -> list[str]:
+    """Build bounded, same-host GET searches declared by a public listing page."""
+
+    page_url = page.final_url or page.url
+    parser = _SearchFormParser()
+    try:
+        parser.feed(page.html or "")
+    except (TypeError, ValueError):
+        return []
+
+    urls: list[str] = []
+    seen: set[str] = set()
+    for form in parser.forms:
+        if form.method != "get":
+            continue
+        normalized = safe_normalize_url(form.action or page_url, page_url)
+        if not normalized:
+            continue
+        try:
+            parsed = urlparse(normalized)
+            page_parsed = urlparse(page_url)
+            port = parsed.port
+            page_port = page_parsed.port
+        except (TypeError, ValueError):
+            continue
+        if (
+            parsed.scheme != "https"
+            or page_parsed.scheme != "https"
+            or not parsed.hostname
+            or parsed.hostname.casefold() != (page_parsed.hostname or "").casefold()
+            or parsed.username is not None
+            or parsed.password is not None
+            or port not in {None, 443}
+            or page_port not in {None, 443}
+        ):
+            continue
+        existing = parse_qs(parsed.query, keep_blank_values=True)
+        if any(key.casefold() in SENSITIVE_FORM_QUERY_NAMES for key in existing):
+            continue
+        query_items = [
+            (key, value)
+            for key, values in existing.items()
+            if key.casefold() != form.field_name.casefold()
+            for value in values
+        ]
+        query_items.append((form.field_name, target_title))
+        search_url = urlunparse(parsed._replace(query=urlencode(query_items)))
+        if search_url not in seen:
+            seen.add(search_url)
+            urls.append(search_url)
+    return urls
+
+
+def _build_search_plan(
+    job_list_url: str,
+    target_title: str,
+    landing_page: Page | None,
+) -> list[tuple[str, Page | None, str]]:
+    plan: list[tuple[str, Page | None, str]] = []
+    seen: set[str] = set()
+
+    def append(url: str, page: Page | None, source: str) -> None:
+        normalized = safe_normalize_url(url)
+        if not normalized or normalized in seen:
+            return
+        seen.add(normalized)
+        plan.append((url, page, source))
+
+    if landing_page is not None:
+        append(job_list_url, landing_page, "reused_landing_page")
+        final_url = landing_page.final_url or landing_page.url
+        final_normalized = safe_normalize_url(final_url)
+        if final_normalized:
+            seen.add(final_normalized)
+        for form_url in build_search_form_urls(landing_page, target_title):
+            append(form_url, None, "declared_get_form")
+
+    for search_url in build_provider_search_urls(job_list_url, target_title):
+        append(search_url, None, "provider_fallback")
+    return plan
 
 
 def detect_provider(url: str) -> str:

@@ -6,6 +6,7 @@ from job_source_agent.opening_matcher import (
     JobOpeningMatcher,
     build_provider_api_urls,
     build_provider_search_urls,
+    build_search_form_urls,
     detect_provider,
     score_title_match,
     structured_job_links,
@@ -15,6 +16,8 @@ from job_source_agent.listing_extraction import (
     validate_output_url,
 )
 from job_source_agent.web import Fetcher, Page
+from job_source_agent.providers.base import AdapterResult, JobBoard
+from job_source_agent.providers.registry import ProviderRegistry
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -153,6 +156,92 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertEqual(
             trace["provider_api"]["provider_detection"]["method"],
             "page_evidence",
+        )
+
+    def test_reuses_landing_page_and_submits_declared_get_form_before_guesses(self):
+        board_url = "https://staff.example.com/jobs/search/"
+        search_url = "https://staff.example.com/jobs/search/?q=AI+Engineer+II"
+        landing_html = (
+            '<form action="/jobs/search/" method="GET">'
+            '<input type="search" name="q">'
+            "</form>"
+        )
+        result_html = '<a href="/jobs/17810432-ai-engineer-ii">AI Engineer II</a>'
+
+        class RecordingFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == board_url:
+                    return Page(url=url, final_url=url, html=landing_html, source="fixture")
+                if url == search_url:
+                    return Page(url=url, final_url=url, html=result_html, source="fixture")
+                raise AssertionError(f"unexpected speculative fetch: {url}")
+
+        fetcher = RecordingFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(board_url, "AI Engineer II")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, "https://staff.example.com/jobs/17810432-ai-engineer-ii")
+        self.assertEqual(fetcher.calls, [board_url, search_url])
+        self.assertEqual(trace["search_plan"][1]["source"], "declared_get_form")
+
+    def test_declared_search_forms_reject_post_cross_site_and_sensitive_actions(self):
+        page = Page(
+            url="https://jobs.example.com/careers",
+            final_url="https://jobs.example.com/careers",
+            source="fixture",
+            html="""
+                <form action="https://evil.example/search" method="get"><input name="q"></form>
+                <form action="/private?token=secret" method="get"><input name="query"></form>
+                <form action="/post-search" method="post"><input name="keywords"></form>
+                <form action="/jobs/search/?sort=relevancy"><input type="search" name="q"></form>
+            """,
+        )
+
+        self.assertEqual(
+            build_search_form_urls(page, "Data Analyst"),
+            ["https://jobs.example.com/jobs/search/?sort=relevancy&q=Data+Analyst"],
+        )
+
+    def test_provider_variant_unsupported_remains_typed_in_trace(self):
+        class UnsupportedAdapter:
+            name = "unsupported_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                    trace={"adapter": self.name, "error": "unsupported public variant"},
+                )
+
+        class EmptyFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(url=url, final_url=url, html="", source="fixture")
+
+        match, trace = JobOpeningMatcher(
+            EmptyFetcher(),
+            ProviderRegistry([UnsupportedAdapter()]),
+        ).match("https://jobs.example.com/careers", "Data Analyst")
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["provider_api"]["inventory"]["reason_code"],
+            "PROVIDER_VARIANT_UNSUPPORTED",
+        )
+        self.assertEqual(
+            trace["provider_api"]["adapter_trace"]["error"],
+            "unsupported public variant",
         )
 
     def test_structured_provider_apis_are_used_before_html(self):

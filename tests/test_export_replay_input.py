@@ -4,6 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
+from job_source_agent.checkpoint import checkpoint_metadata
 from job_source_agent.linkedin import load_company_inputs
 from scripts.export_replay_input import export_replay_records, main
 
@@ -13,6 +14,20 @@ def _stage(stage, status, reason_code=None):
 
 
 class ExportReplayInputTests(unittest.TestCase):
+    def _args(self, **overrides):
+        values = {
+            "input": "/tmp/results.json",
+            "pipeline_status": None,
+            "stage": None,
+            "stage_status": None,
+            "reason_code": None,
+            "provider": None,
+            "include_missing_website": False,
+            "limit": None,
+        }
+        values.update(overrides)
+        return SimpleNamespace(**values)
+
     def test_exports_clean_replay_record_from_prior_result(self):
         records = [
             {
@@ -52,6 +67,70 @@ class ExportReplayInputTests(unittest.TestCase):
         self.assertEqual(exported[0]["source_trace"]["replay"]["provider"], "lever")
         self.assertEqual(exported[0]["checkpoint"]["checkpoint_schema_version"], "1.0")
         self.assertRegex(exported[0]["checkpoint"]["input_fingerprint"], r"^[0-9a-f]{64}$")
+
+    def test_preserves_only_stable_linkedin_posting_evidence_from_trace_output(self):
+        job_url = "https://www.linkedin.com/jobs/view/123"
+        records = [{
+            "company_name": "Native Apply",
+            "company_website_url": "https://native.example",
+            "linkedin_job_url": job_url,
+            "pipeline_status": "partial",
+            "trace": {
+                "source_trace": {
+                    "linkedin_posting": {
+                        "availability": "active",
+                        "apply_mode": "linkedin_native",
+                        "evidence_source": "authenticated_detail_dom",
+                        "job_url": job_url,
+                        "observed_at": "2026-07-14T00:00:00Z",
+                        "raw_html": "<html>authenticated content</html>",
+                        "token": "secret",
+                    },
+                    "cookies": ["li_at=secret"],
+                    "request": {"authorization": "secret"},
+                }
+            },
+        }]
+
+        exported = export_replay_records(records, self._args())
+        source_trace = exported[0]["source_trace"]
+
+        self.assertEqual(
+            source_trace["linkedin_posting"],
+            {
+                "availability": "active",
+                "apply_mode": "linkedin_native",
+                "evidence_source": "authenticated_detail_dom",
+                "job_url": job_url,
+            },
+        )
+        self.assertEqual(set(source_trace), {"linkedin_posting", "replay"})
+        self.assertNotIn("raw_html", json.dumps(exported))
+        self.assertNotIn("secret", json.dumps(exported))
+        self.assertEqual(exported[0]["checkpoint"], checkpoint_metadata(exported[0]))
+
+    def test_preserves_backward_compatible_closed_source_posting_fields(self):
+        records = [{
+            "company_name": "Closed Role",
+            "company_website_url": "https://closed.example",
+            "source_trace": {
+                "posting_status": "closed",
+                "source_posting": {
+                    "status": "expired",
+                    "availability": "unavailable",
+                    "payload": {"private": True},
+                },
+            },
+        }]
+
+        exported = export_replay_records(records, self._args())
+
+        self.assertEqual(exported[0]["source_trace"]["posting_status"], "closed")
+        self.assertEqual(
+            exported[0]["source_trace"]["source_posting"],
+            {"status": "expired", "availability": "unavailable"},
+        )
+        self.assertNotIn("payload", json.dumps(exported))
 
     def test_missing_website_is_skipped_unless_requested(self):
         records = [
