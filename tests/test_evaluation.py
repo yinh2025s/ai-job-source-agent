@@ -372,6 +372,35 @@ class EvaluationTests(unittest.TestCase):
             [f"Company {index:02d}" for index in range(20)],
         )
 
+    def test_failure_clusters_rank_largest_actionable_group_first(self):
+        results = [
+            {
+                "company_name": "Early Stage One",
+                "stages": [{
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "CAREER_PAGE_NOT_FOUND",
+                }],
+            },
+            *[
+                {
+                    "company_name": f"Opening {index}",
+                    "job_list_page_url": "https://jobs.ashbyhq.com/example",
+                    "stages": [{
+                        "stage": "opening_match",
+                        "status": "partial",
+                        "reason_code": "OPENING_NOT_FOUND",
+                    }],
+                }
+                for index in range(3)
+            ],
+        ]
+
+        clusters = summarize_results(results)["failure_clusters"]
+
+        self.assertEqual(clusters[0]["stage"], "opening_match")
+        self.assertEqual(clusters[0]["company_count"], 3)
+
 
 if __name__ == "__main__":
     unittest.main()

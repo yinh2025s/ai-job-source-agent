@@ -49,7 +49,10 @@ class ReplayResult:
 def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> ReplayResult:
     """Validate sanitized snapshots and materialize deterministic offline fixtures."""
     source_root = Path(snapshot_dir).resolve()
-    destination_root = Path(output_dir).resolve()
+    destination_path = Path(output_dir)
+    if destination_path.is_symlink():
+        raise SnapshotReplayError("Replay output must not be a symbolic link")
+    destination_root = destination_path.resolve()
     index_path = source_root / "snapshots.jsonl"
     if not index_path.is_file() or index_path.is_symlink():
         raise SnapshotReplayError(f"Snapshot index is missing or unsafe: {index_path}")
@@ -109,6 +112,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
 
     artifacts = sorted(artifact_entries.values(), key=lambda item: item["replay_path"])
     _validate_selected_canonical_views(fixture_entries_internal, artifacts)
+    _reset_managed_outputs(destination_root)
     _materialize(destination_root, fixture_entries_internal, artifacts)
 
     fixture_entries = [
@@ -357,6 +361,23 @@ def _materialize(
             destination_root / artifact["replay_path"],
             artifact["sha256"],
         )
+
+
+def _reset_managed_outputs(destination_root: Path) -> None:
+    for directory_name in ("sites", "artifacts"):
+        path = destination_root / directory_name
+        if path.is_symlink() or (path.exists() and not path.is_dir()):
+            raise SnapshotReplayError(f"Unsafe replay output path: {path}")
+        if path.exists():
+            shutil.rmtree(path)
+    for filename in ("replay-manifest.json", "replay-summary.json"):
+        path = destination_root / filename
+        if path.is_symlink() or (path.exists() and not path.is_file()):
+            raise SnapshotReplayError(f"Unsafe replay output path: {path}")
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
 
 
 def _validate_selected_canonical_views(

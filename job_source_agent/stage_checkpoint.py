@@ -13,6 +13,7 @@ import fcntl
 
 from .checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from .contracts import CONTRACT_SCHEMA_VERSION, StageExecution
+from .job_board import DiscoveredJobBoard
 from .models import PIPELINE_STAGES, StageResult
 
 
@@ -37,12 +38,24 @@ class FilesystemCheckpointStore:
         _stage_index(stage)
         with self._fingerprint_lock(input_fingerprint):
             path = self._checkpoint_path(input_fingerprint, stage)
+            execution_payload = asdict(execution)
+            discovered_board = execution.updates.get("discovered_job_board")
+            if "discovered_job_board" in execution.updates and not isinstance(
+                discovered_board, DiscoveredJobBoard
+            ):
+                raise TypeError("discovered_job_board checkpoint update has an invalid type")
+            if isinstance(discovered_board, DiscoveredJobBoard):
+                checkpoint_board = discovered_board.to_checkpoint_payload()
+                if checkpoint_board is None:
+                    execution_payload["updates"].pop("discovered_job_board", None)
+                else:
+                    execution_payload["updates"]["discovered_job_board"] = checkpoint_board
             payload = {
                 "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
                 "adapter_version": ADAPTER_VERSION,
                 "input_fingerprint": input_fingerprint,
                 "stage": stage,
-                "execution": asdict(execution),
+                "execution": execution_payload,
             }
 
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -186,6 +199,11 @@ def _deserialize_checkpoint(
     trace = execution.get("trace", {})
     if not isinstance(updates, dict) or not isinstance(trace, dict):
         raise ValueError("Checkpoint updates and trace must be objects")
+    if "discovered_job_board" in updates:
+        updates = dict(updates)
+        updates["discovered_job_board"] = DiscoveredJobBoard.from_checkpoint_payload(
+            updates["discovered_job_board"]
+        )
 
     return StageExecution(
         result=StageResult(**result_payload),

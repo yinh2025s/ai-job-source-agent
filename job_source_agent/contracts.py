@@ -3,11 +3,12 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from .job_board import DiscoveredJobBoard
 from .models import CompanyInput, StageResult
 from .web import Page
 
 
-CONTRACT_SCHEMA_VERSION = "1.0"
+CONTRACT_SCHEMA_VERSION = "1.1"
 
 
 @runtime_checkable
@@ -33,6 +34,7 @@ class PipelineContext:
     career_root_url: str | None = None
     career_page_url: str | None = None
     job_list_page_url: str | None = None
+    discovered_job_board: DiscoveredJobBoard | None = None
     open_position_url: str | None = None
     provider: str | None = None
     stage_results: list[StageResult] = field(default_factory=list)
@@ -53,6 +55,10 @@ class PipelineContext:
         for field_name, value in execution.updates.items():
             if field_name not in _CONTEXT_UPDATE_FIELDS:
                 raise ValueError(f"Stage attempted to update unsupported context field: {field_name}")
+            if field_name == "discovered_job_board" and not isinstance(
+                value, DiscoveredJobBoard
+            ):
+                raise TypeError("discovered_job_board update must use DiscoveredJobBoard")
             setattr(self, field_name, value)
         self.stage_results.append(execution.result)
         self.trace.setdefault("stages", {})[execution.result.stage] = execution.trace
@@ -96,6 +102,7 @@ _CONTEXT_UPDATE_FIELDS = {
     "career_root_url",
     "career_page_url",
     "job_list_page_url",
+    "discovered_job_board",
     "open_position_url",
     "provider",
 }

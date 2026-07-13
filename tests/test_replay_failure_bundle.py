@@ -3,6 +3,7 @@ import io
 import json
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -88,11 +89,33 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(manifest["outcome_gate"]["status"], "passed")
         self.assertEqual(
             manifest["outcome_gate"]["classification_counts"],
-            {"reproduced": 1, "fixture_gap": 0, "mismatch": 0},
+            {
+                "reproduced": 1,
+                "expected_transition": 0,
+                "fixture_gap": 0,
+                "mismatch": 0,
+            },
         )
         comparison = manifest["outcome_gate"]["records"][0]
         self.assertEqual(comparison["classification"], "reproduced")
         self.assertEqual(comparison["original_outcome"], comparison["replay_outcome"])
+
+    def test_reusing_bundle_output_removes_stale_checkpoints(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+            results_path = root / "results.json"
+            results = json.loads(results_path.read_text(encoding="utf-8"))
+            results[0]["linkedin_job_title"] = "Missing Role"
+            results_path.write_text(json.dumps(results), encoding="utf-8")
+            args = self._args(root)
+            replay_failure_bundle(args)
+            stale = root / "bundle" / "checkpoints" / "stale.txt"
+            stale.write_text("stale", encoding="utf-8")
+
+            replay_failure_bundle(args)
+
+            self.assertFalse(stale.exists())
 
     def test_improved_replay_is_mismatch_and_cli_exits_nonzero(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -114,7 +137,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                 "--reason-code", "OPENING_NOT_FOUND",
             ]
             with contextlib.redirect_stdout(io.StringIO()):
-                with self.assertRaisesRegex(SystemExit, "outcome mismatch: 1 record"):
+                with self.assertRaisesRegex(SystemExit, "1 outcome mismatch"):
                     main(cli_args)
 
         self.assertEqual(manifest, written)
@@ -154,10 +177,173 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(gate["status"], "incomplete")
         self.assertEqual(
             gate["classification_counts"],
-            {"reproduced": 0, "fixture_gap": 1, "mismatch": 0},
+            {
+                "reproduced": 0,
+                "expected_transition": 0,
+                "fixture_gap": 1,
+                "mismatch": 0,
+            },
         )
         self.assertEqual(gate["records"][0]["classification"], "fixture_gap")
         self.assertEqual(gate["records"][0]["reason"], "offline_fixture_missing")
+
+    def test_cli_exits_nonzero_for_fixture_gap(self):
+        manifest = {
+            "summary": {"total": 1},
+            "outcome_gate": {
+                "status": "incomplete",
+                "classification_counts": {"mismatch": 0, "fixture_gap": 1},
+            },
+        }
+        cli_args = [
+            "--results", "results.json",
+            "--snapshot-dir", "snapshots",
+            "--output-dir", "bundle",
+        ]
+        with patch(
+            "scripts.replay_failure_bundle.replay_failure_bundle",
+            return_value=manifest,
+        ):
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, "1 fixture gap"):
+                    main(cli_args)
+
+    def test_explicit_expected_transition_is_the_only_allowed_outcome_change(self):
+        replay_inputs = [{
+            "company_name": "Example Data",
+            "source_trace": {"replay": {
+                "pipeline_status": "partial",
+                "first_non_success_stage": {
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                },
+                "expected_transition": {
+                    "pipeline_status": "success",
+                    "failure_stage": {
+                        "stage": "opening_match",
+                        "status": "success",
+                        "reason_code": None,
+                    },
+                },
+            }},
+        }]
+        replay_results = [{
+            "company_name": "Example Data",
+            "pipeline_status": "success",
+            "stages": [{
+                "stage": "opening_match",
+                "status": "success",
+                "reason_code": None,
+            }],
+        }]
+
+        gate = _build_outcome_gate(replay_inputs, replay_results)
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["classification_counts"]["expected_transition"], 1)
+        self.assertEqual(gate["records"][0]["classification"], "expected_transition")
+
+    def test_expected_transition_can_move_to_a_different_failure_stage(self):
+        replay_inputs = [{
+            "company_name": "Example Data",
+            "source_trace": {"replay": {
+                "pipeline_status": "partial",
+                "first_non_success_stage": {
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                },
+                "expected_transition": {
+                    "pipeline_status": "failed",
+                    "failure_stage": {
+                        "stage": "career_discovery",
+                        "status": "failed",
+                        "reason_code": "CAREER_PAGE_NOT_FOUND",
+                    },
+                },
+            }},
+        }]
+        replay_results = [{
+            "company_name": "Example Data",
+            "pipeline_status": "failed",
+            "stages": [{
+                "stage": "career_discovery",
+                "status": "failed",
+                "reason_code": "CAREER_PAGE_NOT_FOUND",
+            }],
+        }]
+
+        gate = _build_outcome_gate(replay_inputs, replay_results)
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["classification_counts"]["expected_transition"], 1)
+
+    def test_expected_transition_can_remove_the_failure_stage(self):
+        replay_inputs = [{
+            "company_name": "Example Data",
+            "source_trace": {"replay": {
+                "pipeline_status": "partial",
+                "first_non_success_stage": {
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                },
+                "expected_transition": {
+                    "pipeline_status": "success",
+                    "failure_stage": None,
+                },
+            }},
+        }]
+        replay_results = [{
+            "company_name": "Example Data",
+            "pipeline_status": "success",
+            "stages": [{
+                "stage": "opening_match",
+                "status": "success",
+                "reason_code": None,
+            }],
+        }]
+
+        gate = _build_outcome_gate(replay_inputs, replay_results)
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["records"][0]["replay_outcome"]["failure_stage"], None)
+
+    def test_fixture_gap_cannot_be_declared_as_an_expected_transition(self):
+        replay_inputs = [{
+            "company_name": "Example Data",
+            "source_trace": {"replay": {
+                "pipeline_status": "partial",
+                "first_non_success_stage": {
+                    "stage": "opening_match",
+                    "status": "partial",
+                    "reason_code": "OPENING_NOT_FOUND",
+                },
+                "expected_transition": {
+                    "pipeline_status": "partial",
+                    "failure_stage": {
+                        "stage": "opening_match",
+                        "status": "partial",
+                        "reason_code": "OFFLINE_FIXTURE_MISSING",
+                    },
+                },
+            }},
+        }]
+        replay_results = [{
+            "company_name": "Example Data",
+            "pipeline_status": "partial",
+            "stages": [{
+                "stage": "opening_match",
+                "status": "partial",
+                "reason_code": "OFFLINE_FIXTURE_MISSING",
+            }],
+        }]
+
+        gate = _build_outcome_gate(replay_inputs, replay_results)
+
+        self.assertEqual(gate["status"], "incomplete")
+        self.assertEqual(gate["records"][0]["classification"], "fixture_gap")
 
     def test_replay_preserves_linkedin_native_only_evidence(self):
         with tempfile.TemporaryDirectory() as directory:

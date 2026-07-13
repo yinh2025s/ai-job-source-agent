@@ -57,7 +57,7 @@ class RecordingFetcher:
 class EightfoldAdapterTests(unittest.TestCase):
     def setUp(self):
         self.adapter = EightfoldAdapter()
-        self.board = JobBoard(BOARD_URL, "eightfold", "example.com")
+        self.board = JobBoard(BOARD_URL, "eightfold", "example.com", replay_safe=True)
 
     def test_native_adapter_is_discovered_and_recognizes_hosted_urls(self):
         native = {adapter.name: adapter for adapter in discover_native_adapters()}

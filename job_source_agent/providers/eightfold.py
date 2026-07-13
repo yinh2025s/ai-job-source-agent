@@ -54,6 +54,7 @@ class EightfoldAdapter:
             url=f"https://{(parsed.hostname or '').casefold()}/careers",
             provider=self.name,
             identifier=domain,
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:

@@ -2,6 +2,7 @@ import json
 import unittest
 
 from job_source_agent.opening_matcher import JobOpeningMatcher
+from job_source_agent.job_board import DiscoveredJobBoard
 from job_source_agent.providers.base import JobQuery
 from job_source_agent.providers.greenhouse import GreenhouseAdapter
 from job_source_agent.web import Page
@@ -75,6 +76,27 @@ class GreenhouseAdapterTests(unittest.TestCase):
             html=next_data_page({"id": 123, "title": "Data Analyst"}),
         )
         self.assertIsNone(self.adapter.identify_board_from_page(weak))
+
+    def test_page_derived_board_with_sensitive_query_is_not_checkpoint_safe(self):
+        url = "https://careers.example.org/careers?client_secret=do-not-persist"
+        page = Page(
+            url=url,
+            html=next_data_page(
+                greenhouse_job(
+                    123,
+                    "Data Analyst",
+                    "https://careers.example.org/careers/123?gh_jid=123",
+                )
+            ),
+        )
+        board = self.adapter.identify_board_from_page(page)
+
+        with self.assertRaises(ValueError):
+            DiscoveredJobBoard(
+                board=board,
+                detection_method="page_evidence",
+                evidence_url=url,
+            ).to_checkpoint_payload()
 
     def test_lists_and_deduplicates_same_origin_custom_frontend_jobs(self):
         url = "https://careers.example.org/careers"

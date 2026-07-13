@@ -95,6 +95,7 @@ class ICIMSAdapterTests(unittest.TestCase):
             url="https://jobs.example.org/region/jobs",
             provider="icims",
             identifier="jobs.example.org",
+            replay_safe=True,
         ))
         weak_page = Page(
             url="https://example.org/jobs",

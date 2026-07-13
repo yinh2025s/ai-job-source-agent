@@ -23,6 +23,9 @@ class ProviderRegistry:
     def adapter_for(self, url: str) -> ProviderAdapter | None:
         return next((adapter for adapter in self._adapters if adapter.recognizes(url)), None)
 
+    def adapter_named(self, provider: str) -> ProviderAdapter | None:
+        return next((adapter for adapter in self._adapters if adapter.name == provider), None)
+
     def detect(self, url: str) -> str:
         adapter = self.adapter_for(url)
         return adapter.name if adapter else "generic"

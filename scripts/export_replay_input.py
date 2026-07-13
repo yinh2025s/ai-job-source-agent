@@ -116,12 +116,18 @@ def _matches_filters(record: dict, args: argparse.Namespace) -> bool:
 
 def _to_replay_record(record: dict, source_path: str) -> dict:
     source_trace = _stable_source_trace(record)
-    source_trace["replay"] = {
+    replay_metadata = {
         "source_result_file": source_path,
         "pipeline_status": record.get("pipeline_status") or record.get("status"),
         "provider": _result_provider(record),
         "first_non_success_stage": _first_non_success_stage(record),
     }
+    expected_transition = _stable_expected_transition(
+        record.get("replay_expected_transition")
+    )
+    if expected_transition is not None:
+        replay_metadata["expected_transition"] = expected_transition
+    source_trace["replay"] = replay_metadata
     replay_record = {
         "company_name": record.get("company_name") or "",
         "company_website_url": record.get("company_website_url") or "",
@@ -217,6 +223,30 @@ def _first_non_success_stage(record: dict) -> dict | None:
                 "reason_code": stage.get("reason_code"),
             }
     return None
+
+
+def _stable_expected_transition(value: object) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    pipeline_status = _nonempty_string(value.get("pipeline_status"))
+    failure_stage = value.get("failure_stage")
+    stable_stage = None
+    if isinstance(failure_stage, dict):
+        stage = _nonempty_string(failure_stage.get("stage"))
+        status = _nonempty_string(failure_stage.get("status"))
+        reason_code = _nonempty_string(failure_stage.get("reason_code"))
+        if stage or status or reason_code:
+            stable_stage = {
+                "stage": stage,
+                "status": status,
+                "reason_code": reason_code,
+            }
+    if pipeline_status is None and stable_stage is None:
+        return None
+    return {
+        "pipeline_status": pipeline_status,
+        "failure_stage": stable_stage,
+    }
 
 
 def _result_provider(record: dict) -> str:

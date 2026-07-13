@@ -1,6 +1,8 @@
 import json
 import unittest
 
+from job_source_agent.job_board import DiscoveredJobBoard
+from job_source_agent.opening_matcher import JobOpeningMatcher
 from job_source_agent.providers.base import JobQuery, ProviderAdapter
 from job_source_agent.providers.registry import ProviderRegistry, discover_native_adapters
 from job_source_agent.providers.sitecore_next_jobs import (
@@ -148,6 +150,7 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
         self.assertEqual(selected, (self.adapter, self.board))
 
     def test_identifies_board_and_binds_all_tenant_configuration(self):
+        self.assertTrue(self.board.replay_safe)
         self.assertEqual(self.board.url, BOARD_URL)
         identity = json.loads(self.board.identifier)
         self.assertEqual(
@@ -189,6 +192,32 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
         self.assertEqual(second.url, "https://careers.second.test:443/fr-ca/emplois/resultats")
         self.assertNotEqual(second.identifier, self.board.identifier)
         self.assertEqual(json.loads(second.identifier)["site"], "second-site")
+
+    def test_typed_board_handoff_skips_second_landing_page_fetch(self):
+        fetcher = RecordingFetcher(
+            [response(inventory([job(title="AI Engineer")], total=1, next_range=10))]
+        )
+        discovered = DiscoveredJobBoard(
+            board=self.board,
+            detection_method="page_evidence",
+            evidence_url=BOARD_URL,
+        )
+
+        match, trace = JobOpeningMatcher(
+            fetcher,
+            ProviderRegistry((self.adapter,)),
+        ).match(
+            BOARD_URL,
+            "AI Engineer",
+            discovered_board=discovered,
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual([request[0] for request in fetcher.requests], [API_URL])
+        self.assertEqual(
+            trace["provider_api"]["provider_detection"]["method"],
+            "typed_stage_handoff",
+        )
 
     def test_requires_safe_url_next_json_sitecore_jobsearch_and_configuration(self):
         cases = [
@@ -325,9 +354,12 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
         capped = self.adapter.list_jobs(cap_fetcher, self.board, JobQuery())
 
         self.assertFalse(repeated.inventory_complete)
+        self.assertEqual(repeated.reason_code, "INVALID_STRUCTURED_DATA")
         self.assertIn("invalid nextRange", repr(repeated.trace["errors"]))
         self.assertEqual(len(cap_fetcher.requests), 10)
         self.assertFalse(capped.inventory_complete)
+        self.assertEqual(capped.reason_code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertTrue(capped.retryable)
         self.assertIn("pagination cap reached", repr(capped.trace["errors"]))
 
     def test_fetch_error_redirect_and_malformed_json_are_incomplete(self):
@@ -396,6 +428,7 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
         )
 
         self.assertFalse(result.inventory_complete)
+        self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
         self.assertIn("contradictory total", repr(result.trace["errors"]))
 
     def test_duplicate_job_ids_across_pages_are_incomplete(self):
@@ -417,7 +450,7 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
         )
 
         self.assertFalse(result.inventory_complete)
-        self.assertEqual(result.reason_code, None)
+        self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
         self.assertEqual(len(result.candidates), 1)
         self.assertIn(
             "invalid, duplicate, or cross-tenant job record",

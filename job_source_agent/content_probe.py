@@ -5,10 +5,74 @@ from collections.abc import Callable
 from urllib.parse import urlparse
 
 from .contracts import FetchClient
-from .web import FetchError, Page, domain_of, normalize_url
+from .web import FetchError, Page, RawLink, domain_of, normalize_url
 
 
 _RAW_WEB_URL = re.compile(r"https?:(?:\\?/){2}[^\"'<>\s]+", flags=re.I)
+_CAREER_LABEL = r"(?:careers?|jobs?|join\s+(?:us|our\s+team)|work\s+with\s+us|opportunities|open\s+positions)"
+_ROOT_ROUTE = r"/[A-Za-z0-9][A-Za-z0-9_./-]{0,198}"
+_ROUTE_THEN_LABEL = re.compile(
+    rf"(?:href|path|value)\s*:\s*[\"'](?P<route>{_ROOT_ROUTE})[\"']"
+    rf"[^{{}}]{{0,180}}?(?:children|label)\s*:\s*[\"'](?P<label>{_CAREER_LABEL})[\"']",
+    flags=re.I,
+)
+_LABEL_THEN_ROUTE = re.compile(
+    rf"(?:children|label)\s*:\s*[\"'](?P<label>{_CAREER_LABEL})[\"']"
+    rf"[^{{}}]{{0,180}}?(?:href|path|value)\s*:\s*[\"'](?P<route>{_ROOT_ROUTE})[\"']",
+    flags=re.I,
+)
+
+
+def discover_first_party_career_navigation(
+    fetcher: FetchClient,
+    page: Page,
+    *,
+    max_assets: int = 3,
+) -> tuple[list[RawLink], dict]:
+    """Extract labeled same-origin career routes from bounded public JS assets."""
+
+    page_url = page.final_url or page.url
+    asset_urls = _first_party_script_assets(page, max_assets=max_assets)
+    fetched: list[str] = []
+    candidates: list[RawLink] = []
+    seen: set[str] = set()
+    for asset_url in asset_urls:
+        try:
+            asset_page = fetcher.fetch(asset_url)
+        except (FetchError, OSError, TimeoutError):
+            continue
+        if not _is_safe_same_site_asset(asset_page.final_url or asset_page.url, page_url):
+            continue
+        fetched.append(asset_url)
+        bundle = (asset_page.html or "")[:5_000_000]
+        for pattern in (_ROUTE_THEN_LABEL, _LABEL_THEN_ROUTE):
+            for match in pattern.finditer(bundle):
+                route = match.group("route")
+                if not _career_route(route):
+                    continue
+                try:
+                    candidate_url = normalize_url(route, page_url)
+                except (TypeError, ValueError):
+                    continue
+                if not _is_safe_same_origin_navigation(candidate_url, page_url):
+                    continue
+                if candidate_url in seen:
+                    continue
+                seen.add(candidate_url)
+                candidates.append(
+                    RawLink(
+                        url=candidate_url,
+                        text=" ".join(match.group("label").split()),
+                        source_url=page_url,
+                        origin="first_party_bundle_navigation",
+                    )
+                )
+
+    return candidates, {
+        "method": "first_party_bundle_navigation",
+        "asset_urls": fetched,
+        "candidate_urls": [candidate.url for candidate in candidates],
+    }
 
 
 def probe_first_party_cms_payload(
@@ -159,6 +223,55 @@ def probe_first_party_provider_assets(
             "asset_urls": fetched,
             "provider_urls": list(dict.fromkeys(provider_urls)),
         },
+    )
+
+
+def _first_party_script_assets(page: Page, *, max_assets: int) -> list[str]:
+    html = page.html or ""
+    page_url = page.final_url or page.url
+    asset_hrefs = re.findall(
+        r'<(?:script|link)\b[^>]*(?:src|href)=["\']([^"\']+\.js(?:\?[^"\']*)?)["\']',
+        html[:300000],
+        flags=re.I,
+    )
+    asset_urls: list[str] = []
+    for href in asset_hrefs:
+        try:
+            asset_url = normalize_url(href, page_url)
+        except (TypeError, ValueError):
+            continue
+        if _is_safe_same_site_asset(asset_url, page_url) and asset_url not in asset_urls:
+            asset_urls.append(asset_url)
+    asset_urls.sort(key=lambda url: _provider_asset_priority(url, ""))
+    return asset_urls[:max_assets]
+
+
+def _career_route(route: str) -> bool:
+    normalized = route.casefold().rstrip("/")
+    parts = [part for part in normalized.split("/") if part]
+    return bool(
+        parts
+        and ".." not in parts
+        and any(part in {"career", "careers", "job", "jobs", "opportunities"} for part in parts)
+    )
+
+
+def _is_safe_same_origin_navigation(candidate_url: str, page_url: str) -> bool:
+    try:
+        candidate = urlparse(candidate_url)
+        page = urlparse(page_url)
+        candidate_port = candidate.port
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        candidate.scheme.casefold() == "https"
+        and candidate.hostname
+        and candidate.hostname.casefold() == (page.hostname or "").casefold()
+        and candidate.username is None
+        and candidate.password is None
+        and candidate_port in {None, 443}
+        and not candidate.query
+        and not candidate.fragment
     )
 
 

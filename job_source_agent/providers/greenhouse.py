@@ -51,6 +51,7 @@ class GreenhouseAdapter:
             url=page_url,
             provider=self.name,
             identifier=f"{_CUSTOM_PREFIX}{(parsed.hostname or '').casefold()}",
+            replay_safe=True,
         )
 
     def probe_board(self, fetcher, page: Page) -> JobBoard | None:
@@ -72,6 +73,7 @@ class GreenhouseAdapter:
             url=page_url,
             provider=self.name,
             identifier=f"{_NUXT_PREFIX}{host}|{payload_url}",
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:

@@ -72,6 +72,7 @@ class CeipalAdapterTests(unittest.TestCase):
         board = selected[1]
         self.assertEqual(board.url, BOARD_URL)
         self.assertEqual(board.provider, "ceipal")
+        self.assertFalse(board.replay_safe)
         self.assertEqual(
             json.loads(board.identifier),
             {

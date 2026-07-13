@@ -5,6 +5,7 @@ from typing import Protocol
 
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
+from ..job_board import DiscoveredJobBoard
 from ..models import STAGE_CAREER_DISCOVERY, STAGE_JOB_BOARD_DISCOVERY, STAGE_OPENING_MATCH
 from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
@@ -33,11 +34,26 @@ class JobBoardDiscoveryService(Protocol):
     ) -> tuple[str, dict]:
         ...
 
+    def find_job_board_with_evidence(
+        self,
+        career_page_url: str,
+        company_name: str | None = None,
+    ) -> tuple[str, dict, DiscoveredJobBoard | None]:
+        ...
+
 
 class OpeningMatchService(Protocol):
     def match_opening(
         self,
         job_list_url: str,
+        target_title: str | None = None,
+        target_location: str | None = None,
+    ) -> tuple[str | None, str, dict]:
+        ...
+
+    def match_discovered_board(
+        self,
+        discovered_board: DiscoveredJobBoard,
         target_title: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str | None, str, dict]:
@@ -147,10 +163,18 @@ class JobBoardDiscoveryStage:
 
         started = time.perf_counter()
         try:
-            job_list_url, trace = self.service.find_job_board(
-                context.career_page_url,
-                company_name=context.company.company_name,
-            )
+            find_with_evidence = getattr(self.service, "find_job_board_with_evidence", None)
+            if callable(find_with_evidence):
+                job_list_url, trace, discovered_board = find_with_evidence(
+                    context.career_page_url,
+                    company_name=context.company.company_name,
+                )
+            else:
+                job_list_url, trace = self.service.find_job_board(
+                    context.career_page_url,
+                    company_name=context.company.company_name,
+                )
+                discovered_board = None
         except FetchError as exc:
             if context.company.external_apply_url:
                 return self._from_external_apply(
@@ -188,6 +212,9 @@ class JobBoardDiscoveryStage:
 
         provider = trace.get("provider") or self.provider_registry.detect(job_list_url)
         provider = None if provider == "generic" else provider
+        updates = {"job_list_page_url": job_list_url, "provider": provider}
+        if discovered_board is not None:
+            updates["discovered_job_board"] = discovered_board
         return StageExecution(
             result=make_stage_result(
                 self.name,
@@ -198,7 +225,7 @@ class JobBoardDiscoveryStage:
                 output_count=1,
                 evidence=[{"field": "job_list_page_url", "url": job_list_url}],
             ),
-            updates={"job_list_page_url": job_list_url, "provider": provider},
+            updates=updates,
             trace=trace,
         )
 
@@ -345,11 +372,19 @@ class OpeningMatchStage:
             )
         started = time.perf_counter()
         try:
-            opening_url, job_list_url, trace = self.service.match_opening(
-                context.job_list_page_url,
-                context.company.job_title,
-                context.company.job_location,
-            )
+            match_discovered = getattr(self.service, "match_discovered_board", None)
+            if context.discovered_job_board is not None and callable(match_discovered):
+                opening_url, job_list_url, trace = match_discovered(
+                    context.discovered_job_board,
+                    context.company.job_title,
+                    context.company.job_location,
+                )
+            else:
+                opening_url, job_list_url, trace = self.service.match_opening(
+                    context.job_list_page_url,
+                    context.company.job_title,
+                    context.company.job_location,
+                )
         except FetchError as exc:
             return _failed_execution(self.name, classify_fetch_error(str(exc)), started, str(exc))
         except DiscoveryError as exc:

@@ -112,7 +112,6 @@ def result_provider(result: dict) -> str:
         "job_list_page_url",
         "career_page_url",
         "career_root_url",
-        "company_website_url",
     ):
         url = result.get(field)
         if isinstance(url, str) and url:
@@ -230,6 +229,7 @@ def _failure_clusters(results: list[dict]) -> list[dict]:
     return sorted(
         ordered_clusters,
         key=lambda cluster: (
+            -cluster["company_count"],
             stage_order.get(cluster["stage"], len(stage_order)),
             cluster["stage"],
             cluster["provider"],

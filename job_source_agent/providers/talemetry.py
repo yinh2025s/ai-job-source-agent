@@ -54,6 +54,7 @@ class TalemetryAdapter:
             url=f"https://{_url_host(host)}/",
             provider=self.name,
             identifier=_identifier(host, career_site_id),
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:

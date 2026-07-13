@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from job_source_agent.checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from job_source_agent.contracts import CheckpointStore, StageExecution
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
 from job_source_agent.models import PIPELINE_STAGES, StageResult
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 
@@ -54,6 +55,58 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         path.write_text("{truncated", encoding="utf-8")
 
         self.assertIsNone(self.store.load(self.fingerprint, "career_discovery"))
+
+    def test_replay_safe_job_board_round_trips_as_typed_context_update(self):
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://jobs.example.test/search-results",
+                provider="phenom",
+                identifier="PUBLIC-TENANT",
+                replay_safe=True,
+            ),
+            detection_method="page_evidence",
+            evidence_url="https://jobs.example.test/search-results",
+        )
+        execution = StageExecution(
+            StageResult(stage="job_board_discovery", status="success"),
+            updates={
+                "job_list_page_url": discovered.board.url,
+                "provider": discovered.board.provider,
+                "discovered_job_board": discovered,
+            },
+        )
+
+        self.store.save(self.fingerprint, execution)
+
+        restored = self.store.load(self.fingerprint, "job_board_discovery")
+        self.assertEqual(restored, execution)
+        self.assertIsInstance(restored.updates["discovered_job_board"], DiscoveredJobBoard)
+
+    def test_runtime_only_job_board_identifier_is_omitted_from_checkpoint(self):
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://jobs.example.test/careers",
+                provider="ceipal",
+                identifier='{"api_key":"do-not-persist"}',
+            ),
+            detection_method="page_evidence",
+            evidence_url="https://jobs.example.test/careers",
+        )
+        execution = StageExecution(
+            StageResult(stage="job_board_discovery", status="success"),
+            updates={
+                "job_list_page_url": discovered.board.url,
+                "provider": discovered.board.provider,
+                "discovered_job_board": discovered,
+            },
+        )
+
+        self.store.save(self.fingerprint, execution)
+
+        payload_text = next(self.root.rglob("job_board_discovery.json")).read_text()
+        restored = self.store.load(self.fingerprint, "job_board_discovery")
+        self.assertNotIn("do-not-persist", payload_text)
+        self.assertNotIn("discovered_job_board", restored.updates)
 
     def test_incompatible_or_mismatched_metadata_is_not_loaded(self):
         execution = StageExecution(StageResult(stage="career_discovery", status="success"))

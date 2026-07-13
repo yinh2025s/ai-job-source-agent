@@ -2,6 +2,7 @@ import unittest
 
 from job_source_agent.contracts import PipelineContext
 from job_source_agent.errors import DiscoveryError
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
 from job_source_agent.models import CompanyInput, StageResult
 from job_source_agent.stages import (
     CareerDiscoveryStage,
@@ -158,6 +159,49 @@ class DiscoveryStageTests(unittest.TestCase):
 
         self.assertEqual(execution.result.provider, "icims")
         self.assertEqual(execution.updates["provider"], "icims")
+
+    def test_page_aware_board_handoff_flows_from_s5_to_s6(self):
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://jobs.acme.example/careers",
+                provider="phenom",
+                identifier="ACME",
+                replay_safe=True,
+            ),
+            detection_method="page_evidence",
+            evidence_url="https://jobs.acme.example/careers",
+        )
+
+        class PageAwareService(FakeDiscoveryService):
+            def __init__(self):
+                self.received = None
+
+            def find_job_board_with_evidence(self, career_page_url, company_name=None):
+                return discovered.board.url, {"provider": "phenom"}, discovered
+
+            def match_discovered_board(
+                self, board_evidence, target_title=None, target_location=None
+            ):
+                self.received = board_evidence
+                return (
+                    board_evidence.board.url + "/job/123",
+                    board_evidence.board.url,
+                    {"provider_detection": {"method": "typed_stage_handoff"}},
+                )
+
+        service = PageAwareService()
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.career_page_url = discovered.evidence_url
+
+        PipelineStageRunner(
+            [JobBoardDiscoveryStage(service), OpeningMatchStage(service)]
+        ).run(context)
+
+        self.assertEqual(context.discovered_job_board, discovered)
+        self.assertIs(service.received, discovered)
+        self.assertEqual(context.open_position_url, discovered.board.url + "/job/123")
 
     def test_opening_no_match_is_partial_not_failed(self):
         class NoMatchService(FakeDiscoveryService):

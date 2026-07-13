@@ -43,6 +43,7 @@ class SitecoreNextJobsAdapter:
             url=board_url,
             provider=self.name,
             identifier=_encode_identity(identity),
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
@@ -173,15 +174,18 @@ class SitecoreNextJobsAdapter:
                 break
             current_range = next_range
         else:
+            failure_reason = "FETCH_BUDGET_EXHAUSTED"
+            failure_retryable = True
             errors.append({"range": current_range, "error": "pagination cap reached"})
 
         if stopped_on_exact_title:
             inventory_complete = False
-        if not candidates:
-            if inventory_complete:
-                reason_code = "EMPTY_PROVIDER_RESPONSE"
-            else:
-                reason_code = failure_reason or "PROVIDER_FETCH_FAILED"
+        if failure_reason:
+            reason_code = failure_reason
+        elif not candidates and inventory_complete:
+            reason_code = "EMPTY_PROVIDER_RESPONSE"
+        elif not candidates:
+            reason_code = "PROVIDER_FETCH_FAILED"
         else:
             reason_code = None
 
@@ -190,7 +194,7 @@ class SitecoreNextJobsAdapter:
             board=board,
             candidates=candidates,
             reason_code=reason_code,
-            retryable=failure_retryable if reason_code else False,
+            retryable=failure_retryable if failure_reason else False,
             inventory_scope=inventory_scope,
             inventory_complete=inventory_complete,
             trace={

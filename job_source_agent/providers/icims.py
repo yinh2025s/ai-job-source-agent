@@ -79,6 +79,7 @@ class ICIMSAdapter:
             url=urlunparse((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", parsed.query, "")),
             provider=self.name,
             identifier=(parsed.hostname or "").casefold(),
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:

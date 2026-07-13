@@ -10,6 +10,12 @@
 
 ### Added
 
+- ADR-0005 冻结 S5→S6 page-derived job-board handoff：新增类型化 `DiscoveredJobBoard`，保留 provider-owned public locator、检测方式和 evidence URL；S6 可按 provider 名直接复用 board identity。所有 locator 默认 runtime-only，只有 adapter 明确标记 replay-safe 才进入 checkpoint；CEIPAL API-key-shaped widget identity 不落盘，raw HTML、cookie、header、request body、token 和认证内容均被禁止。
+
+- Failure replay 增加 outcome gate：逐公司比较原始与离线 replay 的 pipeline/failure-stage signature，输出 `reproduced`、显式声明的跨阶段 `expected_transition`、`fixture_gap` 和 `mismatch`；未声明的结果变化或 fixture gap 都会使 CLI 非零退出。复用 output directory 时先清理工具管理的 fixture 与 stage checkpoint，旧批次不能掩盖当前 capture gap。Evaluation/Markdown report 增加按规模排序的 `stage x provider x reason_code` actionable failure cluster、retryable 数量、inventory disposition 和有界公司样例。
+
+- S4 可从最多三个同站公开 JavaScript asset 中提取“明确 Careers/Jobs 标签 + 同源 root-relative career route”，候选仍需现有页面、错误页、CMS 和 ATS evidence gate 验证。Direct Supply 在 sitemap-disabled 的真实 `.48` snapshot replay 中恢复 `/company/careers`、Magnolia、Workday 和 exact `AI Engineer`，没有公司或 tenant 特例。
+
 - 新增 page-aware `SitecoreNextJobsAdapter`：从 first-party `__NEXT_DATA__` 绑定 Sitecore `JobSearch` tenant 配置，只向同源 `/api/data/jobs/summarized` 发起有界 POST 分页，校验 total/range、重复 job ID、语言/国家/品牌身份，并从安全 `jobId` 构造官网具体岗位 URL。固定 provider benchmark 增加该端到端 exact-opening 样本。
 
 - 新增 CEIPAL widget 与 Talemetry Career Sites 的 detection-only adapter。两者只在强页面指纹成立时绑定 first-party tenant，并始终以 `inventory_scope=unknown`、`inventory_complete=false` 保留 bot、403、离线 fixture 缺失或未知 schema；在冻结并验证成功 inventory contract 前不构造 candidate，也不支持权威 no-match。
@@ -64,6 +70,12 @@
 - Taleo 作为第 15 个原生 provider 自动接入：支持 custom-domain FacetedSearch board、公开 shell tenant 配置、匿名 REST inventory、keyword/location 查询、响应 pageSize 驱动的有界分页、exact-title early stop 和同 tenant detail URL 重建。
 
 ### Changed
+
+- `CONTRACT_SCHEMA_VERSION` 保持 `1.1`，`CHECKPOINT_SCHEMA_VERSION` 提升到 `1.2`，`ADAPTER_VERSION` 提升到 `2026-07-14.51`。replay-safe locator 现在必须通过七个已注册 provider 的 hostname/path/identifier policy；未知 provider、跨 origin evidence、敏感 query key、控制字符、HTML/私钥/JWT/auth 形态内容和越界 locator 在 checkpoint decode 前拒绝。旧 stage checkpoint 安全 miss；runtime-only board handoff 在持久化时被省略。
+
+- Sitecore/Next 即使已经读到部分候选，也会保留矛盾 total、重复/跨租户记录、分页 cap 和 fetch failure 的具体 reason code；不完整库存不会因存在候选就丢失失败语义。Akkodis 当前 focused live 从 S5 checkpoint 恢复后走 `typed_stage_handoff`，当前分页 total 变化被正确归为 `INVALID_STRUCTURED_DATA / parser / discovery_incomplete`，不会声明权威 no-match。
+
+- `.51` 最终门禁为 CPython 3.12 下 774 tests、23/23 provider benchmark、6/6 resolver benchmark、23-adapter architecture validation / 0 issues。相同 frozen-30 manifest 的 serialized live 为 30 website、28 career、26 verified job list、20 exact opening，与 `.49/.50` 基线 rate delta 全为 0；Direct Supply 通过 bundle navigation 恢复 Workday exact，Akkodis 通过 checkpointed Sitecore locator 读取 official inventory。10 个非成功样本的 snapshot outcome gate 为 6 reproduced、2 fixture gaps、2 mismatches，并按设计非零退出；这不是“10/10 replay 成功”。真实登录态 LinkedIn extension Scan/Run 按用户决定继续 deferred。
 
 - Embedded URL/provider-config 抽取会先剥离 HTML comments，避免停用或注释掉的旧 ATS 集成成为活动证据。新增 `OFFLINE_FIXTURE_MISSING`，将缺失 replay fixture 明确标为 non-retryable、owner `replay` 的 incomplete outcome，不再误报网络故障或 `OPENING_NOT_FOUND`。
 

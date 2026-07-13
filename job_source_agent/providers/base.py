@@ -4,14 +4,8 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from ..contracts import FetchClient
+from ..job_board import JobBoard
 from ..web import Page
-
-
-@dataclass(frozen=True)
-class JobBoard:
-    url: str
-    provider: str
-    identifier: str | None = None
 
 
 @dataclass(frozen=True)

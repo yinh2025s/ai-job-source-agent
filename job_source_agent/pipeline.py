@@ -5,9 +5,14 @@ from urllib.parse import urlparse
 from xml.etree import ElementTree as ET
 
 from .career_search import CareerSearchResolver
-from .content_probe import probe_first_party_cms_payload, probe_first_party_provider_assets
+from .content_probe import (
+    discover_first_party_career_navigation,
+    probe_first_party_cms_payload,
+    probe_first_party_provider_assets,
+)
 from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
+from .job_board import DiscoveredJobBoard
 from .models import (
     STAGE_CAREER_DISCOVERY,
     STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -306,6 +311,7 @@ class JobSourceAgent:
         target_location: str | None = None,
     ) -> tuple[str, dict]:
         homepage_url = normalize_url(company_website_url)
+        homepage: Page | None = None
         raw_candidates: list[RawLink] = []
         trace = {"homepage_url": homepage_url, "homepage_fetch_error": None, "candidates": [], "candidate_fetch_errors": []}
         try:
@@ -354,6 +360,47 @@ class JobSourceAgent:
                 "reason": "primary candidate verified before sitemap fanout",
             }
             return selected_url, trace
+
+        if homepage is not None:
+            bundle_links, bundle_trace = discover_first_party_career_navigation(
+                self.fetcher,
+                homepage,
+            )
+            trace["bundle_navigation_discovery"] = bundle_trace
+            bundle_candidates = self._dedupe_candidates(
+                sorted(
+                    [
+                        self._score_career_candidate(
+                            link,
+                            homepage_url,
+                            target_title=target_title,
+                            target_location=target_location,
+                        )
+                        for link in bundle_links
+                    ],
+                    key=lambda candidate: candidate.score,
+                    reverse=True,
+                )
+            )
+            if bundle_candidates:
+                trace["candidates"] = dataclass_to_dict(
+                    self._dedupe_candidates(primary_candidates + bundle_candidates)[:10]
+                )
+                selected_url = self._select_verified_career_candidate(
+                    bundle_candidates,
+                    trace,
+                    max_fetches=2,
+                    target_title=target_title,
+                )
+                if selected_url:
+                    trace["sitemap_discovery"] = {
+                        "skipped": True,
+                        "reason": "first-party bundle navigation verified before sitemap fanout",
+                    }
+                    trace["selected_from"] = "bundle_navigation_discovery"
+                    return selected_url, trace
+        else:
+            trace["bundle_navigation_discovery"] = {"skipped": True}
 
         if self.enable_sitemap_discovery:
             target_region = location_region(target_location)
@@ -440,16 +487,33 @@ class JobSourceAgent:
         career_page_url: str,
         company_name: str | None = None,
     ) -> tuple[str, dict]:
+        job_list_url, trace, _discovered_board = self.find_job_board_with_evidence(
+            career_page_url,
+            company_name=company_name,
+        )
+        return job_list_url, trace
+
+    def find_job_board_with_evidence(
+        self,
+        career_page_url: str,
+        company_name: str | None = None,
+    ) -> tuple[str, dict, DiscoveredJobBoard | None]:
         if self._is_provider_job_board_url(career_page_url):
-            return career_page_url, {
-                "career_page_url": career_page_url,
-                "job_list_page_url": career_page_url,
-                "selected": {
-                    "url": career_page_url,
-                    "reason": "career page is already a provider job board",
+            return (
+                career_page_url,
+                {
+                    "career_page_url": career_page_url,
+                    "job_list_page_url": career_page_url,
+                    "selected": {
+                        "url": career_page_url,
+                        "reason": "career page is already a provider job board",
+                    },
                 },
-            }
-        _opening_url, job_list_url, trace = self._discover_job_board_legacy(career_page_url)
+                None,
+            )
+        _opening_url, job_list_url, trace, discovered_board = self._discover_job_board_legacy(
+            career_page_url
+        )
         if (
             company_name
             and self.max_ats_board_fetches
@@ -468,6 +532,7 @@ class JobSourceAgent:
             trace["ats_search_fallback"] = search_trace
             if searched_url:
                 job_list_url = searched_url
+                discovered_board = None
                 trace["job_list_page_url"] = searched_url
                 trace["selected_from"] = "ats_search_fallback"
                 trace["provider"] = self.provider_registry.detect(searched_url)
@@ -481,7 +546,7 @@ class JobSourceAgent:
         trace.pop("selected", None)
         trace.pop("opening_error", None)
         trace["job_list_page_url"] = job_list_url
-        return job_list_url, trace
+        return job_list_url, trace, discovered_board
 
     def _search_verified_ats_board(
         self,
@@ -547,6 +612,34 @@ class JobSourceAgent:
         target_title: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str | None, str, dict]:
+        return self._match_opening(
+            job_list_url,
+            target_title,
+            target_location,
+            discovered_board=None,
+        )
+
+    def match_discovered_board(
+        self,
+        discovered_board: DiscoveredJobBoard,
+        target_title: str | None = None,
+        target_location: str | None = None,
+    ) -> tuple[str | None, str, dict]:
+        return self._match_opening(
+            discovered_board.board.url,
+            target_title,
+            target_location,
+            discovered_board=discovered_board,
+        )
+
+    def _match_opening(
+        self,
+        job_list_url: str,
+        target_title: str | None,
+        target_location: str | None,
+        *,
+        discovered_board: DiscoveredJobBoard | None,
+    ) -> tuple[str | None, str, dict]:
         if self._looks_like_job_detail_url(job_list_url):
             return job_list_url, job_list_url, {
                 "job_list_page_url": job_list_url,
@@ -556,7 +649,9 @@ class JobSourceAgent:
                 },
             }
         if not target_title:
-            opening_url, resolved_job_list_url, trace = self._discover_job_board_legacy(job_list_url)
+            opening_url, resolved_job_list_url, trace, _board = self._discover_job_board_legacy(
+                job_list_url
+            )
             if opening_url:
                 return opening_url, resolved_job_list_url or job_list_url, trace
             trace["opening_error"] = "open_position_not_found"
@@ -565,6 +660,7 @@ class JobSourceAgent:
             job_list_url,
             target_title,
             target_location,
+            discovered_board=discovered_board,
         )
         if match:
             trace["selected"] = {
@@ -585,11 +681,12 @@ class JobSourceAgent:
         target_title: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str | None, str | None, dict]:
-        job_list_url, trace = self.find_job_board(career_page_url)
-        opening_url, resolved_job_list_url, match_trace = self.match_opening(
+        job_list_url, trace, discovered_board = self.find_job_board_with_evidence(career_page_url)
+        opening_url, resolved_job_list_url, match_trace = self._match_opening(
             job_list_url,
             target_title,
             target_location,
+            discovered_board=discovered_board,
         )
         trace["job_list_page_url"] = resolved_job_list_url
         trace["opening_matcher"] = match_trace
@@ -602,16 +699,21 @@ class JobSourceAgent:
     def _discover_job_board_legacy(
         self,
         career_page_url: str,
-    ) -> tuple[str | None, str | None, dict]:
+    ) -> tuple[str | None, str | None, dict, DiscoveredJobBoard | None]:
         if self._looks_like_job_detail_url(career_page_url):
-            return career_page_url, career_page_url, {
-                "career_page_url": career_page_url,
-                "job_list_page_url": career_page_url,
-                "selected": {
-                    "url": career_page_url,
-                    "reason": "career page is already a job-detail URL",
+            return (
+                career_page_url,
+                career_page_url,
+                {
+                    "career_page_url": career_page_url,
+                    "job_list_page_url": career_page_url,
+                    "selected": {
+                        "url": career_page_url,
+                        "reason": "career page is already a job-detail URL",
+                    },
                 },
-            }
+                None,
+            )
 
         trace = {
             "career_page_url": career_page_url,
@@ -676,7 +778,16 @@ class JobSourceAgent:
                 trace["pages_visited"].append(
                     {"url": actual_page_url, "source": page.source, "top_candidates": []}
                 )
-                return None, board.url, trace
+                return (
+                    None,
+                    board.url,
+                    trace,
+                    DiscoveredJobBoard(
+                        board=board,
+                        detection_method="page_evidence",
+                        evidence_url=actual_page_url,
+                    ),
+                )
             url_adapter = self.provider_registry.adapter_for(actual_page_url)
             url_board = url_adapter.identify_board(actual_page_url) if url_adapter else None
             if url_adapter is not None and url_board is not None and url_adapter.supports_listing:
@@ -733,7 +844,7 @@ class JobSourceAgent:
             if verified_generic_listing:
                 trace["selected_from"] = "explicit_first_party_listing_route"
                 trace["selected_page_source"] = page.source
-                return None, actual_page_url, trace
+                return None, actual_page_url, trace, None
 
             linked_provider_board = next(
                 (
@@ -758,7 +869,7 @@ class JobSourceAgent:
                     "url": board.url,
                 }
                 trace["job_list_page_url"] = board.url
-                return None, board.url, trace
+                return None, board.url, trace, None
 
             official_portal = next(
                 (
@@ -772,7 +883,7 @@ class JobSourceAgent:
                 trace["selected"] = dataclass_to_dict(official_portal)
                 trace["selected_page_source"] = "first_party_portal_link"
                 trace["job_list_page_url"] = official_portal.url
-                return None, official_portal.url, trace
+                return None, official_portal.url, trace, None
 
             traversal_candidates = sorted(
                 deduped[: self.max_candidates],
@@ -805,7 +916,7 @@ class JobSourceAgent:
                 trace["selected"] = dataclass_to_dict(candidate)
                 trace["job_list_page_url"] = actual_page_url
                 trace["selected_page_source"] = opened.source
-                return opened.final_url or opened.url, actual_page_url, trace
+                return opened.final_url or opened.url, actual_page_url, trace, None
 
             for candidate in traversal_candidates:
                 if (
@@ -824,7 +935,7 @@ class JobSourceAgent:
                 ):
                     queue.append(candidate.url)
 
-        return None, trace["job_list_page_url"], trace
+        return None, trace["job_list_page_url"], trace, None
 
     def _career_category_priority(
         self,

@@ -7,6 +7,7 @@ from html import unescape
 from html.parser import HTMLParser
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
+from .job_board import DiscoveredJobBoard
 from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
 from .listing_extraction import extract_listing_candidates, validate_output_url
 from .scoring import is_likely_job_detail, score_job_link
@@ -74,6 +75,8 @@ class JobOpeningMatcher:
         job_list_url: str,
         target_title: str | None,
         target_location: str | None = None,
+        *,
+        discovered_board: DiscoveredJobBoard | None = None,
     ) -> tuple[OpeningMatch | None, dict]:
         trace = {
             "job_list_url": job_list_url,
@@ -90,6 +93,7 @@ class JobOpeningMatcher:
             job_list_url,
             target_title,
             target_location,
+            discovered_board=discovered_board,
         )
         trace["provider_api"] = api_trace
         if api_trace.get("provider") and api_trace["provider"] != "generic":
@@ -179,12 +183,32 @@ class JobOpeningMatcher:
         job_list_url: str,
         target_title: str,
         target_location: str | None = None,
+        *,
+        discovered_board: DiscoveredJobBoard | None = None,
     ) -> tuple[OpeningMatch | None, dict, Page | None]:
         provider = self.provider_registry.detect(job_list_url)
         adapter = self.provider_registry.adapter_for(job_list_url)
         board = adapter.identify_board(job_list_url) if adapter else None
         page_detection = None
         landing_page = None
+        if (
+            discovered_board is not None
+            and discovered_board.board.url.rstrip("/") == job_list_url.rstrip("/")
+        ):
+            typed_adapter = self.provider_registry.adapter_named(
+                discovered_board.board.provider
+            )
+            if typed_adapter is not None:
+                adapter = typed_adapter
+                board = discovered_board.board
+                provider = typed_adapter.name
+                page_detection = {
+                    "method": "typed_stage_handoff",
+                    "source_method": discovered_board.detection_method,
+                    "provider": provider,
+                    "url": board.url,
+                    "evidence_url": discovered_board.evidence_url,
+                }
         if adapter is None:
             try:
                 landing_page = self.fetcher.fetch(job_list_url)

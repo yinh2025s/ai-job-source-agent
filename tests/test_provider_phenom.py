@@ -61,7 +61,10 @@ class PhenomAdapterTests(unittest.TestCase):
 
         self.assertIsNotNone(selected)
         self.assertIs(selected[0], ADAPTER)
-        self.assertEqual(selected[1], JobBoard(self.board_url, "phenom", "ACMEGLOBAL"))
+        self.assertEqual(
+            selected[1],
+            JobBoard(self.board_url, "phenom", "ACMEGLOBAL", replay_safe=True),
+        )
         self.assertIsNone(
             self.adapter.identify_board_from_page(
                 Page(url="https://careers.example.com/global/en", html=phenom_html())

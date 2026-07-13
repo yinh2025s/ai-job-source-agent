@@ -7,7 +7,7 @@ from pathlib import Path
 
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
-from job_source_agent.web import Fetcher, Page
+from job_source_agent.web import FetchError, Fetcher, Page
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -119,6 +119,33 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(first.summary["duplicate_records"], 1)
         self.assertEqual(first.summary["superseded_records"], 0)
         self.assertEqual(first.summary["fixture_count"], 1)
+
+    def test_reusing_output_removes_fixtures_absent_from_new_snapshot_set(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first_snapshots = root / "first-snapshots"
+            second_snapshots = root / "second-snapshots"
+            output = root / "replay"
+            self._write_snapshot(first_snapshots)
+            replay_snapshots(first_snapshots, output)
+            SnapshotStore(second_snapshots).write_page(
+                Page(
+                    url="https://other.example.com/jobs",
+                    final_url="https://other.example.com/jobs",
+                    html="<html>other</html>",
+                    source="live",
+                )
+            )
+
+            replay_snapshots(second_snapshots, output)
+            fetcher = Fetcher(fixtures_dir=output / "sites", offline=True)
+
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://jobs.example.com/search")
+            self.assertEqual(
+                fetcher.fetch("https://other.example.com/jobs").html,
+                "<html>other</html>",
+            )
 
     def test_query_variants_replay_as_distinct_pages_and_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -63,6 +63,19 @@ SUMMARY = {
         "lever": {"OPENING_NOT_FOUND": 1, "FETCH_FAILED": 2},
         "greenhouse": {},
     },
+    "failure_clusters": [
+        {
+            "stage": "opening_match",
+            "provider": "lever",
+            "reason_code": "OPENING_NOT_FOUND",
+            "company_count": 2,
+            "retryable_count": 0,
+            "company_names": ["B", "C"],
+            "inventory_disposition_counts": {
+                "verified_inventory_no_match": 2,
+            },
+        }
+    ],
     "reason_code_counts": {"OPENING_NOT_FOUND": 1},
     "checkpoint_action_counts": {"save": 3, "restore": 1, "invalidate_from": 1},
     "checkpoint_stage_counts": {"career_discovery": 3, "website_resolution": 2},
@@ -117,6 +130,11 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("## Provider Reason Codes", report)
         self.assertIn("| lever | FETCH_FAILED | 2 |", report)
         self.assertLess(report.index("| lever | FETCH_FAILED | 2 |"), report.index("| lever | OPENING_NOT_FOUND | 1 |"))
+        self.assertIn("## Actionable Failure Clusters", report)
+        self.assertIn(
+            "| 1 | opening_match | lever | OPENING_NOT_FOUND | 2 | 0 | verified_inventory_no_match:2 | B, C |",
+            report,
+        )
         self.assertIn("| B | lever | partial | OPENING_NOT_FOUND", report)
         self.assertIn("## Checkpoint Activity", report)
         self.assertIn("| Action | save | 3 |", report)
@@ -131,8 +149,10 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("| none | - | - | - | - | - | - | - |", report)
         self.assertIn("## Provider Reason Codes", report)
         self.assertIn("| none | none | 0 |", report)
+        self.assertIn("## Actionable Failure Clusters", report)
+        self.assertIn("| 0 | none | none | none | 0 | 0 | - | - |", report)
         self.assertIn("## Checkpoint Activity", report)
-        self.assertEqual(report.count("| none | none | 0 |"), 2)
+        self.assertEqual(report.count("| none | none | 0 |"), 3)
 
     def test_cli_writes_report_file(self):
         with tempfile.TemporaryDirectory() as directory:

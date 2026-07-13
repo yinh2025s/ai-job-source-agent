@@ -1,7 +1,10 @@
 import unittest
 from pathlib import Path
 
-from job_source_agent.content_probe import probe_first_party_cms_payload
+from job_source_agent.content_probe import (
+    discover_first_party_career_navigation,
+    probe_first_party_cms_payload,
+)
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import CompanyInput, LinkCandidate
@@ -13,6 +16,97 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfflinePipelineTests(unittest.TestCase):
+    def test_labeled_first_party_bundle_navigation_recovers_career_without_sitemap(self):
+        homepage = "https://bundle.example"
+        asset = homepage + "/assets/index-app.js"
+        career = homepage + "/company/careers"
+        payload = (
+            "https://magnolia-public.bundle.example/.rest/delivery/marketing-pages/v1/"
+            "bundle-site/company/careers"
+        )
+        workday = "https://bundle.wd5.myworkdayjobs.com/bundle-careers"
+        bundle = (
+            'const nav=[{href:"/company/about",children:"About"},'
+            '{href:"/company/careers",children:"Careers"}];'
+            'const endpoint="/.rest/delivery/marketing-pages/v1";'
+            'const cms="https://magnolia-public.bundle.example";'
+            'const base=sessionStorage.getItem("appBase")||"/bundle-site";'
+        )
+
+        class BundleFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.requests = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requests.append(url)
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=f'<script type="module" src="{asset}"></script>',
+                    )
+                if url == asset:
+                    return Page(url=url, final_url=url, html=bundle, source="public-js")
+                if url.rstrip("/") == career:
+                    return Page(
+                        url=url,
+                        final_url=career,
+                        html=f'<script type="module" src="{asset}"></script>',
+                    )
+                if url == payload:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=f'<h1>Careers</h1><script>const board="{workday}";</script>',
+                        source="magnolia-public",
+                    )
+                raise FetchError(f"not available: {url}")
+
+        fetcher = BundleFetcher()
+        agent = JobSourceAgent(
+            fetcher,
+            max_career_candidate_fetches=2,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        career_url, trace = agent.find_career_page(homepage, company_name="Bundle")
+
+        self.assertEqual(career_url, career)
+        self.assertEqual(trace["selected_from"], "bundle_navigation_discovery")
+        self.assertEqual(
+            trace["bundle_navigation_discovery"]["candidate_urls"],
+            [career],
+        )
+
+    def test_bundle_navigation_requires_labeled_same_origin_career_route(self):
+        homepage = "https://bundle.example"
+        asset = homepage + "/assets/index.js"
+
+        class BundleFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == asset:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            '{href:"/company/careers",children:"Products"},'
+                            '{href:"https://other.example/careers",children:"Careers"}'
+                        ),
+                    )
+                raise FetchError("unexpected")
+
+        page = Page(
+            url=homepage,
+            html=f'<script type="module" src="{asset}"></script>',
+        )
+
+        candidates, trace = discover_first_party_career_navigation(BundleFetcher(), page)
+
+        self.assertEqual(candidates, [])
+        self.assertEqual(trace["candidate_urls"], [])
+
     def test_sample_jobs_discover_successfully(self):
         companies = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")
         agent = JobSourceAgent(

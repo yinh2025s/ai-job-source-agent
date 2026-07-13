@@ -60,6 +60,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines.extend(_simple_count_table("Provider Distribution", summary.get("provider_counts", {}), "Provider"))
     lines.extend(_provider_stage_reliability(summary))
     lines.extend(_provider_reason_codes(summary))
+    lines.extend(_failure_clusters(summary))
     lines.extend(_simple_count_table("Reason Codes", summary.get("reason_code_counts", {}), "Reason"))
     lines.extend(
         _simple_count_table(
@@ -218,6 +219,40 @@ def _provider_reason_codes(summary: dict) -> list[str]:
             has_reasons = True
     if not has_reasons:
         lines.append("| none | none | 0 |")
+    lines.append("")
+    return lines
+
+
+def _failure_clusters(summary: dict) -> list[str]:
+    clusters = summary.get("failure_clusters") or []
+    lines = [
+        "## Actionable Failure Clusters",
+        "",
+        "| Rank | Stage | Provider | Reason | Companies | Retryable | Dispositions | Examples |",
+        "| ---: | --- | --- | --- | ---: | ---: | --- | --- |",
+    ]
+    for rank, cluster in enumerate(clusters, start=1):
+        dispositions = ", ".join(
+            f"{name}:{count}"
+            for name, count in sorted(
+                (cluster.get("inventory_disposition_counts") or {}).items()
+            )
+        ) or "-"
+        examples = ", ".join(str(name) for name in cluster.get("company_names") or []) or "-"
+        lines.append(
+            "| {rank} | {stage} | {provider} | {reason} | {companies} | {retryable} | {dispositions} | {examples} |".format(
+                rank=rank,
+                stage=_escape(cluster.get("stage") or "unknown"),
+                provider=_escape(cluster.get("provider") or "unknown"),
+                reason=_escape(cluster.get("reason_code") or "unknown"),
+                companies=cluster.get("company_count", 0),
+                retryable=cluster.get("retryable_count", 0),
+                dispositions=_escape(dispositions),
+                examples=_escape(examples),
+            )
+        )
+    if not clusters:
+        lines.append("| 0 | none | none | none | 0 | 0 | - | - |")
     lines.append("")
     return lines
 

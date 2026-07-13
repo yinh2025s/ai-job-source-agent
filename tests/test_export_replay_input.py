@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from job_source_agent.checkpoint import checkpoint_metadata
+from job_source_agent.checkpoint import CHECKPOINT_SCHEMA_VERSION, checkpoint_metadata
 from job_source_agent.linkedin import load_company_inputs
 from scripts.export_replay_input import export_replay_records, main
 
@@ -65,7 +65,10 @@ class ExportReplayInputTests(unittest.TestCase):
         self.assertEqual(exported[0]["career_root_url"], "https://jobs.lever.co/example-robotics")
         self.assertEqual(exported[0]["source"], "replay_input")
         self.assertEqual(exported[0]["source_trace"]["replay"]["provider"], "lever")
-        self.assertEqual(exported[0]["checkpoint"]["checkpoint_schema_version"], "1.0")
+        self.assertEqual(
+            exported[0]["checkpoint"]["checkpoint_schema_version"],
+            CHECKPOINT_SCHEMA_VERSION,
+        )
         self.assertRegex(exported[0]["checkpoint"]["input_fingerprint"], r"^[0-9a-f]{64}$")
 
     def test_preserves_only_stable_linkedin_posting_evidence_from_trace_output(self):
@@ -131,6 +134,40 @@ class ExportReplayInputTests(unittest.TestCase):
             {"status": "expired", "availability": "unavailable"},
         )
         self.assertNotIn("payload", json.dumps(exported))
+
+    def test_preserves_only_typed_expected_replay_transition(self):
+        record = {
+            "company_name": "Example Robotics",
+            "company_website_url": "https://example.test",
+            "pipeline_status": "partial",
+            "replay_expected_transition": {
+                "pipeline_status": "success",
+                "failure_stage": {
+                    "stage": "opening_match",
+                    "status": "success",
+                    "reason_code": None,
+                    "raw_html": "must not persist",
+                },
+                "token": "must not persist",
+            },
+            "stages": [_stage("opening_match", "partial", "OPENING_NOT_FOUND")],
+        }
+
+        exported = export_replay_records([record], self._args())
+
+        transition = exported[0]["source_trace"]["replay"]["expected_transition"]
+        self.assertEqual(
+            transition,
+            {
+                "pipeline_status": "success",
+                "failure_stage": {
+                    "stage": "opening_match",
+                    "status": "success",
+                    "reason_code": None,
+                },
+            },
+        )
+        self.assertNotIn("must not persist", json.dumps(exported))
 
     def test_missing_website_is_skipped_unless_requested(self):
         records = [

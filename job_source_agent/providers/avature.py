@@ -37,6 +37,7 @@ class AvatureAdapter:
             url=_search_url(host, language, portal),
             provider=self.name,
             identifier=f"{host}|{language}|{portal}",
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
