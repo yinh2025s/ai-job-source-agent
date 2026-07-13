@@ -909,7 +909,6 @@ class JobSourceAgent:
                 (adapter, board, candidate)
                 for candidate in deduped
                 if candidate.origin == "page_link" and candidate.text
-                if not is_likely_job_detail(candidate)
                 if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
                 and adapter.supports_listing
                 and (board := adapter.identify_board(candidate.url)) is not None

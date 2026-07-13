@@ -196,6 +196,23 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
         self.assertEqual(fetcher.requested, [career])
 
+    def test_visible_canonical_whitecarrot_board_is_handed_to_provider(self):
+        career = "https://smart-bricks.com/company/careers/open-roles"
+        board = "https://app.whitecarrot.io/careers/smart-bricks"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<a href="{board}">See Open Roles</a>',
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(trace["provider"], "whitecarrot")
+        self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
+        self.assertEqual(fetcher.requested, [career])
+
     def test_visible_taleo_board_outside_candidate_cap_is_handed_to_provider(self):
         career = "https://example.com/careers"
         board = "https://jobs.example.net/careersection/percepta/jobsearch.ftl"
