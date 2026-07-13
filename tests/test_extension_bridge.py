@@ -3,8 +3,13 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
-from job_source_agent.composition import FetcherConfig
+from job_source_agent.composition import (
+    LINKEDIN_EVIDENCE_CACHE_FILENAME,
+    FetcherConfig,
+    build_application,
+)
 from job_source_agent.extension_bridge import (
     MAX_RECORDS,
     ExtensionBridgeConfig,
@@ -82,6 +87,45 @@ class ExtensionBridgeTests(unittest.TestCase):
                 manager.submit(records)
         finally:
             manager.close()
+
+    def test_manager_reuses_output_directory_evidence_cache_across_runs(self):
+        record = {
+            "company_name": "Aurora Data",
+            "company_website_url": "https://aurora-data.example",
+            "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
+            "job_title": "AI Engineer",
+            "source": "linkedin_browser_extension",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            manager = ExtensionRunManager(
+                ExtensionBridgeConfig(
+                    fetcher=FetcherConfig(
+                        fixtures_dir=ROOT / "samples" / "sites",
+                        offline=True,
+                    ),
+                    workers=1,
+                    output_dir=output_dir,
+                )
+            )
+            try:
+                with patch(
+                    "job_source_agent.extension_bridge.build_application",
+                    wraps=build_application,
+                ) as build:
+                    first_run = manager.submit([record])
+                    self._wait_for_run(manager, first_run)
+                    second_run = manager.submit([record])
+                    self._wait_for_run(manager, second_run)
+            finally:
+                manager.close()
+
+        expected_path = output_dir / LINKEDIN_EVIDENCE_CACHE_FILENAME
+        self.assertEqual(build.call_count, 2)
+        self.assertEqual(
+            [call.kwargs["linkedin_evidence_cache_path"] for call in build.call_args_list],
+            [expected_path, expected_path],
+        )
 
     def test_bridge_auth_contract_allows_only_extension_origin_and_exact_token(self):
         self.assertTrue(is_allowed_origin(None))

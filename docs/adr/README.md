@@ -14,3 +14,4 @@ NNNN-short-decision-title.md
 
 - [ADR-0001: Separate Stage Execution And Provider Adapters](0001-separate-stage-and-provider-boundaries.md)
 - [ADR-0002: Keep Browser Extension As An Evidence Adapter](0002-browser-extension-evidence-bridge.md)
+- [ADR-0003: Cache Verified LinkedIn Website Evidence](0003-cache-linkedin-website-evidence.md)

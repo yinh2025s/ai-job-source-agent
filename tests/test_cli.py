@@ -2,8 +2,10 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from job_source_agent.cli import main
+from job_source_agent.composition import build_application
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -50,6 +52,36 @@ class CliTests(unittest.TestCase):
             main(common + ["--resume-from-stage", "career_discovery"])
         with self.assertRaisesRegex(SystemExit, "require --checkpoint-dir"):
             main(common + ["--rerun-stage", "career_discovery"])
+
+    def test_cli_passes_explicit_linkedin_evidence_cache_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            trace = Path(directory) / "trace.json"
+            evidence_cache = Path(directory) / "shared-evidence.json"
+            with patch(
+                "job_source_agent.cli.build_application",
+                wraps=build_application,
+            ) as build:
+                main(
+                    [
+                        "--input",
+                        str(ROOT / "samples" / "linkedin_jobs.json"),
+                        "--fixtures-dir",
+                        str(ROOT / "samples" / "sites"),
+                        "--offline",
+                        "--linkedin-evidence-cache",
+                        str(evidence_cache),
+                        "--output",
+                        str(output),
+                        "--trace-output",
+                        str(trace),
+                    ]
+                )
+
+        self.assertEqual(
+            build.call_args.kwargs["linkedin_evidence_cache_path"],
+            str(evidence_cache),
+        )
 
 
 if __name__ == "__main__":

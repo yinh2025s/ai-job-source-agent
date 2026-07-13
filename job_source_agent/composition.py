@@ -6,6 +6,7 @@ from pathlib import Path
 from .application_runner import ApplicationRunner
 from .company_identity import CompanyIdentityResolver
 from .contracts import FetchClient
+from .identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
 from .pipeline import JobSourceAgent
 from .pipeline_application import PipelineApplication
 from .posting_identity import LinkedInPostingIdentityProbe
@@ -25,6 +26,9 @@ from .stages import (
 )
 from .web import Fetcher
 from .website_resolver import CompanyWebsiteResolver
+
+
+LINKEDIN_EVIDENCE_CACHE_FILENAME = "linkedin-website-evidence.json"
 
 
 @dataclass(frozen=True)
@@ -122,11 +126,23 @@ def build_application(
     provider_registry: ProviderRegistry | None = None,
     checkpoint_dir: str | Path | None = None,
     website_overrides: str | Path | None = None,
+    linkedin_evidence_cache_path: str | Path | None = None,
 ) -> ApplicationComponents:
     registry = provider_registry or build_default_provider_registry()
     fetcher = build_fetcher(fetcher_config)
     agent = build_agent(fetcher, agent_config, registry)
-    website_resolver = CompanyWebsiteResolver(fetcher, overrides_path=website_overrides)
+    evidence_cache_path = linkedin_evidence_cache_path
+    if evidence_cache_path is None and checkpoint_dir is not None:
+        evidence_cache_path = Path(checkpoint_dir) / LINKEDIN_EVIDENCE_CACHE_FILENAME
+    website_resolver = CompanyWebsiteResolver(
+        fetcher,
+        overrides_path=website_overrides,
+        linkedin_evidence_store=(
+            FilesystemLinkedInWebsiteEvidenceStore(evidence_cache_path)
+            if evidence_cache_path is not None
+            else None
+        ),
+    )
     runner = ApplicationRunner(
         (
             InputDiscoveryStage(),

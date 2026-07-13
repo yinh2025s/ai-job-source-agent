@@ -222,6 +222,136 @@ class WebsiteResolverTests(unittest.TestCase):
             trace["selected"]["reasons"],
         )
 
+    def test_linkedin_fetch_error_retries_trailing_slash_variant(self):
+        linkedin_url = "https://www.linkedin.com/company/velox"
+
+        class TransientLinkedInFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == linkedin_url:
+                    raise FetchError("transient public-page failure")
+                if url == f"{linkedin_url}/":
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"VELOX",'
+                            '"sameAs":"https://www.velox.com"}'
+                            "</script>"
+                        ),
+                    )
+                raise FetchError("homepage or search blocked")
+
+        fetcher = TransientLinkedInFetcher()
+        website_url, trace = CompanyWebsiteResolver(
+            fetcher,
+            verify_limit=3,
+        ).resolve("VELOX", linkedin_url, "Boise, ID")
+
+        self.assertEqual(website_url, "https://www.velox.com")
+        linkedin_calls = [url for url in fetcher.calls if "linkedin.com" in url]
+        self.assertEqual(linkedin_calls, [linkedin_url, f"{linkedin_url}/"])
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
+
+    def test_cached_official_website_beats_stale_preferred_domain_during_throttle(self):
+        linkedin_url = "https://www.linkedin.com/company/m-r-walls"
+
+        class EvidenceStore:
+            def load(self, company_name, linkedin_company_url):
+                self.loaded = (company_name, linkedin_company_url)
+                return ("https://mrwalls.io",)
+
+            def save(self, company_name, linkedin_company_url, official_website_urls):
+                raise AssertionError("throttled page must not overwrite cached evidence")
+
+        class ThrottledMigrationFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com" in url:
+                    raise FetchError("public company page throttled")
+                if domain_of(url) == "mrwalls.io":
+                    return Page(
+                        url=url,
+                        final_url="https://mrwalls.io/",
+                        html=(
+                            '<html><head><title>M|R Walls</title>'
+                            '<link rel="canonical" href="https://mrwalls.io/"></head>'
+                            "<body>M|R Walls</body></html>"
+                        ),
+                    )
+                if domain_of(url) == "mrwalls.com":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<html><head><title>M R Walls</title></head><body>M R Walls</body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        store = EvidenceStore()
+        website_url, trace = CompanyWebsiteResolver(
+            ThrottledMigrationFetcher(offline=True),
+            verify_limit=3,
+            linkedin_evidence_store=store,
+        ).resolve(
+            "M|R Walls",
+            linkedin_url,
+            "Santa Monica, CA",
+            preferred_url="https://mrwalls.com",
+        )
+
+        self.assertEqual(website_url, "https://mrwalls.io/")
+        self.assertEqual(trace["linkedin_official_evidence_source"], "cache")
+        self.assertIn(
+            "candidate source: linkedin_cached_official_website",
+            trace["selected"]["reasons"],
+        )
+        self.assertEqual(store.loaded, ("M|R Walls", linkedin_url))
+
+    def test_live_linkedin_official_website_is_saved_for_future_runs(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class RecordingStore:
+            def __init__(self):
+                self.saved = None
+
+            def load(self, company_name, linkedin_company_url):
+                return ()
+
+            def save(self, company_name, linkedin_company_url, official_website_urls):
+                self.saved = (company_name, linkedin_company_url, official_website_urls)
+
+        class OfficialPageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com" in url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme",'
+                            '"sameAs":"https://acme.example"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "acme.example":
+                    return Page(url=url, html="<html><title>Acme</title><body>Acme</body></html>")
+                raise FetchError("not this candidate")
+
+        store = RecordingStore()
+        website_url, trace = CompanyWebsiteResolver(
+            OfficialPageFetcher(offline=True),
+            linkedin_evidence_store=store,
+        ).resolve("Acme", linkedin_url, preferred_url="https://old-acme.example")
+
+        self.assertEqual(website_url, "https://acme.example")
+        self.assertEqual(trace["linkedin_official_evidence_source"], "live")
+        self.assertEqual(store.saved, ("Acme", linkedin_url, ("https://acme.example",)))
+
     def test_exact_disambiguating_slug_selects_verified_extended_brand(self):
         class ExtendedBrandFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):

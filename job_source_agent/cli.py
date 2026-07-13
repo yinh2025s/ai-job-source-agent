@@ -40,6 +40,10 @@ def build_parser() -> argparse.ArgumentParser:
         "--checkpoint-dir",
         help="Optional directory for compatible per-company, per-stage checkpoints.",
     )
+    parser.add_argument(
+        "--linkedin-evidence-cache",
+        help="Optional path for reusable LinkedIn official-website evidence.",
+    )
     stage_group = parser.add_mutually_exclusive_group()
     stage_group.add_argument(
         "--resume-from-stage",
@@ -74,6 +78,7 @@ def main(argv: list[str] | None = None) -> None:
         ),
         checkpoint_dir=args.checkpoint_dir,
         website_overrides=args.website_overrides,
+        linkedin_evidence_cache_path=args.linkedin_evidence_cache,
     )
     fetcher = application.fetcher
     companies = _load_companies(args, fetcher)

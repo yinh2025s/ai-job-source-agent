@@ -11,7 +11,9 @@ from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from xml.etree import ElementTree as ET
 
-from .web import FetchError, Fetcher, domain_of, normalize_url
+from .contracts import FetchClient
+from .identity_evidence import LinkedInWebsiteEvidenceStore
+from .web import FetchError, domain_of, normalize_url
 
 
 SEARCH_ENDPOINT = "https://www.bing.com/search"
@@ -104,16 +106,25 @@ class SearchEvidence:
     snippet: str = ""
 
 
+@dataclass(frozen=True)
+class _LinkedInCompanyCandidates:
+    official_urls: tuple[str, ...] = ()
+    outbound_urls: tuple[str, ...] = ()
+    official_source: str | None = None
+
+
 class CompanyWebsiteResolver:
     def __init__(
         self,
-        fetcher: Fetcher,
+        fetcher: FetchClient,
         overrides_path: str | Path | None = None,
         verify_limit: int = 3,
+        linkedin_evidence_store: LinkedInWebsiteEvidenceStore | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.overrides = self._load_overrides(overrides_path)
         self.verify_limit = verify_limit
+        self.linkedin_evidence_store = linkedin_evidence_store
 
     def resolve(
         self,
@@ -142,12 +153,18 @@ class CompanyWebsiteResolver:
         preferred_candidates = [preferred_url] if preferred_url else []
         linkedin_official_candidates: list[str] = []
         linkedin_candidates: list[str] = []
+        linkedin_official_source: str | None = None
         linkedin_evidence_loaded = False
         if (preferred_url or _linkedin_slug_uses_marketing_prefix(linkedin_company_url)) and linkedin_company_url:
-            linkedin_official_candidates, linkedin_candidates = self._linkedin_company_candidates(
+            linkedin_evidence = self._linkedin_company_candidates(
                 linkedin_company_url,
                 company_name,
             )
+            linkedin_official_candidates = list(linkedin_evidence.official_urls)
+            linkedin_candidates = list(linkedin_evidence.outbound_urls)
+            linkedin_official_source = linkedin_evidence.official_source
+            if linkedin_official_source:
+                trace["linkedin_official_evidence_source"] = linkedin_official_source
             linkedin_evidence_loaded = True
         fast_candidates = dedupe_urls(
             preferred_candidates
@@ -158,6 +175,10 @@ class CompanyWebsiteResolver:
         fast_sources = _candidate_source_map(
             ("preferred_input", preferred_candidates),
             ("linkedin_official_website", linkedin_official_candidates),
+            (
+                "linkedin_cached_official_website",
+                linkedin_official_candidates if linkedin_official_source == "cache" else [],
+            ),
             ("linkedin_slug", self._linkedin_slug_domain_candidates(linkedin_company_url)),
             ("speculative_guess", guessed_candidates[:6]),
         )
@@ -205,10 +226,15 @@ class CompanyWebsiteResolver:
                 return regional_selected.url, trace
 
         if not linkedin_evidence_loaded:
-            linkedin_official_candidates, linkedin_candidates = self._linkedin_company_candidates(
+            linkedin_evidence = self._linkedin_company_candidates(
                 linkedin_company_url,
                 company_name,
             )
+            linkedin_official_candidates = list(linkedin_evidence.official_urls)
+            linkedin_candidates = list(linkedin_evidence.outbound_urls)
+            linkedin_official_source = linkedin_evidence.official_source
+            if linkedin_official_source:
+                trace["linkedin_official_evidence_source"] = linkedin_official_source
         search_evidence = self._search_candidates_with_evidence(company_name, job_location)
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
@@ -222,6 +248,10 @@ class CompanyWebsiteResolver:
         candidate_sources = _candidate_source_map(
             ("preferred_input", preferred_candidates),
             ("linkedin_official_website", linkedin_official_candidates),
+            (
+                "linkedin_cached_official_website",
+                linkedin_official_candidates if linkedin_official_source == "cache" else [],
+            ),
             ("linkedin_evidence", linkedin_candidates[:5]),
             ("search_evidence", search_candidates[:5]),
             ("speculative_guess", guessed_candidates[:6]),
@@ -363,28 +393,59 @@ class CompanyWebsiteResolver:
         self,
         linkedin_company_url: str | None,
         company_name: str,
-    ) -> tuple[list[str], list[str]]:
+    ) -> _LinkedInCompanyCandidates:
         if not linkedin_company_url:
-            return [], []
-        try:
-            page = self.fetcher.fetch(linkedin_company_url)
-        except FetchError:
-            return [], []
-        if _linkedin_company_page_incomplete(page.html):
-            retry_url = f"{linkedin_company_url.rstrip('/')}/"
-            if retry_url != linkedin_company_url:
-                try:
-                    page = self.fetcher.fetch(retry_url)
-                except FetchError:
-                    pass
-        official = _linkedin_json_ld_websites(page.html, company_name)
+            return _LinkedInCompanyCandidates()
+        base_url = linkedin_company_url.rstrip("/")
+        attempt_urls = list(
+            dict.fromkeys(
+                (
+                    linkedin_company_url,
+                    base_url if linkedin_company_url.endswith("/") else f"{base_url}/",
+                )
+            )
+        )
+        pages = []
+        for attempt_url in attempt_urls:
+            try:
+                candidate_page = self.fetcher.fetch(attempt_url)
+            except FetchError:
+                continue
+            pages.append(candidate_page)
+            if not _linkedin_company_page_incomplete(candidate_page.html):
+                break
+        page = max(pages, key=lambda item: _linkedin_company_page_quality(item.html)) if pages else None
+        official = _linkedin_json_ld_websites(page.html, company_name) if page else []
+        official_source = "live" if official else None
+        if official and self.linkedin_evidence_store is not None:
+            try:
+                self.linkedin_evidence_store.save(
+                    company_name,
+                    linkedin_company_url,
+                    tuple(official),
+                )
+            except (OSError, TypeError, ValueError):
+                pass
+        elif self.linkedin_evidence_store is not None:
+            try:
+                official = list(
+                    self.linkedin_evidence_store.load(company_name, linkedin_company_url)
+                )
+            except (OSError, TypeError, ValueError):
+                official = []
+            if official:
+                official_source = "cache"
         urls: list[str] = []
-        for url in re.findall(r"https?://[^\"'<>\s)\\]+", page.html):
+        for url in re.findall(r"https?://[^\"'<>\s)\\]+", page.html if page else ""):
             cleaned = clean_search_url(url)
             if not cleaned or is_blocked_domain(cleaned):
                 continue
             urls.append(cleaned)
-        return dedupe_urls(official), dedupe_urls(urls)
+        return _LinkedInCompanyCandidates(
+            official_urls=tuple(dedupe_urls(official)),
+            outbound_urls=tuple(dedupe_urls(urls)),
+            official_source=official_source,
+        )
 
     def _guess_domain_candidates(self, company_name: str) -> list[str]:
         tokens = tokenize_company_name(company_name)
@@ -1095,6 +1156,15 @@ def _linkedin_json_ld_websites(html: str, company_name: str) -> list[str]:
 
 def _linkedin_company_page_incomplete(html: str) -> bool:
     return len(html) < 10_000 or "application/ld+json" not in html.casefold()
+
+
+def _linkedin_company_page_quality(html: str) -> tuple[bool, int, int]:
+    lowered = html.casefold()
+    return (
+        not _linkedin_company_page_incomplete(html),
+        lowered.count("application/ld+json"),
+        len(html),
+    )
 
 
 def _walk_linkedin_organizations(value):

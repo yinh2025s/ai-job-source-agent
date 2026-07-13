@@ -11,7 +11,12 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from .composition import AgentConfig, FetcherConfig, build_application
+from .composition import (
+    LINKEDIN_EVIDENCE_CACHE_FILENAME,
+    AgentConfig,
+    FetcherConfig,
+    build_application,
+)
 from .linkedin import company_inputs_from_records
 from .models import dataclass_to_dict
 
@@ -64,7 +69,15 @@ class ExtensionRunManager:
     def _execute(self, run_id: str, companies) -> None:
         self._update(run_id, status="running")
         try:
-            application = build_application(self.config.fetcher, self.config.agent)
+            application = build_application(
+                self.config.fetcher,
+                self.config.agent,
+                linkedin_evidence_cache_path=(
+                    self.config.output_dir / LINKEDIN_EVIDENCE_CACHE_FILENAME
+                    if self.config.output_dir is not None
+                    else None
+                ),
+            )
             results = [application.pipeline.discover(company) for company in companies]
             records = [result.result_record() for result in results]
             traces = [dataclass_to_dict(result.trace_record()) for result in results]
