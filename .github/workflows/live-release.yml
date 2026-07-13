@@ -1,0 +1,36 @@
+name: Live release gate
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: live-release-gate
+  cancel-in-progress: false
+
+jobs:
+  fixed-live:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Run fixed 51-company live gate
+        run: make live-gate PYTHON=python
+      - name: Upload live evidence
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: live-release-evidence
+          path: |
+            /tmp/live-fixed-release-results.json
+            /tmp/live-fixed-release-trace.json
+            /tmp/live-fixed-release-summary.json
+          if-no-files-found: warn
+          retention-days: 14

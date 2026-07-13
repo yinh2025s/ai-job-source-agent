@@ -29,6 +29,8 @@ make live-gate
 
 Set `PYTHON=/path/to/python3.12` when `python3.12` is not on `PATH`.
 
+GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offline release gates on 3.12 for every push and pull request. The network-dependent 51-company gate is a manual `Live release gate` workflow and retains its result, trace, and summary JSON as artifacts even when the gate fails.
+
 ## What It Returns
 
 For each input record:
