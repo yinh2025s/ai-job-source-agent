@@ -22,7 +22,6 @@ def diagnose_opening_availability(
     """Classify an opening miss without treating missing search results as proof of expiry."""
 
     source_status = explicit_closed_source_status(source_trace or {})
-    inventory = trace.get("provider_api", {}).get("inventory")
     if source_status in {"closed", "expired", "unavailable"}:
         return OpeningAvailabilityDiagnostic(
             disposition="source_posting_closed",
@@ -32,6 +31,21 @@ def diagnose_opening_availability(
             evidence={"source_posting_status": source_status},
         )
 
+    provider_errors = _provider_errors(trace)
+    if provider_errors:
+        return OpeningAvailabilityDiagnostic(
+            disposition="discovery_incomplete",
+            confidence="low",
+            reason_code="OPENING_NOT_FOUND",
+            detail="No exact opening was verified, and provider errors prevented a conclusive availability check.",
+            evidence={
+                "provider_error_count": len(provider_errors),
+                "provider_errors": provider_errors,
+            },
+        )
+
+    provider_api = trace.get("provider_api")
+    inventory = provider_api.get("inventory") if isinstance(provider_api, dict) else None
     if isinstance(inventory, dict) and inventory.get("status") in {
         "verified",
         "verified_filtered_empty",
@@ -63,14 +77,76 @@ def diagnose_opening_availability(
             },
         )
 
-    errors = trace.get("provider_api", {}).get("errors")
     return OpeningAvailabilityDiagnostic(
         disposition="discovery_incomplete",
         confidence="low",
         reason_code="OPENING_NOT_FOUND",
         detail="No exact opening was verified, and the available evidence cannot establish that the posting is closed.",
-        evidence={"provider_error_count": len(errors) if isinstance(errors, list) else 0},
+        evidence={"provider_error_count": 0, "provider_errors": []},
     )
+
+
+def _provider_errors(trace: dict[str, Any]) -> list[dict[str, Any]]:
+    provider_api = trace.get("provider_api")
+    channels: list[tuple[str, Any, bool]] = [("generic_search", trace, False)]
+    if isinstance(provider_api, dict):
+        channels.extend(
+            (
+                ("provider_api", provider_api, False),
+                ("provider_adapter", provider_api.get("adapter_trace"), True),
+                ("provider_detection", provider_api.get("provider_detection"), True),
+            )
+        )
+
+    aggregated: list[dict[str, Any]] = []
+    positions: dict[Any, int] = {}
+    for provenance, container, include_singular in channels:
+        if not isinstance(container, dict):
+            continue
+        records = container.get("errors")
+        if isinstance(records, list):
+            for record in records:
+                if isinstance(record, dict) and record.get("error"):
+                    _add_provider_error(aggregated, positions, record, provenance)
+        if include_singular and container.get("error"):
+            _add_provider_error(
+                aggregated,
+                positions,
+                {"error": container["error"]},
+                provenance,
+            )
+    return aggregated
+
+
+def _add_provider_error(
+    aggregated: list[dict[str, Any]],
+    positions: dict[Any, int],
+    record: dict[str, Any],
+    provenance: str,
+) -> None:
+    key = _freeze(record)
+    position = positions.get(key)
+    if position is None:
+        positions[key] = len(aggregated)
+        aggregated.append({**record, "provenance": [provenance]})
+        return
+    provenances = aggregated[position]["provenance"]
+    if provenance not in provenances:
+        provenances.append(provenance)
+
+
+def _freeze(value: Any) -> Any:
+    if isinstance(value, dict):
+        return tuple(sorted((str(key), _freeze(item)) for key, item in value.items()))
+    if isinstance(value, (list, tuple)):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, set):
+        return tuple(sorted((_freeze(item) for item in value), key=repr))
+    try:
+        hash(value)
+    except TypeError:
+        return repr(value)
+    return value
 
 
 def _nonnegative_int(value: Any) -> int | None:

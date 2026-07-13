@@ -76,6 +76,81 @@ class SitemapDiscoveryTests(unittest.TestCase):
         self.assertGreater(us_candidate.score, au_candidate.score)
         self.assertIn("matches target location region 'us'", us_candidate.reasons)
 
+    def test_language_only_locale_is_not_treated_as_a_conflicting_region(self):
+        candidate = JobSourceAgent(Fetcher(offline=True))._score_career_candidate(
+            RawLink(
+                url="https://global.example/en/careers",
+                text="Careers",
+                source_url="https://global.example",
+                origin="page_link",
+            ),
+            "https://global.example",
+            target_location="United States",
+        )
+
+        self.assertFalse(
+            any("conflicts with target location region" in reason for reason in candidate.reasons)
+        )
+
+    def test_nested_job_index_reaches_target_region_before_static_sitemap_fanout(self):
+        base = "https://inventory.example"
+        jobs_index = f"{base}/jobsindex.xml"
+        us_jobs = f"{base}/sitemap-company-jobs-unitedstates-en.xml"
+        au_jobs = f"{base}/sitemap-company-jobs-australia-en.xml"
+        static_children = [f"{base}/sitemap-static-{index}.xml" for index in range(20)]
+
+        class NestedInventoryFetcher:
+            def __init__(self):
+                self.urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.urls.append(url)
+                if url.endswith("/robots.txt"):
+                    raise FetchError("missing")
+                if url == f"{base}/sitemap.xml":
+                    children = [*static_children, jobs_index]
+                    return Page(
+                        url=url,
+                        html="<sitemapindex>"
+                        + "".join(f"<sitemap><loc>{child}</loc></sitemap>" for child in children)
+                        + "</sitemapindex>",
+                    )
+                if url == jobs_index:
+                    return Page(
+                        url=url,
+                        html=(
+                            "<sitemapindex>"
+                            f"<sitemap><loc>{au_jobs}</loc></sitemap>"
+                            f"<sitemap><loc>{us_jobs}</loc></sitemap>"
+                            "</sitemapindex>"
+                        ),
+                    )
+                if url == us_jobs:
+                    return Page(
+                        url=url,
+                        html=(
+                            "<urlset><url><loc>"
+                            f"{base}/en-us/careers/jobs/artificial-intelligence-engineer"
+                            "</loc></url></urlset>"
+                        ),
+                    )
+                if url == au_jobs:
+                    raise AssertionError("target-region inventory should be fetched first")
+                if url == f"{base}/sitemap_index.xml" or url in static_children:
+                    return Page(url=url, html="<urlset />")
+                raise AssertionError(f"unexpected fetch: {url}")
+
+        fetcher = NestedInventoryFetcher()
+        links, trace = JobSourceAgent(fetcher)._sitemap_candidates(base, target_region="us")
+
+        self.assertEqual(
+            [link.url for link in links],
+            [f"{base}/en-us/careers/jobs/artificial-intelligence-engineer"],
+        )
+        self.assertIn(jobs_index, fetcher.urls)
+        self.assertIn(us_jobs, fetcher.urls)
+        self.assertEqual(trace["stopped_reason"], "target_region_candidates_found")
+
     def test_primary_homepage_career_link_is_verified_before_sitemap_fanout(self):
         base = "https://primary.example"
 

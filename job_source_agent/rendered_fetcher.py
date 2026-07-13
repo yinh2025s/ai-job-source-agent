@@ -8,6 +8,10 @@ from urllib.parse import parse_qs, urlsplit
 from .web import FetchError, Fetcher, Page, extract_links, normalize_url
 
 
+class RenderCapabilityUnavailable(FetchError):
+    """The configured renderer cannot run in the current environment."""
+
+
 class RenderedFetcher(Fetcher):
     """Fetch pages through a real browser when static HTML is insufficient.
 
@@ -30,7 +34,7 @@ class RenderedFetcher(Fetcher):
             from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
             from playwright.sync_api import sync_playwright
         except ImportError as exc:
-            raise FetchError(
+            raise RenderCapabilityUnavailable(
                 "Playwright is not installed. Install with: "
                 'pip install -e ".[browser]" && playwright install chromium'
             ) from exc
@@ -84,6 +88,7 @@ class SmartRenderedFetcher(Fetcher):
         self.capture_screenshot = capture_screenshot
         self.render_attempts = 0
         self.render_events: list[dict[str, str | int]] = []
+        self._render_capability_error: str | None = None
 
     def _fetch_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
         if data is not None:
@@ -91,20 +96,46 @@ class SmartRenderedFetcher(Fetcher):
 
         try:
             static_page = self._static_live(url, data=data, headers=headers)
-        except FetchError as exc:
+        except FetchError as static_exc:
+            if self._render_capability_error is not None:
+                self._record_render_event(
+                    url,
+                    "static_error",
+                    "skipped_unavailable",
+                    source="static_error",
+                )
+                raise
             if not self._can_render():
                 raise
             try:
                 rendered = self._render_live(url, reason="static_error")
+            except RenderCapabilityUnavailable as render_exc:
+                self._record_render_event(
+                    url,
+                    "static_error",
+                    "capability_unavailable",
+                    source="static_error",
+                    error=str(render_exc),
+                )
+                raise static_exc
             except FetchError as render_exc:
                 self._record_render_event(url, "static_error", "failed", source="browser", error=str(render_exc))
                 raise
             rendered.source = _source_with_artifacts("browser_after_static_error", rendered)
-            self._record_render_event(url, "static_error", "success", source=rendered.source, error=str(exc))
+            self._record_render_event(url, "static_error", "success", source=rendered.source, error=str(static_exc))
             return rendered
 
         render_reason = self._render_reason(static_page)
         if not render_reason:
+            return static_page
+
+        if self._render_capability_error is not None:
+            self._record_render_event(
+                url,
+                render_reason,
+                "skipped_unavailable",
+                source=static_page.source,
+            )
             return static_page
 
         if not self._can_render():
@@ -121,6 +152,15 @@ class SmartRenderedFetcher(Fetcher):
             rendered.source = _source_with_artifacts("browser_after_static_shell", rendered)
             self._record_render_event(url, render_reason, "success", source=rendered.source)
             return rendered
+        except RenderCapabilityUnavailable as exc:
+            self._record_render_event(
+                url,
+                render_reason,
+                "capability_unavailable",
+                source=static_page.source,
+                error=str(exc),
+            )
+            return static_page
         except FetchError as exc:
             self._record_render_event(url, render_reason, "failed", source=static_page.source, error=str(exc))
             return static_page
@@ -129,8 +169,15 @@ class SmartRenderedFetcher(Fetcher):
         return super()._fetch_live(url, data=data, headers=headers)
 
     def _render_live(self, url: str, reason: str = "manual") -> Page:
+        if self._render_capability_error is not None:
+            raise RenderCapabilityUnavailable(self._render_capability_error)
         self.render_attempts += 1
-        return RenderedFetcher(timeout=self.timeout, capture_screenshot=self.capture_screenshot)._fetch_live(url)
+        try:
+            return RenderedFetcher(timeout=self.timeout, capture_screenshot=self.capture_screenshot)._fetch_live(url)
+        except RenderCapabilityUnavailable as exc:
+            self.render_attempts -= 1
+            self._render_capability_error = str(exc)
+            raise
 
     def _record_render_event(
         self,

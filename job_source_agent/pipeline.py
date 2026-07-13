@@ -43,7 +43,7 @@ from .scoring import (
 )
 from .stages import CareerDiscoveryStage, JobBoardDiscoveryStage, OpeningMatchStage, PipelineStageRunner
 from .web import FetchError, Page, RawLink, domain_of, extract_links, normalize_url
-from .website_resolver import location_region
+from .website_resolver import location_region, url_region
 
 
 COMMON_CAREER_PATHS = (
@@ -704,17 +704,23 @@ class JobSourceAgent:
                 )
                 continue
             scored = sorted(
-                [score_job_link(link, actual_page_url) for link in extract_links(page)],
+                [
+                    score_job_link(
+                        self._upgrade_same_site_http_link(link, actual_page_url),
+                        actual_page_url,
+                    )
+                    for link in extract_links(page)
+                ],
                 key=lambda candidate: candidate.score,
                 reverse=True,
             )
             deduped = self._dedupe_candidates(scored)
+            verified_generic_listing = self._looks_like_generic_job_list_route(
+                actual_page_url
+            )
             if self._has_job_list_evidence(actual_page_url, deduped) and not trace["job_list_page_url"]:
                 trace["job_list_page_url"] = actual_page_url
-            elif (
-                actual_page_url.rstrip("/") != career_page_url.rstrip("/")
-                and self._looks_like_generic_job_list_route(actual_page_url)
-            ):
+            elif verified_generic_listing:
                 trace["job_list_page_url"] = actual_page_url
             trace["pages_visited"].append(
                 {
@@ -724,6 +730,10 @@ class JobSourceAgent:
                 }
             )
             trace["candidates"].extend(dataclass_to_dict(deduped[:5]))
+            if verified_generic_listing:
+                trace["selected_from"] = "explicit_first_party_listing_route"
+                trace["selected_page_source"] = page.source
+                return None, actual_page_url, trace
 
             linked_provider_board = next(
                 (
@@ -942,11 +952,23 @@ class JobSourceAgent:
         if not parts or any(part in NON_JOB_BOARD_PATH_PARTS for part in parts):
             return False
         leaf = parts[-1]
-        if leaf in {"jobs", "positions", "openings", "job-openings", "search-results"}:
+        if leaf in {
+            "jobs",
+            "positions",
+            "openings",
+            "job-openings",
+            "job-results",
+            "search-results",
+        }:
             return True
         return any(
             marker in leaf
-            for marker in ("job-search", "jobs-search", "career-opportunities-search")
+            for marker in (
+                "job-results",
+                "job-search",
+                "jobs-search",
+                "career-opportunities-search",
+            )
         )
 
     def _is_provider_job_board_url(self, url: str) -> bool:
@@ -1097,12 +1119,17 @@ class JobSourceAgent:
         target_title: str | None = None,
         target_location: str | None = None,
     ) -> LinkCandidate:
+        original_url = link.url
+        link = self._upgrade_same_site_http_link(link, homepage_url)
+        upgraded_same_site_http = link.url != original_url
         candidate = score_career_link(link)
         path_parts = [part.lower() for part in urlparse(link.url).path.split("/") if part]
         normalized_text = " ".join(link.text.casefold().split())
         if homepage_url and normalize_url(link.url) == normalize_url(homepage_url):
             candidate.score -= 250
             candidate.reasons.append("homepage self-link")
+        if upgraded_same_site_http:
+            candidate.reasons.append("upgraded same-site HTTP link to HTTPS")
         if normalized_text in {"career home", "careers home"} or urlparse(link.url).path.casefold().endswith(
             "/careers/careers.html"
         ):
@@ -1115,14 +1142,15 @@ class JobSourceAgent:
         homepage_locale = _leading_locale_segment(homepage_url)
         candidate_locale = _leading_locale_segment(link.url)
         target_region = location_region(target_location)
-        if target_region and candidate_locale:
-            if candidate_locale == target_region:
+        candidate_region = url_region(link.url)
+        if target_region and candidate_region:
+            if candidate_region == target_region:
                 candidate.score += 180
                 candidate.reasons.append(f"matches target location region '{target_region}'")
             else:
                 candidate.score -= 300
                 candidate.reasons.append(
-                    f"conflicts with target location region '{target_region}': '{candidate_locale}'"
+                    f"conflicts with target location region '{target_region}': '{candidate_region}'"
                 )
         if (
             homepage_locale
@@ -1143,6 +1171,12 @@ class JobSourceAgent:
         if self._is_localized_career_section(path_parts):
             candidate.score += 35
             candidate.reasons.append("localized career section")
+        if (
+            link.origin != "path_probe"
+            and self._looks_like_generic_job_list_route(link.url)
+        ):
+            candidate.score += 220
+            candidate.reasons.append("explicit job-list route")
         if link.origin == "page_link":
             candidate.score += 110
             candidate.reasons.append("homepage navigation link")
@@ -1168,6 +1202,28 @@ class JobSourceAgent:
             candidate.score += 150
             candidate.reasons.append("sitemap source")
         return candidate
+
+    def _upgrade_same_site_http_link(
+        self,
+        link: RawLink,
+        source_url: str | None,
+    ) -> RawLink:
+        if not source_url:
+            return link
+        source = urlparse(source_url)
+        target = urlparse(link.url)
+        if (
+            source.scheme != "https"
+            or target.scheme != "http"
+            or not self._same_site_host(target.hostname or "", source.hostname or "")
+        ):
+            return link
+        return RawLink(
+            url=target._replace(scheme="https").geturl(),
+            text=link.text,
+            source_url=link.source_url,
+            origin=link.origin,
+        )
 
     def _is_concise_career_path(self, path_parts: list[str]) -> bool:
         if len(path_parts) == 1:
@@ -1262,6 +1318,17 @@ class JobSourceAgent:
                         {"url": candidate.url, "error": "derived provider board lacked job or API evidence"}
                     )
                     continue
+            if (
+                "generated path probe" not in candidate.reasons
+                and self._looks_like_generic_job_list_route(actual_url)
+                and self._same_site_host(
+                    urlparse(actual_url).hostname or "",
+                    urlparse(candidate.source_url).hostname or "",
+                )
+            ):
+                trace["selected"] = dataclass_to_dict(candidate)
+                trace["selected_page_source"] = page.source
+                return actual_url
             if self._looks_like_career_page(candidate, page.html):
                 trace["selected"] = dataclass_to_dict(candidate)
                 trace["selected_page_source"] = page.source
@@ -1434,10 +1501,14 @@ class JobSourceAgent:
 
         links: list[RawLink] = []
         seen_sitemaps: set[str] = set()
-        pending_sitemaps = list(dict.fromkeys(sitemap_urls))[:MAX_SITEMAPS_PER_DISCOVERY]
-        scheduled_sitemaps = set(pending_sitemaps)
-        while pending_sitemaps:
+        pending_sitemaps = list(dict.fromkeys(sitemap_urls))
+        queued_sitemaps = set(pending_sitemaps)
+        while pending_sitemaps and len(seen_sitemaps) < MAX_SITEMAPS_PER_DISCOVERY:
+            pending_sitemaps.sort(
+                key=lambda url: _sitemap_queue_priority(url, target_region)
+            )
             sitemap_url = pending_sitemaps.pop(0)
+            queued_sitemaps.discard(sitemap_url)
             if sitemap_url in seen_sitemaps:
                 continue
             seen_sitemaps.add(sitemap_url)
@@ -1448,26 +1519,19 @@ class JobSourceAgent:
                 continue
 
             urls = self._extract_sitemap_locs(page.html)
-            if target_region:
-                urls.sort(
-                    key=lambda url: (
-                        0 if _sitemap_matches_region(url, target_region) else 1,
-                        url,
-                    )
-                )
+            urls.sort(key=lambda url: _sitemap_queue_priority(url, target_region))
             trace["sitemaps_checked"].append({"url": sitemap_url, "url_count": len(urls)})
             candidates_before = len(links)
             for url in urls:
                 lower_url = url.lower()
                 if lower_url.endswith(".xml"):
                     normalized_sitemap = normalize_url(url)
-                    if normalized_sitemap in scheduled_sitemaps:
+                    if (
+                        normalized_sitemap in seen_sitemaps
+                        or normalized_sitemap in queued_sitemaps
+                    ):
                         continue
-                    if len(scheduled_sitemaps) >= MAX_SITEMAPS_PER_DISCOVERY:
-                        trace["fanout_limit_reached"] = True
-                        trace["sitemaps_not_scheduled"] += 1
-                        continue
-                    scheduled_sitemaps.add(normalized_sitemap)
+                    queued_sitemaps.add(normalized_sitemap)
                     pending_sitemaps.append(normalized_sitemap)
                     continue
                 normalized_url = normalize_url(url)
@@ -1499,9 +1563,13 @@ class JobSourceAgent:
                 and len(links) > candidates_before
             ):
                 trace["stopped_reason"] = "target_region_candidates_found"
-                trace["sitemaps_not_scheduled"] += len(pending_sitemaps)
+                trace["sitemaps_not_scheduled"] = len(pending_sitemaps)
+                pending_sitemaps.clear()
                 break
 
+        if pending_sitemaps:
+            trace["fanout_limit_reached"] = True
+            trace["sitemaps_not_scheduled"] = len(pending_sitemaps)
         trace["candidate_count"] = len(links)
         return links, trace
 
@@ -1682,8 +1750,31 @@ def _sitemap_matches_region(url: str, region: str) -> bool:
         path = urlparse(url).path.casefold()
     except (TypeError, ValueError):
         return False
-    escaped = re.escape(region.casefold())
-    return re.search(rf"(?:^|[._/-]){escaped}(?:[._/-]|$)", path) is not None
+    aliases = {
+        "us": ("us", "usa", "united-states", "unitedstates", "en-us", "en_us"),
+    }.get(region.casefold(), (region.casefold(),))
+    return any(
+        re.search(
+            rf"(?:^|[._/-]){re.escape(alias)}(?:[._/-]|$)",
+            path,
+        )
+        is not None
+        for alias in aliases
+    )
+
+
+def _sitemap_queue_priority(url: str, target_region: str | None) -> tuple[int, int]:
+    try:
+        path = urlparse(url).path.casefold()
+    except (TypeError, ValueError):
+        path = ""
+    region_rank = (
+        0
+        if target_region and _sitemap_matches_region(url, target_region)
+        else 1
+    )
+    inventory_rank = 0 if "job" in path else 1
+    return region_rank, inventory_rank
 
 
 def _career_audience_mismatch(

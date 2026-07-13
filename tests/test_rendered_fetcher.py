@@ -1,7 +1,9 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import job_source_agent.rendered_fetcher as rendered_fetcher
+from job_source_agent.rendered_fetcher import RenderCapabilityUnavailable, RenderedFetcher
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
 from job_source_agent.rendered_fetcher import _navigate_with_settle
 from job_source_agent.web import FetchError, Page
@@ -243,6 +245,98 @@ class SmartRenderedFetcherTests(unittest.TestCase):
             [event["outcome"] for event in fetcher.render_events],
             ["success", "skipped_budget"],
         )
+
+    def test_unavailable_renderer_is_cached_without_consuming_attempts(self):
+        static_page = Page(
+            url="https://example.com/jobs",
+            html='<html><body><div id="root">Open jobs load here.</div></body></html>',
+            final_url="https://example.com/jobs",
+            source="live",
+        )
+        fetcher = SmartRenderedFetcher(render_budget=1)
+
+        with (
+            patch.object(fetcher, "_static_live", return_value=static_page),
+            patch.object(
+                RenderedFetcher,
+                "_fetch_live",
+                side_effect=RenderCapabilityUnavailable("Playwright is not installed"),
+            ) as render_live,
+        ):
+            first_page = fetcher._fetch_live("https://example.com/jobs/first")
+            second_page = fetcher._fetch_live("https://example.com/jobs/second")
+
+        self.assertIs(first_page, static_page)
+        self.assertIs(second_page, static_page)
+        self.assertEqual(render_live.call_count, 1)
+        self.assertEqual(fetcher.render_attempts, 0)
+        self.assertEqual(
+            [event["outcome"] for event in fetcher.render_events],
+            ["capability_unavailable", "skipped_unavailable"],
+        )
+        self.assertEqual(fetcher.render_events[0]["error"], "Playwright is not installed")
+        self.assertNotIn("error", fetcher.render_events[1])
+        self.assertEqual(first_page.source, "live")
+
+    def test_static_fetch_continues_after_renderer_becomes_unavailable(self):
+        shell_page = Page(
+            url="https://example.com/jobs",
+            html='<html><body><div id="root">Open jobs load here.</div></body></html>',
+            final_url="https://example.com/jobs",
+            source="live",
+        )
+        content_page = Page(
+            url="https://example.com/about",
+            html="<html><body>Substantial static company information remains available.</body></html>",
+            final_url="https://example.com/about",
+            source="live",
+        )
+        fetcher = SmartRenderedFetcher(render_budget=1)
+
+        with (
+            patch.object(fetcher, "_static_live", side_effect=[shell_page, content_page]),
+            patch.object(
+                RenderedFetcher,
+                "_fetch_live",
+                side_effect=RenderCapabilityUnavailable("Playwright is not installed"),
+            ) as render_live,
+        ):
+            fetcher._fetch_live(shell_page.url)
+            page = fetcher._fetch_live(content_page.url)
+
+        self.assertIs(page, content_page)
+        self.assertEqual(page.source, "live")
+        self.assertEqual(render_live.call_count, 1)
+        self.assertEqual(fetcher.render_attempts, 0)
+
+    def test_cached_renderer_unavailability_preserves_later_static_error(self):
+        shell_page = Page(
+            url="https://example.com/jobs",
+            html='<html><body><div id="root">Open jobs load here.</div></body></html>',
+            final_url="https://example.com/jobs",
+            source="live",
+        )
+        fetcher = SmartRenderedFetcher(render_budget=1)
+
+        with (
+            patch.object(
+                fetcher,
+                "_static_live",
+                side_effect=[shell_page, FetchError("later static timeout")],
+            ),
+            patch.object(
+                RenderedFetcher,
+                "_fetch_live",
+                side_effect=RenderCapabilityUnavailable("Playwright is not installed"),
+            ) as render_live,
+        ):
+            fetcher._fetch_live(shell_page.url)
+            with self.assertRaisesRegex(FetchError, "later static timeout"):
+                fetcher._fetch_live("https://example.com/other")
+
+        self.assertEqual(render_live.call_count, 1)
+        self.assertEqual(fetcher.render_attempts, 0)
+        self.assertEqual(fetcher.render_events[-1]["outcome"], "skipped_unavailable")
 
     def test_launch_browser_falls_back_to_local_chrome(self):
         class FakePlaywrightError(Exception):

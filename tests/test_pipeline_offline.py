@@ -362,6 +362,120 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertIn("localized career section", candidate.reasons)
         self.assertGreater(candidate.score, 240)
 
+    def test_explicit_homepage_job_results_route_survives_same_site_redirect(self):
+        homepage = "https://routes.example"
+        listed_route = f"{homepage}/en-us/careers/job-results"
+        redirected_route = f"{homepage}/en/careers/job-results-global?isRedirected=true"
+
+        class JobResultsFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=f'<a href="{listed_route}">Search jobs</a>',
+                    )
+                if url == listed_route:
+                    return Page(
+                        url=url,
+                        final_url=redirected_route,
+                        html='<html><body><div id="root"></div></body></html>',
+                    )
+                raise FetchError("not this route")
+
+        career_url, trace = JobSourceAgent(
+            JobResultsFetcher(offline=True),
+            max_career_candidate_fetches=1,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        ).find_career_page(
+            homepage,
+            company_name="Routes",
+            target_location="United States",
+        )
+
+        self.assertEqual(career_url, redirected_route)
+        self.assertIn("explicit job-list route", trace["selected"]["reasons"])
+        self.assertNotIn("generated path probe", trace["selected"]["reasons"])
+
+    def test_https_homepage_upgrades_explicit_same_site_http_career_link(self):
+        homepage = "https://secure.example"
+        candidate = JobSourceAgent(Fetcher(offline=True))._score_career_candidate(
+            RawLink(
+                url="http://www.secure.example/en-us/careers/job-results",
+                text="Search jobs",
+                source_url=homepage,
+                origin="page_link",
+            ),
+            homepage,
+            target_location="United States",
+        )
+
+        self.assertEqual(
+            candidate.url,
+            "https://www.secure.example/en-us/careers/job-results",
+        )
+        self.assertIn("upgraded same-site HTTP link to HTTPS", candidate.reasons)
+
+    def test_job_board_stops_after_first_verified_first_party_listing_route(self):
+        career = "https://routes.example/en/careers"
+        us_listing = "https://routes.example/en-us/careers/job-results"
+        other_listing = "https://routes.example/en-be/careers/job-results"
+
+        class RegionalListingFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == career:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            '<a href="http://routes.example/en-us/careers/job-results">US jobs</a>'
+                            f'<a href="{other_listing}">Belgium jobs</a>'
+                        ),
+                    )
+                if url == us_listing:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html='<html><body><div id="jobs"></div></body></html>',
+                    )
+                if url == other_listing:
+                    raise AssertionError("later regional listing must not overwrite the first verified route")
+                raise FetchError("not this route")
+
+        job_list_url, trace = JobSourceAgent(
+            RegionalListingFetcher(offline=True),
+            max_job_pages=4,
+            max_ats_board_fetches=0,
+        ).find_job_board(career)
+
+        self.assertEqual(job_list_url, us_listing)
+        self.assertEqual(trace["selected_from"], "explicit_first_party_listing_route")
+        self.assertEqual([page["url"] for page in trace["pages_visited"]], [career, us_listing])
+
+    def test_verified_career_listing_route_is_checked_once_for_page_provider(self):
+        listing = "https://routes.example/en-us/careers/job-results"
+
+        class ListingFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.urls.append(url)
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html='<html><body><div id="jobs"></div></body></html>',
+                )
+
+        fetcher = ListingFetcher()
+        job_list_url, trace = JobSourceAgent(fetcher).find_job_board(listing)
+
+        self.assertEqual(job_list_url, listing)
+        self.assertEqual(trace["selected_from"], "explicit_first_party_listing_route")
+        self.assertEqual(fetcher.urls, [listing])
+
     def test_career_candidate_preserves_verified_homepage_locale(self):
         agent = JobSourceAgent(Fetcher(offline=True))
         homepage = "https://example.com/us/en.html"

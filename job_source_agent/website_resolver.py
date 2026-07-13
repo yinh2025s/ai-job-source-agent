@@ -709,7 +709,7 @@ class CompanyWebsiteResolver:
                 reasons.append("homepage canonical confirms company identity")
 
         target_region = location_region(job_location)
-        resolved_region = _url_region(resolved_url)
+        resolved_region = url_region(resolved_url)
         if target_region and resolved_region and target_region != resolved_region:
             score -= 120
             reasons.append(
@@ -1319,7 +1319,7 @@ def clean_search_url(url: str, preserve_region: str | None = None) -> str:
     if parsed.netloc.endswith("bing.com") or parsed.netloc.endswith("microsoft.com"):
         return ""
     base = f"{parsed.scheme}://{parsed.netloc}"
-    if preserve_region and _url_region(url) == preserve_region:
+    if preserve_region and url_region(url) == preserve_region:
         return normalize_url(f"{base}{parsed.path or '/'}")
     return normalize_url(base)
 
@@ -1363,7 +1363,7 @@ def location_region(location: str | None) -> str | None:
     return None
 
 
-def _url_region(url: str) -> str | None:
+def url_region(url: str) -> str | None:
     try:
         parsed = urlparse(url)
     except (TypeError, ValueError):

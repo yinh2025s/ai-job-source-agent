@@ -153,6 +153,7 @@ GENERIC_JOB_LISTING_PARTS = {
     "positions",
     "openings",
     "job-openings",
+    "job-results",
     "search-results",
     "candidateexperience",
 }
@@ -196,6 +197,8 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     path = parsed.path.lower()
     text = link.text.lower()
     haystack = f"{path} {text}"
+    path_parts = [part for part in path.split("/") if part]
+    leaf = path_parts[-1] if path_parts else ""
     score = 0
     reasons: list[str] = []
 
@@ -218,15 +221,20 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
             score += 25
             reasons.append("ATS board/listing candidate")
 
-    if any(token in path for token in ("/jobs/", "/job/", "/careers/", "/positions/", "/openings/", "/job-openings/")):
+    if _looks_like_generic_listing_leaf(leaf):
+        score += 80
+        reasons.append("job-listing route name")
+    elif any(token in path for token in ("/jobs/", "/job/", "/positions/", "/openings/", "/job-openings/")):
         score += 60
         reasons.append("job-detail path pattern")
-    elif any(token in path for token in ("/jobs", "/careers", "/positions", "/openings", "/job-openings")):
+    elif "/careers/" in path and any(keyword in text for keyword in JOB_TITLE_KEYWORDS):
+        score += 60
+        reasons.append("job-detail path pattern")
+    elif leaf == "search" and any(
+        part in {"jobs", "careers"} for part in path_parts[:-1]
+    ):
         score += 25
         reasons.append("job-listing path pattern")
-    elif [part for part in path.split("/") if part] and path.rstrip("/").split("/")[-1] in GENERIC_JOB_LISTING_PARTS:
-        score += 50
-        reasons.append("job-listing route name")
 
     if any(
         phrase in " ".join(text.split())
@@ -269,7 +277,7 @@ def is_likely_job_detail(candidate: LinkCandidate) -> bool:
     if normalize_for_compare(candidate.url) == normalize_for_compare(candidate.source_url):
         return False
     path_parts = [part.lower() for part in urlparse(candidate.url).path.split("/") if part]
-    if not path_parts or path_parts[-1] in GENERIC_JOB_LISTING_PARTS:
+    if not path_parts or _looks_like_generic_listing_leaf(path_parts[-1]):
         return False
     if is_ats_url(candidate.url) and _looks_like_ats_job_detail(candidate.url):
         return True
@@ -305,7 +313,7 @@ def is_likely_job_listing_page(candidate: LinkCandidate) -> bool:
             "ATS board/listing candidate" in reason_text
             or "job-listing path pattern" in reason_text
             or "job-listing route name" in reason_text
-            or (path_parts and path_parts[-1] in GENERIC_JOB_LISTING_PARTS)
+            or (path_parts and _looks_like_generic_listing_leaf(path_parts[-1]))
             or "open roles" in text
             or "open positions" in text
             or "career keyword" in reason_text
@@ -316,6 +324,18 @@ def is_likely_job_listing_page(candidate: LinkCandidate) -> bool:
 def normalize_for_compare(url: str) -> str:
     parsed = urlparse(url)
     return parsed._replace(query="", fragment="", path=parsed.path.rstrip("/")).geturl()
+
+
+def _looks_like_generic_listing_leaf(leaf: str) -> bool:
+    return leaf in GENERIC_JOB_LISTING_PARTS or any(
+        marker in leaf
+        for marker in (
+            "job-results",
+            "job-search",
+            "jobs-search",
+            "career-opportunities-search",
+        )
+    )
 
 
 def _looks_like_ats_job_detail(url: str) -> bool:

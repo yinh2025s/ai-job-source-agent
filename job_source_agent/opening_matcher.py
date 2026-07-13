@@ -95,7 +95,7 @@ class JobOpeningMatcher:
             candidates = []
             links = extract_links(page) + structured_job_links(page.html, page_url)
             for link in dedupe_raw_links(links):
-                validated_url = validate_output_url(link.url, page_url)
+                validated_url = validate_output_url(link.url, page_url, title=link.text)
                 if not validated_url:
                     continue
                 link = RawLink(validated_url, link.text, link.source_url, link.origin)
@@ -537,7 +537,7 @@ def _walk_structured_job_records(value, source_url: str):
     if isinstance(value, dict):
         title = _first_text_field(value, STRUCTURED_TITLE_FIELDS)
         url = _structured_record_url(value, source_url, title)
-        if title and url and _looks_like_structured_job_record(value, url, source_url):
+        if title and url and _looks_like_structured_job_record(value, url, source_url, title):
             yield title, url
         for child in value.values():
             yield from _walk_structured_job_records(child, source_url)
@@ -589,10 +589,15 @@ def _structured_record_url(record: dict, source_url: str, title: str) -> str | N
     return None
 
 
-def _looks_like_structured_job_record(record: dict, url: str, source_url: str) -> bool:
+def _looks_like_structured_job_record(
+    record: dict,
+    url: str,
+    source_url: str,
+    title: str,
+) -> bool:
     keys = " ".join(str(key).lower() for key in record)
     query = urlparse(url).query.lower()
-    candidate = score_job_link(RawLink(url=url, text="", source_url=source_url), source_url)
+    candidate = score_job_link(RawLink(url=url, text=title, source_url=source_url), source_url)
     reason_text = " ".join(candidate.reasons)
     return (
         is_likely_job_detail(candidate)

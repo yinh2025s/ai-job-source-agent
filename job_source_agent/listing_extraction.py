@@ -110,13 +110,13 @@ class _ListingParser(HTMLParser):
         if not title:
             return
         for href, _ in card.links:
-            url = validate_output_url(href, self.source_url)
+            url = validate_output_url(href, self.source_url, title=title)
             if url:
                 self.results.append(ListingCandidate(title, url, self.source_url, "parent_card"))
                 return
 
 
-def validate_output_url(url: str, source_url: str) -> str | None:
+def validate_output_url(url: str, source_url: str, *, title: str = "") -> str | None:
     """Return a normalized URL only when it is a plausible official job detail."""
     normalized = safe_normalize_url(url, source_url)
     if not normalized:
@@ -130,7 +130,7 @@ def validate_output_url(url: str, source_url: str) -> str | None:
             return None
     except ValueError:
         return None
-    link = RawLink(normalized, "", source_url)
+    link = RawLink(normalized, title, source_url)
     scored = score_job_link(link, source_url)
     if not is_likely_job_detail(scored):
         return None
@@ -176,7 +176,7 @@ def _structured_candidates(html: str, source_url: str):
                 count += 1
                 title = _field(record, TITLE_FIELDS)
                 raw_url = _field(record, URL_FIELDS)
-                url = validate_output_url(raw_url, source_url) if raw_url else None
+                url = validate_output_url(raw_url, source_url, title=title) if raw_url else None
                 if title and url:
                     yield ListingCandidate(title, url, source_url, "structured_state")
                 if count >= MAX_JSON_RECORDS:
