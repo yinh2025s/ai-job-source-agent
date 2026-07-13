@@ -3,6 +3,7 @@ import unittest
 
 from job_source_agent.career_search import (
     CareerSearchResolver,
+    build_ats_search_queries,
     build_search_queries,
     clean_search_result_url,
 )
@@ -36,6 +37,39 @@ class CareerSearchTests(unittest.TestCase):
             "site:acme.example careers",
             "site:acme.example jobs",
         ])
+
+    def test_ats_only_queries_and_results_exclude_first_party_career_page(self):
+        self.assertTrue(build_ats_search_queries("Glean")[0].startswith("site:job-boards.greenhouse.io"))
+        rss = """<rss><channel>
+          <item><link>https://www.glean.com/careers</link></item>
+          <item><link>https://job-boards.greenhouse.io/gleanwork/jobs/4006734005</link></item>
+        </channel></rss>"""
+        result = CareerSearchResolver(
+            MappingFetcher(lambda url: Page(url, rss, final_url=url)),
+            max_queries=1,
+        ).search("Glean", "https://www.glean.com/careers", ats_only=True)
+
+        self.assertEqual(
+            [item.url for item in result.candidates],
+            ["https://job-boards.greenhouse.io/gleanwork/jobs/4006734005"],
+        )
+        self.assertTrue(result.trace["ats_only"])
+
+    def test_ats_only_search_gives_each_provider_query_a_bounded_rss_attempt(self):
+        fetcher = MappingFetcher(
+            lambda url: Page(url, "<rss><channel /></rss>", final_url=url)
+        )
+
+        CareerSearchResolver(fetcher, max_queries=5, max_source_fetches=6).search(
+            "Zillow, Inc.",
+            "https://zillow.com",
+            ats_only=True,
+        )
+
+        self.assertEqual(len(fetcher.calls), 5)
+        self.assertTrue(all("format=rss" in url for url in fetcher.calls))
+        self.assertIn("site%3Amyworkdayjobs.com", fetcher.calls[1])
+        self.assertNotIn("Inc", fetcher.calls[0])
 
     def test_bing_rss_filters_drift_and_accepts_official_result(self):
         def handler(url):

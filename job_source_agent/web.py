@@ -12,7 +12,7 @@ import threading
 import time
 from contextlib import contextmanager
 from urllib.error import HTTPError, URLError
-from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 
@@ -27,7 +27,7 @@ TRACKING_PARAMS = {
 }
 
 MAX_EXTRACTED_LINKS = 200
-MAX_EMBEDDED_SCAN_CHARS = 250_000
+MAX_EMBEDDED_SCAN_CHARS = 1_000_000
 _URL_DATA_ATTRIBUTES = {
     "data-apply-url",
     "data-careers-url",
@@ -140,6 +140,7 @@ class _LinkParser(HTMLParser):
         if len(self.links) >= MAX_EXTRACTED_LINKS:
             return
         normalized = safe_normalize_url(value, self.base_url)
+        normalized = _canonical_navigation_url(normalized) if normalized else None
         if normalized:
             self.links.append(RawLink(normalized, "", self.source_url, origin))
 
@@ -153,6 +154,8 @@ class _LinkParser(HTMLParser):
             return
         if tag_name == "iframe" and attrs_dict.get("src"):
             self._append_attribute_link(attrs_dict["src"] or "", "iframe_src")
+        if tag_name == "form" and attrs_dict.get("action"):
+            self._append_attribute_link(attrs_dict["action"] or "", "form_action")
         for name, value in attrs_dict.items():
             if value and (name in _URL_DATA_ATTRIBUTES or (name.startswith("data-") and name.endswith("-url"))):
                 self._append_attribute_link(value, "data_attribute")
@@ -202,10 +205,24 @@ def extract_links(page: Page) -> list[RawLink]:
     embedded = re.sub(r"\\u00(?:2f|2F)", "/", embedded)
     embedded = embedded.replace(r"\/", "/")
     embedded = unescape(embedded)
+    provider_config_links = [
+            RawLink(
+                url=board_url,
+                text="",
+                source_url=source_url,
+                origin="derived_provider_config",
+            )
+        for board_url in _greenhouse_template_board_urls(embedded)
+    ]
+    if provider_config_links:
+        configured_urls = {link.url for link in provider_config_links}
+        links = provider_config_links + [link for link in links if link.url not in configured_urls]
+        links = links[:MAX_EXTRACTED_LINKS]
     for url in re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", embedded):
         if len(links) >= MAX_EXTRACTED_LINKS:
             break
         normalized_url = safe_normalize_url(url.rstrip("'\"),.;"))
+        normalized_url = _canonical_navigation_url(normalized_url) if normalized_url else None
         if not normalized_url:
             continue
         if any(existing.url == normalized_url for existing in links):
@@ -219,6 +236,41 @@ def extract_links(page: Page) -> list[RawLink]:
             )
         )
     return links
+
+
+def _canonical_navigation_url(url: str) -> str:
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").casefold()
+    if host == "boards.greenhouse.io" and parsed.path.rstrip("/") == "/embed/job_board/js":
+        identifier = (parse_qs(parsed.query).get("for") or [""])[0]
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", identifier):
+            return f"https://job-boards.greenhouse.io/{identifier}"
+    return url
+
+
+def _greenhouse_template_board_urls(text: str) -> list[str]:
+    variable_names = set(
+        re.findall(
+            r"boards-api\.greenhouse\.io/v1/boards/(?:\$\{\s*([A-Za-z_$][\w$]*)\s*\}|[\"']\s*\+\s*([A-Za-z_$][\w$]*))",
+            text,
+        )
+    )
+    flattened_names = {name for pair in variable_names for name in pair if name}
+    if not flattened_names:
+        return []
+    assignments = {
+        name: value
+        for name, quote, value in re.findall(
+            r"(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*([\"'])([A-Za-z0-9_-]+)\2",
+            text,
+        )
+        if name in flattened_names
+    }
+    return [
+        f"https://job-boards.greenhouse.io/{assignments[name]}"
+        for name in sorted(flattened_names)
+        if name in assignments
+    ]
 
 
 class Fetcher:

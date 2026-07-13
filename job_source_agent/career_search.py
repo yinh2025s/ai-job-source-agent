@@ -61,7 +61,13 @@ class CareerSearchResolver:
         self.max_queries = max(0, max_queries)
         self.max_source_fetches = max(0, max_source_fetches)
 
-    def search(self, company_name: str, company_website_url: str) -> CareerSearchResult:
+    def search(
+        self,
+        company_name: str,
+        company_website_url: str,
+        *,
+        ats_only: bool = False,
+    ) -> CareerSearchResult:
         official_domain = domain_of(company_website_url)
         candidates: list[LinkCandidate] = []
         seen: set[str] = set()
@@ -73,12 +79,20 @@ class CareerSearchResolver:
             "source_fetch_budget": self.max_source_fetches,
             "source_fetch_budget_exhausted": False,
             "stopped_reason": None,
+            "ats_only": ats_only,
         }
 
-        queries = build_search_queries(company_name, official_domain)[: self.max_queries]
+        queries = (
+            build_ats_search_queries(company_name)
+            if ats_only
+            else build_search_queries(company_name, official_domain)
+        )[: self.max_queries]
         source_fetches = 0
         for query_text in queries:
-            for source in _search_sources(query_text):
+            sources = _search_sources(query_text)
+            if ats_only:
+                sources = sources[:1]
+            for source in sources:
                 if source_fetches >= self.max_source_fetches:
                     trace["source_fetch_budget_exhausted"] = True
                     break
@@ -112,6 +126,7 @@ class CareerSearchResolver:
                     candidates,
                     seen,
                     query_trace,
+                    ats_only=ats_only,
                 )
                 if candidates:
                     trace["stopped_reason"] = "search_candidate_found"
@@ -138,6 +153,8 @@ class CareerSearchResolver:
         candidates: list[LinkCandidate],
         seen: set[str],
         query_trace: dict,
+        *,
+        ats_only: bool = False,
     ) -> None:
         for raw_url in raw_urls:
             cleaned = clean_search_result_url(raw_url)
@@ -145,6 +162,8 @@ class CareerSearchResolver:
             if not cleaned or key in seen:
                 continue
             seen.add(key)
+            if ats_only and not is_ats_url(cleaned):
+                continue
             if not _is_valid_search_result(cleaned, company_name, official_domain):
                 continue
             link = RawLink(url=cleaned, text=cleaned, source_url=source_url, origin="search_result")
@@ -285,6 +304,17 @@ def build_search_queries(company_name: str, official_domain: str) -> list[str]:
         queries.extend([f"site:{official_domain} careers", f"site:{official_domain} jobs"])
     queries.extend([f"{company_name} careers", f"{company_name} jobs"])
     return dedupe_preserving_order(queries)
+
+
+def build_ats_search_queries(company_name: str) -> list[str]:
+    normalized_company = " ".join(_identity_tokens(company_name)) or company_name
+    return [
+        f'site:job-boards.greenhouse.io "{normalized_company}" jobs',
+        f'site:myworkdayjobs.com "{normalized_company}" jobs',
+        f'site:jobs.lever.co "{normalized_company}" jobs',
+        f'site:jobs.ashbyhq.com "{normalized_company}" jobs',
+        f'site:eightfold.ai "{normalized_company}" jobs',
+    ]
 
 
 def _identity_tokens(company_name: str, official_domain: str = "") -> list[str]:
