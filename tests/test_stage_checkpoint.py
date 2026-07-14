@@ -145,6 +145,41 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
                 path.write_text(json.dumps(payload), encoding="utf-8")
                 self.assertIsNone(self.store.load(self.fingerprint, "career_discovery"))
 
+    def test_invalid_homepage_navigation_payload_is_a_safe_cache_miss(self):
+        evidence = HomepageNavigationEvidence(
+            homepage_url="https://company.example/",
+            candidate_urls=("https://company.example/careers",),
+        )
+        execution = StageExecution(
+            result=StageResult(stage="website_resolution", status="success"),
+            updates={"homepage_navigation_evidence": evidence},
+        )
+        invalid_payloads = [
+            {
+                "schema_version": 1,
+                "homepage_url": "https://company.example/",
+                "candidate_urls": ["https://company.example/careers?token=secret"],
+            },
+            {
+                "schema_version": 1,
+                "homepage_url": "https://company.example/",
+                "candidate_urls": ["https://company.example/careers"],
+                "raw_html": "<html>secret</html>",
+            },
+        ]
+
+        for invalid in invalid_payloads:
+            with self.subTest(invalid=invalid):
+                self.store.save(self.fingerprint, execution)
+                path = next(self.root.rglob("website_resolution.json"))
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["execution"]["updates"]["homepage_navigation_evidence"] = invalid
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                self.assertIsNone(
+                    self.store.load(self.fingerprint, "website_resolution")
+                )
+
     def test_invalidate_from_removes_selected_and_downstream_only(self):
         for stage in PIPELINE_STAGES:
             self.store.save(self.fingerprint, StageExecution(StageResult(stage=stage, status="success")))

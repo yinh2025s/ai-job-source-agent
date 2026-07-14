@@ -9,6 +9,7 @@ from job_source_agent.contracts import (
     StageExecution,
 )
 from job_source_agent.models import CompanyInput, StageResult
+from job_source_agent.homepage_navigation import HomepageNavigationEvidence
 from job_source_agent.providers import AdapterResult, JobBoard, JobCandidate, JobQuery, ProviderAdapter
 from job_source_agent.providers.base import (
     has_fetch_reserve,
@@ -134,6 +135,29 @@ class ContractTests(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             context.apply(execution)
+
+    def test_pipeline_context_requires_typed_homepage_navigation_evidence(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        evidence = HomepageNavigationEvidence(
+            homepage_url="https://acme.example/",
+            candidate_urls=("https://acme.example/careers",),
+        )
+
+        context.apply(StageExecution(
+            result=StageResult(stage="website_resolution", status="success"),
+            updates={"homepage_navigation_evidence": evidence},
+        ))
+
+        self.assertEqual(context.homepage_navigation_evidence, evidence)
+        with self.assertRaises(TypeError):
+            context.apply(StageExecution(
+                result=StageResult(stage="website_resolution", status="success"),
+                updates={
+                    "homepage_navigation_evidence": {
+                        "homepage_url": "https://acme.example/"
+                    }
+                },
+            ))
 
     def test_stage_checkpoint_and_provider_protocols_are_structural(self):
         class FakeStage:
