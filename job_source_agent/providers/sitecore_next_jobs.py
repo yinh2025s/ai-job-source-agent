@@ -485,14 +485,16 @@ def _record_matches_identity(record: dict, identity: dict) -> bool:
     country = _clean_record_string(record.get("countryId"))
     if None in (brand, language, country):
         return False
-    if brand.casefold() != identity["brand"].casefold():
+    expected_brands = {
+        identity["brand"].casefold(),
+        identity["config"]["brandFromDictionary"].casefold(),
+    }
+    if brand.casefold() not in expected_brands:
         return False
     language_parts = language.replace("_", "-").split("-")
     expected_language = identity["language"].replace("_", "-").split("-")[0]
     expected_country = identity["country"].upper()
     if language_parts[0].casefold() != expected_language.casefold():
-        return False
-    if len(language_parts) > 1 and language_parts[-1].upper() != expected_country:
         return False
     record_country = country.upper()
     return record_country == expected_country or (

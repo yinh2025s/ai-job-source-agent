@@ -586,6 +586,97 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
             repr(result.trace["errors"]),
         )
 
+    def test_accepts_dictionary_brand_with_primary_language_and_board_country(self):
+        board = self.adapter.identify_board_from_page(
+            Page(
+                url=BOARD_URL,
+                html=next_data_html(
+                    country="BE",
+                    brand="akkodis",
+                    dictionary_brand="akkodis-belgium",
+                ),
+            )
+        )
+        self.assertIsNotNone(board)
+        fetcher = RecordingFetcher(
+            [
+                response(
+                    inventory(
+                        [
+                            job(
+                                brand="AKKODIS-BELGIUM",
+                                language="en-GB",
+                                country="BEL",
+                            )
+                        ],
+                        total=1,
+                        next_range=10,
+                    )
+                )
+            ]
+        )
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual(result.reason_code, None)
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(
+            [candidate.title for candidate in result.candidates],
+            ["Platform Engineer"],
+        )
+
+    def test_rejects_unrelated_brand_wrong_primary_language_and_wrong_country(self):
+        board = self.adapter.identify_board_from_page(
+            Page(
+                url=BOARD_URL,
+                html=next_data_html(
+                    country="BE",
+                    brand="akkodis",
+                    dictionary_brand="akkodis-belgium",
+                ),
+            )
+        )
+        self.assertIsNotNone(board)
+        records = [
+            job(brand="OTHER", language="en-GB", country="BEL"),
+            job(brand="AKKODIS-BELGIUM", language="fr-BE", country="BEL"),
+            job(brand="AKKODIS-BELGIUM", language="en-GB", country="GBR"),
+        ]
+        for record in records:
+            with self.subTest(record=record):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(
+                        [response(inventory([record], total=1, next_range=10))]
+                    ),
+                    board,
+                    JobQuery(),
+                )
+                self.assertEqual(result.candidates, [])
+                self.assertFalse(result.inventory_complete)
+                self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+
+    def test_duplicate_unsafe_and_mixed_page_checks_remain_fail_closed(self):
+        cases = [
+            [job(), job(title="Duplicate title")],
+            [job("../../admin")],
+            [job(), job("US_EN_2_456", brand="OTHER")],
+        ]
+        for records in cases:
+            with self.subTest(records=records):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(
+                        [response(inventory(records, total=len(records), next_range=10))]
+                    ),
+                    self.board,
+                    JobQuery(),
+                )
+                self.assertFalse(result.inventory_complete)
+                self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+                self.assertIn(
+                    "invalid, duplicate, or cross-tenant job record",
+                    repr(result.trace["errors"]),
+                )
+
     def test_rejects_unsafe_ids_and_cross_tenant_record_identity(self):
         records = [
             job("../../admin"),
