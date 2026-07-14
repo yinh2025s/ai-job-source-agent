@@ -91,30 +91,18 @@ class WebsiteResolutionStage:
             provided_website = (
                 context.company_website_url or context.company.company_website_url
             )
-            if provided_website and context.company.source != "replay_input":
-                website_url = normalize_url(
-                    provided_website
-                )
-                trace = {
-                    "selected": {
-                        "url": website_url,
-                        "reason": "provided by input record",
-                    }
-                }
-                detail = "Official website supplied by the input record."
-            else:
-                website_url, trace = self.service.resolve(
-                    context.company.company_name,
-                    context.company.linkedin_company_url,
-                    context.company.job_location,
-                    preferred_url=provided_website,
-                )
-                website_url = normalize_url(website_url) if website_url else None
-                detail = (
-                    "Historical website was revalidated before use."
-                    if provided_website
-                    else None
-                )
+            website_url, trace = self.service.resolve(
+                context.company.company_name,
+                context.company.linkedin_company_url,
+                context.company.job_location,
+                preferred_url=provided_website,
+            )
+            website_url = normalize_url(website_url) if website_url else None
+            detail = (
+                "Provided website was revalidated before use."
+                if provided_website
+                else None
+            )
         except FetchError as exc:
             return _failed_execution(classify_fetch_error(str(exc)), started, str(exc))
         except DiscoveryError as exc:

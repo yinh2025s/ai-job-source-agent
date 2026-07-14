@@ -52,17 +52,27 @@ class FakeIdentityResolver:
 
 
 class UpstreamStageTests(unittest.TestCase):
-    def test_s2_uses_provided_website_without_calling_resolver(self):
-        resolver = FakeWebsiteResolver()
+    def test_s2_revalidates_supplied_website_as_preferred_candidate(self):
+        resolver = FakeWebsiteResolver("https://new-acme.example")
         context = PipelineContext.from_company(
-            CompanyInput(company_name="Acme", company_website_url="acme.test")
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://old-acme.example",
+            )
         )
 
         execution = WebsiteResolutionStage(resolver).run(context)
 
         self.assertEqual(execution.result.status, "success")
-        self.assertEqual(execution.updates["company_website_url"], "https://acme.test")
-        self.assertEqual(resolver.calls, [])
+        self.assertEqual(
+            execution.updates["company_website_url"],
+            "https://new-acme.example",
+        )
+        self.assertEqual(
+            resolver.calls,
+            [("Acme", None, "https://old-acme.example")],
+        )
+        self.assertIn("revalidated", execution.result.detail)
 
     def test_s2_revalidates_replay_website_as_preferred_candidate(self):
         resolver = FakeWebsiteResolver("https://new-acme.example")
