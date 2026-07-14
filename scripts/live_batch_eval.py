@@ -18,7 +18,7 @@ from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.batch_discovery import LinkedInDiscoveryManifestStore
 from job_source_agent.checkpoint import execution_fingerprint
 from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
-from job_source_agent.contracts import FetchClient, PipelineContext
+from job_source_agent.contracts import FetchClient, PipelineContext, StageExecution
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
 from job_source_agent.evaluation_history import cohort_identities_compatible, derive_cohort_identity
 from job_source_agent.linkedin import load_company_inputs
@@ -762,11 +762,69 @@ def _missing_resume_checkpoints(
     store = FilesystemCheckpointStore(_checkpoint_dir(args))
     requested_index = PIPELINE_STAGES.index(requested)
     missing: list[str] = []
+    context = PipelineContext.from_company(company)
+    chain_is_usable = True
     for stage in PIPELINE_STAGES[:requested_index]:
         execution = store.load(fingerprint, stage)
         if execution is None or execution.result.status not in {"success", "not_applicable"}:
             missing.append(stage)
+            chain_is_usable = False
+            continue
+        if not chain_is_usable:
+            continue
+        candidate_context = copy.deepcopy(context)
+        try:
+            candidate_context.apply(execution)
+        except (TypeError, ValueError):
+            missing.append(stage)
+            chain_is_usable = False
+            continue
+        if not _resume_context_update_is_usable(candidate_context, execution):
+            missing.append(stage)
+            chain_is_usable = False
+            continue
+        context = candidate_context
     return missing
+
+
+def _resume_context_update_is_usable(
+    context: PipelineContext,
+    execution: StageExecution,
+) -> bool:
+    optional_text_fields = {
+        "hiring_entity_name",
+        "provider",
+    }
+    nullable_url_fields = {
+        "career_root_url",
+        "career_page_url",
+        "job_list_page_url",
+        "open_position_url",
+    }
+    for field_name, value in execution.updates.items():
+        if field_name in optional_text_fields and value is not None and not isinstance(value, str):
+            return False
+        if field_name == "company_website_url" and (
+            not isinstance(value, str) or not value.strip()
+        ):
+            return False
+        if field_name in nullable_url_fields and value is not None and (
+            not isinstance(value, str) or not value.strip()
+        ):
+            return False
+
+    if execution.result.status != "success":
+        return True
+    required_output = {
+        STAGE_WEBSITE_RESOLUTION: "company_website_url",
+        STAGE_CAREER_DISCOVERY: "career_page_url",
+        STAGE_JOB_BOARD_DISCOVERY: "job_list_page_url",
+        STAGE_OPENING_MATCH: "open_position_url",
+    }.get(execution.result.stage)
+    if required_output is None:
+        return True
+    value = getattr(context, required_output)
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _downstream_rerun_stage(args: argparse.Namespace) -> str | None:

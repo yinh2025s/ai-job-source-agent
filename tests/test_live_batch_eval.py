@@ -1212,6 +1212,52 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual(fallback, "rebuild_downstream")
         self.assertIn("job_board_discovery", company.source_trace["resume"]["missing_checkpoints"])
 
+    def test_resume_rebuilds_when_s4_checkpoint_has_unsupported_update(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            company_website_url="https://checkpoint.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            store, fingerprint = self.save_checkpoint_chain(company, args)
+            path = store._checkpoint_path(fingerprint, "career_discovery")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["execution"]["updates"]["unsupported_field"] = "blocked"
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            args.resume_from_stage = "job_board_discovery"
+
+            start_at, fallback = _downstream_start_stage(company, args)
+
+        self.assertEqual(start_at, "career_discovery")
+        self.assertEqual(fallback, "rebuild_downstream")
+        self.assertIn(
+            "career_discovery",
+            company.source_trace["resume"]["missing_checkpoints"],
+        )
+
+    def test_resume_rebuilds_when_s4_checkpoint_has_malformed_career_url(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            company_website_url="https://checkpoint.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            store, fingerprint = self.save_checkpoint_chain(company, args)
+            path = store._checkpoint_path(fingerprint, "career_discovery")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["execution"]["updates"]["career_page_url"] = ["not", "a", "url"]
+            path.write_text(json.dumps(payload), encoding="utf-8")
+            args.resume_from_stage = "job_board_discovery"
+
+            start_at, fallback = _downstream_start_stage(company, args)
+
+        self.assertEqual(start_at, "career_discovery")
+        self.assertEqual(fallback, "rebuild_downstream")
+        self.assertIn(
+            "career_discovery",
+            company.source_trace["resume"]["missing_checkpoints"],
+        )
+
     def test_two_pipeline_phases_restore_s1_to_s3_checkpoint_updates(self):
         company = CompanyInput(
             company_name="Aurora Data",
