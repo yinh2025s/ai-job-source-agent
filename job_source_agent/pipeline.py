@@ -2780,6 +2780,18 @@ class JobSourceAgent:
                         trace["selected"] = dataclass_to_dict(candidate)
                         trace["selected_page_source"] = "provider_adapter"
                         return verified_url
+                    fetch_failure = verification.get("fetch_failure")
+                    if isinstance(fetch_failure, dict):
+                        trace["candidate_fetch_errors"].append(
+                            {
+                                "url": candidate.url,
+                                **fetch_failure,
+                                "origin": candidate.origin,
+                                "evidence_tier": candidate_evidence_tier(candidate),
+                                "provider": verification["provider"],
+                            }
+                        )
+                        continue
                     trace["candidate_fetch_errors"].append(
                         {"url": candidate.url, "error": "derived provider adapter rejected tenant or title"}
                     )
@@ -3163,8 +3175,18 @@ class JobSourceAgent:
             return None
         try:
             result = adapter.list_jobs(self.fetcher, board, JobQuery(title=target_title))
-        except FetchError:
-            return None
+        except FetchError as exc:
+            failure = _fetch_failure_trace(exc)
+            return None, {
+                "url": board.url,
+                "provider": adapter.name,
+                "method": "native_adapter_first",
+                "candidate_count": 0,
+                "title_match_count": 0,
+                "reason_code": failure["reason_code"],
+                "adapter_trace": {},
+                "fetch_failure": failure,
+            }
 
         matching = [
             candidate
