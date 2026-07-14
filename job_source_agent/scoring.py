@@ -208,6 +208,20 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     haystack = f"{path} {text}"
     path_parts = [part for part in path.split("/") if part]
     leaf = path_parts[-1] if path_parts else ""
+    normalized_text = " ".join(text.split())
+    explicit_job_list_command = any(
+        phrase in normalized_text
+        for phrase in (
+            "browse jobs",
+            "browse roles",
+            "open positions",
+            "open roles",
+            "search jobs",
+            "search roles",
+            "view jobs",
+            "view roles",
+        )
+    )
     score = 0
     reasons: list[str] = []
     same_page_detail_query = _looks_like_same_page_detail_query(
@@ -254,20 +268,11 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     ):
         score += 25
         reasons.append("job-listing path pattern")
+    elif leaf == "all-jobs" and explicit_job_list_command:
+        score += 20
+        reasons.append("explicit all-jobs route")
 
-    if any(
-        phrase in " ".join(text.split())
-        for phrase in (
-            "browse jobs",
-            "browse roles",
-            "open positions",
-            "open roles",
-            "search jobs",
-            "search roles",
-            "view jobs",
-            "view roles",
-        )
-    ):
+    if explicit_job_list_command:
         score += 30
         reasons.append("explicit job-list command")
 
@@ -334,6 +339,7 @@ def is_likely_job_listing_page(candidate: LinkCandidate) -> bool:
             "ATS board/listing candidate" in reason_text
             or "job-listing path pattern" in reason_text
             or "job-listing route name" in reason_text
+            or "explicit all-jobs route" in reason_text
             or (path_parts and _looks_like_generic_listing_leaf(path_parts[-1]))
             or "open roles" in text
             or "open positions" in text

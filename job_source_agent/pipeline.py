@@ -897,12 +897,15 @@ class JobSourceAgent:
         }
 
         queue = [career_page_url]
+        queued_candidates: dict[str, LinkCandidate] = {}
+        asset_backed_provider_targets: set[str] = set()
         visited: set[str] = set()
         pages_checked = 0
 
         while queue and pages_checked < self.max_job_pages:
             page_url = queue.pop(0)
             normalized_page_url = page_url.rstrip("/")
+            incoming_candidate = queued_candidates.get(normalized_page_url)
             if normalized_page_url in visited:
                 continue
             visited.add(normalized_page_url)
@@ -929,15 +932,59 @@ class JobSourceAgent:
             normalized_actual_url = actual_page_url.rstrip("/")
             if normalized_actual_url != normalized_page_url and normalized_actual_url in visited:
                 pages_checked -= 1
+                requested_adapter = self.provider_registry.adapter_for(page_url)
+                requested_board = (
+                    requested_adapter.identify_board(page_url)
+                    if requested_adapter is not None
+                    else None
+                )
+                preserve_provider_handoff = (
+                    incoming_candidate is not None
+                    and requested_adapter is not None
+                    and requested_adapter.supports_listing
+                    and requested_board is not None
+                    and (
+                        normalized_page_url in asset_backed_provider_targets
+                        or (
+                            incoming_candidate.origin in {"page_link", "form_action"}
+                            and bool(incoming_candidate.text)
+                        )
+                    )
+                )
                 trace["pages_visited"].append(
                     {
                         "url": actual_page_url,
                         "requested_url": page_url,
                         "source": page.source,
                         "redirect_duplicate": True,
+                        "provider_handoff_preserved": preserve_provider_handoff,
                         "top_candidates": [],
                     }
                 )
+                if preserve_provider_handoff:
+                    canonical_board_url = self._canonical_provider_board_url(
+                        requested_adapter.name,
+                        requested_board.url,
+                        requested_board.identifier,
+                    )
+                    trace["provider"] = requested_adapter.name
+                    trace["provider_detection"] = {
+                        "method": "redirected_linked_url_evidence",
+                        "provider": requested_adapter.name,
+                        "url": canonical_board_url,
+                        "evidence_url": incoming_candidate.source_url,
+                    }
+                    trace["job_list_page_url"] = canonical_board_url
+                    return (
+                        None,
+                        canonical_board_url,
+                        trace,
+                        DiscoveredJobBoard(
+                            board=requested_board,
+                            detection_method="redirected_linked_url_evidence",
+                            evidence_url=incoming_candidate.source_url,
+                        ),
+                    )
                 continue
             visited.add(normalized_actual_url)
             page_board = self.provider_registry.board_for_page(page, self.fetcher)
@@ -1008,8 +1055,19 @@ class JobSourceAgent:
                 reverse=True,
             )
             deduped = self._dedupe_candidates(scored)
+            if provider_asset_probe:
+                for candidate in deduped:
+                    if self._provider_asset_confirms_candidate(
+                        provider_asset_probe,
+                        candidate,
+                    ):
+                        asset_backed_provider_targets.add(candidate.url.rstrip("/"))
             verified_generic_listing = self._looks_like_generic_job_list_route(
                 actual_page_url
+            ) or (
+                incoming_candidate is not None
+                and "explicit all-jobs route" in incoming_candidate.reasons
+                and normalize_url(incoming_candidate.url) == normalize_url(actual_page_url)
             )
             if self._has_job_list_evidence(actual_page_url, deduped) and not trace["job_list_page_url"]:
                 trace["job_list_page_url"] = actual_page_url
@@ -1142,6 +1200,7 @@ class JobSourceAgent:
                     and self._is_safe_traversal_target(candidate, actual_page_url)
                     and candidate.url.rstrip("/") not in visited
                 ):
+                    queued_candidates.setdefault(candidate.url.rstrip("/"), candidate)
                     queue.append(candidate.url)
 
         return None, trace["job_list_page_url"], trace, None
@@ -1266,6 +1325,43 @@ class JobSourceAgent:
         if self._is_provider_job_board_url(page_url):
             return True
         return any(is_likely_job_detail(candidate) for candidate in candidates)
+
+    def _provider_asset_confirms_candidate(
+        self,
+        probe: dict,
+        candidate: LinkCandidate,
+    ) -> bool:
+        candidate_adapter = self.provider_registry.adapter_for(candidate.url)
+        candidate_board = (
+            candidate_adapter.identify_board(candidate.url)
+            if candidate_adapter is not None
+            else None
+        )
+        if (
+            candidate_adapter is None
+            or not candidate_adapter.supports_listing
+            or candidate_board is None
+            or not candidate_board.identifier
+        ):
+            return False
+        provider_urls = probe.get("provider_urls")
+        if not isinstance(provider_urls, list):
+            return False
+        synthetic = Page(
+            url=candidate.source_url,
+            html="\n".join(url for url in provider_urls if isinstance(url, str)),
+        )
+        for link in extract_links(synthetic):
+            adapter = self.provider_registry.adapter_for(link.url)
+            board = adapter.identify_board(link.url) if adapter is not None else None
+            if (
+                adapter is not None
+                and board is not None
+                and adapter.name == candidate_adapter.name
+                and board.identifier == candidate_board.identifier
+            ):
+                return True
+        return False
 
     def _looks_like_generic_job_list_route(self, url: str) -> bool:
         parts = [part.casefold() for part in urlparse(url).path.split("/") if part]

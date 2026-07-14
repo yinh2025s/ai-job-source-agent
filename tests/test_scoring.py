@@ -170,6 +170,31 @@ class ScoringTests(unittest.TestCase):
 
         self.assertTrue(is_likely_job_listing_page(candidate))
 
+    def test_explicit_all_jobs_route_is_a_listing_candidate(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://careers.example.com/en/all-jobs/",
+                text="Search Jobs",
+                source_url="https://careers.example.com/en/",
+            ),
+            career_page_url="https://careers.example.com/en/",
+        )
+
+        self.assertTrue(is_likely_job_listing_page(candidate))
+        self.assertIn("explicit all-jobs route", candidate.reasons)
+
+    def test_unlabeled_all_jobs_route_is_not_a_listing_candidate(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://careers.example.com/en/all-jobs/",
+                text="",
+                source_url="https://careers.example.com/en/",
+            ),
+            career_page_url="https://careers.example.com/en/",
+        )
+
+        self.assertFalse(is_likely_job_listing_page(candidate))
+
     def test_nested_job_results_route_is_a_listing_not_a_detail(self):
         candidate = score_job_link(
             RawLink(

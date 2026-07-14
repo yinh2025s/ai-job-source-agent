@@ -52,6 +52,61 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(probe["asset_urls"], [route_asset, shared_asset])
         self.assertEqual(probe["provider_urls"], [board])
 
+    def test_preserves_asset_backed_provider_handoff_when_board_redirects_to_career(self):
+        career = "https://www.example.com/careers/"
+        route_asset = "https://www.example.com/assets/page-careers.js"
+        embed = "https://boards.greenhouse.io/embed/job_board/js?for=example"
+        board = "https://job-boards.greenhouse.io/example"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<script src="{route_asset}"></script><main>Open positions</main>',
+            ),
+            route_asset: Page(url=route_asset, html=f'const board="{embed}";'),
+            board: Page(url=board, final_url=career, html="<main>Open positions</main>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(
+            trace["provider_detection"]["method"],
+            "redirected_linked_url_evidence",
+        )
+        self.assertTrue(trace["pages_visited"][1]["provider_handoff_preserved"])
+
+    def test_traverses_explicit_same_site_all_jobs_route(self):
+        career = "https://careers.example.com/en/"
+        all_jobs = "https://careers.example.com/en/all-jobs/"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<a href="{all_jobs}">Search Jobs</a>'),
+            all_jobs: Page(url=all_jobs, html="<main>Find your next role</main>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, all_jobs)
+        self.assertEqual(trace["selected_from"], "explicit_first_party_listing_route")
+
+    def test_does_not_traverse_unlabeled_or_cross_site_all_jobs_route(self):
+        career = "https://careers.example.com/en/"
+        unlabeled = "https://careers.example.com/en/all-jobs/"
+        cross_site = "https://careers.unrelated.example.net/en/all-jobs/"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<a href="{unlabeled}"></a>'
+                    f'<a href="{cross_site}">Search Jobs</a>'
+                ),
+            ),
+        })
+
+        with self.assertRaises(DiscoveryError):
+            JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(fetcher.requested, [career])
+
     def test_provider_asset_probe_rejects_credentials_and_cross_site_assets(self):
         career = "https://www.example.com/careers/"
         credentialed = "https://user@www.example.com/assets/page-careers.js"
