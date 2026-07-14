@@ -7,6 +7,7 @@ from job_source_agent.career_search import (
     build_search_queries,
     clean_search_result_url,
 )
+from job_source_agent.career_transport_budget import CareerTransportBudgetFetcher
 from job_source_agent.web import FetchError, Fetcher, Page
 
 
@@ -393,6 +394,121 @@ class CareerSearchTests(unittest.TestCase):
         self.assertEqual(len(fetcher.calls), 4)
         self.assertEqual(len(result.trace["queries"]), 4)
         self.assertTrue(result.trace["source_fetch_budget_exhausted"])
+
+    def test_non_retryable_error_disables_source_without_spending_later_budgets(self):
+        def handler(url):
+            if "format=rss" in url:
+                raise FetchError(
+                    "request rejected",
+                    reason_code="HTTP_FORBIDDEN",
+                    retryable=False,
+                )
+            return Page(url, "<html></html>", final_url=url)
+
+        fetcher = BudgetMappingFetcher(handler, [1.0] * 5)
+        result = CareerSearchResolver(
+            fetcher,
+            max_queries=2,
+            max_source_fetches=5,
+        ).search("Acme Co", "https://acme.example")
+
+        self.assertEqual(len(fetcher.calls), 5)
+        self.assertEqual(fetcher.budget_checks, 5)
+        self.assertEqual(sum("format=rss" in url for url in fetcher.calls), 1)
+        self.assertEqual(len(result.trace["queries"]), 5)
+        self.assertFalse(result.trace["source_fetch_budget_exhausted"])
+        self.assertEqual(
+            result.trace["source_circuit_breaks"],
+            [{"source": "bing_rss", "reason": "non_retryable_fetch_error"}],
+        )
+        self.assertEqual(
+            result.trace["source_circuit_skips"],
+            [{"source": "bing_rss", "reason": "non_retryable_fetch_error"}],
+        )
+
+    def test_retryable_and_untyped_fetch_errors_do_not_disable_source(self):
+        for retryable in (True, None):
+            with self.subTest(retryable=retryable):
+                def handler(url):
+                    if "format=rss" in url:
+                        raise FetchError("search unavailable", retryable=retryable)
+                    return Page(url, "<html></html>", final_url=url)
+
+                fetcher = MappingFetcher(handler)
+                result = CareerSearchResolver(
+                    fetcher,
+                    max_queries=2,
+                    max_source_fetches=6,
+                ).search("Acme Co", "https://acme.example")
+
+                self.assertEqual(len(fetcher.calls), 6)
+                self.assertEqual(sum("format=rss" in url for url in fetcher.calls), 2)
+                self.assertEqual(result.trace["source_circuit_breaks"], [])
+                self.assertEqual(result.trace["source_circuit_skips"], [])
+
+    def test_non_retryable_disable_is_isolated_to_the_failed_source(self):
+        def handler(url):
+            if "bing.com" in url and "format=rss" not in url:
+                raise FetchError("blocked", retryable=False)
+            return Page(url, "<html></html>", final_url=url)
+
+        fetcher = MappingFetcher(handler)
+        result = CareerSearchResolver(
+            fetcher,
+            max_queries=2,
+            max_source_fetches=6,
+        ).search("Acme Co", "https://acme.example")
+
+        self.assertEqual(len(fetcher.calls), 5)
+        self.assertEqual(sum("format=rss" in url for url in fetcher.calls), 2)
+        self.assertEqual(sum("duckduckgo.com" in url for url in fetcher.calls), 2)
+        self.assertEqual(
+            result.trace["source_circuit_breaks"],
+            [{"source": "bing_html", "reason": "non_retryable_fetch_error"}],
+        )
+
+    def test_source_circuit_resets_for_each_search_invocation(self):
+        def handler(url):
+            if "format=rss" in url:
+                raise FetchError("request rejected", retryable=False)
+            return Page(url, "<html></html>", final_url=url)
+
+        fetcher = MappingFetcher(handler)
+        resolver = CareerSearchResolver(fetcher, max_queries=2, max_source_fetches=6)
+
+        first = resolver.search("Acme Co", "https://acme.example")
+        first_call_count = len(fetcher.calls)
+        second = resolver.search("Beta Co", "https://beta.example")
+
+        self.assertEqual(first_call_count, 5)
+        self.assertEqual(len(fetcher.calls), 10)
+        self.assertEqual(sum("format=rss" in url for url in fetcher.calls), 2)
+        self.assertEqual(len(first.trace["source_circuit_breaks"]), 1)
+        self.assertEqual(len(second.trace["source_circuit_breaks"]), 1)
+
+    def test_circuit_skips_do_not_consume_transport_dispatch_budget(self):
+        def handler(url):
+            if "format=rss" in url:
+                raise FetchError("request rejected", retryable=False)
+            return Page(url, "<html></html>", final_url=url)
+
+        base = MappingFetcher(handler)
+        fetcher = CareerTransportBudgetFetcher(base)
+        with fetcher.career_discovery_scope(5) as budget:
+            with fetcher.career_discovery_phase("career_search"):
+                result = CareerSearchResolver(
+                    fetcher,
+                    max_queries=2,
+                    max_source_fetches=5,
+                ).search("Acme Co", "https://acme.example")
+            budget_trace = budget.snapshot()
+
+        self.assertEqual(len(base.calls), 5)
+        self.assertEqual(budget_trace["dispatched"], 5)
+        self.assertEqual(budget_trace["remaining"], 0)
+        self.assertEqual(budget_trace["rejected"], 0)
+        self.assertEqual(budget_trace["by_phase"], {"career_search": 5})
+        self.assertEqual(len(result.trace["source_circuit_skips"]), 1)
 
 
 if __name__ == "__main__":

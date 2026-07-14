@@ -17,6 +17,7 @@ from .web import FetchError, Fetcher, RawLink, domain_of, safe_normalize_url
 
 BING_SEARCH_ENDPOINT = "https://www.bing.com/search"
 DUCKDUCKGO_SEARCH_ENDPOINT = "https://html.duckduckgo.com/html/"
+SOURCE_CIRCUIT_REASON = "non_retryable_fetch_error"
 
 BLOCKED_SEARCH_DOMAINS = {
     "bing.com",
@@ -79,6 +80,8 @@ class CareerSearchResolver:
             "query_url": None,
             "candidates": [],
             "error": None,
+            "source_circuit_breaks": [],
+            "source_circuit_skips": [],
             "source_fetch_budget": self.max_source_fetches,
             "source_fetch_budget_exhausted": False,
             "fetch_budget_supported": fetch_budget is not None,
@@ -99,12 +102,21 @@ class CareerSearchResolver:
         trace["configured_query_limit"] = self.max_queries
         trace["effective_query_limit"] = effective_query_limit
         source_fetches = 0
+        disabled_sources: set[str] = set()
         for query_text in queries:
             sources = _search_sources(query_text)
             if ats_only:
                 sources = sources[:1]
             skip_bing_html = False
             for source in sources:
+                if source.name in disabled_sources:
+                    trace["source_circuit_skips"].append(
+                        {
+                            "source": source.name,
+                            "reason": SOURCE_CIRCUIT_REASON,
+                        }
+                    )
+                    continue
                 if source.name == "bing_html" and skip_bing_html:
                     continue
                 if source_fetches >= self.max_source_fetches:
@@ -135,6 +147,14 @@ class CareerSearchResolver:
                 except FetchError as exc:
                     query_trace["error"] = str(exc)
                     trace["error"] = trace["error"] or str(exc)
+                    if exc.retryable is False:
+                        disabled_sources.add(source.name)
+                        trace["source_circuit_breaks"].append(
+                            {
+                                "source": source.name,
+                                "reason": SOURCE_CIRCUIT_REASON,
+                            }
+                        )
                     continue
 
                 raw_urls = _parse_search_results(source.name, page.html)
