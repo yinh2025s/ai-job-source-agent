@@ -755,10 +755,14 @@ def _matches_with_omitted_sensitive_query(expected_url: str, recorded_url: str) 
         return True
     expected = urlparse(expected_url)
     recorded = urlparse(recorded_url)
+    paths_match = expected.path == recorded.path or {
+        expected.path,
+        recorded.path,
+    } == {"", "/"}
     if (
         expected.scheme != recorded.scheme
         or expected.netloc != recorded.netloc
-        or expected.path != recorded.path
+        or not paths_match
         or expected.query
         or not recorded.query
     ):

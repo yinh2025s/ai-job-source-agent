@@ -78,6 +78,65 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(final_page.html, request_page.html)
         self.assertEqual(result.summary["fixture_count"], 2)
 
+    def test_root_response_alias_with_slash_replays_request_without_slash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            SnapshotStore(snapshots).write_page(
+                Page(
+                    url="https://jobs.example.com/?token=secret",
+                    html="<html>Root jobs</html>",
+                    source="live",
+                )
+            )
+
+            replay_snapshots(snapshots, output)
+            page = Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                "https://jobs.example.com"
+            )
+
+        self.assertEqual(page.html, "<html>Root jobs</html>")
+
+    def test_root_response_alias_without_slash_replays_request_with_slash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            SnapshotStore(snapshots).write_page(
+                Page(
+                    url="https://jobs.example.com?token=secret",
+                    html="<html>Root jobs</html>",
+                    source="live",
+                )
+            )
+
+            replay_snapshots(snapshots, output)
+            page = Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                "https://jobs.example.com/"
+            )
+
+        self.assertEqual(page.html, "<html>Root jobs</html>")
+
+    def test_non_root_response_alias_rejects_trailing_slash_difference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            SnapshotStore(snapshots).write_page(
+                Page(
+                    url="https://jobs.example.com/jobs/?token=secret",
+                    html="<html>Jobs</html>",
+                    source="live",
+                )
+            )
+
+            replay_snapshots(snapshots, output)
+            with self.assertRaisesRegex(FetchError, "Invalid offline replay manifest"):
+                Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                    "https://jobs.example.com/jobs"
+                )
+
     def test_cross_host_redirect_preserves_verified_response_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
