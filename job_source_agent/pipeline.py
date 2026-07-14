@@ -1595,9 +1595,39 @@ class JobSourceAgent:
                 self.fetcher,
                 page,
                 self._is_provider_job_board_url,
+                self._provider_board_identity,
             )
             if provider_asset_probe:
                 trace.setdefault("content_payload_probes", []).append(provider_asset_probe)
+                if (
+                    provider_asset_probe.get("method")
+                    == "first_party_dynamic_inventory"
+                    and provider_asset_probe.get("status") == "verified"
+                    and provider_asset_probe.get("inventory_complete") is True
+                    and provider_asset_probe.get("inventory_count") == 0
+                ):
+                    trace["explicit_empty_inventory"] = {
+                        "url": provider_asset_probe.get("endpoint_url"),
+                        "source": "first_party_dynamic_inventory",
+                        "phrase": "verified empty first-party inventory",
+                    }
+                fetch_error = provider_asset_probe.get("fetch_error")
+                if isinstance(fetch_error, dict):
+                    dependency_urls = provider_asset_probe.get("dependency_asset_urls")
+                    dependency_url = (
+                        dependency_urls[-1]
+                        if isinstance(dependency_urls, list) and dependency_urls
+                        else None
+                    )
+                    trace["fetch_errors"].append(
+                        {
+                            "url": provider_asset_probe.get("endpoint_url")
+                            or dependency_url,
+                            "origin": "first_party_dynamic_inventory",
+                            "evidence_tier": 0,
+                            **fetch_error,
+                        }
+                    )
             actual_page_url = page.final_url or page.url
             normalized_actual_url = actual_page_url.rstrip("/")
             actual_page_compatible = self._url_matches_target_region(
@@ -1957,6 +1987,20 @@ class JobSourceAgent:
                 )
             ),
             None,
+        )
+
+    def _provider_board_identity(self, url: str) -> tuple[str, str] | None:
+        adapter = self.provider_registry.adapter_for(url)
+        board = adapter.identify_board(url) if adapter is not None else None
+        if adapter is None or board is None or not adapter.supports_listing:
+            return None
+        return (
+            adapter.name,
+            self._canonical_provider_board_url(
+                adapter.name,
+                board.url,
+                board.identifier,
+            ),
         )
 
     @staticmethod

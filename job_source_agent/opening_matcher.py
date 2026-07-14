@@ -152,7 +152,10 @@ class JobOpeningMatcher:
                 link = RawLink(validated_url, link.text, link.source_url, link.origin)
                 scored = score_job_link(link, page_url)
                 title_score, title_reasons = score_title_match(link.text, target_title)
-                if title_score < MIN_TITLE_MATCH_SCORE:
+                if (
+                    title_score < MIN_TITLE_MATCH_SCORE
+                    or not title_identity_matches(link.text, target_title)
+                ):
                     continue
                 total_score = scored.score + title_score
                 reasons = scored.reasons + title_reasons + [f"listing origin: {link.origin}"]
@@ -342,7 +345,13 @@ class JobOpeningMatcher:
                         scored = []
                         for candidate in adapter_result.candidates:
                             title_score, title_reasons = score_title_match(candidate.title, target_title)
-                            if title_score < MIN_PROVIDER_TITLE_MATCH_SCORE:
+                            if (
+                                title_score < MIN_PROVIDER_TITLE_MATCH_SCORE
+                                or not title_identity_matches(
+                                    candidate.title,
+                                    target_title,
+                                )
+                            ):
                                 continue
                             location_score, location_reasons = score_location_match(
                                 candidate.location,
@@ -404,7 +413,10 @@ class JobOpeningMatcher:
             for title, url in candidates:
                 title_score, title_reasons = score_title_match(title, target_title)
                 strongest_title_score = max(strongest_title_score, title_score)
-                if title_score < MIN_TITLE_MATCH_SCORE:
+                if (
+                    title_score < MIN_TITLE_MATCH_SCORE
+                    or not title_identity_matches(title, target_title)
+                ):
                     continue
                 scored.append(
                     OpeningMatch(
@@ -1047,6 +1059,36 @@ def score_title_match(candidate_title: str, target_title: str) -> tuple[int, lis
         score += 50
         reasons.append("exact title match")
     return score, reasons
+
+
+def title_identity_matches(candidate_title: str, target_title: str) -> bool:
+    """Require a title-shaped identity, not only an unordered token intersection."""
+
+    candidate = _title_token_sequence(candidate_title)
+    target = _title_token_sequence(target_title)
+    if not candidate or not target:
+        return False
+    if len(candidate) == len(target) and sorted(candidate) == sorted(target):
+        return True
+    if len(target) == 1:
+        return False
+    target_index = 0
+    for token in candidate:
+        if token == target[target_index]:
+            target_index += 1
+            if target_index == len(target):
+                return True
+    return False
+
+
+def _title_token_sequence(text: str) -> list[str]:
+    normalized = "".join(char.lower() if char.isalnum() else " " for char in text)
+    aliases = {"sr": "senior", "jr": "junior"}
+    return [
+        aliases.get(token, token)
+        for token in normalized.split()
+        if len(token) >= 2 and token not in STOPWORDS
+    ]
 
 
 def _tokens(text: str) -> set[str]:

@@ -9,6 +9,7 @@ from job_source_agent.opening_matcher import (
     build_search_form_urls,
     detect_provider,
     score_title_match,
+    title_identity_matches,
     structured_job_links,
 )
 from job_source_agent.listing_extraction import (
@@ -110,6 +111,60 @@ class OpeningMatcherTests(unittest.TestCase):
         )
 
         self.assertLess(score, 65)
+
+    def test_title_identity_rejects_unordered_overlap_from_another_role(self):
+        candidate = "Full Stack Engineer (Automation & AI Agents) | Delivery Automation Team"
+
+        self.assertGreaterEqual(score_title_match(candidate, "AI Engineer")[0], 65)
+        self.assertFalse(title_identity_matches(candidate, "AI Engineer"))
+
+    def test_title_identity_accepts_ordered_specialization_and_level_alias(self):
+        self.assertTrue(title_identity_matches("Generative AI Engineer", "AI Engineer"))
+        self.assertTrue(title_identity_matches("AI Algorithm Engineer Intern", "AI Engineer"))
+        self.assertTrue(title_identity_matches("Senior Data Scientist", "Sr Data Scientist"))
+        self.assertTrue(title_identity_matches("Engineer, AI", "AI Engineer"))
+        self.assertTrue(title_identity_matches("Engineer II", "Engineer"))
+        self.assertFalse(title_identity_matches("Platform Engineer", "Engineer"))
+
+    def test_native_adapter_does_not_promote_unordered_title_overlap(self):
+        board_url = "https://jobs.example.com/example"
+
+        class Adapter:
+            name = "strict_title"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return url == board_url
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title=(
+                                "Full Stack Engineer (Automation & AI Agents) "
+                                "| Delivery Automation Team"
+                            ),
+                            url=board_url + "/1",
+                            provider=self.name,
+                        )
+                    ],
+                )
+
+        matcher = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([Adapter()]),
+        )
+
+        match, trace = matcher.match(board_url, "AI Engineer")
+
+        self.assertIsNone(match)
+        self.assertEqual(trace["provider_api"]["inventory"]["status"], "verified")
+        self.assertEqual(trace["search_skipped"], "verified_native_inventory_no_match")
 
     def test_google_search_results_match_linkedin_title(self):
         matcher = JobOpeningMatcher(

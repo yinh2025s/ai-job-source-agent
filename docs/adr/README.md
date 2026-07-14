@@ -29,3 +29,4 @@ NNNN-short-decision-title.md
 - [ADR-0015: Gate Result Identity And Checkpoint Prefix](0015-gate-result-identity-and-checkpoint-prefix.md)
 - [ADR-0016: Prioritize Direct Website Evidence Before Speculation](0016-prioritize-direct-website-evidence.md)
 - [ADR-0017: Bound Multi-Board Opening Discovery](0017-bound-multi-board-opening-discovery.md)
+- [ADR-0018: Verify First-Party Dynamic Job Inventory](0018-verify-first-party-dynamic-job-inventory.md)

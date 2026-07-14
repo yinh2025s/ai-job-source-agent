@@ -7,6 +7,11 @@ from html.parser import HTMLParser
 from urllib.parse import unquote, urlparse
 
 from .contracts import FetchClient
+from .first_party_inventory import (
+    AssetSource,
+    ProviderBoardIdentity,
+    probe_first_party_job_inventory,
+)
 from .web import FetchError, Page, RawLink, domain_of, normalize_url
 
 
@@ -188,6 +193,7 @@ def probe_first_party_provider_assets(
     fetcher: FetchClient,
     page: Page,
     recognizes_provider_url: Callable[[str], bool],
+    provider_board_identity: ProviderBoardIdentity | None = None,
     *,
     max_assets: int = 3,
 ) -> tuple[Page, dict | None]:
@@ -214,10 +220,21 @@ def probe_first_party_provider_assets(
             continue
         if asset_url not in asset_urls:
             asset_urls.append(asset_url)
-    asset_urls.sort(key=lambda url: _provider_asset_priority(url, route_token))
+    declaration_order = {url: index for index, url in enumerate(asset_urls)}
+
+    def provider_asset_order(url: str) -> tuple[int, int, str]:
+        priority, filename = _provider_asset_priority(url, route_token)
+        return (
+            priority,
+            -declaration_order[url] if priority == 3 else 0,
+            filename,
+        )
+
+    asset_urls.sort(key=provider_asset_order)
 
     fetched: list[str] = []
     bundles: list[str] = []
+    asset_sources: list[AssetSource] = []
     provider_urls: list[str] = []
     for asset_url in asset_urls[:max_assets]:
         try:
@@ -229,12 +246,23 @@ def probe_first_party_provider_assets(
         bundle = asset_page.html or ""
         fetched.append(asset_url)
         bundles.append(bundle)
+        asset_sources.append(AssetSource(url=asset_url, body=bundle))
         provider_urls.extend(_recognized_provider_urls(bundle, recognizes_provider_url))
         if provider_urls:
             break
 
     if not provider_urls:
-        return page, None
+        if provider_board_identity is None:
+            return page, None
+        inventory_probe = probe_first_party_job_inventory(
+            fetcher,
+            page,
+            asset_sources,
+            provider_board_identity,
+        )
+        if inventory_probe is None:
+            return page, None
+        return inventory_probe.page, inventory_probe.trace
     return (
         Page(
             url=page.url,
