@@ -88,6 +88,77 @@ class CareerSearchTests(unittest.TestCase):
         self.assertFalse(result.trace["fetch_budget_supported"])
         self.assertEqual(result.trace["fetch_budget_checks"], 0)
 
+    def test_ats_only_invalid_rss_uses_secondary_candidate(self):
+        rss = """<rss><channel>
+          <item><link>https://unrelated.example/careers</link></item>
+        </channel></rss>"""
+        secondary = """<html><body>
+          <a class="result__a" href="https://jobs.lever.co/acme">Acme jobs</a>
+        </body></html>"""
+
+        def handler(url):
+            body = rss if "format=rss" in url else secondary
+            return Page(url, body, final_url=url)
+
+        fetcher = MappingFetcher(handler)
+        result = CareerSearchResolver(
+            fetcher,
+            max_queries=1,
+            max_source_fetches=2,
+        ).search("Acme", "https://acme.example", ats_only=True)
+
+        self.assertEqual([item.url for item in result.candidates], ["https://jobs.lever.co/acme"])
+        self.assertEqual(len(fetcher.calls), 2)
+        self.assertEqual(len(set(fetcher.calls)), 2)
+        self.assertEqual(
+            [item["source"] for item in result.trace["queries"]],
+            ["bing_rss", "duckduckgo_html"],
+        )
+        self.assertEqual(result.trace["queries"][0]["result_count"], 1)
+        self.assertEqual(result.trace["queries"][0]["candidates"], [])
+        self.assertEqual(
+            result.trace["queries"][0]["skipped_sources"],
+            [
+                {
+                    "source": "bing_html",
+                    "reason": "rss_returned_results_without_valid_candidate",
+                }
+            ],
+        )
+        self.assertEqual(result.trace["stopped_reason"], "search_candidate_found")
+        self.assertFalse(result.trace["source_fetch_budget_exhausted"])
+
+    def test_ats_only_invalid_rss_and_secondary_report_no_valid_candidates(self):
+        rss = """<rss><channel>
+          <item><link>https://unrelated.example/careers</link></item>
+        </channel></rss>"""
+        secondary = """<html><body>
+          <a class="result__a" href="https://jobs.lever.co/other-company">Other jobs</a>
+        </body></html>"""
+
+        def handler(url):
+            body = rss if "format=rss" in url else secondary
+            return Page(url, body, final_url=url)
+
+        fetcher = MappingFetcher(handler)
+        result = CareerSearchResolver(
+            fetcher,
+            max_queries=1,
+            max_source_fetches=2,
+        ).search("Acme", "https://acme.example", ats_only=True)
+
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(len(fetcher.calls), 2)
+        self.assertEqual(len(set(fetcher.calls)), 2)
+        self.assertEqual(
+            [item["source"] for item in result.trace["queries"]],
+            ["bing_rss", "duckduckgo_html"],
+        )
+        self.assertTrue(all(item["result_count"] == 1 for item in result.trace["queries"]))
+        self.assertTrue(all(item["candidates"] == [] for item in result.trace["queries"]))
+        self.assertEqual(result.trace["stopped_reason"], "no_valid_candidates")
+        self.assertFalse(result.trace["source_fetch_budget_exhausted"])
+
     def test_fetch_budget_exhaustion_stops_ats_fanout_before_next_fetch(self):
         fetcher = BudgetMappingFetcher(
             lambda url: Page(url, "<rss><channel /></rss>", final_url=url),
@@ -305,8 +376,11 @@ class CareerSearchTests(unittest.TestCase):
             "Acme Co", "https://acme.example", ats_only=True
         )
 
-        self.assertEqual(len(ats.trace["queries"]), 5)
+        self.assertEqual(len(ats.trace["queries"]), 6)
         self.assertEqual(ats.trace["effective_query_limit"], 5)
+        self.assertTrue(ats.trace["source_fetch_budget_exhausted"])
+        self.assertEqual(sum("format=rss" in url for url in fetcher.calls), 3)
+        self.assertEqual(sum("duckduckgo.com" in url for url in fetcher.calls), 3)
 
     def test_brand_prefixed_official_career_path_is_accepted(self):
         rss = "<rss><channel><item><link>https://acme.example/real-careers</link></item></channel></rss>"

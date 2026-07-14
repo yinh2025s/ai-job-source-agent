@@ -97,6 +97,13 @@ NEGATIVE_KEYWORDS = {
     "whitepaper": -80,
 }
 
+ATS_AUXILIARY_PATH_PARTS = {
+    "introduceyourself",
+    "login",
+    "my-profile",
+    "sign-in",
+}
+
 NON_JOB_PATH_PARTS = {
     "api",
     "assets",
@@ -112,9 +119,7 @@ NON_JOB_PATH_PARTS = {
     "locations",
     "departments",
     "people",
-    "login",
-    "my-profile",
-    "sign-in",
+    *ATS_AUXILIARY_PATH_PARTS,
 }
 
 RESOURCE_EXTENSIONS = (
@@ -305,13 +310,15 @@ def is_likely_job_detail(candidate: LinkCandidate) -> bool:
         return False
     if is_non_official_job_domain(candidate.url):
         return False
+    path_parts = [part.lower() for part in urlparse(candidate.url).path.split("/") if part]
+    if is_ats_url(candidate.url) and set(path_parts).intersection(ATS_AUXILIARY_PATH_PARTS):
+        return False
     if _looks_like_same_page_detail_query(candidate.url, candidate.source_url):
         return True
     if _looks_like_first_party_numeric_detail_route(candidate.url, candidate.source_url):
         return True
     if normalize_for_compare(candidate.url) == normalize_for_compare(candidate.source_url):
         return False
-    path_parts = [part.lower() for part in urlparse(candidate.url).path.split("/") if part]
     if not path_parts or _looks_like_generic_listing_leaf(path_parts[-1]):
         return False
     if is_ats_url(candidate.url) and _looks_like_ats_job_detail(candidate.url):
@@ -436,7 +443,7 @@ def _looks_like_generic_listing_leaf(leaf: str) -> bool:
 def _looks_like_ats_job_detail(url: str) -> bool:
     parsed = urlparse(url)
     host = parsed.netloc.lower()
-    parts = [part for part in parsed.path.split("/") if part]
+    parts = [part.lower() for part in parsed.path.split("/") if part]
     if any(part in NON_JOB_PATH_PARTS for part in parts):
         return False
     if is_resource_url(url):
@@ -452,23 +459,22 @@ def _looks_like_ats_job_detail(url: str) -> bool:
     if "smartrecruiters.com" in host:
         return len(parts) >= 2 and parts[0].lower() not in {"companies", "company"}
     if "workable.com" in host:
-        return "j" in [part.lower() for part in parts] or len(parts) >= 3
+        return "j" in parts or len(parts) >= 3
     if "icims.com" in host:
-        return "jobs" in [part.lower() for part in parts] and any(part.isdigit() for part in parts)
+        return "jobs" in parts and any(part.isdigit() for part in parts)
     if "workdayjobs.com" in host or "myworkdayjobs.com" in host:
-        return "job" in [part.lower() for part in parts] and len(parts) >= 3
+        return "job" in parts and len(parts) >= 3
     if "eightfold.ai" in host:
-        return any(part.lower() in {"job", "jobs"} for part in parts) and len(parts) >= 3
+        return any(part in {"job", "jobs"} for part in parts) and len(parts) >= 3
     if host == "careers.oracle.com" or host.endswith(".oraclecloud.com"):
-        lowered = [part.lower() for part in parts]
-        return "job" in lowered or "jobdetail" in lowered
+        return "job" in parts or "jobdetail" in parts
     if "successfactors.com" in host or "sapsf.com" in host:
         query = urlparse(url).query.lower()
-        return "career_job_req_id" in query or "jobreqid" in query or any(part.lower() == "job" for part in parts)
+        return "career_job_req_id" in query or "jobreqid" in query or "job" in parts
     if "rippling.com" in host:
-        return "jobs" in [part.lower() for part in parts] and len(parts) >= 4 and parts[0].lower() != "embed"
+        return "jobs" in parts and len(parts) >= 4 and parts[0] != "embed"
     if "bamboohr.com" in host:
-        return len(parts) >= 2 and parts[0].lower() == "careers" and parts[1].isdigit()
+        return len(parts) >= 2 and parts[0] == "careers" and parts[1].isdigit()
     return len(parts) >= 2
 
 

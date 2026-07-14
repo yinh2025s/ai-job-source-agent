@@ -158,6 +158,69 @@ class ScoringTests(unittest.TestCase):
         self.assertFalse(is_likely_job_detail(candidate))
         self.assertFalse(is_likely_job_listing_page(candidate))
 
+    def test_oracle_job_detail_remains_recognized(self):
+        candidate = score_job_link(
+            RawLink(
+                url=(
+                    "https://acme.fa.oraclecloud.com/hcmUI/CandidateExperience/en/"
+                    "sites/Acme/JoB/Software-Engineer/123"
+                ),
+                text="Software Engineer",
+                source_url="https://example.com/careers",
+            ),
+            career_page_url="https://example.com/careers",
+        )
+
+        self.assertTrue(is_likely_job_detail(candidate))
+        self.assertFalse(is_likely_job_listing_page(candidate))
+
+    def test_workday_boards_and_job_details_remain_recognized(self):
+        board_url = "https://acme.wd5.myworkdayjobs.com/en-US/AcmeCareers"
+        listing_url = board_url + "/jobs"
+        detail_url = board_url + "/JOB/New-York/Software-Engineer_R123"
+
+        for url, is_detail in (
+            (board_url, False),
+            (listing_url, False),
+            (detail_url, True),
+        ):
+            with self.subTest(url=url):
+                candidate = score_job_link(
+                    RawLink(
+                        url=url,
+                        text="Software Engineer" if is_detail else "Search Jobs",
+                        source_url="https://example.com/careers",
+                    ),
+                    career_page_url="https://example.com/careers",
+                )
+
+                self.assertEqual(is_likely_job_detail(candidate), is_detail)
+                self.assertEqual(is_likely_job_listing_page(candidate), not is_detail)
+
+    def test_workday_introduce_yourself_routes_are_not_jobs(self):
+        urls = (
+            "https://acme.wd5.myworkdayjobs.com/en-US/AcmeCareers/introduceYourself",
+            "https://acme.wd5.myworkdayjobs.com/en-US/AcmeCareers/INTRODUCEYOURSELF/",
+            (
+                "https://acme.wd5.myworkdayjobs.com/en-US/AcmeCareers/"
+                "JoB/Talent-Community/IntroduceYourself"
+            ),
+        )
+
+        for url in urls:
+            with self.subTest(url=url):
+                candidate = score_job_link(
+                    RawLink(
+                        url=url,
+                        text="Introduce Yourself",
+                        source_url="https://example.com/careers",
+                    ),
+                    career_page_url="https://example.com/careers",
+                )
+
+                self.assertFalse(is_likely_job_detail(candidate))
+                self.assertFalse(is_likely_job_listing_page(candidate))
+
     def test_search_results_route_is_a_listing_candidate(self):
         candidate = score_job_link(
             RawLink(

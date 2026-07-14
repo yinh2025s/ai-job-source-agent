@@ -1680,6 +1680,133 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertIn("https://multifactor.com", candidates)
         self.assertFalse(any("yc" in candidate or "f25" in candidate for candidate in candidates))
 
+    def test_guess_candidates_can_use_terminal_technology_token_as_tld(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+
+        candidates = resolver._guess_domain_candidates("P-1 AI")
+
+        self.assertEqual(candidates[0], "https://p1.ai")
+
+    def test_guess_candidates_add_constrained_all_token_edu_acronym(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+
+        institutional = resolver._guess_domain_candidates(
+            "Southern New Hampshire University"
+        )
+        non_institutional = resolver._guess_domain_candidates(
+            "Southern New Hampshire Software"
+        )
+
+        self.assertEqual(institutional[0], "https://snhu.edu")
+        self.assertNotIn("https://snhs.edu", non_institutional)
+
+    def test_generated_brand_tld_and_edu_acronym_are_selectable_when_verified(self):
+        class GeneratedCandidateFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                domain = domain_of(url)
+                if domain == "p1.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://p1.ai/",
+                        html="<html><head><title>P-1 AI</title></head><body>P-1 AI</body></html>",
+                    )
+                if domain == "snhu.edu":
+                    return Page(
+                        url=url,
+                        final_url="https://www.snhu.edu/",
+                        html="<html><head><title>SNHU</title></head><body>SNHU</body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(GeneratedCandidateFetcher(offline=True))
+
+        p1_url, _p1_trace = resolver.resolve("P-1 AI")
+        snhu_url, snhu_trace = resolver.resolve("Southern New Hampshire University")
+
+        self.assertEqual(p1_url, "https://p1.ai/")
+        self.assertEqual(snhu_url, "https://www.snhu.edu/")
+        self.assertIn(
+            "homepage title confirms company abbreviation",
+            snhu_trace["selected"]["reasons"],
+        )
+
+    def test_incomplete_body_only_identity_cannot_select_unrelated_company(self):
+        class TokenCollisionFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://us.pg.com/",
+                    html=(
+                        "<html><head><title>P and G consumer products</title></head>"
+                        "<body>P describes one topic."
+                        + (" unrelated content" * 400)
+                        + " Section 1 separately mentions AI.</body>"
+                        "</html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(TokenCollisionFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://us.pg.com",
+            "P-1 AI",
+            verify=True,
+        )
+
+        self.assertGreaterEqual(candidate.score, 25)
+        self.assertIn("homepage body confirms company identity", candidate.reasons)
+        self.assertIn("incomplete company identity", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_verified_preferred_homepage_may_omit_generic_group_suffix(self):
+        class GroupHomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) != "bosch.com":
+                    raise FetchError("not this candidate")
+                return Page(
+                    url=url,
+                    final_url="https://www.bosch.com/",
+                    html="<html><head><title>Bosch</title></head><body>Bosch</body></html>",
+                )
+
+        resolver = CompanyWebsiteResolver(GroupHomepageFetcher(offline=True))
+
+        website_url, trace = resolver.resolve(
+            "Bosch Group",
+            preferred_url="https://www.bosch.com",
+        )
+
+        self.assertEqual(website_url, "https://www.bosch.com/")
+        self.assertIn(
+            "homepage title confirms core company identity",
+            trace["selected"]["reasons"],
+        )
+
+    def test_verified_preferred_parent_brand_does_not_drop_product_qualifier(self):
+        class ParentBrandFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) != "bosch.com":
+                    raise FetchError("not this candidate")
+                return Page(
+                    url=url,
+                    final_url="https://www.bosch.com/",
+                    html="<html><head><title>Bosch</title></head><body>Bosch</body></html>",
+                )
+
+        resolver = CompanyWebsiteResolver(ParentBrandFetcher(offline=True))
+
+        website_url, trace = resolver.resolve(
+            "Bosch Home",
+            preferred_url="https://www.bosch.com",
+        )
+
+        self.assertIsNone(website_url)
+        preferred = next(
+            candidate
+            for candidate in trace["candidates"]
+            if domain_of(candidate["url"]) == "bosch.com"
+        )
+        self.assertIn("incomplete company identity", preferred["reasons"])
+
     def test_search_evidence_survives_speculative_budget_for_explore30_company_shapes(self):
         cases = (
             ("Hadrian Automation, Inc.", "hadrian.co"),

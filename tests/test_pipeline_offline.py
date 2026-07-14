@@ -1230,6 +1230,102 @@ class OfflinePipelineTests(unittest.TestCase):
 
         self.assertGreater(homepage_link.score, path_probe.score)
 
+    def test_explicit_first_party_jobs_portal_precedes_marketing_career_root(self):
+        homepage = "https://www.northstar.example"
+        marketing_root = f"{homepage}/careers"
+        jobs_portal = "https://jobs.northstar.example/"
+
+        class PortalFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.requested = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested.append(url)
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=(
+                            f'<a href="{marketing_root}">Careers</a>'
+                            f'<a href="{jobs_portal}">Search jobs</a>'
+                        ),
+                    )
+                if url == jobs_portal:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<html><h1>Open roles</h1></html>",
+                    )
+                raise AssertionError(f"unexpected candidate fetch: {url}")
+
+        fetcher = PortalFetcher()
+        career_url, trace = JobSourceAgent(
+            fetcher,
+            max_candidates=1,
+            max_career_candidate_fetches=1,
+            enable_career_search=False,
+            enable_sitemap_discovery=False,
+        ).find_career_page(homepage)
+
+        self.assertEqual(career_url, jobs_portal)
+        self.assertEqual(fetcher.requested, [homepage, jobs_portal])
+        self.assertEqual(trace["candidate_schedule"]["scheduled"][0]["evidence_tier"], 1)
+        self.assertIn(
+            "explicit first-party jobs portal action",
+            trace["selected"]["reasons"],
+        )
+
+    def test_jobs_portal_priority_requires_strong_first_party_homepage_action(self):
+        homepage = "https://www.northstar.example"
+        agent = JobSourceAgent(Fetcher(offline=True), enable_career_search=False)
+        marketing_root = agent._score_career_candidate(
+            RawLink(f"{homepage}/careers", "Careers", homepage, "page_link"),
+            homepage,
+        )
+        for portal_url, action_text in (
+            ("https://apply.northstar.example", "Apply now"),
+            ("https://jobs.northstar.example", "Search jobs"),
+            ("https://portal.northstar.example", "Open jobs"),
+        ):
+            explicit_portal = agent._score_career_candidate(
+                RawLink(portal_url, action_text, homepage, "page_link"),
+                homepage,
+            )
+            self.assertGreater(explicit_portal.score, marketing_root.score)
+            self.assertIn(
+                "explicit first-party jobs portal action",
+                explicit_portal.reasons,
+            )
+        weak_action = agent._score_career_candidate(
+            RawLink("https://jobs.northstar.example", "Learn more", homepage, "page_link"),
+            homepage,
+        )
+        external_portal = agent._score_career_candidate(
+            RawLink("https://jobs.unrelated.example", "Search jobs", homepage, "page_link"),
+            homepage,
+        )
+        conflicting_region = agent._score_career_candidate(
+            RawLink(
+                "https://jobs.northstar.example/en-gb",
+                "Search jobs",
+                homepage,
+                "page_link",
+            ),
+            homepage,
+            target_location="United States",
+        )
+
+        self.assertGreater(marketing_root.score, weak_action.score)
+        self.assertGreater(marketing_root.score, external_portal.score)
+        self.assertGreater(marketing_root.score, conflicting_region.score)
+        self.assertNotIn("explicit first-party jobs portal action", weak_action.reasons)
+        self.assertNotIn("explicit first-party jobs portal action", external_portal.reasons)
+        self.assertIn(
+            "conflicts with target location region 'us': 'gb'",
+            conflicting_region.reasons,
+        )
+
     def test_error_page_is_not_treated_as_career_page(self):
         agent = JobSourceAgent(
             Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)

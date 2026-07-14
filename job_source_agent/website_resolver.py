@@ -612,12 +612,18 @@ class CompanyWebsiteResolver:
         if abbreviation:
             bases.append(abbreviation)
         urls: list[str] = []
+        brand_as_tld = _brand_as_tld_candidate(tokens)
+        if brand_as_tld:
+            urls.append(brand_as_tld)
+        institutional_acronym = _institutional_acronym(tokens)
+        if institutional_acronym:
+            urls.append(f"https://{institutional_acronym}.edu")
         for base in bases:
             for tld in tlds[:4]:
                 urls.append(f"https://{base}{tld}")
             for prefix in prefixes[2:4]:
                 urls.append(f"https://{prefix}{base}.com")
-        return urls
+        return dedupe_urls(urls)
 
     def _linkedin_slug_domain_candidates(self, linkedin_company_url: str | None) -> list[str]:
         if not linkedin_company_url:
@@ -666,7 +672,21 @@ class CompanyWebsiteResolver:
                 candidate.reasons.append(
                     "LinkedIn official website accepted without homepage response"
                 )
-            if not linkedin_official and not _has_positive_page_identity(candidate):
+            preferred_core_identity = (
+                "candidate source: preferred_input" in candidate.reasons
+                and _has_positive_core_page_identity(candidate)
+            )
+            if (
+                not linkedin_official
+                and not _has_positive_page_identity(candidate)
+                and not preferred_core_identity
+            ):
+                continue
+            if (
+                not linkedin_official
+                and "incomplete company identity" in candidate.reasons
+                and not _has_strong_identity_evidence(candidate)
+            ):
                 continue
             if "single-token brand extension domain" in candidate.reasons and not any(
                 reason in candidate.reasons
@@ -729,6 +749,7 @@ class CompanyWebsiteResolver:
         reasons: list[str] = []
         domain = domain_of(url)
         company_tokens = tokenize_company_name(company_name)
+        core_company_tokens = _core_company_tokens(company_tokens)
         ambiguous_name = _is_ambiguous_company_name(company_tokens)
         if ambiguous_name:
             reasons.append("ambiguous company name")
@@ -742,10 +763,19 @@ class CompanyWebsiteResolver:
                 reasons.append(f"company token '{token}' in domain")
 
         if _domain_matches_company_abbreviation(domain, company_tokens):
-            score += 45
+            abbreviation_score = (
+                35 * len(company_tokens)
+                if _domain_matches_institutional_acronym(domain, company_tokens)
+                else 45
+            )
+            score += abbreviation_score
             reasons.append("company abbreviation in domain")
 
-        if domain.endswith((".com", ".ai", ".io", ".co", ".org")):
+        if _domain_uses_brand_token_as_tld(domain, company_tokens):
+            score += 45
+            reasons.append("terminal brand token used as TLD")
+
+        if domain.endswith((".com", ".ai", ".io", ".co", ".org", ".edu")):
             score += 10
             reasons.append("credible company TLD")
         if domain.endswith(".com"):
@@ -843,18 +873,30 @@ class CompanyWebsiteResolver:
         )
         title_identity = _text_confirms_company_identity(homepage_title, company_tokens)
         body_identity = _body_confirms_company_identity(page.html, company_tokens)
+        structured_core_identity = (
+            core_company_tokens != company_tokens
+            and _structured_organization_confirms_identity(page.html, core_company_tokens)
+        )
+        title_core_identity = (
+            core_company_tokens != company_tokens
+            and _text_confirms_company_identity(homepage_title, core_company_tokens)
+        )
+        body_core_identity = (
+            core_company_tokens != company_tokens
+            and _body_confirms_company_identity(page.html, core_company_tokens)
+        )
         if structured_identity:
             score += 35
             reasons.append("homepage organization data confirms company identity")
         if title_identity:
             score += 25
             reasons.append("homepage title confirms company identity")
+        matching_abbreviation = _matching_company_abbreviation(
+            domain_of(resolved_url), company_tokens
+        )
         abbreviation_confirms_identity = (
-            _domain_matches_company_abbreviation(domain_of(resolved_url), company_tokens)
-            and _contains_identity_token(
-                homepage_title,
-                _company_abbreviation(company_tokens) or "",
-            )
+            matching_abbreviation is not None
+            and _contains_identity_token(homepage_title, matching_abbreviation)
         )
         if abbreviation_confirms_identity:
             score += 25
@@ -863,6 +905,16 @@ class CompanyWebsiteResolver:
             if not structured_identity and not title_identity and not abbreviation_confirms_identity:
                 score += 25
             reasons.append("homepage body confirms company identity")
+        if structured_core_identity and not structured_identity:
+            score += 35
+            reasons.append("homepage organization data confirms core company identity")
+        if title_core_identity and not title_identity:
+            score += 25
+            reasons.append("homepage title confirms core company identity")
+        if body_core_identity and not body_identity:
+            if not structured_core_identity and not title_core_identity:
+                score += 25
+            reasons.append("homepage body confirms core company identity")
         token_in_homepage = abbreviation_confirms_identity
         evidenced_tokens: set[str] = set(company_tokens) if abbreviation_confirms_identity else set()
         for token in company_tokens:
@@ -877,9 +929,9 @@ class CompanyWebsiteResolver:
             score -= 35
             reasons.append("company token missing from homepage")
         if (
-            len(company_tokens) > 1
-            and not _domain_confirms_company_identity(domain, company_tokens)
-            and len(evidenced_tokens) < len(company_tokens)
+            len(core_company_tokens) > 1
+            and not _domain_confirms_company_identity(domain, core_company_tokens)
+            and not set(core_company_tokens).issubset(evidenced_tokens)
         ):
             score -= 45
             reasons.append("incomplete company identity")
@@ -1085,12 +1137,57 @@ def _company_abbreviation(company_tokens: list[str]) -> str | None:
     return abbreviation if len(abbreviation) >= 4 else None
 
 
+def _institutional_acronym(company_tokens: list[str]) -> str | None:
+    if not 3 <= len(company_tokens) <= 8:
+        return None
+    if company_tokens[-1] not in {"college", "institute", "university"}:
+        return None
+    if not all(token.isalpha() for token in company_tokens):
+        return None
+    return "".join(token[0] for token in company_tokens)
+
+
+def _brand_as_tld_candidate(company_tokens: list[str]) -> str | None:
+    if len(company_tokens) < 2 or company_tokens[-1] not in {"ai", "io", "tech"}:
+        return None
+    label = "".join(company_tokens[:-1])
+    if not re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label):
+        return None
+    return f"https://{label}.{company_tokens[-1]}"
+
+
 def _domain_matches_company_abbreviation(domain: str, company_tokens: list[str]) -> bool:
-    abbreviation = _company_abbreviation(company_tokens)
-    if not abbreviation:
+    return _matching_company_abbreviation(domain, company_tokens) is not None
+
+
+def _domain_matches_institutional_acronym(
+    domain: str,
+    company_tokens: list[str],
+) -> bool:
+    institutional_acronym = _institutional_acronym(company_tokens)
+    if not institutional_acronym or not domain.casefold().endswith(".edu"):
         return False
     label = domain.split(".")[-2] if "." in domain else domain
-    return re.sub(r"[^a-z0-9]", "", label.casefold()) == abbreviation
+    return re.sub(r"[^a-z0-9]", "", label.casefold()) == institutional_acronym
+
+
+def _matching_company_abbreviation(
+    domain: str,
+    company_tokens: list[str],
+) -> str | None:
+    abbreviation = _company_abbreviation(company_tokens)
+    label = domain.split(".")[-2] if "." in domain else domain
+    normalized_label = re.sub(r"[^a-z0-9]", "", label.casefold())
+    if abbreviation and normalized_label == abbreviation:
+        return abbreviation
+    institutional_acronym = _institutional_acronym(company_tokens)
+    if (
+        institutional_acronym
+        and domain.casefold().endswith(".edu")
+        and normalized_label == institutional_acronym
+    ):
+        return institutional_acronym
+    return None
 
 
 def _contains_identity_token(text: str, token: str) -> bool:
@@ -1124,7 +1221,17 @@ def _domain_confirms_company_identity(domain: str, company_tokens: list[str]) ->
     label = domain.split(".")[-2] if "." in domain else domain
     compact_name = "".join(company_tokens)
     dashed_name = "-".join(company_tokens)
-    return label in {compact_name, dashed_name}
+    if label in {compact_name, dashed_name}:
+        return True
+    return _domain_uses_brand_token_as_tld(domain, company_tokens)
+
+
+def _domain_uses_brand_token_as_tld(
+    domain: str,
+    company_tokens: list[str],
+) -> bool:
+    brand_as_tld = _brand_as_tld_candidate(company_tokens)
+    return bool(brand_as_tld and domain == domain_of(brand_as_tld))
 
 
 def _is_single_token_brand_extension_domain(domain: str, company_tokens: list[str]) -> bool:
@@ -1367,6 +1474,34 @@ def _has_positive_page_identity(candidate: WebsiteCandidate) -> bool:
     )
 
 
+def _has_positive_core_page_identity(candidate: WebsiteCandidate) -> bool:
+    return any(
+        reason in candidate.reasons
+        for reason in (
+            "homepage organization data confirms core company identity",
+            "homepage title confirms core company identity",
+            "homepage body confirms core company identity",
+        )
+    )
+
+
+def _has_strong_identity_evidence(candidate: WebsiteCandidate) -> bool:
+    return any(
+        reason in candidate.reasons
+        for reason in (
+            "search result confirms company identity",
+            "homepage organization data confirms company identity",
+            "homepage title confirms company identity",
+            "homepage title confirms company abbreviation",
+            "homepage canonical confirms company identity",
+            "homepage organization data confirms core company identity",
+            "homepage title confirms core company identity",
+            "LinkedIn slug confirms domain",
+            "LinkedIn slug exactly matches domain",
+        )
+    )
+
+
 def _canonical_company_url(html: str, base_url: str, company_tokens: list[str]) -> str | None:
     parser = _CanonicalLinkParser()
     parser.feed(html[:100000])
@@ -1393,6 +1528,12 @@ def tokenize_company_name(company_name: str) -> list[str]:
         for token in re.findall(r"[A-Za-z0-9]+", cleaned)
         if token
     ]
+
+
+def _core_company_tokens(company_tokens: list[str]) -> list[str]:
+    if len(company_tokens) > 1 and company_tokens[-1] in {"group"}:
+        return company_tokens[:-1]
+    return company_tokens
 
 
 def _strip_non_brand_qualifiers(company_name: str) -> str:

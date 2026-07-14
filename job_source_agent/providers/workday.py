@@ -10,6 +10,9 @@ from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 _WORKDAY_HOST_SUFFIXES = (".myworkdayjobs.com", ".workdayjobs.com")
 _LOCALE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+_AUXILIARY_ROUTE_PARTS = frozenset(
+    {"introduceyourself", "login", "sign-in", "my-profile", "talent-community"}
+)
 _PAGE_SIZE = 20
 _MAX_PAGES = 5
 
@@ -36,7 +39,13 @@ class WorkdayAdapter:
         parts = [part for part in parsed.path.split("/") if part]
         tenant = (parsed.hostname or "").split(".", 1)[0]
         site, board_parts = _site_and_board_parts(parts, tenant)
-        if not tenant or not site or not board_parts:
+        if (
+            not tenant
+            or not site
+            or not board_parts
+            or site.casefold() in _AUXILIARY_ROUTE_PARTS
+            or not _is_board_route(parts[len(board_parts) :])
+        ):
             return None
 
         board_path = "/" + "/".join(board_parts)
@@ -224,6 +233,15 @@ def _site_and_board_parts(parts: list[str], tenant: str) -> tuple[str | None, li
     site_index = 1 if len(parts) >= 2 and _LOCALE_PATTERN.fullmatch(parts[0]) else 0
     site = parts[site_index]
     return site, parts[: site_index + 1]
+
+
+def _is_board_route(route_parts: list[str]) -> bool:
+    folded = [part.casefold() for part in route_parts]
+    if any(part in _AUXILIARY_ROUTE_PARTS for part in folded):
+        return False
+    if not folded or folded == ["jobs"]:
+        return True
+    return len(folded) >= 2 and folded[0] == "job"
 
 
 def _split_identifier(identifier: str | None) -> tuple[str, str] | None:

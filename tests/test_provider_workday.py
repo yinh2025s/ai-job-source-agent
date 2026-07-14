@@ -44,6 +44,10 @@ class WorkdayAdapterTests(unittest.TestCase):
                 "company/acme",
                 "https://company.wd5.myworkdayjobs.com/en-US/acme",
             ),
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/jobs/?q=analyst": (
+                "company/acme",
+                "https://company.wd5.myworkdayjobs.com/en-US/acme",
+            ),
             "https://company.wd5.myworkdayjobs.com/acme": (
                 "company/acme",
                 "https://company.wd5.myworkdayjobs.com/acme",
@@ -56,6 +60,47 @@ class WorkdayAdapterTests(unittest.TestCase):
                 self.assertIsNotNone(board)
                 self.assertEqual(board.identifier, identifier)
                 self.assertEqual(board.url, board_url)
+
+    def test_rejects_auxiliary_and_account_routes(self):
+        adapter = WorkdayAdapter()
+        urls = [
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/introduceYourself",
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/INTRODUCEYOURSELF/?source=jobs",
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/login",
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/sign-in?redirect=jobs",
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/my-profile/",
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/job/Talent-Community",
+            (
+                "https://company.wd5.myworkdayjobs.com/en-US/acme/"
+                "JoB/Talent-Community/IntroduceYourself?source=linkedin"
+            ),
+            "https://company.wd5.myworkdayjobs.com/login",
+            "https://company.wd5.myworkdayjobs.com/en-US/my-profile",
+        ]
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertIsNone(adapter.identify_board(url))
+
+    def test_rejects_unknown_non_board_routes_but_keeps_real_job_details(self):
+        adapter = WorkdayAdapter()
+
+        self.assertIsNone(
+            adapter.identify_board(
+                "https://company.wd5.myworkdayjobs.com/en-US/acme/account/settings"
+            )
+        )
+        board = adapter.identify_board(
+            "https://company.wd5.myworkdayjobs.com/en-US/acme/"
+            "job/Talent-Acquisition-Partner_R123/?source=linkedin"
+        )
+
+        self.assertIsNotNone(board)
+        self.assertEqual(board.identifier, "company/acme")
+        self.assertEqual(
+            board.url,
+            "https://company.wd5.myworkdayjobs.com/en-US/acme",
+        )
 
     def test_posts_cxs_payload_and_parses_job_postings(self):
         adapter = WorkdayAdapter()

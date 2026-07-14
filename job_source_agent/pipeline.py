@@ -2160,6 +2160,11 @@ class JobSourceAgent:
         if link.origin in {"page_link", "verified_homepage_navigation"}:
             candidate.score += 110
             candidate.reasons.append("homepage navigation link")
+            if self._is_explicit_homepage_jobs_portal(link, homepage_url):
+                candidate.score += 325
+                if "explicit job-list route" not in candidate.reasons:
+                    candidate.reasons.append("explicit job-list route")
+                candidate.reasons.append("explicit first-party jobs portal action")
         elif link.origin == "identity_career_root":
             candidate.score += 600
             candidate.reasons.append("identity-supplied career root requiring verification")
@@ -2182,6 +2187,28 @@ class JobSourceAgent:
             candidate.score += 150
             candidate.reasons.append("sitemap source")
         return candidate
+
+    def _is_explicit_homepage_jobs_portal(
+        self,
+        link: RawLink,
+        homepage_url: str | None,
+    ) -> bool:
+        if not homepage_url:
+            return False
+        target = urlparse(link.url)
+        source = urlparse(homepage_url)
+        if not target.hostname or not source.hostname or target.hostname == source.hostname:
+            return False
+        if self._registrable_site(target.hostname) != self._registrable_site(source.hostname):
+            return False
+        portal_label = target.hostname.split(".", 1)[0].casefold()
+        if not any(
+            marker in portal_label
+            for marker in ("jobs", "careers", "apply", "portal")
+        ):
+            return False
+        action_text = " ".join(link.text.casefold().split()).rstrip(".!:")
+        return action_text in {"apply now", "search jobs", "open jobs"}
 
     def _upgrade_same_site_http_link(
         self,

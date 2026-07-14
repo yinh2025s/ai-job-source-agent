@@ -106,9 +106,16 @@ class CareerSearchResolver:
         for query_text in queries:
             sources = _search_sources(query_text)
             if ats_only:
-                sources = sources[:1]
+                sources = [
+                    source
+                    for source in sources
+                    if source.name in {"bing_rss", "duckduckgo_html"}
+                ]
             skip_bing_html = False
+            use_ats_secondary = False
             for source in sources:
+                if ats_only and source.name == "duckduckgo_html" and not use_ats_secondary:
+                    continue
                 if source.name in disabled_sources:
                     trace["source_circuit_skips"].append(
                         {
@@ -175,6 +182,7 @@ class CareerSearchResolver:
                     break
                 if source.name == "bing_rss" and raw_urls:
                     skip_bing_html = True
+                    use_ats_secondary = ats_only
                     query_trace["skipped_sources"] = [
                         {
                             "source": "bing_html",
