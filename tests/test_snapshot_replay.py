@@ -858,6 +858,21 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual([entry.html for entry in tape.entries], ["first", "second"])
         self.assertEqual(tape.entries[0].request, tape.entries[1].request)
 
+    def test_scoped_tape_preserves_crlf_bytes_used_by_scope_digest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshots = Path(directory) / "snapshots"
+            html = "<html>\r\n<body>Jobs</body>\r\n</html>"
+            scope = self._capture_scope(
+                SnapshotStore(snapshots),
+                "attempt-crlf-00001",
+                "job_board_discovery",
+                [("page", "https://jobs.example.com/careers", html)],
+            )
+
+            tape = load_scoped_outcome_tapes(snapshots, [scope])[scope.scope_id]
+
+        self.assertEqual(tape.entries[0].html, html)
+
     def test_scoped_zero_request_scope_and_orphan_are_supported(self):
         with tempfile.TemporaryDirectory() as directory:
             snapshots = Path(directory) / "snapshots"

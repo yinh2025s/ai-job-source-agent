@@ -399,9 +399,14 @@ def _parse_v3_page_record(
     }
     legacy_record["schema_version"] = 2
     try:
-        validated = _validate_record(source_root, legacy_record, line_number)
+        validated = _validate_record(
+            source_root,
+            legacy_record,
+            line_number,
+            include_text=True,
+        )
         _validate_artifacts(source_root, legacy_record, line_number)
-        html = validated["source_path"].read_text(encoding="utf-8")
+        html = validated["validated_text"]
         return PageOutcomeTapeEntry(
             **_v3_common(record),
             page_url=record["page_url"],
@@ -480,7 +485,13 @@ def _is_incomplete_json_tail(raw_line: str, error: json.JSONDecodeError) -> bool
     return error.pos >= len(stripped)
 
 
-def _validate_record(source_root: Path, record: dict[str, Any], line_number: int) -> dict[str, Any]:
+def _validate_record(
+    source_root: Path,
+    record: dict[str, Any],
+    line_number: int,
+    *,
+    include_text: bool = False,
+) -> dict[str, Any]:
     missing = sorted(REQUIRED_RECORD_FIELDS - record.keys())
     if missing:
         raise SnapshotReplayError(f"Line {line_number}: missing metadata fields: {', '.join(missing)}")
@@ -559,7 +570,7 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
     if not isinstance(record["artifact_paths"], dict):
         raise SnapshotReplayError(f"Line {line_number}: artifact_paths must be an object")
 
-    return {
+    validated = {
         "fixture_path": relative_path.as_posix(),
         "request_urls": [urls["request_url"]],
         "page_urls": [urls["page_url"]],
@@ -573,6 +584,9 @@ def _validate_record(source_root: Path, record: dict[str, Any], line_number: int
         "request": request_identity.as_dict() if request_identity else None,
         "request_identity": request_identity,
     }
+    if include_text:
+        validated["validated_text"] = text
+    return validated
 
 
 def _validate_failure_record(record: dict[str, Any], line_number: int) -> dict[str, Any]:
