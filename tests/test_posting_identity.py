@@ -19,6 +19,20 @@ class _StaticFetcher(Fetcher):
         return Page(url=url, html=self.html or "")
 
 
+class _MappingFetcher(Fetcher):
+    def __init__(self, pages=None, errors=None):
+        super().__init__(offline=True)
+        self.pages = pages or {}
+        self.errors = errors or {}
+        self.calls = []
+
+    def fetch(self, url, data=None, headers=None):
+        self.calls.append(url)
+        if url in self.errors:
+            raise FetchError(self.errors[url])
+        return Page(url=url, html=self.pages.get(url, ""))
+
+
 def _job_page(description: str, publisher: str) -> str:
     return (
         '<script type="application/ld+json">'
@@ -38,6 +52,9 @@ def _job_page(description: str, publisher: str) -> str:
 
 
 class LinkedInPostingIdentityProbeTests(unittest.TestCase):
+    WEBSITE_URL = "https://example.com/"
+    JOB_URL = "https://www.linkedin.com/jobs/view/software-engineer-789"
+
     def test_extracts_repeated_alternate_employer_from_employer_contexts(self):
         description = (
             "<strong>Join the Team Modernizing Medicine</strong>"
@@ -85,6 +102,115 @@ class LinkedInPostingIdentityProbeTests(unittest.TestCase):
 
         self.assertEqual(result.classification, "not_applicable")
         self.assertEqual(fetcher.calls, [])
+
+    def test_strong_verified_website_evidence_triggers_job_detail_probe(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: (
+                    "<main>We are a global executive search firm serving leaders.</main>"
+                ),
+                self.JOB_URL: _job_page(
+                    "We are recruiting for our client, a healthcare company.",
+                    "Acme Search",
+                ),
+            }
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme Search",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "agency_unresolved")
+        self.assertTrue(
+            any("bounded probe triggered" in reason for reason in result.reasons)
+        )
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
+    def test_ordinary_verified_website_does_not_fetch_job_detail(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: (
+                    "<main>We build payment software and hire our own product team.</main>"
+                )
+            }
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "not_applicable")
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL])
+
+    def test_verified_website_failure_does_not_fetch_job_detail(self):
+        fetcher = _MappingFetcher(errors={self.WEBSITE_URL: "temporary timeout"})
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "unavailable")
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL])
+
+    def test_invalid_job_url_does_not_fetch_verified_website(self):
+        fetcher = _MappingFetcher(errors={self.WEBSITE_URL: "must not fetch"})
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme",
+            "https://example.com/jobs/software-engineer-789",
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "unavailable")
+        self.assertEqual(fetcher.calls, [])
+
+    def test_intermediary_internal_role_remains_publisher_unconfirmed(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: (
+                    "<main>Talent solutions for our clients across technology.</main>"
+                ),
+                self.JOB_URL: _job_page(
+                    "Join our finance team and improve our internal operations.",
+                    "Acme Search",
+                ),
+            }
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme Search",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "publisher_unconfirmed")
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
+    def test_name_marker_keeps_direct_job_detail_probe_behavior(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.JOB_URL: _job_page(
+                    "Join our internal recruiting operations team.",
+                    "Acme Staffing",
+                )
+            },
+            errors={self.WEBSITE_URL: "website must not be fetched"},
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme Staffing",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "publisher_unconfirmed")
+        self.assertEqual(fetcher.calls, [self.JOB_URL])
 
     def test_optional_probe_failure_does_not_raise(self):
         result = LinkedInPostingIdentityProbe(

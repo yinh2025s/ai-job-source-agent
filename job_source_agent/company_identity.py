@@ -204,6 +204,7 @@ class PostingIdentityProbe(Protocol):
         self,
         publisher_name: str,
         linkedin_job_url: str | None,
+        website_url: str | None = None,
     ) -> PostingIdentityEvidence:
         ...
 
@@ -250,7 +251,11 @@ class CompanyIdentityResolver:
         if self.posting_probe is None:
             return None, trace
 
-        posting_evidence = self.posting_probe.probe(company_name, linkedin_job_url)
+        posting_evidence = self.posting_probe.probe(
+            company_name,
+            linkedin_job_url,
+            website_url=website_url,
+        )
         trace["posting_identity"] = posting_evidence.trace()
         if (
             posting_evidence.classification != "alternate_employer"

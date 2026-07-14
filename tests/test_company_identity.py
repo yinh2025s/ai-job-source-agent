@@ -7,8 +7,10 @@ from job_source_agent.posting_identity import PostingIdentityEvidence
 class _PostingProbe:
     def __init__(self, evidence):
         self.evidence = evidence
+        self.calls = []
 
-    def probe(self, company_name, linkedin_job_url):
+    def probe(self, company_name, linkedin_job_url, website_url=None):
+        self.calls.append((company_name, linkedin_job_url, website_url))
         return self.evidence
 
 
@@ -89,9 +91,8 @@ class CompanyIdentityTests(unittest.TestCase):
         self.assertEqual(trace["matched_rule"], "modmed")
 
     def test_undisclosed_agency_client_does_not_select_identity(self):
-        resolver = CompanyIdentityResolver(
-            posting_probe=_PostingProbe(PostingIdentityEvidence("agency_unresolved"))
-        )
+        posting_probe = _PostingProbe(PostingIdentityEvidence("agency_unresolved"))
+        resolver = CompanyIdentityResolver(posting_probe=posting_probe)
 
         identity, trace = resolver.resolve(
             "Aventis Solutions",
@@ -103,6 +104,16 @@ class CompanyIdentityTests(unittest.TestCase):
         self.assertEqual(
             trace["posting_identity"]["classification"],
             "agency_unresolved",
+        )
+        self.assertEqual(
+            posting_probe.calls,
+            [
+                (
+                    "Aventis Solutions",
+                    "https://www.linkedin.com/jobs/view/job-456",
+                    "https://aventissolutions.com",
+                )
+            ],
         )
 
 

@@ -31,6 +31,27 @@ _AGENCY_TEXT_MARKERS = (
     "hiring externally for",
 )
 
+_INTERMEDIARY_WEBSITE_MARKERS = (
+    (
+        "staffing agency or firm",
+        r"\bstaffing(?:\s+(?:and|&)\s+recruit(?:ment|ing))?\s+(?:agency|firm)\b",
+    ),
+    (
+        "recruitment agency or firm",
+        r"\brecruit(?:ment|ing)(?:\s+(?:and|&)\s+staffing)?\s+(?:agency|firm)\b",
+    ),
+    (
+        "executive search firm",
+        r"\bexecutive\s+search\s+(?:firm|agency|consultancy)\b",
+    ),
+    (
+        "client talent solutions",
+        r"\b(?:talent|staffing|workforce|recruitment)\s+solutions?\s+"
+        r"(?:for|to)\s+(?:our\s+|their\s+)?"
+        r"(?:clients|employers|businesses|organizations)\b",
+    ),
+)
+
 
 @dataclass(frozen=True)
 class PostingIdentityEvidence:
@@ -64,8 +85,10 @@ class LinkedInPostingIdentityProbe:
         self,
         publisher_name: str,
         linkedin_job_url: str | None,
+        website_url: str | None = None,
     ) -> PostingIdentityEvidence:
-        if not linkedin_job_url or not self.should_probe(publisher_name):
+        trigger_reasons: tuple[str, ...] = ()
+        if not linkedin_job_url:
             return PostingIdentityEvidence(
                 "not_applicable",
                 reasons=("publisher name did not trigger bounded intermediary probe",),
@@ -75,19 +98,49 @@ class LinkedInPostingIdentityProbe:
                 "unavailable",
                 reasons=("job URL is not a public LinkedIn detail URL",),
             )
+        if not self.should_probe(publisher_name):
+            if not website_url:
+                return PostingIdentityEvidence(
+                    "not_applicable",
+                    reasons=(
+                        "publisher name and verified website did not trigger bounded intermediary probe",
+                    ),
+                )
+            try:
+                website_page = self.fetcher.fetch(website_url)
+            except FetchError as exc:
+                return PostingIdentityEvidence(
+                    "unavailable",
+                    reasons=(f"verified website trigger fetch failed: {exc}",),
+                )
+            website_markers = _strong_intermediary_website_markers(website_page.html)
+            if not website_markers:
+                return PostingIdentityEvidence(
+                    "not_applicable",
+                    reasons=(
+                        "verified website did not contain strong intermediary semantics",
+                    ),
+                )
+            trigger_reasons = (
+                "bounded probe triggered by verified website semantics: "
+                + ", ".join(website_markers),
+            )
         try:
             page = self.fetcher.fetch(linkedin_job_url)
         except FetchError as exc:
             return PostingIdentityEvidence(
                 "unavailable",
-                reasons=(f"public job detail fetch failed: {exc}",),
+                reasons=(f"public job detail fetch failed: {exc}", *trigger_reasons),
             )
 
         descriptions = _job_posting_descriptions(page.html)
         if not descriptions:
             return PostingIdentityEvidence(
                 "unavailable",
-                reasons=("public job detail did not contain JobPosting JSON-LD",),
+                reasons=(
+                    "public job detail did not contain JobPosting JSON-LD",
+                    *trigger_reasons,
+                ),
             )
 
         description = max(descriptions, key=len)
@@ -104,6 +157,7 @@ class LinkedInPostingIdentityProbe:
                 employer_name=name,
                 reasons=(
                     "description repeatedly uses a different organization in employer-owned contexts",
+                    *trigger_reasons,
                 ),
                 employer_mentions=mentions,
                 employer_contexts=contexts,
@@ -118,12 +172,25 @@ class LinkedInPostingIdentityProbe:
                 "agency_unresolved",
                 reasons=tuple(
                     f"job description marker: {marker}" for marker in agency_markers
-                ),
+                )
+                + trigger_reasons,
             )
         return PostingIdentityEvidence(
             "publisher_unconfirmed",
-            reasons=("no alternate employer or undisclosed-client marker was verified",),
+            reasons=(
+                "no alternate employer or undisclosed-client marker was verified",
+                *trigger_reasons,
+            ),
         )
+
+
+def _strong_intermediary_website_markers(html: str) -> tuple[str, ...]:
+    text = _plain_text(html).casefold()
+    return tuple(
+        label
+        for label, pattern in _INTERMEDIARY_WEBSITE_MARKERS
+        if re.search(pattern, text)
+    )
 
 
 def _is_public_linkedin_job_url(url: str) -> bool:
@@ -230,7 +297,16 @@ class _TextParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self._hidden_depth = 0
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.casefold() in {"script", "style"}:
+            self._hidden_depth += 1
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() in {"script", "style"} and self._hidden_depth:
+            self._hidden_depth -= 1
 
     def handle_data(self, data: str) -> None:
-        if data.strip():
+        if not self._hidden_depth and data.strip():
             self.parts.append(data)
