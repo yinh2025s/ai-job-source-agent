@@ -59,6 +59,11 @@ inferring provenance from timestamps, paths, trace strings, or global sequence.
     unknown fields, prefix gaps, and corrupt records fail closed. Orphan snapshots
     from an interrupted stage are ignored unless a durable checkpoint references
     their finalized scope.
+11. The legacy snapshot materializer accepts only v1/v2 indexes. If either page or
+    terminal-failure input contains any schema-v3 scoped record, including a mixed
+    legacy/scoped index, it fails before cleaning or writing output and directs the
+    caller to bundle-v6 scoped replay. Filtering v3 records into an empty legacy
+    success is forbidden.
 
 ## Privacy
 
@@ -79,6 +84,8 @@ sanitization remains mandatory for each outcome record.
 - Zero-request stages cannot silently borrow evidence from an older invocation.
 - Existing captures remain useful for explicit legacy diagnosis but cannot claim
   attempt-scoped deterministic reproduction.
+- A modern scoped capture cannot be accidentally published as an empty or partial
+  legacy fixture tree.
 - The implementation requires coordinated schema changes across runner,
   checkpoint, completion, snapshot, and replay boundaries.
 
@@ -93,6 +100,8 @@ sanitization remains mandatory for each outcome record.
 - Replay tests cover repeated identities, concurrent scheduling permutations,
   exact-once consumption, mismatch non-consumption, cross-stage and cross-attempt
   outcomes, isolated duplicate inputs, tape divergence, and legacy compatibility.
+- Legacy materialization tests cover v3-only and mixed-index rejection, nonzero
+  CLI exit, actionable bundle-v6 guidance, and preservation of existing output.
 - Main runs all offline gates and one serialized scoped crash-resume/replay
   acceptance. Authenticated LinkedIn extension acceptance remains independently
   deferred.
