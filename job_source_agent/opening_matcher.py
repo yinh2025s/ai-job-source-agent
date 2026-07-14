@@ -343,6 +343,13 @@ class JobOpeningMatcher:
                         if page_detection is not None:
                             trace["provider_detection"] = page_detection
                         scored = []
+                        acquired_brand_handoff = bool(
+                            discovered_board is not None
+                            and discovered_board.detection_method
+                            == "acquired_brand_handoff"
+                        )
+                        if acquired_brand_handoff:
+                            trace["title_policy"] = "exact_for_acquired_brand_handoff"
                         for candidate in adapter_result.candidates:
                             title_score, title_reasons = score_title_match(candidate.title, target_title)
                             if (
@@ -350,6 +357,11 @@ class JobOpeningMatcher:
                                 or not title_identity_matches(
                                     candidate.title,
                                     target_title,
+                                )
+                                or (
+                                    acquired_brand_handoff
+                                    and _title_token_sequence(candidate.title)
+                                    != _title_token_sequence(target_title)
                                 )
                             ):
                                 continue

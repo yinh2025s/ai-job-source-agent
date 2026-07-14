@@ -147,6 +147,14 @@ class DiscoveredJobBoardTests(unittest.TestCase):
                 "identifier": '{"career_site_id":"123","host":"jobs.example.test"}',
             },
             {
+                "url": "https://jobs.example.test/en/search-jobs",
+                "provider": "talentbrew",
+                "identifier": (
+                    '{"host":"jobs.example.test","locale":"en",'
+                    '"site_id":"62886","tenant_id":"47263"}'
+                ),
+            },
+            {
                 "url": "https://jobs.smartrecruiters.com/Visa",
                 "provider": "smartrecruiters",
                 "identifier": "Visa",
@@ -184,6 +192,22 @@ class DiscoveredJobBoardTests(unittest.TestCase):
                 "url": "https://visa.wd1.myworkdayjobs.com/Other_Careers",
                 "provider": "workday",
                 "identifier": "visa/Visa_Careers",
+            },
+            {
+                "url": "https://jobs.example.test/de/search-jobs",
+                "provider": "talentbrew",
+                "identifier": (
+                    '{"host":"jobs.example.test","locale":"en",'
+                    '"site_id":"62886","tenant_id":"47263"}'
+                ),
+            },
+            {
+                "url": "https://other.example.test/en/search-jobs",
+                "provider": "talentbrew",
+                "identifier": (
+                    '{"host":"jobs.example.test","locale":"en",'
+                    '"site_id":"62886","tenant_id":"47263"}'
+                ),
             },
         )
         for board_payload in invalid_boards:

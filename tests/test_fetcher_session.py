@@ -42,6 +42,24 @@ class FetcherSessionTests(unittest.TestCase):
         build_opener.assert_called_once()
         self.assertEqual(opener.open.call_count, 2)
 
+    @patch("job_source_agent.web.build_opener")
+    def test_authorization_is_not_copied_into_redirect_headers(self, build_opener):
+        opener = MagicMock()
+        opener.open.side_effect = lambda request, timeout: _Response(request.full_url)
+        build_opener.return_value = opener
+
+        Fetcher(timeout=1).fetch(
+            "https://api.example.com/jobs",
+            headers={"Authorization": "Bearer public-runtime-key"},
+        )
+
+        request = opener.open.call_args.args[0]
+        self.assertNotIn("Authorization", request.headers)
+        self.assertEqual(
+            request.unredirected_hdrs["Authorization"],
+            "Bearer public-runtime-key",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

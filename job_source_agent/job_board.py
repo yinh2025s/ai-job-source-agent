@@ -9,6 +9,7 @@ from urllib.parse import parse_qsl, quote, unquote, urlparse
 
 
 _DETECTION_METHODS = {
+    "acquired_brand_handoff",
     "external_apply_url",
     "linked_url_evidence",
     "page_evidence",
@@ -469,6 +470,32 @@ def _talemetry_policy(board: JobBoard) -> bool:
     )
 
 
+def _talentbrew_policy(board: JobBoard) -> bool:
+    identity = _strict_json(board.identifier or "")
+    if identity is None or set(identity) != {"host", "locale", "site_id", "tenant_id"}:
+        return False
+    host = identity.get("host")
+    locale = identity.get("locale")
+    site_id = identity.get("site_id")
+    tenant_id = identity.get("tenant_id")
+    parsed = urlparse(board.url)
+    return bool(
+        isinstance(host, str)
+        and _valid_hostname(host)
+        and host.casefold() == host == _host(board.url)
+        and isinstance(locale, str)
+        and re.fullmatch(r"[a-z]{2}(?:-[a-z]{2})?", locale)
+        and isinstance(site_id, str)
+        and re.fullmatch(r"[1-9][0-9]{0,11}", site_id)
+        and isinstance(tenant_id, str)
+        and re.fullmatch(r"[1-9][0-9]{0,11}", tenant_id)
+        and parsed.path == f"/{locale}/search-jobs"
+        and _no_query(board.url)
+        and json.dumps(identity, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+        == board.identifier
+    )
+
+
 def _smartrecruiters_policy(board: JobBoard) -> bool:
     identifier = board.identifier or ""
     parsed = urlparse(board.url)
@@ -516,6 +543,7 @@ _REPLAY_SAFE_POLICIES: dict[str, Callable[[JobBoard], bool]] = {
     "phenom": _phenom_policy,
     "sitecore_next_jobs": _sitecore_policy,
     "smartrecruiters": _smartrecruiters_policy,
+    "talentbrew": _talentbrew_policy,
     "talemetry": _talemetry_policy,
     "workday": _workday_policy,
 }

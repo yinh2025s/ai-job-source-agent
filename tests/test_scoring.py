@@ -18,6 +18,7 @@ class ScoringTests(unittest.TestCase):
             "Explore roles",
             "View open jobs",
             "Browse job opportunities",
+            "Search All Jobs",
         ):
             with self.subTest(text=text):
                 self.assertTrue(is_explicit_job_list_command(text))
@@ -37,6 +38,20 @@ class ScoringTests(unittest.TestCase):
         )
 
         self.assertIn("explicit job-list command", candidate.reasons)
+
+    def test_search_all_jobs_command_is_not_penalized_as_generic_all_jobs_text(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://jobs.parent.example/en/",
+                text="Search All Jobs",
+                source_url="https://www.example.com/careers/",
+            ),
+            career_page_url="https://www.example.com/careers/",
+        )
+
+        self.assertIn("explicit job-list command", candidate.reasons)
+        self.assertNotIn("negative keyword 'all jobs'", candidate.reasons)
+        self.assertGreaterEqual(candidate.score, 30)
 
     def test_whitecarrot_hosts_are_known_ats_domains(self):
         self.assertTrue(is_ats_url("https://app.whitecarrot.io/careers/acme"))

@@ -381,13 +381,22 @@ class Fetcher:
         if data is not None:
             request_headers["Content-Type"] = "application/json"
             request_headers["Accept"] = "application/json,text/plain,*/*"
+        origin_only_headers: dict[str, str] = {}
         if headers:
-            request_headers.update(headers)
+            for name, value in headers.items():
+                if name.casefold() in {"authorization", "proxy-authorization"}:
+                    origin_only_headers[name] = value
+                else:
+                    request_headers[name] = value
         request = Request(
             url,
             data=data,
             headers=request_headers,
         )
+        # urllib copies ordinary headers into redirect requests. Credentials are
+        # deliberately unredirected so a provider cannot forward them off-origin.
+        for name, value in origin_only_headers.items():
+            request.add_unredirected_header(name, value)
         try:
             with hard_timeout(self.timeout + 1):
                 with self._thread_opener().open(request, timeout=self.timeout) as response:

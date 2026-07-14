@@ -748,6 +748,132 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
             JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
         self.assertEqual(fetcher.requested, [career, external])
 
+    def test_probes_acquired_brand_portal_with_parent_identity_and_typed_provider(self):
+        career = "https://www.source.example/careers/"
+        portal = "https://jobs.parent.example/en/"
+
+        class ParentPortalAdapter:
+            name = "parent_portal"
+            supports_listing = True
+
+            def recognizes(self, _url):
+                return False
+
+            def identify_board(self, _url):
+                return None
+
+            def identify_board_from_page(self, page):
+                if 'data-provider="parent"' not in page.html:
+                    return None
+                return JobBoard(url=page.final_url or page.url, provider=self.name)
+
+            def list_jobs(self, fetcher, board, query):
+                raise AssertionError("inventory is outside S5 discovery")
+
+        source_html = (
+            '<section class="career-callout">'
+            '<p>Source Brand is now a Parent Corp company.</p>'
+            f'<a href="{portal}">Search All Jobs</a>'
+            "</section>"
+        )
+        target_html = (
+            f'<link rel="canonical" href="{portal}">'
+            '<meta property="og:site_name" content="Parent Corp Careers">'
+            '<div data-provider="parent"></div>'
+        )
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=source_html),
+            portal: Page(url=portal, html=target_html),
+        })
+
+        job_list, trace, discovered = JobSourceAgent(
+            fetcher,
+            provider_registry=ProviderRegistry((ParentPortalAdapter(),)),
+            max_job_pages=2,
+        ).find_job_board_with_evidence(career, company_name="Source Brand")
+
+        self.assertEqual(job_list, portal)
+        self.assertEqual(discovered.board.provider, "parent_portal")
+        self.assertEqual(discovered.detection_method, "acquired_brand_handoff")
+        self.assertTrue(trace["acquired_brand_handoff"]["verified"])
+        self.assertEqual(trace["selected_page_source"], "acquired_brand_portal")
+        self.assertEqual(fetcher.requested, [career, portal])
+
+    def test_rejects_acquired_brand_portal_when_parent_metadata_mismatches(self):
+        career = "https://www.source.example/careers/"
+        portal = "https://jobs.parent.example/en/"
+        source_html = (
+            '<section><p>Source Brand is now a Parent Corp company.</p>'
+            f'<a href="{portal}">Search All Jobs</a></section>'
+        )
+        target_html = (
+            f'<link rel="canonical" href="{portal}">'
+            '<meta property="og:site_name" content="Unrelated Careers">'
+        )
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=source_html),
+            portal: Page(url=portal, html=target_html),
+        })
+
+        with self.assertRaises(DiscoveryError) as raised:
+            JobSourceAgent(
+                fetcher,
+                max_job_pages=2,
+                max_ats_board_fetches=0,
+            ).find_job_board(
+                career,
+                company_name="Source Brand",
+            )
+
+        self.assertEqual(
+            raised.exception.trace["acquired_brand_handoff"]["reason"],
+            "parent portal identity mismatch",
+        )
+        self.assertEqual(fetcher.requested, [career, portal])
+
+    def test_acquired_brand_handoff_types_talentbrew_parent_board(self):
+        career = "https://www.source.example/careers/"
+        portal = "https://jobs.parent.example/en/"
+        board = "https://jobs.parent.example/en/search-jobs"
+        source_html = (
+            '<section><p>Source Brand is now a Parent Corp company.</p>'
+            f'<a href="{portal}">Search All Jobs</a></section>'
+        )
+        target_html = f"""
+          <link rel="canonical" href="{portal}">
+          <meta property="og:site_name" content="Parent Corp Careers">
+          <meta name="site-tenant-id" content="47263">
+          <meta name="site-organization-id" content="47263">
+          <meta name="site-id" content="62886">
+          <meta name="gtm_tenantid" content="47263">
+          <meta name="gtm_companysiteid" content="62886">
+          <meta name="site-current-language" content="en">
+          <meta name="site-url-modified-language-code" content="en">
+          <link rel="stylesheet"
+                href="https://tbcdn.talentbrew.com/company/47263/css/62886.css">
+          <form action="{board}" method="GET">
+            <input name="k" type="search">
+            <input name="l" type="text">
+            <input name="orgIds" type="hidden" value="47263">
+          </form>
+        """
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=source_html),
+            portal: Page(url=portal, html=target_html),
+        })
+
+        job_list, trace, discovered = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+            max_ats_board_fetches=0,
+        ).find_job_board_with_evidence(career, company_name="Source Brand")
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(discovered.board.provider, "talentbrew")
+        self.assertTrue(discovered.board.replay_safe)
+        self.assertEqual(trace["provider"], "talentbrew")
+        self.assertEqual(fetcher.requested, [career, portal])
+
     def test_listing_traversal_prefers_route_that_preserves_locale_prefix(self):
         career = "https://careers.example.com/world/en"
         alias = "https://careers.example.com/world/search-results"

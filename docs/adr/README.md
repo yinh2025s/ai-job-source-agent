@@ -31,3 +31,6 @@ NNNN-short-decision-title.md
 - [ADR-0017: Bound Multi-Board Opening Discovery](0017-bound-multi-board-opening-discovery.md)
 - [ADR-0018: Verify First-Party Dynamic Job Inventory](0018-verify-first-party-dynamic-job-inventory.md)
 - [ADR-0019: Replay Upstream Terminal Outcomes](0019-replay-upstream-terminal-outcomes.md)
+- [ADR-0020: Bind Public Runtime Provider Credentials](0020-bind-public-runtime-provider-credentials.md)
+- [ADR-0021: Probe Acquired-Brand Job Portals](0021-probe-acquired-brand-job-portals.md)
+- [ADR-0022: Verify TalentBrew Search Inventory](0022-verify-talentbrew-search-inventory.md)

@@ -17,6 +17,7 @@ from job_source_agent.listing_extraction import (
     validate_output_url,
 )
 from job_source_agent.web import FetchError, Fetcher, Page
+from job_source_agent.job_board import DiscoveredJobBoard
 from job_source_agent.providers.base import AdapterResult, JobBoard, JobCandidate
 from job_source_agent.providers.registry import ProviderRegistry
 
@@ -494,6 +495,58 @@ class OpeningMatcherTests(unittest.TestCase):
         )
         self.assertFalse(missing_trace["provider_api"]["inventory"]["complete"])
         self.assertNotIn("search_skipped", missing_trace)
+
+    def test_acquired_brand_handoff_requires_exact_normalized_title(self):
+        class ParentInventoryAdapter:
+            name = "parent_inventory"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return False
+
+            def identify_board(self, url):
+                return None
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Principal / Senior Data Scientist - LLM Agents",
+                            url="https://jobs.parent.example/job/1",
+                            provider=self.name,
+                        )
+                    ],
+                    inventory_scope="title_filtered",
+                    inventory_complete=True,
+                )
+
+        board = JobBoard(
+            url="https://jobs.parent.example/search-jobs",
+            provider="parent_inventory",
+        )
+        discovered = DiscoveredJobBoard(
+            board=board,
+            detection_method="acquired_brand_handoff",
+            evidence_url="https://jobs.parent.example/",
+        )
+        matcher = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry((ParentInventoryAdapter(),)),
+        )
+
+        match, trace = matcher.match(
+            board.url,
+            "Data Scientist",
+            discovered_board=discovered,
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["provider_api"]["title_policy"],
+            "exact_for_acquired_brand_handoff",
+        )
 
     def test_native_budget_exhaustion_skips_generic_fallback(self):
         class BudgetAdapter:

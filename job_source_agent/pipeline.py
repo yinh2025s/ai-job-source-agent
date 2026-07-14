@@ -7,6 +7,7 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qsl, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
+from .acquired_brand_portal import parse_acquired_brand_portal_evidence
 from .career_search import CareerSearchResolver
 from .checkpoint import execution_fingerprint
 from .career_candidate_scheduler import (
@@ -911,6 +912,7 @@ class JobSourceAgent:
             )
         _opening_url, job_list_url, trace, discovered_board = self._discover_job_board_legacy(
             career_page_url,
+            company_name=company_name,
             target_location=target_location,
         )
         if (
@@ -1292,6 +1294,7 @@ class JobSourceAgent:
     def _discover_job_board_legacy(
         self,
         career_page_url: str,
+        company_name: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str | None, str | None, dict, DiscoveredJobBoard | None]:
         target_region = location_region(target_location)
@@ -1689,6 +1692,37 @@ class JobSourceAgent:
                     }
                 )
                 continue
+
+            acquired_handoff = (
+                parse_acquired_brand_portal_evidence(page, company_name)
+                if is_initial_career_root and company_name
+                else None
+            )
+            if acquired_handoff is not None:
+                if pages_checked >= self.max_job_pages:
+                    trace["acquired_brand_handoff"] = {
+                        "target_url": acquired_handoff.target_url,
+                        "parent_brand": acquired_handoff.parent_brand,
+                        "verified": False,
+                        "reason": "job-page probe budget exhausted",
+                    }
+                else:
+                    pages_checked += 1
+                    discovered, handoff_trace = self._probe_acquired_brand_job_portal(
+                        acquired_handoff.target_url,
+                        acquired_handoff.parent_brand,
+                    )
+                    trace["acquired_brand_handoff"] = handoff_trace
+                    if discovered is not None:
+                        trace["provider"] = discovered.board.provider
+                        trace["provider_detection"] = {
+                            "method": "page_probe",
+                            "provider": discovered.board.provider,
+                            "url": discovered.board.url,
+                        }
+                        trace["job_list_page_url"] = discovered.board.url
+                        trace["selected_page_source"] = "acquired_brand_portal"
+                        return None, discovered.board.url, trace, discovered
             empty_evidence = explicit_empty_inventory_evidence(page.html)
             if empty_evidence:
                 trace["explicit_empty_inventory"] = {
@@ -2069,6 +2103,87 @@ class JobSourceAgent:
         return (
             any(marker in target_label for marker in ("jobs", "careers", "apply"))
             and is_explicit_job_list_command(text)
+        )
+
+    def _probe_acquired_brand_job_portal(
+        self,
+        target_url: str,
+        parent_brand: str,
+    ) -> tuple[DiscoveredJobBoard | None, dict]:
+        trace = {
+            "target_url": target_url,
+            "parent_brand": parent_brand,
+            "verified": False,
+        }
+        try:
+            page = self.fetcher.fetch(target_url)
+        except FetchError as exc:
+            trace.update(_fetch_failure_trace(exc))
+            return None, trace
+
+        actual_url = page.final_url or page.url
+        trace["final_url"] = actual_url
+        metadata = _CareerRedirectMetadataParser()
+        try:
+            metadata.feed(page.html[:500000])
+            metadata.close()
+        except (TypeError, ValueError):
+            trace["reason"] = "invalid parent portal markup"
+            return None, trace
+
+        parent_tokens = self._company_identity_tokens(parent_brand)
+        identity_matches = [
+            value
+            for value in metadata.identity_values
+            if parent_tokens
+            and parent_tokens.issubset(
+                set(re.findall(r"[a-z0-9]+", value.casefold()))
+            )
+        ]
+        if not identity_matches:
+            trace["reason"] = "parent portal identity mismatch"
+            return None, trace
+
+        declared_urls = metadata.canonical_urls + metadata.og_urls
+        if not declared_urls:
+            trace["reason"] = "parent portal lacks canonical or og:url identity"
+            return None, trace
+        normalized_urls = [urljoin(actual_url, value) for value in declared_urls]
+        if any(not self._same_url_origin(value, actual_url) for value in normalized_urls):
+            trace["reason"] = "parent portal canonical or og:url crosses origin"
+            return None, trace
+
+        identified = self.provider_registry.board_for_page(page, self.fetcher)
+        if identified is None:
+            adapter = self.provider_registry.adapter_for(actual_url)
+            board = adapter.identify_board(actual_url) if adapter is not None else None
+            identified = (adapter, board) if adapter is not None and board is not None else None
+        if identified is None:
+            trace["reason"] = "parent portal lacks typed provider evidence"
+            return None, trace
+        adapter, board = identified
+        if not adapter.supports_listing:
+            trace["reason"] = "parent portal provider is detection-only"
+            return None, trace
+        if not self._same_url_origin(board.url, actual_url):
+            trace["reason"] = "parent portal provider board crosses origin"
+            return None, trace
+
+        trace.update(
+            {
+                "verified": True,
+                "provider": adapter.name,
+                "board_url": board.url,
+                "page_source": page.source,
+            }
+        )
+        return (
+            DiscoveredJobBoard(
+                board=board,
+                detection_method="acquired_brand_handoff",
+                evidence_url=actual_url,
+            ),
+            trace,
         )
 
     def _shared_path_prefix(self, target_url: str, source_url: str) -> int:

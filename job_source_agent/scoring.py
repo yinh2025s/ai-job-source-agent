@@ -109,6 +109,7 @@ EXPLICIT_JOB_LIST_COMMANDS = (
     "open positions",
     "open roles",
     "search jobs",
+    "search all jobs",
     "search roles",
     "staff careers",
     "view jobs",
@@ -300,6 +301,8 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
             reasons.append(f"title keyword '{keyword}'")
 
     for keyword, weight in NEGATIVE_KEYWORDS.items():
+        if explicit_job_list_command and keyword in {"all jobs", "all roles"}:
+            continue
         if keyword in haystack:
             score += weight
             reasons.append(f"negative keyword '{keyword}'")
