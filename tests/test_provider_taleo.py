@@ -112,6 +112,72 @@ class TaleoAdapterTests(unittest.TestCase):
         self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
         self.assertEqual(result.trace["total_found"], 0)
         self.assertEqual(result.trace["inventory_scope"], "title_filtered")
+        self.assertTrue(result.inventory_complete)
+
+    def test_rejects_missing_or_contradictory_paging_metadata(self):
+        cases = [
+            {"requisitionList": [], "pagingData": {}},
+            {
+                "requisitionList": [job("1", "AI Engineer")],
+                "pagingData": {"currentPageNo": 1, "pageSize": 25, "totalCount": 0},
+            },
+            {
+                "requisitionList": [job("1", "AI Engineer")],
+                "pagingData": {"currentPageNo": 2, "pageSize": 25, "totalCount": 1},
+            },
+            {
+                "requisitionList": [job("1", "AI Engineer")],
+                "pagingData": {"currentPageNo": 1, "pageSize": 25, "totalCount": 2},
+            },
+        ]
+        for body in cases:
+            with self.subTest(body=body):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(
+                        {
+                            BOARD_URL: Page(url=BOARD_URL, html=shell_html()),
+                            API_URL: Page(url=API_URL, html=json.dumps(body)),
+                        }
+                    ),
+                    self.board,
+                    JobQuery(title="AI Engineer"),
+                )
+                self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+                self.assertFalse(result.inventory_complete)
+
+    def test_rejects_page_size_changes_across_pages(self):
+        first_page = [job(str(index + 1), f"Engineer {index}") for index in range(25)]
+
+        class DriftingPageSizeFetcher(RecordingFetcher):
+            def fetch(inner, url, data=None, headers=None):
+                inner.requests.append((url, data, headers))
+                if url == BOARD_URL:
+                    return Page(url=url, html=shell_html())
+                page_no = json.loads(data)["pageNo"]
+                jobs = first_page if page_no == 1 else []
+                page_size = 25 if page_no == 1 else 50
+                return Page(
+                    url=url,
+                    html=json.dumps(
+                        {
+                            "requisitionList": jobs,
+                            "pagingData": {
+                                "currentPageNo": page_no,
+                                "pageSize": page_size,
+                                "totalCount": 50,
+                            },
+                        }
+                    ),
+                )
+
+        result = self.adapter.list_jobs(
+            DriftingPageSizeFetcher(),
+            self.board,
+            JobQuery(title="Missing Role"),
+        )
+
+        self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertFalse(result.inventory_complete)
 
     def test_rejects_wrong_config_and_cross_tenant_redirect(self):
         wrong = self.adapter.list_jobs(
@@ -136,7 +202,164 @@ class TaleoAdapterTests(unittest.TestCase):
         )
         self.assertEqual(failed.reason_code, "PROVIDER_FETCH_FAILED")
         self.assertTrue(failed.retryable)
+        self.assertFalse(failed.inventory_complete)
         self.assertEqual(malformed.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertFalse(malformed.inventory_complete)
+
+    def test_server_error_with_text_location_retries_title_only(self):
+        class LocationFallbackFetcher(RecordingFetcher):
+            def fetch(inner, url, data=None, headers=None):
+                inner.requests.append((url, data, headers))
+                if url == BOARD_URL:
+                    return Page(url=url, html=shell_html())
+                payload = json.loads(data)
+                if payload["fieldData"]["fields"]["LOCATION"]:
+                    raise FetchError(
+                        "HTTP Error 500: Internal Server Error",
+                        status=500,
+                        reason_code="SERVER_ERROR",
+                        retryable=True,
+                    )
+                return Page(
+                    url=url,
+                    html=search_json([job("260445", "AI Engineer")], total=1),
+                )
+
+        fetcher = LocationFallbackFetcher()
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="AI Engineer", location="New York, NY"),
+        )
+
+        self.assertIsNone(result.reason_code)
+        self.assertEqual([candidate.title for candidate in result.candidates], ["AI Engineer"])
+        post_payloads = [json.loads(request[1]) for request in fetcher.requests[1:]]
+        self.assertEqual(
+            [payload["fieldData"]["fields"]["LOCATION"] for payload in post_payloads],
+            ["New York, NY", ""],
+        )
+        self.assertTrue(result.trace["location_filter_fallback"])
+        self.assertEqual(
+            result.trace["request_variants"],
+            ["title_and_location", "title_only"],
+        )
+
+    def test_location_fallback_failure_remains_retryable(self):
+        class AlwaysFailingSearchFetcher(RecordingFetcher):
+            def fetch(inner, url, data=None, headers=None):
+                inner.requests.append((url, data, headers))
+                if url == BOARD_URL:
+                    return Page(url=url, html=shell_html())
+                raise FetchError(
+                    "HTTP Error 500: Internal Server Error",
+                    status=500,
+                    reason_code="SERVER_ERROR",
+                    retryable=True,
+                )
+
+        fetcher = AlwaysFailingSearchFetcher()
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="AI Engineer", location="New York, NY"),
+        )
+
+        self.assertEqual(len(fetcher.requests), 3)
+        self.assertEqual(result.reason_code, "PROVIDER_FETCH_FAILED")
+        self.assertTrue(result.retryable)
+        self.assertFalse(result.inventory_complete)
+        self.assertTrue(result.trace["location_filter_fallback"])
+
+    def test_location_fallback_remains_title_only_across_pagination(self):
+        first_page = [job(str(index + 1), f"Engineer {index}") for index in range(25)]
+
+        class PagedLocationFallbackFetcher(RecordingFetcher):
+            def fetch(inner, url, data=None, headers=None):
+                inner.requests.append((url, data, headers))
+                if url == BOARD_URL:
+                    return Page(url=url, html=shell_html())
+                payload = json.loads(data)
+                fields = payload["fieldData"]["fields"]
+                if fields["LOCATION"]:
+                    raise FetchError(
+                        "HTTP Error 500: Internal Server Error",
+                        status=500,
+                        reason_code="SERVER_ERROR",
+                        retryable=True,
+                    )
+                page_no = payload["pageNo"]
+                jobs = first_page if page_no == 1 else [job("999", "AI Engineer")]
+                return Page(url=url, html=search_json(jobs, total=26, page=page_no))
+
+        fetcher = PagedLocationFallbackFetcher()
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="AI Engineer", location="New York, NY"),
+        )
+
+        post_payloads = [json.loads(request[1]) for request in fetcher.requests[1:]]
+        self.assertEqual(
+            [payload["fieldData"]["fields"]["LOCATION"] for payload in post_payloads],
+            ["New York, NY", "", ""],
+        )
+        self.assertEqual([payload["pageNo"] for payload in post_payloads], [1, 1, 2])
+        self.assertEqual(result.candidates[-1].title, "AI Engineer")
+        self.assertEqual(
+            result.trace["request_variants"],
+            ["title_and_location", "title_only", "title_only"],
+        )
+
+    def test_non_server_failure_does_not_relax_location_filter(self):
+        class ForbiddenSearchFetcher(RecordingFetcher):
+            def fetch(inner, url, data=None, headers=None):
+                inner.requests.append((url, data, headers))
+                if url == BOARD_URL:
+                    return Page(url=url, html=shell_html())
+                raise FetchError(
+                    "HTTP Error 403: Forbidden",
+                    status=403,
+                    reason_code="HTTP_FORBIDDEN",
+                    retryable=False,
+                )
+
+        fetcher = ForbiddenSearchFetcher()
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="AI Engineer", location="New York, NY"),
+        )
+
+        self.assertEqual(len(fetcher.requests), 2)
+        self.assertEqual(result.reason_code, "PROVIDER_FETCH_FAILED")
+        self.assertFalse(result.retryable)
+        self.assertFalse(result.trace["location_filter_fallback"])
+
+    def test_whitespace_location_and_conflicting_status_do_not_trigger_fallback(self):
+        class ConflictingFailureFetcher(RecordingFetcher):
+            def fetch(inner, url, data=None, headers=None):
+                inner.requests.append((url, data, headers))
+                if url == BOARD_URL:
+                    return Page(url=url, html=shell_html())
+                raise FetchError(
+                    "server error",
+                    status=403,
+                    reason_code="SERVER_ERROR",
+                    retryable=False,
+                )
+
+        for location in ("   ", "New York, NY"):
+            with self.subTest(location=location):
+                fetcher = ConflictingFailureFetcher()
+                result = self.adapter.list_jobs(
+                    fetcher,
+                    self.board,
+                    JobQuery(title="AI Engineer", location=location),
+                )
+                self.assertEqual(len(fetcher.requests), 2)
+                self.assertFalse(result.trace["location_filter_fallback"])
+                self.assertFalse(result.retryable)
 
     def test_reports_unavailable_career_section_as_unsupported(self):
         unavailable = json.dumps({

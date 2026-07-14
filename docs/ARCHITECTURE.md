@@ -141,6 +141,14 @@ ADR-0005 定义 page-derived board 的跨关卡 contract。S5 可输出 `Discove
 
 Provider adapter 也可以在统一 trace contract 中输出强租户身份证据，例如 SmartRecruiters 的 `tenant_identity_verified`。该布尔值必须由 adapter 根据 provider 自己的结构化 inventory 和 tenant 规则计算；中央 discovery 只组合“非空库存 + 强身份”结论，不读取或解释 provider-specific payload。这样 derived board 的验证可以复用，同时保持 provider 高内聚和 pipeline 低耦合。
 
+Taleo FacetedSearch 的 `LOCATION` 是页面 OLF selector，而不是任意文本字段。Adapter
+可以先尝试来源 location，但只有该非空 filter 导致 5xx 时，才向同一已验证
+tenant/portal 单次降级为 title-only inventory，并把 location 留给客户端 ranking。
+其他错误不触发降级；静态 shell 的空 tbody、no-results 占位与 localization resource
+不能作为 empty inventory。REST 响应的 page number、page size 和 total 必须
+完整且跨页稳定，不一致时 fail closed。所有 Taleo failure 都保持
+`inventory_complete=false`。
+
 S6 adapter result 通过 `inventory_scope` 和 `inventory_complete` 区分“读取到正向岗位证据”与“完整检查了可用于 no-match 的库存”，并由 stage 把 `target_location` 传入 provider query。只有与目标查询相关且完整的库存才能支持权威 no-match；`inventory_complete=false` 的未命中必须保持 incomplete。CEIPAL 对 first-party wrapper、单一 tenant iframe、公开 inventory endpoint、稳定 count/limit/pages、连续 next/previous、重复 ID 与最多 50 页执行整体校验；具体岗位 URL 只由 verified record ID 构造回 first-party board。中途错误、cap、循环和矛盾 metadata 都保守为 incomplete。Location 只对同标题候选加 tie-break 分数，缺失地点不会拒绝岗位。Meta Careers 原生 adapter 只接受 visible-page positive evidence，可确认明确出现的具体岗位，但固定返回不完整库存。其离线 fixture/provider benchmark 可保证 exact parsing，匿名 live hydration 仍不稳定，不能据此声明 live stable 或 no-match。
 
 Sitecore/Next adapter 从 first-party `__NEXT_DATA__` 绑定 site、brand、language、country 和 search configuration，仅调用同源固定 jobs endpoint；分页 total/range、重复 job ID 和 record tenant identity 任一矛盾都会保持 incomplete。公开 record 的无害空白可以规范化，但 job ID、endpoint 和租户边界不放宽。原生 provider 的最终 opening 选择使用比通用页面探索更严格的标题门槛，单个泛化角色词不能验证具体职位。

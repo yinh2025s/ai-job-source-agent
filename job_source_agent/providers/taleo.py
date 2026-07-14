@@ -4,6 +4,7 @@ import json
 import re
 from urllib.parse import urlencode, urlparse
 
+from ..reasons import classify_fetch_error, reason_spec
 from ..web import FetchError
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
@@ -73,16 +74,26 @@ class TaleoAdapter:
         api_urls: list[str] = []
         pages_fetched = 0
         total_found: int | None = None
+        expected_page_size: int | None = None
         target = _normalized_title(query.title)
         inventory_scope = "title_filtered" if query.title else "full"
         inventory_complete = False
+        location_filter_fallback = False
+        request_variants: list[str] = []
+        active_query = query
+        has_location_filter = bool((query.location or "").strip())
 
         for page_no in range(1, _MAX_PAGES + 1):
             api_urls.append(api_url)
+            request_variants.append(
+                "title_and_location"
+                if (active_query.location or "").strip()
+                else "title_only"
+            )
             try:
                 response = fetcher.fetch(
                     api_url,
-                    data=json.dumps(_search_payload(query, page_no)).encode(),
+                    data=json.dumps(_search_payload(active_query, page_no)).encode(),
                     headers={
                         "Accept": "application/json",
                         "Content-Type": "application/json",
@@ -92,9 +103,36 @@ class TaleoAdapter:
                     },
                 )
             except (FetchError, OSError, TimeoutError) as error:
-                if candidates:
+                if page_no == 1 and has_location_filter and _is_http_5xx(error):
+                    location_filter_fallback = True
+                    active_query = JobQuery(title=query.title)
+                    request_variants.append("title_only")
+                    try:
+                        response = fetcher.fetch(
+                            api_url,
+                            data=json.dumps(
+                                _search_payload(active_query, page_no)
+                            ).encode(),
+                            headers={
+                                "Accept": "application/json",
+                                "Content-Type": "application/json",
+                                "Referer": board_url,
+                                "tz": "GMT+00:00",
+                                "tzname": "UTC",
+                            },
+                        )
+                    except (FetchError, OSError, TimeoutError) as fallback_error:
+                        return _fetch_failure(
+                            board,
+                            board_url,
+                            api_urls,
+                            fallback_error,
+                            location_filter_fallback=True,
+                        )
+                elif candidates:
                     break
-                return _fetch_failure(board, board_url, api_urls, error)
+                else:
+                    return _fetch_failure(board, board_url, api_urls, error)
             if not _is_expected_api(response.final_url or response.url, host):
                 return _unsupported(board, "Taleo API redirected outside the tenant", response.final_url or response.url)
             try:
@@ -107,23 +145,44 @@ class TaleoAdapter:
             paging = body.get("pagingData") if isinstance(body, dict) else None
             if not isinstance(records, list) or not isinstance(paging, dict):
                 return _invalid(board, board_url, api_urls, "missing Taleo inventory fields")
+            current_page = paging.get("currentPageNo")
+            page_size = paging.get("pageSize")
+            page_total = paging.get("totalCount")
+            offset = (page_no - 1) * page_size if isinstance(page_size, int) else -1
+            if (
+                isinstance(current_page, bool)
+                or current_page != page_no
+                or isinstance(page_size, bool)
+                or not isinstance(page_size, int)
+                or not 0 < page_size <= 100
+                or isinstance(page_total, bool)
+                or not isinstance(page_total, int)
+                or page_total < 0
+                or len(records) > page_size
+                or page_total < offset + len(records)
+                or (not records and offset < page_total)
+                or (len(records) < page_size and offset + len(records) < page_total)
+                or (total_found is not None and page_total != total_found)
+                or (expected_page_size is not None and page_size != expected_page_size)
+            ):
+                return _invalid(
+                    board,
+                    board_url,
+                    api_urls,
+                    "inconsistent Taleo paging metadata",
+                )
             pages_fetched += 1
-            total_found = _nonnegative_int(paging.get("totalCount"), total_found)
+            total_found = page_total
+            expected_page_size = page_size
             for record in records:
                 candidate = _candidate(record, host, code, source)
                 if candidate is None or candidate.url in seen:
                     continue
                 seen.add(candidate.url)
                 candidates.append(candidate)
-            page_size = _positive_int(paging.get("pageSize"), _PAGE_SIZE)
             consumed = (page_no - 1) * page_size + len(records)
-            if total_found is not None and consumed >= total_found:
+            if consumed == total_found:
                 inventory_complete = True
-                break
-            if total_found is None and (not records or len(records) < page_size):
-                inventory_complete = True
-                break
-            if not records:
                 break
             if target and any(_normalized_title(item.title) == target for item in candidates):
                 break
@@ -144,6 +203,8 @@ class TaleoAdapter:
                 "candidate_count": len(candidates),
                 "pages_fetched": pages_fetched,
                 "total_found": total_found,
+                "location_filter_fallback": location_filter_fallback,
+                "request_variants": request_variants,
                 "inventory_scope": inventory_scope,
                 "inventory_complete": inventory_complete,
             },
@@ -243,31 +304,68 @@ def _is_expected_api(url: str, host: str) -> bool:
     return bool(parsed and (parsed.hostname or "").casefold() == host and parsed.path == "/careersection/rest/jobboard/searchjobs")
 
 
-def _nonnegative_int(value, fallback):
-    return value if isinstance(value, int) and value >= 0 else fallback
-
-
-def _positive_int(value, fallback):
-    return value if isinstance(value, int) and 0 < value <= 100 else fallback
-
-
 def _normalized_title(title: str | None) -> str:
     return " ".join((title or "").casefold().split())
+
+
+def _is_http_5xx(error: Exception) -> bool:
+    status = getattr(error, "status", None)
+    return isinstance(status, int) and not isinstance(status, bool) and 500 <= status <= 599
 
 
 def _unsupported(board, error, rejected_url=None):
     trace = {"adapter": "taleo", "error": error}
     if rejected_url:
         trace["rejected_final_url"] = rejected_url
-    return AdapterResult(provider="taleo", board=board, reason_code="PROVIDER_VARIANT_UNSUPPORTED", trace=trace)
+    return AdapterResult(
+        provider="taleo",
+        board=board,
+        reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+        inventory_complete=False,
+        trace=trace,
+    )
 
 
-def _fetch_failure(board, board_url, api_urls, error):
-    return AdapterResult(provider="taleo", board=board, reason_code="PROVIDER_FETCH_FAILED", retryable=True, trace={"adapter": "taleo", "board_urls": [board_url], "api_urls": api_urls, "error": str(error)})
+def _fetch_failure(
+    board,
+    board_url,
+    api_urls,
+    error,
+    *,
+    location_filter_fallback=False,
+):
+    retryable = getattr(error, "retryable", None)
+    if not isinstance(retryable, bool):
+        retryable = reason_spec(classify_fetch_error(str(error))).retryable
+    return AdapterResult(
+        provider="taleo",
+        board=board,
+        reason_code="PROVIDER_FETCH_FAILED",
+        retryable=retryable,
+        inventory_complete=False,
+        trace={
+            "adapter": "taleo",
+            "board_urls": [board_url],
+            "api_urls": api_urls,
+            "error": str(error),
+            "location_filter_fallback": location_filter_fallback,
+        },
+    )
 
 
 def _invalid(board, board_url, api_urls, error):
-    return AdapterResult(provider="taleo", board=board, reason_code="INVALID_STRUCTURED_DATA", trace={"adapter": "taleo", "board_urls": [board_url], "api_urls": api_urls, "error": error})
+    return AdapterResult(
+        provider="taleo",
+        board=board,
+        reason_code="INVALID_STRUCTURED_DATA",
+        inventory_complete=False,
+        trace={
+            "adapter": "taleo",
+            "board_urls": [board_url],
+            "api_urls": api_urls,
+            "error": error,
+        },
+    )
 
 
 ADAPTER = TaleoAdapter()
