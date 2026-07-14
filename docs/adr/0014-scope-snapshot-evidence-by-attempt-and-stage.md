@@ -36,10 +36,13 @@ inferring provenance from timestamps, paths, trace strings, or global sequence.
 5. Capture records caller-visible terminal fetch outcomes. Retry attempts remain
    internal. Cache hits used by another stage are recorded in that stage's scope,
    so the stage can replay independently.
-6. Scoped replay consumes an ordered outcome tape for the exact declared scope.
-   Repeated request identities remain separate entries. An early, late, extra, or
-   unconsumed request is a typed replay divergence; scoped replay never falls back
-   to global latest-wins fixtures.
+6. Scoped replay consumes every outcome in the exact declared scope by sanitized
+   request identity. Independent identities may be requested in a different order
+   because concurrent discovery does not guarantee thread scheduling; repeated
+   occurrences of the same identity remain separate and are consumed in capture
+   order. Consumption is atomic. A missing, extra, mismatched, or unconsumed
+   request is a typed replay divergence, and scoped replay never falls back to
+   global latest-wins fixtures.
 7. Each replay source occurrence receives a stable record ID, isolated checkpoint
    directory, application, tape cursor, and runtime cache. Outcome gates join by
    record ID rather than list position. Duplicate, missing, or unexpected IDs fail
@@ -71,6 +74,8 @@ sanitization remains mandatory for each outcome record.
   every restored or recomputed stage.
 - Parallel companies and repeated request identities cannot overwrite one
   another during replay.
+- Concurrent requests with independent identities can change scheduling order
+  without changing the declared evidence set or weakening duplicate ordering.
 - Zero-request stages cannot silently borrow evidence from an older invocation.
 - Existing captures remain useful for explicit legacy diagnosis but cannot claim
   attempt-scoped deterministic reproduction.
@@ -85,8 +90,9 @@ sanitization remains mandatory for each outcome record.
   retry terminality, and cache hits across stages.
 - Checkpoint and completion tests cover schema invalidation and mixed-attempt
   lineage across selective retry and crash recovery.
-- Replay tests cover repeated identities, cross-stage and cross-attempt outcomes,
-  isolated duplicate inputs, tape divergence, and legacy compatibility.
+- Replay tests cover repeated identities, concurrent scheduling permutations,
+  exact-once consumption, mismatch non-consumption, cross-stage and cross-attempt
+  outcomes, isolated duplicate inputs, tape divergence, and legacy compatibility.
 - Main runs all offline gates and one serialized scoped crash-resume/replay
   acceptance. Authenticated LinkedIn extension acceptance remains independently
   deferred.
