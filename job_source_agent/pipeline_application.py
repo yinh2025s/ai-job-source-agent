@@ -5,7 +5,9 @@ from dataclasses import asdict
 from .application_runner import ApplicationRunner
 from .checkpoint import execution_fingerprint
 from .contracts import PipelineContext
+from .evidence_scope import new_capture_attempt_id
 from .models import (
+    PIPELINE_STAGES,
     STAGE_CAREER_DISCOVERY,
     STAGE_JOB_BOARD_DISCOVERY,
     STAGE_OPENING_MATCH,
@@ -38,6 +40,7 @@ class PipelineApplication:
         start_at: str | None = None,
         stop_after: str | None = None,
         rerun_from: str | None = None,
+        capture_attempt_id: str | None = None,
     ) -> DiscoveryResult:
         context = PipelineContext.from_company(company)
         run_options: dict = {
@@ -45,6 +48,9 @@ class PipelineApplication:
             "stop_after": stop_after,
         }
         fingerprint = execution_fingerprint(asdict(company), self.run_configuration.digest)
+        attempt_id = capture_attempt_id or new_capture_attempt_id()
+        run_options["execution_fingerprint"] = fingerprint
+        run_options["producer_attempt_id"] = attempt_id
         if self.runner.checkpointing_enabled:
             run_options["input_fingerprint"] = fingerprint
             run_options["rerun_from"] = rerun_from
@@ -96,6 +102,11 @@ def discovery_result_from_context(
             "run_configuration_digest": settings.digest,
             "execution_fingerprint": execution_fingerprint_value
             or execution_fingerprint(asdict(company), settings.digest),
+            "stage_evidence_lineage": [
+                asdict(context.stage_evidence_lineage[stage])
+                for stage in PIPELINE_STAGES
+                if stage in context.stage_evidence_lineage
+            ],
             "steps": [],
         },
     )

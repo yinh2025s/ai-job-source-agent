@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterable
 
 from .contracts import CheckpointStore, PipelineContext, Stage, StageExecution
+from .evidence_scope import StageEvidenceLineage
 from .models import PIPELINE_STAGES, StageResult
 
 
@@ -46,6 +47,8 @@ class ApplicationRunner:
         stop_after: str | None = None,
         input_fingerprint: str | None = None,
         rerun_from: str | None = None,
+        execution_fingerprint: str | None = None,
+        producer_attempt_id: str | None = None,
     ) -> PipelineContext:
         """Execute an inclusive stage range and return the mutated context.
 
@@ -80,7 +83,9 @@ class ApplicationRunner:
 
         previous_results = _index_existing_results(context)
         previous_traces = dict(context.trace.get("stages", {}))
+        previous_lineage = dict(context.stage_evidence_lineage)
         context.stage_results = []
+        context.stage_evidence_lineage = {}
         context.trace["stages"] = {}
 
         for index, stage_name in enumerate(PIPELINE_STAGES):
@@ -94,6 +99,7 @@ class ApplicationRunner:
                     context.apply(StageExecution(
                         result=previous,
                         trace=previous_traces.get(stage_name, {}),
+                        evidence_lineage=previous_lineage.get(stage_name),
                     ))
                 else:
                     if self._checkpoint_store is not None:
@@ -130,6 +136,12 @@ class ApplicationRunner:
 
             execution = stage.run(context)
             _validate_execution(execution, stage_name, source="Stage")
+            if execution_fingerprint is not None and producer_attempt_id is not None:
+                execution.evidence_lineage = StageEvidenceLineage(
+                    stage=stage_name,
+                    execution_fingerprint=execution_fingerprint,
+                    producer_attempt_id=producer_attempt_id,
+                )
             context.apply(execution)
             if self._checkpoint_store is not None:
                 assert input_fingerprint is not None

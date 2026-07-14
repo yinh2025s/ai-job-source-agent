@@ -13,6 +13,7 @@ import fcntl
 
 from .checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from .contracts import CONTRACT_SCHEMA_VERSION, StageExecution
+from .evidence_scope import StageEvidenceLineage
 from .homepage_navigation import HomepageNavigationEvidence
 from .job_board import DiscoveredJobBoard
 from .models import PIPELINE_STAGES, StageResult
@@ -197,6 +198,14 @@ def _deserialize_checkpoint(
     execution = payload.get("execution")
     if not isinstance(execution, dict):
         raise ValueError("Checkpoint execution must be an object")
+    if set(execution) != {
+        "result",
+        "updates",
+        "trace",
+        "evidence_lineage",
+        "schema_version",
+    }:
+        raise ValueError("Checkpoint execution is incomplete or contains unsupported fields")
     if execution.get("schema_version") != CONTRACT_SCHEMA_VERSION:
         raise ValueError("Stage execution schema version is incompatible")
 
@@ -224,9 +233,22 @@ def _deserialize_checkpoint(
             )
         )
 
+    lineage_payload = execution.get("evidence_lineage")
+    lineage = (
+        None
+        if lineage_payload is None
+        else StageEvidenceLineage.from_payload(lineage_payload)
+    )
+    if lineage is not None:
+        if lineage.stage != stage:
+            raise ValueError("Checkpoint lineage stage does not match")
+        if lineage.execution_fingerprint != execution_fingerprint:
+            raise ValueError("Checkpoint lineage execution fingerprint does not match")
+
     return StageExecution(
         result=StageResult(**result_payload),
         updates=updates,
         trace=trace,
+        evidence_lineage=lineage,
         schema_version=execution["schema_version"],
     )

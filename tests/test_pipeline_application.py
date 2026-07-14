@@ -30,8 +30,12 @@ class PipelineApplicationTests(unittest.TestCase):
 
     def test_runs_all_seven_stages_and_preserves_result_shape(self):
         company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]
+        attempt_id = "capture-attempt-0001"
 
-        result = self.build_application().pipeline.discover(company)
+        result = self.build_application().pipeline.discover(
+            company,
+            capture_attempt_id=attempt_id,
+        )
 
         self.assertEqual([stage.stage for stage in result.stage_results], list(PIPELINE_STAGES))
         self.assertEqual(result.status, "success")
@@ -44,6 +48,15 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertEqual(result.run_configuration["schema_version"], "1.1")
         self.assertRegex(result.run_configuration_digest, r"^[0-9a-f]{64}$")
         self.assertRegex(result.execution_fingerprint, r"^[0-9a-f]{64}$")
+        lineage = result.trace["stage_evidence_lineage"]
+        self.assertEqual([item["stage"] for item in lineage], list(PIPELINE_STAGES))
+        self.assertTrue(
+            all(item["producer_attempt_id"] == attempt_id for item in lineage)
+        )
+        self.assertTrue(
+            all(item["execution_fingerprint"] == result.execution_fingerprint for item in lineage)
+        )
+        self.assertTrue(all(item["snapshot_scope"] is None for item in lineage))
 
     def test_result_records_the_exact_deterministic_run_configuration(self):
         company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]
@@ -113,10 +126,14 @@ class PipelineApplicationTests(unittest.TestCase):
         company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]
         with tempfile.TemporaryDirectory() as directory:
             application = self.build_application(directory)
-            first = application.pipeline.discover(company)
+            first = application.pipeline.discover(
+                company,
+                capture_attempt_id="capture-attempt-first",
+            )
             resumed = application.pipeline.discover(
                 company,
                 start_at=STAGE_HIRING_IDENTITY_RESOLUTION,
+                capture_attempt_id="capture-attempt-second",
             )
 
         self.assertEqual(first.company_website_url, resumed.company_website_url)
@@ -128,6 +145,18 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertIn(
             {"stage": STAGE_WEBSITE_RESOLUTION, "action": "restore"},
             resumed.trace["checkpoint_events"],
+        )
+        attempts = {
+            item["stage"]: item["producer_attempt_id"]
+            for item in resumed.trace["stage_evidence_lineage"]
+        }
+        self.assertEqual(attempts["linkedin_discovery"], "capture-attempt-first")
+        self.assertEqual(attempts[STAGE_WEBSITE_RESOLUTION], "capture-attempt-first")
+        self.assertTrue(
+            all(
+                attempts[stage] == "capture-attempt-second"
+                for stage in PIPELINE_STAGES[2:]
+            )
         )
 
     def test_linkedin_native_only_is_partial_in_both_result_statuses(self):

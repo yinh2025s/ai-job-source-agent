@@ -25,6 +25,7 @@ from job_source_agent.composition import AgentConfig, FetcherConfig, build_appli
 from job_source_agent.contracts import FetchClient, PipelineContext, StageExecution
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
 from job_source_agent.evaluation_history import cohort_identities_compatible, derive_cohort_identity
+from job_source_agent.evidence_scope import new_capture_attempt_id
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.linkedin_discovery import (
     LinkedInJobsDiscoverer,
@@ -657,6 +658,7 @@ def _atomic_write_json(path: Path, payload) -> None:
 def run_company(company: CompanyInput, args: argparse.Namespace):
     started = time.monotonic()
     upstream_result: DiscoveryResult | None = None
+    capture_attempt_id = new_capture_attempt_id()
     automatic_retry_start = _automatic_retry_start_stage(company, args)
     if resume_uses_replay_upstream(args):
         prepare_replay_company_for_resume(company, args)
@@ -687,6 +689,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                     STAGE_HIRING_IDENTITY_RESOLUTION,
                     None if automatic_retry_start else _upstream_rerun_stage(args),
                     upstream_deadline,
+                    capture_attempt_id,
                 ),
                 timeout=upstream_budget,
             )
@@ -754,6 +757,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                 None,
                 None if automatic_retry_start else _downstream_rerun_stage(args),
                 downstream_deadline,
+                capture_attempt_id,
             ),
             timeout=remaining,
         )
@@ -1039,6 +1043,7 @@ def run_pipeline_phase(
     stop_after: str | None,
     rerun_from: str | None,
     retry_deadline: float | None = None,
+    capture_attempt_id: str | None = None,
 ) -> DiscoveryResult:
     application = build_application(
         _company_fetcher_config(args, retry_deadline=retry_deadline),
@@ -1050,6 +1055,7 @@ def run_pipeline_phase(
         start_at=start_at,
         stop_after=stop_after,
         rerun_from=rerun_from,
+        capture_attempt_id=capture_attempt_id,
     )
     fetcher = application.fetcher
     retry_events = getattr(fetcher, "retry_events", None)

@@ -10,6 +10,7 @@ from job_source_agent.batch_checkpoint import (
     FilesystemBatchCompletionStore,
 )
 from job_source_agent.checkpoint import ADAPTER_VERSION, input_fingerprint
+from job_source_agent.evidence_scope import StageEvidenceLineage
 from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 
 
@@ -52,6 +53,68 @@ class FilesystemBatchCompletionStoreTests(unittest.TestCase):
         equivalent = {**self.input_record, "company_name": "  Example   Corp "}
 
         self.assertIsNotNone(self.store.load(equivalent))
+
+    def test_completion_freezes_canonical_mixed_attempt_stage_lineage(self):
+        pipeline_fingerprint = "a" * 64
+        lineages = [
+            StageEvidenceLineage(
+                stage="linkedin_discovery",
+                execution_fingerprint=pipeline_fingerprint,
+                producer_attempt_id="capture-attempt-first",
+            ),
+            StageEvidenceLineage(
+                stage="website_resolution",
+                execution_fingerprint=pipeline_fingerprint,
+                producer_attempt_id="capture-attempt-second",
+            ),
+        ]
+        trace = {
+            "trace": {
+                "stage_evidence_lineage": [
+                    {
+                        "stage": item.stage,
+                        "execution_fingerprint": item.execution_fingerprint,
+                        "producer_attempt_id": item.producer_attempt_id,
+                        "snapshot_scope": None,
+                        "schema_version": item.schema_version,
+                    }
+                    for item in lineages
+                ]
+            }
+        }
+
+        saved = self.store.save(self.input_record, self.result, trace, 1)
+        payload = json.loads(
+            self.store._completion_path(saved.execution_fingerprint).read_text()
+        )
+
+        self.assertEqual(saved.stage_evidence_lineage, tuple(lineages))
+        self.assertEqual(
+            [item["producer_attempt_id"] for item in payload["stage_evidence_lineage"]],
+            ["capture-attempt-first", "capture-attempt-second"],
+        )
+
+    def test_completion_rejects_noncanonical_or_unknown_lineage(self):
+        lineage = {
+            "stage": "website_resolution",
+            "execution_fingerprint": "a" * 64,
+            "producer_attempt_id": "capture-attempt-0001",
+            "snapshot_scope": None,
+            "schema_version": "1.0",
+        }
+        invalid = [
+            [lineage, lineage],
+            [lineage, {**lineage, "stage": "linkedin_discovery"}],
+            [{**lineage, "raw_html": "secret"}],
+        ]
+        for value in invalid:
+            with self.subTest(value=value), self.assertRaises(ValueError):
+                self.store.save(
+                    self.input_record,
+                    self.result,
+                    {"trace": {"stage_evidence_lineage": value}},
+                    1,
+                )
 
     def test_scan_only_returns_expected_compatible_inputs(self):
         second = {**self.input_record, "company_name": "Second Corp"}

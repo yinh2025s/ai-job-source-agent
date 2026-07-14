@@ -5,11 +5,12 @@ from typing import Any, Protocol, runtime_checkable
 
 from .job_board import DiscoveredJobBoard
 from .homepage_navigation import HomepageNavigationEvidence
+from .evidence_scope import StageEvidenceLineage
 from .models import CompanyInput, StageResult
 from .web import Page
 
 
-CONTRACT_SCHEMA_VERSION = "1.2"
+CONTRACT_SCHEMA_VERSION = "1.3"
 
 
 @runtime_checkable
@@ -50,6 +51,7 @@ class PipelineContext:
     open_position_url: str | None = None
     provider: str | None = None
     stage_results: list[StageResult] = field(default_factory=list)
+    stage_evidence_lineage: dict[str, StageEvidenceLineage] = field(default_factory=dict)
     trace: dict[str, Any] = field(default_factory=dict)
     schema_version: str = CONTRACT_SCHEMA_VERSION
 
@@ -64,6 +66,11 @@ class PipelineContext:
         )
 
     def apply(self, execution: StageExecution) -> None:
+        if (
+            execution.evidence_lineage is not None
+            and execution.evidence_lineage.stage != execution.result.stage
+        ):
+            raise ValueError("Stage evidence lineage does not match stage result")
         for field_name, value in execution.updates.items():
             if field_name not in _CONTEXT_UPDATE_FIELDS:
                 raise ValueError(f"Stage attempted to update unsupported context field: {field_name}")
@@ -80,6 +87,8 @@ class PipelineContext:
             setattr(self, field_name, value)
         self.stage_results.append(execution.result)
         self.trace.setdefault("stages", {})[execution.result.stage] = execution.trace
+        if execution.evidence_lineage is not None:
+            self.stage_evidence_lineage[execution.result.stage] = execution.evidence_lineage
 
 
 @dataclass
@@ -89,6 +98,7 @@ class StageExecution:
     result: StageResult
     updates: dict[str, Any] = field(default_factory=dict)
     trace: dict[str, Any] = field(default_factory=dict)
+    evidence_lineage: StageEvidenceLineage | None = None
     schema_version: str = CONTRACT_SCHEMA_VERSION
 
 

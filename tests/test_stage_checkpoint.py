@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from job_source_agent.checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from job_source_agent.contracts import CheckpointStore, StageExecution
+from job_source_agent.evidence_scope import StageEvidenceLineage
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
 from job_source_agent.models import PIPELINE_STAGES, StageResult
@@ -44,6 +45,11 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.temporary_directory.cleanup()
 
     def test_satisfies_checkpoint_contract_and_round_trips_dataclasses(self):
+        lineage = StageEvidenceLineage(
+            stage="career_discovery",
+            execution_fingerprint=self.fingerprint,
+            producer_attempt_id="capture-attempt-0001",
+        )
         execution = StageExecution(
             result=StageResult(
                 stage="career_discovery",
@@ -54,6 +60,7 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
             ),
             updates={"career_page_url": "https://example.test/careers"},
             trace={"candidates": [{"score": 10}]},
+            evidence_lineage=lineage,
         )
 
         self.assertIsInstance(self.store, CheckpointStore)
@@ -64,6 +71,39 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.assertEqual(payload["checkpoint_schema_version"], CHECKPOINT_SCHEMA_VERSION)
         self.assertEqual(payload["adapter_version"], ADAPTER_VERSION)
         self.assertEqual(payload["execution_fingerprint"], self.fingerprint)
+        self.assertEqual(
+            payload["execution"]["evidence_lineage"]["producer_attempt_id"],
+            "capture-attempt-0001",
+        )
+
+    def test_mismatched_or_unknown_lineage_is_a_safe_cache_miss(self):
+        execution = StageExecution(
+            StageResult(stage="career_discovery", status="success"),
+            evidence_lineage=StageEvidenceLineage(
+                stage="career_discovery",
+                execution_fingerprint=self.fingerprint,
+                producer_attempt_id="capture-attempt-0001",
+            ),
+        )
+        invalid_changes = (
+            ("execution_fingerprint", "b" * 64),
+            ("stage", "job_board_discovery"),
+        )
+        for field, value in invalid_changes:
+            with self.subTest(field=field):
+                self.store.save(self.fingerprint, execution)
+                path = next(self.root.rglob("career_discovery.json"))
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["execution"]["evidence_lineage"][field] = value
+                path.write_text(json.dumps(payload), encoding="utf-8")
+                self.assertIsNone(self.store.load(self.fingerprint, "career_discovery"))
+
+        self.store.save(self.fingerprint, execution)
+        path = next(self.root.rglob("career_discovery.json"))
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        payload["execution"]["evidence_lineage"]["raw_html"] = "secret"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        self.assertIsNone(self.store.load(self.fingerprint, "career_discovery"))
 
     def test_missing_and_corrupt_checkpoints_are_safe_cache_misses(self):
         self.assertIsNone(self.store.load(self.fingerprint, "career_discovery"))

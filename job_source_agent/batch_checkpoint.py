@@ -5,17 +5,19 @@ import math
 import os
 import tempfile
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any, Iterable, Iterator
 
 import fcntl
 
 from .checkpoint import ADAPTER_VERSION, execution_fingerprint, input_fingerprint
+from .evidence_scope import StageEvidenceLineage
+from .models import PIPELINE_STAGES
 from .run_configuration import AgentConfig, DeterministicRunConfig
 
 
-BATCH_COMPLETION_SCHEMA_VERSION = "1.1"
+BATCH_COMPLETION_SCHEMA_VERSION = "1.2"
 
 
 @dataclass(frozen=True)
@@ -25,6 +27,7 @@ class BatchCompletion:
     result: dict[str, Any]
     trace: dict[str, Any]
     elapsed: float
+    stage_evidence_lineage: tuple[StageEvidenceLineage, ...] = ()
 
 
 class FilesystemBatchCompletionStore:
@@ -58,6 +61,7 @@ class FilesystemBatchCompletionStore:
             result,
             trace,
             elapsed,
+            _extract_stage_evidence_lineage(trace),
         )
         path = self._completion_path(completion.execution_fingerprint)
         payload = {
@@ -68,6 +72,9 @@ class FilesystemBatchCompletionStore:
             "result": completion.result,
             "trace": completion.trace,
             "elapsed": completion.elapsed,
+            "stage_evidence_lineage": [
+                asdict(lineage) for lineage in completion.stage_evidence_lineage
+            ],
         }
 
         with self._completion_lock(completion.execution_fingerprint):
@@ -185,6 +192,7 @@ def _deserialize_completion(
         "result",
         "trace",
         "elapsed",
+        "stage_evidence_lineage",
     }:
         raise ValueError("Batch completion envelope is incomplete or contains unsupported fields")
     if payload["batch_completion_schema_version"] != BATCH_COMPLETION_SCHEMA_VERSION:
@@ -201,6 +209,7 @@ def _deserialize_completion(
         payload["result"],
         payload["trace"],
         payload["elapsed"],
+        payload["stage_evidence_lineage"],
     )
 
 
@@ -210,6 +219,7 @@ def _validate_completion(
     result: Any,
     trace: Any,
     elapsed: Any,
+    stage_evidence_lineage: Any,
 ) -> BatchCompletion:
     if not isinstance(result, dict) or not isinstance(trace, dict):
         raise ValueError("Batch completion result and trace must be objects")
@@ -223,13 +233,45 @@ def _validate_completion(
         json.dumps(trace, ensure_ascii=True)
     except (TypeError, ValueError) as error:
         raise ValueError("Batch completion result and trace must be JSON serializable") from error
+    lineage = _validate_stage_evidence_lineage(stage_evidence_lineage)
     return BatchCompletion(
         input_fingerprint=input_fingerprint_value,
         execution_fingerprint=execution_fingerprint_value,
         result=result,
         trace=trace,
         elapsed=elapsed_value,
+        stage_evidence_lineage=lineage,
     )
+
+
+def _extract_stage_evidence_lineage(trace: dict[str, Any]) -> Any:
+    if not isinstance(trace, dict):
+        return []
+    trace_payload = trace.get("trace")
+    if isinstance(trace_payload, dict):
+        return trace_payload.get("stage_evidence_lineage", [])
+    return trace.get("stage_evidence_lineage", [])
+
+
+def _validate_stage_evidence_lineage(value: Any) -> tuple[StageEvidenceLineage, ...]:
+    if not isinstance(value, list):
+        raise ValueError("Batch completion stage evidence lineage must be a list")
+    restored: list[StageEvidenceLineage] = []
+    seen: set[str] = set()
+    last_index = -1
+    for payload in value:
+        lineage = (
+            payload
+            if isinstance(payload, StageEvidenceLineage)
+            else StageEvidenceLineage.from_payload(payload)
+        )
+        stage_index = PIPELINE_STAGES.index(lineage.stage)
+        if lineage.stage in seen or stage_index <= last_index:
+            raise ValueError("Batch completion stage evidence lineage is not canonical")
+        seen.add(lineage.stage)
+        last_index = stage_index
+        restored.append(lineage)
+    return tuple(restored)
 
 
 def _fsync_directory(directory: Path) -> None:
