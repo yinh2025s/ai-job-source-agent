@@ -1,15 +1,21 @@
 from __future__ import annotations
 
+import ipaddress
 import re
 from collections.abc import Callable
-from urllib.parse import urlparse
+from html.parser import HTMLParser
+from urllib.parse import unquote, urlparse
 
 from .contracts import FetchClient
 from .web import FetchError, Page, RawLink, domain_of, normalize_url
 
 
 _RAW_WEB_URL = re.compile(r"https?:(?:\\?/){2}[^\"'<>\s]+", flags=re.I)
-_CAREER_LABEL = r"(?:careers?|jobs?|join\s+(?:us|our\s+team)|work\s+with\s+us|opportunities|open\s+positions)"
+_CAREER_LABEL = (
+    r"(?:careers?|jobs?|job\s+opportunities|join\s+(?:us|our\s+team)|"
+    r"work\s+with\s+us|opportunities|open\s+positions)"
+)
+_CAREER_LABEL_RE = re.compile(rf"^{_CAREER_LABEL}$", flags=re.I)
 _ROOT_ROUTE = r"/[A-Za-z0-9][A-Za-z0-9_./-]{0,198}"
 _ROUTE_THEN_LABEL = re.compile(
     rf"(?:href|path|value)\s*:\s*[\"'](?P<route>{_ROOT_ROUTE})[\"']"
@@ -44,7 +50,7 @@ def discover_first_party_career_navigation(
         if not _is_safe_same_site_asset(asset_page.final_url or asset_page.url, page_url):
             continue
         fetched.append(asset_url)
-        bundle = (asset_page.html or "")[:5_000_000]
+        bundle = _strip_javascript_comments((asset_page.html or "")[:5_000_000])
         for pattern in (_ROUTE_THEN_LABEL, _LABEL_THEN_ROUTE):
             for match in pattern.finditer(bundle):
                 route = match.group("route")
@@ -54,19 +60,38 @@ def discover_first_party_career_navigation(
                     candidate_url = normalize_url(route, page_url)
                 except (TypeError, ValueError):
                     continue
-                if not _is_safe_same_origin_navigation(candidate_url, page_url):
+                if not _is_safe_same_site_navigation(candidate_url, page_url):
                     continue
-                if candidate_url in seen:
-                    continue
-                seen.add(candidate_url)
-                candidates.append(
-                    RawLink(
-                        url=candidate_url,
-                        text=" ".join(match.group("label").split()),
-                        source_url=page_url,
-                        origin="first_party_bundle_navigation",
-                    )
+                _append_navigation_candidate(
+                    candidates,
+                    seen,
+                    candidate_url,
+                    match.group("label"),
+                    page_url,
                 )
+        parser = _CareerAnchorParser()
+        try:
+            parser.feed(bundle)
+            parser.close()
+        except (AssertionError, ValueError):
+            pass
+        for href, label in parser.links:
+            try:
+                raw_target = urlparse(href)
+                if raw_target.query or raw_target.fragment:
+                    continue
+                candidate_url = normalize_url(href, page_url)
+            except (TypeError, ValueError):
+                continue
+            if not _is_safe_same_site_navigation(candidate_url, page_url):
+                continue
+            _append_navigation_candidate(
+                candidates,
+                seen,
+                candidate_url,
+                label,
+                page_url,
+            )
 
     return candidates, {
         "method": "first_party_bundle_navigation",
@@ -256,7 +281,27 @@ def _career_route(route: str) -> bool:
     )
 
 
-def _is_safe_same_origin_navigation(candidate_url: str, page_url: str) -> bool:
+def _append_navigation_candidate(
+    candidates: list[RawLink],
+    seen: set[str],
+    candidate_url: str,
+    label: str,
+    page_url: str,
+) -> None:
+    if candidate_url in seen:
+        return
+    seen.add(candidate_url)
+    candidates.append(
+        RawLink(
+            url=candidate_url,
+            text=" ".join(label.split()),
+            source_url=page_url,
+            origin="first_party_bundle_navigation",
+        )
+    )
+
+
+def _is_safe_same_site_navigation(candidate_url: str, page_url: str) -> bool:
     try:
         candidate = urlparse(candidate_url)
         page = urlparse(page_url)
@@ -265,14 +310,117 @@ def _is_safe_same_origin_navigation(candidate_url: str, page_url: str) -> bool:
         return False
     return bool(
         candidate.scheme.casefold() == "https"
-        and candidate.hostname
-        and candidate.hostname.casefold() == (page.hostname or "").casefold()
+        and _is_public_host(candidate.hostname)
+        and _same_site_host(candidate.hostname or "", page.hostname or "")
         and candidate.username is None
         and candidate.password is None
         and candidate_port in {None, 443}
         and not candidate.query
         and not candidate.fragment
+        and not _has_resource_extension(candidate.path)
     )
+
+
+def _has_resource_extension(path: str) -> bool:
+    try:
+        final_segment = unquote(path).rstrip("/").rsplit("/", 1)[-1]
+    except (TypeError, ValueError):
+        return True
+    return bool(re.search(r"\.[A-Za-z0-9]{1,12}$", final_segment))
+
+
+def _is_public_host(host: str | None) -> bool:
+    normalized = (host or "").casefold().rstrip(".")
+    if not normalized or normalized == "localhost" or normalized.endswith(".localhost"):
+        return False
+    try:
+        address = ipaddress.ip_address(normalized)
+    except ValueError:
+        return "." in normalized
+    return address.is_global
+
+
+def _strip_javascript_comments(source: str) -> str:
+    source = re.sub(
+        r"<!--[\s\S]*?-->",
+        lambda match: "\n" * match.group(0).count("\n"),
+        source,
+    )
+    output: list[str] = []
+    index = 0
+    quote = ""
+    while index < len(source):
+        character = source[index]
+        following = source[index + 1] if index + 1 < len(source) else ""
+        if quote:
+            output.append(character)
+            if character == "\\" and following:
+                output.append(following)
+                index += 2
+                continue
+            if character == quote:
+                quote = ""
+            index += 1
+            continue
+        if character in {'"', "'", "`"}:
+            quote = character
+            output.append(character)
+            index += 1
+            continue
+        if character == "/" and following == "/":
+            newline = source.find("\n", index + 2)
+            if newline < 0:
+                break
+            output.append("\n")
+            index = newline + 1
+            continue
+        if character == "/" and following == "*":
+            end = source.find("*/", index + 2)
+            if end < 0:
+                break
+            output.append("\n" * source.count("\n", index, end + 2))
+            index = end + 2
+            continue
+        output.append(character)
+        index += 1
+    return "".join(output)
+
+
+class _CareerAnchorParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.links: list[tuple[str, str]] = []
+        self._href: str | None = None
+        self._text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if self._href is not None:
+            return
+        if tag.casefold() != "a":
+            return
+        attributes = {key.casefold(): value for key, value in attrs}
+        href = attributes.get("href")
+        inactive = (
+            "disabled" in attributes
+            or "inert" in attributes
+            or (attributes.get("aria-disabled") or "").casefold() == "true"
+        )
+        if href and not inactive:
+            self._href = href
+            self._text = []
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._href is None or tag.casefold() != "a":
+            return
+        label = " ".join("".join(self._text).split())
+        if _CAREER_LABEL_RE.fullmatch(label):
+            self.links.append((self._href, label))
+        self._href = None
+        self._text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._href is not None:
+            self._text.append(data)
 
 
 def _provider_asset_priority(url: str, route_token: str) -> tuple[int, str]:
@@ -317,6 +465,7 @@ def _is_safe_same_site_asset(asset_url: str, page_url: str) -> bool:
         return False
     if (
         asset.scheme.casefold() != "https"
+        or not _is_public_host(asset.hostname)
         or asset.username is not None
         or asset.password is not None
         or asset_port not in {None, 443}
