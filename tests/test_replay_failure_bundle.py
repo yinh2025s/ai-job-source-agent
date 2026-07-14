@@ -470,6 +470,91 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(gate["records"][0]["classification"], "fixture_gap")
         self.assertEqual(gate["records"][0]["reason"], "offline_fixture_missing")
 
+    def test_nested_offline_fixture_reason_in_result_or_trace_is_fixture_gap(self):
+        replay_inputs = [{
+            "company_name": "Adobe",
+            "source_trace": {"replay": {
+                "pipeline_status": "failed",
+                "first_non_success_stage": {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "CAREER_PAGE_NOT_FOUND",
+                },
+            }},
+        }]
+        replay_results = [{
+            "company_name": "Adobe",
+            "pipeline_status": "failed",
+            "stages": [{
+                "stage": "career_discovery",
+                "status": "failed",
+                "reason_code": "CAREER_PAGE_NOT_FOUND",
+            }],
+        }]
+        nested_fixture_reason = {
+            "trace": {
+                "attempts": [[{
+                    "reason_code": "OFFLINE_FIXTURE_MISSING",
+                }]],
+            },
+        }
+
+        for location in ("result", "trace"):
+            with self.subTest(location=location):
+                result = {
+                    **replay_results[0],
+                    **(nested_fixture_reason if location == "result" else {}),
+                }
+                traces = [nested_fixture_reason] if location == "trace" else None
+                gate = _build_outcome_gate(
+                    replay_inputs,
+                    [result],
+                    trace_records=traces,
+                )
+
+                self.assertEqual(gate["status"], "incomplete")
+                self.assertEqual(gate["classification_counts"]["fixture_gap"], 1)
+                self.assertEqual(gate["classification_counts"]["reproduced"], 0)
+                self.assertEqual(gate["records"][0]["classification"], "fixture_gap")
+
+    def test_offline_fixture_text_without_typed_reason_is_not_fixture_gap(self):
+        replay_inputs = [{
+            "company_name": "Example Data",
+            "source_trace": {"replay": {
+                "pipeline_status": "failed",
+                "first_non_success_stage": {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "CAREER_PAGE_NOT_FOUND",
+                },
+            }},
+        }]
+        replay_results = [{
+            "company_name": "Example Data",
+            "pipeline_status": "failed",
+            "stages": [{
+                "stage": "career_discovery",
+                "status": "failed",
+                "reason_code": "CAREER_PAGE_NOT_FOUND",
+            }],
+        }]
+        replay_traces = [{
+            "trace": {
+                "error": "OFFLINE_FIXTURE_MISSING: no fixture found",
+                "detail": ["reason_code=OFFLINE_FIXTURE_MISSING"],
+            },
+        }]
+
+        gate = _build_outcome_gate(
+            replay_inputs,
+            replay_results,
+            trace_records=replay_traces,
+        )
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["classification_counts"]["fixture_gap"], 0)
+        self.assertEqual(gate["classification_counts"]["reproduced"], 1)
+
     def test_cli_exits_nonzero_for_fixture_gap(self):
         manifest = {
             "summary": {"total": 1},

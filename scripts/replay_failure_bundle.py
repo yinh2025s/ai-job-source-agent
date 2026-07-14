@@ -143,6 +143,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
     outcome_gate = _build_outcome_gate(
         replay_records,
         result_records,
+        trace_records=trace_records,
         source_records=source_records,
     )
 
@@ -424,6 +425,7 @@ def _build_outcome_gate(
     replay_records: list[dict],
     result_records: list[dict],
     *,
+    trace_records: list[dict] | None = None,
     source_records: list[dict] | None = None,
 ) -> dict:
     comparisons = []
@@ -438,6 +440,11 @@ def _build_outcome_gate(
     for index in range(record_count):
         replay_input = replay_records[index] if index < len(replay_records) else None
         replay_result = result_records[index] if index < len(result_records) else None
+        replay_trace = (
+            trace_records[index]
+            if trace_records is not None and index < len(trace_records)
+            else None
+        )
         source_record = (
             source_records[index]
             if source_records is not None and index < len(source_records)
@@ -476,12 +483,15 @@ def _build_outcome_gate(
             include_identity=True,
         )
         source_identity_prefix = _successful_identity_prefix(source_record)
-        if original == replayed_original and original is not None:
-            classification = "reproduced"
-            reason = "outcome_equal"
-        elif _has_reason_code(replay_result, "OFFLINE_FIXTURE_MISSING"):
+        if _contains_reason_code(
+            (replay_result, replay_trace),
+            "OFFLINE_FIXTURE_MISSING",
+        ):
             classification = "fixture_gap"
             reason = "offline_fixture_missing"
+        elif original == replayed_original and original is not None:
+            classification = "reproduced"
+            reason = "outcome_equal"
         elif (
             expected_transition is not None
             and expected_transition == replayed_expected
@@ -790,6 +800,17 @@ def _has_reason_code(record: dict | None, reason_code: str) -> bool:
         isinstance(stage, dict) and stage.get("reason_code") == reason_code
         for stage in record["stages"]
     )
+
+
+def _contains_reason_code(value: object, reason_code: str) -> bool:
+    if isinstance(value, dict):
+        return value.get("reason_code") == reason_code or any(
+            _contains_reason_code(nested, reason_code)
+            for nested in value.values()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_reason_code(item, reason_code) for item in value)
+    return False
 
 
 def _record_field(
