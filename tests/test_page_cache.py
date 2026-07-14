@@ -5,8 +5,9 @@ from job_source_agent.web import FetchError, Page
 
 
 class RecordingFetcher:
-    def __init__(self, *, fail=False):
+    def __init__(self, *, fail=False, final_url=None):
         self.fail = fail
+        self.final_url = final_url
         self.calls = []
         self.timeout = 4
 
@@ -14,7 +15,11 @@ class RecordingFetcher:
         self.calls.append((url, data, headers))
         if self.fail:
             raise FetchError("temporary failure")
-        return Page(url=url, final_url=url, html=f"response {len(self.calls)}")
+        return Page(
+            url=url,
+            final_url=self.final_url or url,
+            html=f"response {len(self.calls)}",
+        )
 
 
 class PageCacheFetcherTests(unittest.TestCase):
@@ -52,6 +57,31 @@ class PageCacheFetcherTests(unittest.TestCase):
                 fetcher.fetch("https://example.test/jobs")
 
         self.assertEqual(len(base.calls), 2)
+
+    def test_reuses_redirect_response_by_final_url(self):
+        final_url = "https://careers.example.test/us/en"
+        base = RecordingFetcher(final_url=final_url)
+        fetcher = PageCacheFetcher(base)
+
+        first = fetcher.fetch("https://careers.example.test")
+        second = fetcher.fetch(final_url)
+
+        self.assertEqual(len(base.calls), 1)
+        self.assertEqual(first.html, second.html)
+        self.assertEqual(fetcher.cache_hits, 1)
+        self.assertEqual(fetcher.cache_misses, 1)
+
+    def test_redirect_aliases_are_removed_when_entry_is_evicted(self):
+        final_url = "https://careers.example.test/us/en"
+        base = RecordingFetcher(final_url=final_url)
+        fetcher = PageCacheFetcher(base, max_entries=1)
+
+        fetcher.fetch("https://careers.example.test")
+        base.final_url = None
+        fetcher.fetch("https://other.example.test/jobs")
+        fetcher.fetch(final_url)
+
+        self.assertEqual(len(base.calls), 3)
 
     def test_lru_bound_evicts_oldest_page(self):
         base = RecordingFetcher()

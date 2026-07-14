@@ -16,7 +16,10 @@ class PageCacheFetcher:
         self.timeout = getattr(fetcher, "timeout", None)
         self.cache_hits = 0
         self.cache_misses = 0
-        self._pages: OrderedDict[str, Page] = OrderedDict()
+        self._pages: OrderedDict[int, Page] = OrderedDict()
+        self._aliases: dict[str, int] = {}
+        self._entry_aliases: dict[int, set[str]] = {}
+        self._next_entry_id = 0
         self._lock = Lock()
 
     def fetch(
@@ -28,9 +31,10 @@ class PageCacheFetcher:
         cacheable = self.max_entries > 0 and data is None and not headers
         if cacheable:
             with self._lock:
-                cached = self._pages.get(url)
-                if cached is not None:
-                    self._pages.move_to_end(url)
+                entry_id = self._aliases.get(url)
+                cached = self._pages.get(entry_id) if entry_id is not None else None
+                if cached is not None and entry_id is not None:
+                    self._pages.move_to_end(entry_id)
                     self.cache_hits += 1
                     return _copy_page(cached)
                 self.cache_misses += 1
@@ -38,10 +42,25 @@ class PageCacheFetcher:
         page = self.fetcher.fetch(url, data=data, headers=headers)
         if cacheable:
             with self._lock:
-                self._pages[url] = _copy_page(page)
-                self._pages.move_to_end(url)
+                self._next_entry_id += 1
+                entry_id = self._next_entry_id
+                aliases = {
+                    alias
+                    for alias in (url, page.url, page.final_url)
+                    if isinstance(alias, str) and alias
+                }
+                self._pages[entry_id] = _copy_page(page)
+                self._entry_aliases[entry_id] = aliases
+                for alias in aliases:
+                    previous_entry_id = self._aliases.get(alias)
+                    if previous_entry_id is not None:
+                        self._entry_aliases.get(previous_entry_id, set()).discard(alias)
+                    self._aliases[alias] = entry_id
                 while len(self._pages) > self.max_entries:
-                    self._pages.popitem(last=False)
+                    evicted_entry_id, _ = self._pages.popitem(last=False)
+                    for alias in self._entry_aliases.pop(evicted_entry_id, set()):
+                        if self._aliases.get(alias) == evicted_entry_id:
+                            self._aliases.pop(alias, None)
         return page
 
     def remaining_fetch_seconds(self) -> float | None:
