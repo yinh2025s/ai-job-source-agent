@@ -182,6 +182,61 @@ class EvaluationTests(unittest.TestCase):
         self.assertIsNone(check["expected_identity"])
         self.assertIsNone(check["actual_identity"])
 
+    def test_partial_identity_can_freeze_only_the_source_opening_url(self):
+        result = self._identity_result()
+        expectation = {
+            "expected_provider": "ashby",
+            "expected_minimum_stage": "opening_match",
+            "require_exact_opening": True,
+            "allow_job_board_fallback": False,
+            "expected_identity": {
+                "opening": {
+                    "canonical_url": "https://jobs.ashbyhq.com/acme/opening"
+                }
+            },
+        }
+
+        accepted = evaluate_expectations([result], {"Example": expectation})["checks"][0]
+        swapped = evaluate_expectations(
+            [{**result, "open_position_url": "https://jobs.ashbyhq.com/other/opening"}],
+            {"Example": expectation},
+        )["checks"][0]
+
+        self.assertTrue(accepted["passed"])
+        self.assertEqual(
+            accepted["expected_identity"],
+            {
+                "opening": {
+                    "canonical_url": "https://jobs.ashbyhq.com/acme/opening",
+                    "aliases": [],
+                }
+            },
+        )
+        self.assertIn("identity:opening_url_mismatch", swapped["failures"])
+        self.assertNotIn("identity:website_url_mismatch", swapped["failures"])
+        self.assertNotIn("identity:job_board_url_mismatch", swapped["failures"])
+
+    def test_partial_identity_fails_closed_when_empty_or_declared_url_is_missing(self):
+        result = self._identity_result()
+        empty = self._identity_expectation()
+        empty["expected_identity"] = {}
+        opening_only = self._identity_expectation()
+        opening_only["expected_identity"] = {
+            "opening": {
+                "canonical_url": "https://jobs.ashbyhq.com/acme/opening"
+            }
+        }
+
+        empty_check = evaluate_expectations([result], {"Example": empty})["checks"][0]
+        missing_check = evaluate_expectations(
+            [{**result, "open_position_url": None}],
+            {"Example": opening_only},
+        )["checks"][0]
+
+        self.assertIn("identity:expected_identity_empty", empty_check["failures"])
+        self.assertIn("identity:actual_opening_url_invalid", missing_check["failures"])
+        self.assertIn("identity:opening_url_mismatch", missing_check["failures"])
+
     @staticmethod
     def _identity_result():
         return {

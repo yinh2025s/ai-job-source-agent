@@ -703,76 +703,103 @@ def _evaluate_result_identity(
         return None, ["identity:expected_identity_invalid"]
 
     normalized: dict = {}
-    website_urls = _expected_url_set(
-        expected.get("website_url"),
-        expected.get("website_url_aliases", []),
-        "website_url",
-        failures,
+    declared_fields = 0
+    website_declared = any(
+        field in expected for field in ("website_url", "website_url_aliases")
     )
-    career_urls = _expected_url_set(
-        expected.get("career_page_url"),
-        expected.get("career_page_url_aliases", []),
-        "career_page_url",
-        failures,
-    )
-    normalized["website_url"] = website_urls[0] if website_urls else None
-    normalized["website_url_aliases"] = website_urls[1:]
-    normalized["career_page_url"] = career_urls[0] if career_urls else None
-    normalized["career_page_url_aliases"] = career_urls[1:]
+    website_urls: list[str] = []
+    if website_declared:
+        declared_fields += 1
+        website_urls = _expected_url_set(
+            expected.get("website_url"),
+            expected.get("website_url_aliases", []),
+            "website_url",
+            failures,
+        )
+        normalized["website_url"] = website_urls[0] if website_urls else None
+        normalized["website_url_aliases"] = website_urls[1:]
 
+    career_declared = any(
+        field in expected for field in ("career_page_url", "career_page_url_aliases")
+    )
+    career_urls: list[str] = []
+    if career_declared:
+        declared_fields += 1
+        career_urls = _expected_url_set(
+            expected.get("career_page_url"),
+            expected.get("career_page_url_aliases", []),
+            "career_page_url",
+            failures,
+        )
+        normalized["career_page_url"] = career_urls[0] if career_urls else None
+        normalized["career_page_url_aliases"] = career_urls[1:]
+
+    board_declared = "job_board" in expected
     expected_board = expected.get("job_board")
     board_urls: list[str] = []
-    if not isinstance(expected_board, dict):
-        failures.append("identity:expected_job_board_invalid")
-        normalized["job_board"] = None
-    else:
-        board_urls = _expected_url_set(
-            expected_board.get("canonical_url"),
-            expected_board.get("aliases", []),
-            "job_board",
-            failures,
-        )
-        expected_provider = expected_board.get("provider")
-        expected_tenant = expected_board.get("tenant")
-        canonical_tenant = tenant_locator(board_urls[0]) if board_urls else None
-        if not isinstance(expected_provider, str) or not expected_provider:
-            failures.append("identity:expected_job_board_provider_invalid")
-        if expected_tenant != canonical_tenant:
-            failures.append("identity:expected_job_board_tenant_invalid")
-        normalized["job_board"] = {
-            "provider": expected_provider,
-            "tenant": expected_tenant,
-            "canonical_url": board_urls[0] if board_urls else None,
-            "aliases": board_urls[1:],
-        }
+    if board_declared:
+        declared_fields += 1
+        if not isinstance(expected_board, dict):
+            failures.append("identity:expected_job_board_invalid")
+            normalized["job_board"] = None
+        else:
+            board_urls = _expected_url_set(
+                expected_board.get("canonical_url"),
+                expected_board.get("aliases", []),
+                "job_board",
+                failures,
+            )
+            expected_provider = expected_board.get("provider")
+            expected_tenant = expected_board.get("tenant")
+            canonical_tenant = tenant_locator(board_urls[0]) if board_urls else None
+            if not isinstance(expected_provider, str) or not expected_provider:
+                failures.append("identity:expected_job_board_provider_invalid")
+            if expected_tenant != canonical_tenant:
+                failures.append("identity:expected_job_board_tenant_invalid")
+            normalized["job_board"] = {
+                "provider": expected_provider,
+                "tenant": expected_tenant,
+                "canonical_url": board_urls[0] if board_urls else None,
+                "aliases": board_urls[1:],
+            }
 
+    opening_declared = "opening" in expected
     expected_opening = expected.get("opening")
     opening_urls: list[str] = []
-    if not isinstance(expected_opening, dict):
-        failures.append("identity:expected_opening_invalid")
-        normalized["opening"] = None
-    else:
-        opening_urls = _expected_url_set(
-            expected_opening.get("canonical_url"),
-            expected_opening.get("aliases", []),
-            "opening",
-            failures,
-        )
-        normalized["opening"] = {
-            "canonical_url": opening_urls[0] if opening_urls else None,
-            "aliases": opening_urls[1:],
-        }
+    if opening_declared:
+        declared_fields += 1
+        if not isinstance(expected_opening, dict):
+            failures.append("identity:expected_opening_invalid")
+            normalized["opening"] = None
+        else:
+            opening_urls = _expected_url_set(
+                expected_opening.get("canonical_url"),
+                expected_opening.get("aliases", []),
+                "opening",
+                failures,
+            )
+            normalized["opening"] = {
+                "canonical_url": opening_urls[0] if opening_urls else None,
+                "aliases": opening_urls[1:],
+            }
 
-    _check_actual_url(result.get("company_website_url"), "website_url", failures)
-    _check_actual_url(result.get("career_page_url"), "career_page_url", failures)
-    _check_actual_url(result.get("job_list_page_url"), "job_board", failures)
-    _check_actual_url(result.get("open_position_url"), "opening", failures)
+    if declared_fields == 0:
+        failures.append("identity:expected_identity_empty")
 
-    if website_urls and not _matches_website(actual["website_url"], website_urls):
+    if website_declared:
+        _check_actual_url(result.get("company_website_url"), "website_url", failures)
+    if career_declared:
+        _check_actual_url(result.get("career_page_url"), "career_page_url", failures)
+    if board_declared:
+        _check_actual_url(result.get("job_list_page_url"), "job_board", failures)
+    if opening_declared:
+        _check_actual_url(result.get("open_position_url"), "opening", failures)
+
+    if website_declared and website_urls and not _matches_website(actual["website_url"], website_urls):
         failures.append("identity:website_url_mismatch")
-    if career_urls and not _matches_any(actual["career_page_url"], career_urls):
+    if career_declared and career_urls and not _matches_any(actual["career_page_url"], career_urls):
         failures.append("identity:career_page_url_mismatch")
-    if isinstance(expected_board, dict):
+    if board_declared and isinstance(expected_board, dict):
         if actual["job_board"]["provider"] != expected_board.get("provider"):
             failures.append("identity:job_board_provider_mismatch")
         accepted_tenants = {tenant_locator(url) for url in board_urls}
@@ -780,7 +807,9 @@ def _evaluate_result_identity(
             failures.append("identity:job_board_tenant_mismatch")
         if board_urls and not _matches_any(actual["job_board"]["canonical_url"], board_urls):
             failures.append("identity:job_board_url_mismatch")
-    if opening_urls and not _matches_any(actual["opening"]["canonical_url"], opening_urls):
+    if opening_declared and opening_urls and not _matches_any(
+        actual["opening"]["canonical_url"], opening_urls
+    ):
         failures.append("identity:opening_url_mismatch")
     return normalized, failures
 

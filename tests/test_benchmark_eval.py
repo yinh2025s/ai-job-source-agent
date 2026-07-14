@@ -79,6 +79,22 @@ class BenchmarkEvalTests(unittest.TestCase):
         self.assertEqual(summary["success"], 25)
         self.assertEqual(summary["expectation_checks"]["passed"], 25)
         self.assertEqual(summary["expectation_checks"]["failed"], 0)
+        self.assertEqual(len(summary["company_identity_matrix"]), 25)
+        self.assertEqual(
+            {row["company_name"] for row in summary["company_identity_matrix"]},
+            {result["company_name"] for result in results},
+        )
+        for check in summary["expectation_checks"]["checks"]:
+            self.assertIsNotNone(check["expected_identity"])
+            self.assertIsNotNone(check["actual_identity"])
+            self.assertEqual(
+                check["expected_identity"]["job_board"]["provider"],
+                check["actual_identity"]["job_board"]["provider"],
+            )
+            self.assertEqual(
+                check["expected_identity"]["job_board"]["tenant"],
+                check["actual_identity"]["job_board"]["tenant"],
+            )
 
         expected_configuration = application.pipeline.run_configuration.to_payload()
         expected_digest = application.pipeline.run_configuration.digest
