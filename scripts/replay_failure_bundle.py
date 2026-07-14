@@ -31,10 +31,10 @@ from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapsho
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.run_configuration import DeterministicRunConfig
 from job_source_agent.web import normalize_url
-from scripts.export_replay_input import export_replay_records
+from scripts.export_replay_input import _matches_filters, export_replay_records
 
 
-BUNDLE_SCHEMA_VERSION = 4
+BUNDLE_SCHEMA_VERSION = 5
 
 
 class FailureReplayError(ValueError):
@@ -73,6 +73,15 @@ def main(argv: list[str] | None = None) -> None:
     print(f"bundle: {Path(args.output_dir).resolve()}", flush=True)
     outcome_gate = manifest.get("outcome_gate")
     if isinstance(outcome_gate, dict) and outcome_gate.get("status") in {"failed", "incomplete"}:
+        integrity = manifest.get("record_integrity", {})
+        if integrity.get("status") == "failed":
+            reason_codes = ", ".join(
+                reason["code"] for reason in integrity.get("reasons", [])
+            )
+            raise SystemExit(
+                "failure replay gate failed: record integrity failed"
+                + (f" ({reason_codes})" if reason_codes else "")
+            )
         counts = outcome_gate.get("classification_counts", {})
         mismatch_count = counts.get("mismatch", 0)
         fixture_gap_count = counts.get("fixture_gap", 0)
@@ -99,13 +108,41 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         limit=args.limit,
         include_missing_website=args.include_missing_website,
     )
-    replay_records, source_records = _export_replay_records_with_sources(
-        records,
-        export_args,
+    replay_records, source_records, selection_counts = (
+        _export_replay_records_with_sources(records, export_args)
     )
+    preflight_integrity = _build_record_integrity(
+        args,
+        selection_counts,
+        result_count=0,
+        trace_count=0,
+        comparison_count=0,
+    )
+    if _selection_integrity_failed(preflight_integrity):
+        manifest = _empty_bundle_manifest(
+            args,
+            status="failed",
+            reason="record_integrity_failed",
+            record_integrity=preflight_integrity,
+        )
+        _write_json_atomic(output_root / "bundle-manifest.json", manifest)
+        return manifest
     if not replay_records:
+        record_integrity = preflight_integrity
+        if record_integrity["status"] == "failed":
+            manifest = _empty_bundle_manifest(
+                args,
+                status="failed",
+                reason="record_integrity_failed",
+                record_integrity=record_integrity,
+            )
+            _write_json_atomic(output_root / "bundle-manifest.json", manifest)
+            return manifest
         if allow_empty:
-            manifest = _empty_bundle_manifest(args)
+            manifest = _empty_bundle_manifest(
+                args,
+                record_integrity=record_integrity,
+            )
             _write_json_atomic(output_root / "bundle-manifest.json", manifest)
             return manifest
         raise FailureReplayError("No replayable records matched the requested filters")
@@ -147,12 +184,21 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         trace_records=trace_records,
         source_records=source_records,
     )
+    record_integrity = _build_record_integrity(
+        args,
+        selection_counts,
+        result_count=len(result_records),
+        trace_count=len(trace_records),
+        comparison_count=len(outcome_gate["records"]),
+    )
+    if record_integrity["status"] == "failed":
+        outcome_gate["status"] = "failed"
 
     _write_json_atomic(output_root / "replay-results.json", result_records)
     _write_json_atomic(output_root / "replay-trace.json", trace_records)
     _write_json_atomic(output_root / "replay-summary.json", summary)
     manifest = {
-        "status": "success",
+        "status": "failed" if record_integrity["status"] == "failed" else "success",
         "bundle_schema_version": BUNDLE_SCHEMA_VERSION,
         "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
         "result_schema_version": RESULT_SCHEMA_VERSION,
@@ -180,16 +226,23 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         },
         "snapshot_summary": fixture_result.summary,
         "summary": summary,
+        "record_integrity": record_integrity,
         "outcome_gate": outcome_gate,
     }
     _write_json_atomic(output_root / "bundle-manifest.json", manifest)
     return manifest
 
 
-def _empty_bundle_manifest(args: argparse.Namespace) -> dict:
+def _empty_bundle_manifest(
+    args: argparse.Namespace,
+    *,
+    status: str = "skipped",
+    reason: str = "no_replayable_failure_records",
+    record_integrity: dict | None = None,
+) -> dict:
     return {
-        "status": "skipped",
-        "reason": "no_replayable_failure_records",
+        "status": status,
+        "reason": reason,
         "bundle_schema_version": BUNDLE_SCHEMA_VERSION,
         "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
         "result_schema_version": RESULT_SCHEMA_VERSION,
@@ -205,8 +258,9 @@ def _empty_bundle_manifest(args: argparse.Namespace) -> dict:
         },
         "snapshot_summary": None,
         "summary": {"total": 0},
+        "record_integrity": record_integrity,
         "outcome_gate": {
-            "status": "skipped",
+            "status": "failed" if status == "failed" else "skipped",
             "classification_counts": {
                 "reproduced": 0,
                 "expected_transition": 0,
@@ -229,20 +283,123 @@ def _reset_checkpoint_output(path: Path) -> None:
 def _export_replay_records_with_sources(
     records: list[dict],
     export_args: SimpleNamespace,
-) -> tuple[list[dict], list[dict]]:
+) -> tuple[list[dict], list[dict], dict[str, int]]:
     replay_records: list[dict] = []
     source_records: list[dict] = []
     per_record_args = SimpleNamespace(**vars(export_args))
     per_record_args.limit = None
-    for record in records:
+    selected_records = [
+        record for record in records if _matches_filters(record, per_record_args)
+    ]
+    export_attempted_count = 0
+    replayability_dropped_count = 0
+    for record in selected_records:
+        if (
+            export_args.limit
+            and replay_records
+            and len(replay_records) >= export_args.limit
+        ):
+            break
+        export_attempted_count += 1
         exported = export_replay_records([record], per_record_args)
         if not exported:
+            replayability_dropped_count += 1
             continue
         replay_records.append(exported[0])
         source_records.append(record)
-        if export_args.limit and len(replay_records) >= export_args.limit:
-            break
-    return replay_records, source_records
+    counts = {
+        "source_result_count": len(records),
+        "filter_matched_count": len(selected_records),
+        "selected_count": len(source_records),
+        "export_attempted_count": export_attempted_count,
+        "exported_count": len(replay_records),
+        "replayability_dropped_count": replayability_dropped_count,
+        "limit_omitted_count": len(selected_records) - export_attempted_count,
+    }
+    return replay_records, source_records, counts
+
+
+def _build_record_integrity(
+    args: argparse.Namespace,
+    selection_counts: dict[str, int],
+    *,
+    result_count: int,
+    trace_count: int,
+    comparison_count: int,
+) -> dict:
+    source_count = selection_counts["source_result_count"]
+    explicit_filters = any(
+        (
+            args.pipeline_status,
+            args.stage,
+            args.stage_status,
+            args.reason_code,
+            args.provider,
+        )
+    )
+    limit_covers_source = args.limit is None or args.limit >= source_count
+    full_coverage_required = not explicit_filters and limit_covers_source
+    counts = {
+        **selection_counts,
+        "result_count": result_count,
+        "trace_count": trace_count,
+        "comparison_count": comparison_count,
+    }
+    reasons: list[dict[str, object]] = []
+    if full_coverage_required:
+        checks = (
+            (
+                "filter_match_count_mismatch",
+                source_count,
+                counts["filter_matched_count"],
+            ),
+            ("selection_count_mismatch", source_count, counts["selected_count"]),
+            ("export_count_mismatch", source_count, counts["exported_count"]),
+            ("result_count_mismatch", source_count, result_count),
+            ("trace_count_mismatch", source_count, trace_count),
+            ("comparison_count_mismatch", source_count, comparison_count),
+        )
+        reasons.extend(
+            {"code": code, "expected": expected, "actual": actual}
+            for code, expected, actual in checks
+            if expected != actual
+        )
+        if counts["replayability_dropped_count"]:
+            reasons.append(
+                {
+                    "code": "replayability_records_dropped",
+                    "count": counts["replayability_dropped_count"],
+                }
+            )
+    elif explicit_filters:
+        reasons.append({"code": "explicit_failure_filters"})
+    else:
+        reasons.append(
+            {
+                "code": "limit_below_source_count",
+                "limit": args.limit,
+                "source_result_count": source_count,
+            }
+        )
+    return {
+        "status": "failed" if full_coverage_required and reasons else "passed",
+        "full_coverage_required": full_coverage_required,
+        "counts": counts,
+        "reasons": reasons,
+    }
+
+
+def _selection_integrity_failed(record_integrity: dict) -> bool:
+    selection_reason_codes = {
+        "filter_match_count_mismatch",
+        "selection_count_mismatch",
+        "export_count_mismatch",
+        "replayability_records_dropped",
+    }
+    return record_integrity.get("status") == "failed" and any(
+        reason.get("code") in selection_reason_codes
+        for reason in record_integrity.get("reasons", [])
+    )
 
 
 def _seed_authoritative_handoffs(

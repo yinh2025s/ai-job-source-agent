@@ -14,6 +14,8 @@ from job_source_agent.web import Page
 from scripts.replay_failure_bundle import (
     FailureReplayError,
     _build_outcome_gate,
+    _build_record_integrity,
+    _export_replay_records_with_sources,
     _replay_resume_stage,
     main,
     replay_failure_bundle,
@@ -179,7 +181,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                 (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
             )
 
-        self.assertEqual(manifest["bundle_schema_version"], 4)
+        self.assertEqual(manifest["bundle_schema_version"], 5)
         self.assertEqual(manifest["run_configuration"], source_config.to_payload())
         self.assertEqual(manifest["run_configuration_digest"], source_config.digest)
         self.assertEqual(manifest["run_configuration_provenance"], "source_record")
@@ -1220,6 +1222,226 @@ class FailureReplayBundleTests(unittest.TestCase):
                 replay_failure_bundle(
                     self._args(root, reason_code=["NETWORK_TIMEOUT"])
                 )
+
+    def test_full_outcome_integrity_blocks_one_missing_selected_record(self):
+        args = SimpleNamespace(
+            pipeline_status=None,
+            stage=None,
+            stage_status=None,
+            reason_code=None,
+            provider=None,
+            limit=30,
+        )
+        integrity = _build_record_integrity(
+            args,
+            {
+                "source_result_count": 30,
+                "filter_matched_count": 30,
+                "selected_count": 29,
+                "export_attempted_count": 30,
+                "exported_count": 29,
+                "replayability_dropped_count": 1,
+                "limit_omitted_count": 0,
+            },
+            result_count=29,
+            trace_count=29,
+            comparison_count=29,
+        )
+
+        self.assertEqual(integrity["status"], "failed")
+        self.assertTrue(integrity["full_coverage_required"])
+        self.assertEqual(integrity["counts"]["source_result_count"], 30)
+        self.assertEqual(integrity["counts"]["comparison_count"], 29)
+        self.assertEqual(
+            {reason["code"] for reason in integrity["reasons"]},
+            {
+                "selection_count_mismatch",
+                "export_count_mismatch",
+                "result_count_mismatch",
+                "trace_count_mismatch",
+                "comparison_count_mismatch",
+                "replayability_records_dropped",
+            },
+        )
+
+    def test_full_outcome_integrity_passes_with_complete_counts(self):
+        args = SimpleNamespace(
+            pipeline_status=None,
+            stage=None,
+            stage_status=None,
+            reason_code=None,
+            provider=None,
+            limit=None,
+        )
+        integrity = _build_record_integrity(
+            args,
+            {
+                "source_result_count": 30,
+                "filter_matched_count": 30,
+                "selected_count": 30,
+                "export_attempted_count": 30,
+                "exported_count": 30,
+                "replayability_dropped_count": 0,
+                "limit_omitted_count": 0,
+            },
+            result_count=30,
+            trace_count=30,
+            comparison_count=30,
+        )
+
+        self.assertEqual(integrity["status"], "passed")
+        self.assertTrue(integrity["full_coverage_required"])
+        self.assertEqual(integrity["reasons"], [])
+
+    def test_explicit_filter_or_small_limit_does_not_require_full_coverage(self):
+        base_counts = {
+            "source_result_count": 30,
+            "filter_matched_count": 10,
+            "selected_count": 10,
+            "export_attempted_count": 9,
+            "exported_count": 9,
+            "replayability_dropped_count": 0,
+            "limit_omitted_count": 1,
+        }
+        explicit_filter = _build_record_integrity(
+            SimpleNamespace(
+                pipeline_status=["failed"],
+                stage=None,
+                stage_status=None,
+                reason_code=None,
+                provider=None,
+                limit=None,
+            ),
+            base_counts,
+            result_count=9,
+            trace_count=9,
+            comparison_count=9,
+        )
+        small_limit = _build_record_integrity(
+            SimpleNamespace(
+                pipeline_status=None,
+                stage=None,
+                stage_status=None,
+                reason_code=None,
+                provider=None,
+                limit=9,
+            ),
+            base_counts,
+            result_count=9,
+            trace_count=9,
+            comparison_count=9,
+        )
+
+        self.assertEqual(explicit_filter["status"], "passed")
+        self.assertFalse(explicit_filter["full_coverage_required"])
+        self.assertEqual(
+            explicit_filter["reasons"], [{"code": "explicit_failure_filters"}]
+        )
+        self.assertEqual(small_limit["status"], "passed")
+        self.assertFalse(small_limit["full_coverage_required"])
+        self.assertEqual(
+            small_limit["reasons"][0]["code"], "limit_below_source_count"
+        )
+
+    def test_export_counts_replayability_drop_across_thirty_source_results(self):
+        records = [
+            {
+                "company_name": f"Company {index}",
+                "company_website_url": (
+                    "" if index == 29 else f"https://company-{index}.example"
+                ),
+                "pipeline_status": "success",
+            }
+            for index in range(30)
+        ]
+        export_args = SimpleNamespace(
+            input="results.json",
+            pipeline_status=None,
+            stage=None,
+            stage_status=None,
+            reason_code=None,
+            provider=None,
+            limit=30,
+            include_missing_website=False,
+        )
+
+        replay_records, source_records, counts = _export_replay_records_with_sources(
+            records,
+            export_args,
+        )
+
+        self.assertEqual(len(replay_records), 29)
+        self.assertEqual(len(source_records), 29)
+        self.assertEqual(
+            counts,
+            {
+                "source_result_count": 30,
+                "filter_matched_count": 30,
+                "selected_count": 29,
+                "export_attempted_count": 30,
+                "exported_count": 29,
+                "replayability_dropped_count": 1,
+                "limit_omitted_count": 0,
+            },
+        )
+
+    def test_full_outcome_bundle_fails_closed_before_replaying_thirty_as_twenty_nine(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            records = [
+                {
+                    "company_name": f"Company {index}",
+                    "company_website_url": (
+                        "" if index == 29 else f"https://company-{index}.example"
+                    ),
+                    "pipeline_status": "success",
+                }
+                for index in range(30)
+            ]
+            (root / "results.json").write_text(
+                json.dumps(records),
+                encoding="utf-8",
+            )
+            args = self._args(
+                root,
+                pipeline_status=None,
+                stage=None,
+                stage_status=None,
+                reason_code=None,
+                limit=30,
+            )
+
+            manifest = replay_failure_bundle(args)
+            written = json.loads(
+                (root / "bundle" / "bundle-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+            cli_args = [
+                "--results", str(root / "results.json"),
+                "--snapshot-dir", str(root / "snapshots"),
+                "--output-dir", str(root / "cli-bundle"),
+                "--limit", "30",
+            ]
+            with contextlib.redirect_stdout(io.StringIO()):
+                with self.assertRaisesRegex(SystemExit, "record integrity failed"):
+                    main(cli_args)
+
+        self.assertEqual(manifest, written)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["reason"], "record_integrity_failed")
+        self.assertEqual(manifest["outcome_gate"]["status"], "failed")
+        integrity = manifest["record_integrity"]
+        self.assertEqual(integrity["status"], "failed")
+        self.assertEqual(integrity["counts"]["source_result_count"], 30)
+        self.assertEqual(integrity["counts"]["selected_count"], 29)
+        self.assertEqual(integrity["counts"]["exported_count"], 29)
+        self.assertEqual(integrity["counts"]["comparison_count"], 0)
+        self.assertIn(
+            "replayability_records_dropped",
+            {reason["code"] for reason in integrity["reasons"]},
+        )
+        self.assertFalse((root / "bundle" / "replay-input.json").exists())
 
     def test_allow_empty_writes_skipped_manifest_without_requiring_snapshots(self):
         with tempfile.TemporaryDirectory() as directory:
