@@ -6,6 +6,12 @@ from urllib.parse import urlparse
 
 from .models import PIPELINE_STAGES
 from .opening_matcher import detect_provider
+from .result_identity import (
+    canonicalize_identity_url,
+    identity_urls_equivalent,
+    public_result_identity,
+    tenant_locator,
+)
 
 
 FAILURE_CLUSTER_COMPANY_LIMIT = 20
@@ -109,6 +115,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
         "terminal_outcome_counts": dict(terminal_outcome_counts),
         "failure_clusters": failure_clusters,
         "company_stage_matrix": _company_stage_matrix(results),
+        "company_identity_matrix": _company_identity_matrix(results),
     }
     if elapsed_sec is not None:
         summary["elapsed_sec"] = elapsed_sec
@@ -140,7 +147,72 @@ def compare_summaries(current: dict, baseline: dict) -> dict:
             - int(baseline.get("stage_funnel", {}).get(stage, {}).get("success", 0))
             for stage in stage_keys
         },
+        "company_identity_drift": _company_identity_drift(current, baseline),
     }
+
+
+def _company_identity_drift(current: dict, baseline: dict) -> dict:
+    empty = {
+        "added_companies": [],
+        "removed_companies": [],
+        "changed_companies": [],
+        "changed_fields": {},
+    }
+    current_matrix = current.get("company_identity_matrix")
+    baseline_matrix = baseline.get("company_identity_matrix")
+    if not isinstance(current_matrix, list) or not isinstance(baseline_matrix, list):
+        return {"comparison_status": "not_available", **empty}
+
+    current_by_company = _identity_matrix_by_company(current_matrix)
+    baseline_by_company = _identity_matrix_by_company(baseline_matrix)
+    current_names = set(current_by_company)
+    baseline_names = set(baseline_by_company)
+    changed_fields: dict[str, list[str]] = {}
+    changed_companies: set[str] = set()
+    for company_name in current_names & baseline_names:
+        current_fields = _public_identity_fields(current_by_company[company_name])
+        baseline_fields = _public_identity_fields(baseline_by_company[company_name])
+        for field in current_fields:
+            if current_fields[field] == baseline_fields[field]:
+                continue
+            changed_companies.add(company_name)
+            changed_fields.setdefault(field, []).append(company_name)
+
+    return {
+        "comparison_status": "available",
+        "added_companies": _sorted_company_names(current_names - baseline_names),
+        "removed_companies": _sorted_company_names(baseline_names - current_names),
+        "changed_companies": _sorted_company_names(changed_companies),
+        "changed_fields": {
+            field: _sorted_company_names(names)
+            for field, names in sorted(changed_fields.items())
+        },
+    }
+
+
+def _identity_matrix_by_company(matrix: list) -> dict[str, dict]:
+    return {
+        str(row.get("company_name")): row
+        for row in matrix
+        if isinstance(row, dict) and row.get("company_name")
+    }
+
+
+def _public_identity_fields(row: dict) -> dict[str, object]:
+    job_board = row.get("job_board") if isinstance(row.get("job_board"), dict) else {}
+    opening = row.get("opening") if isinstance(row.get("opening"), dict) else {}
+    return {
+        "website_url": row.get("website_url"),
+        "career_page_url": row.get("career_page_url"),
+        "job_board.provider": job_board.get("provider"),
+        "job_board.tenant": job_board.get("tenant"),
+        "job_board.canonical_url": job_board.get("canonical_url"),
+        "opening.canonical_url": opening.get("canonical_url"),
+    }
+
+
+def _sorted_company_names(names) -> list[str]:
+    return sorted(names, key=lambda name: (name.casefold(), name))
 
 
 def _rates(results: list[dict]) -> dict[str, float]:
@@ -468,6 +540,16 @@ def _company_stage_matrix(results: list[dict]) -> list[dict]:
     return matrix
 
 
+def _company_identity_matrix(results: list[dict]) -> list[dict]:
+    return [
+        {
+            "company_name": result.get("company_name") or "Unknown Company",
+            **public_result_identity(result, _result_provider(result)),
+        }
+        for result in results
+    ]
+
+
 def _stage_by_name(result: dict) -> dict[str, dict]:
     stages = result.get("stages")
     if not isinstance(stages, list):
@@ -514,15 +596,38 @@ def _count_deltas(current: dict, baseline: dict) -> dict[str, int]:
 def evaluate_expectations(results: list[dict], expectations: dict[str, dict]) -> dict:
     """Validate a deterministic benchmark against its declared acceptance floor."""
 
-    results_by_company = {str(result.get("company_name")): result for result in results}
+    results_by_company: dict[str, dict] = {}
+    duplicate_company_names: set[str] = set()
+    for result in results:
+        company_name = str(result.get("company_name"))
+        if company_name in results_by_company:
+            duplicate_company_names.add(company_name)
+        else:
+            results_by_company[company_name] = result
     checks = []
     for company_name, expected in expectations.items():
         result = results_by_company.get(company_name)
         failures: list[str] = []
         if result is None:
             failures.append("missing_company_result")
-            checks.append({"company_name": company_name, "passed": False, "failures": failures})
+            checks.append(
+                {
+                    "company_name": company_name,
+                    "expected_provider": expected.get("expected_provider"),
+                    "actual_provider": None,
+                    "expected_minimum_stage": str(
+                        expected.get("expected_minimum_stage") or "job_board_discovery"
+                    ),
+                    "expected_identity": expected.get("expected_identity"),
+                    "actual_identity": None,
+                    "passed": False,
+                    "failures": failures,
+                }
+            )
             continue
+
+        if company_name in duplicate_company_names:
+            failures.append("duplicate_company_result")
 
         actual_provider = _result_provider(result)
         expected_provider = expected.get("expected_provider")
@@ -539,14 +644,42 @@ def evaluate_expectations(results: list[dict], expectations: dict[str, dict]) ->
         if not expected.get("allow_job_board_fallback", True) and not result.get("job_list_page_url"):
             failures.append("job_board:not_found")
 
+        expected_identity = expected.get("expected_identity")
+        actual_identity = None
+        normalized_expected_identity = None
+        if expected_identity is not None:
+            actual_identity = public_result_identity(result, actual_provider)
+            normalized_expected_identity, identity_failures = _evaluate_result_identity(
+                result,
+                actual_identity,
+                expected_identity,
+            )
+            failures.extend(identity_failures)
+
         checks.append(
             {
                 "company_name": company_name,
                 "expected_provider": expected_provider,
                 "actual_provider": actual_provider,
                 "expected_minimum_stage": expected_stage,
+                "expected_identity": normalized_expected_identity,
+                "actual_identity": actual_identity,
                 "passed": not failures,
                 "failures": failures,
+            }
+        )
+
+    for company_name in _sorted_company_names(duplicate_company_names - set(expectations)):
+        checks.append(
+            {
+                "company_name": company_name,
+                "expected_provider": None,
+                "actual_provider": _result_provider(results_by_company[company_name]),
+                "expected_minimum_stage": None,
+                "expected_identity": None,
+                "actual_identity": None,
+                "passed": False,
+                "failures": ["duplicate_company_result"],
             }
         )
 
@@ -556,4 +689,139 @@ def evaluate_expectations(results: list[dict], expectations: dict[str, dict]) ->
         "passed": len(checks) - len(failed),
         "failed": len(failed),
         "checks": checks,
+        "duplicate_company_names": sorted(duplicate_company_names),
     }
+
+
+def _evaluate_result_identity(
+    result: dict,
+    actual: dict,
+    expected: object,
+) -> tuple[dict | None, list[str]]:
+    failures: list[str] = []
+    if not isinstance(expected, dict):
+        return None, ["identity:expected_identity_invalid"]
+
+    normalized: dict = {}
+    website_urls = _expected_url_set(
+        expected.get("website_url"),
+        expected.get("website_url_aliases", []),
+        "website_url",
+        failures,
+    )
+    career_urls = _expected_url_set(
+        expected.get("career_page_url"),
+        expected.get("career_page_url_aliases", []),
+        "career_page_url",
+        failures,
+    )
+    normalized["website_url"] = website_urls[0] if website_urls else None
+    normalized["website_url_aliases"] = website_urls[1:]
+    normalized["career_page_url"] = career_urls[0] if career_urls else None
+    normalized["career_page_url_aliases"] = career_urls[1:]
+
+    expected_board = expected.get("job_board")
+    board_urls: list[str] = []
+    if not isinstance(expected_board, dict):
+        failures.append("identity:expected_job_board_invalid")
+        normalized["job_board"] = None
+    else:
+        board_urls = _expected_url_set(
+            expected_board.get("canonical_url"),
+            expected_board.get("aliases", []),
+            "job_board",
+            failures,
+        )
+        expected_provider = expected_board.get("provider")
+        expected_tenant = expected_board.get("tenant")
+        canonical_tenant = tenant_locator(board_urls[0]) if board_urls else None
+        if not isinstance(expected_provider, str) or not expected_provider:
+            failures.append("identity:expected_job_board_provider_invalid")
+        if expected_tenant != canonical_tenant:
+            failures.append("identity:expected_job_board_tenant_invalid")
+        normalized["job_board"] = {
+            "provider": expected_provider,
+            "tenant": expected_tenant,
+            "canonical_url": board_urls[0] if board_urls else None,
+            "aliases": board_urls[1:],
+        }
+
+    expected_opening = expected.get("opening")
+    opening_urls: list[str] = []
+    if not isinstance(expected_opening, dict):
+        failures.append("identity:expected_opening_invalid")
+        normalized["opening"] = None
+    else:
+        opening_urls = _expected_url_set(
+            expected_opening.get("canonical_url"),
+            expected_opening.get("aliases", []),
+            "opening",
+            failures,
+        )
+        normalized["opening"] = {
+            "canonical_url": opening_urls[0] if opening_urls else None,
+            "aliases": opening_urls[1:],
+        }
+
+    _check_actual_url(result.get("company_website_url"), "website_url", failures)
+    _check_actual_url(result.get("career_page_url"), "career_page_url", failures)
+    _check_actual_url(result.get("job_list_page_url"), "job_board", failures)
+    _check_actual_url(result.get("open_position_url"), "opening", failures)
+
+    if website_urls and not _matches_website(actual["website_url"], website_urls):
+        failures.append("identity:website_url_mismatch")
+    if career_urls and not _matches_any(actual["career_page_url"], career_urls):
+        failures.append("identity:career_page_url_mismatch")
+    if isinstance(expected_board, dict):
+        if actual["job_board"]["provider"] != expected_board.get("provider"):
+            failures.append("identity:job_board_provider_mismatch")
+        accepted_tenants = {tenant_locator(url) for url in board_urls}
+        if actual["job_board"]["tenant"] not in accepted_tenants:
+            failures.append("identity:job_board_tenant_mismatch")
+        if board_urls and not _matches_any(actual["job_board"]["canonical_url"], board_urls):
+            failures.append("identity:job_board_url_mismatch")
+    if opening_urls and not _matches_any(actual["opening"]["canonical_url"], opening_urls):
+        failures.append("identity:opening_url_mismatch")
+    return normalized, failures
+
+
+def _expected_url_set(
+    canonical: object,
+    aliases: object,
+    field: str,
+    failures: list[str],
+) -> list[str]:
+    if not isinstance(aliases, list) or len(aliases) > 100:
+        failures.append(f"identity:expected_{field}_aliases_invalid")
+        aliases = []
+    values = [canonical, *aliases]
+    normalized = []
+    for value in values:
+        try:
+            normalized.append(canonicalize_identity_url(value))
+        except ValueError:
+            failures.append(f"identity:expected_{field}_url_invalid")
+    return normalized
+
+
+def _check_actual_url(value: object, field: str, failures: list[str]) -> None:
+    try:
+        canonicalize_identity_url(value)
+    except ValueError:
+        failures.append(f"identity:actual_{field}_url_invalid")
+
+
+def _matches_any(actual: str | None, expected: list[str], *, allow_www: bool = False) -> bool:
+    return actual is not None and any(
+        identity_urls_equivalent(actual, candidate, allow_www=allow_www)
+        for candidate in expected
+    )
+
+
+def _matches_website(actual: str | None, expected: list[str]) -> bool:
+    if actual is None:
+        return False
+    return actual == expected[0] or any(
+        identity_urls_equivalent(actual, alias, allow_www=True)
+        for alias in expected[1:]
+    )

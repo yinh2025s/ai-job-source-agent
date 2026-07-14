@@ -78,12 +78,160 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(summary["stage_funnel"]["opening_match"]["success"], 25)
         self.assertEqual(summary["pipeline_status_counts"]["success"], 25)
         self.assertEqual(len(summary["company_stage_matrix"]), 25)
+        self.assertEqual(len(summary["company_identity_matrix"]), 25)
 
         expectations = json.loads((ROOT / "samples" / "benchmark_expectations.json").read_text(encoding="utf-8"))
         checks = evaluate_expectations(results, expectations)
 
         self.assertEqual(checks["passed"], 25)
         self.assertEqual(checks["failed"], 0)
+
+    def test_identity_contract_rejects_url_swaps_and_accepts_explicit_aliases(self):
+        result = self._identity_result()
+        expected = self._identity_expectation()
+
+        accepted = dict(result)
+        accepted["company_website_url"] = "https://www.example.com/"
+        accepted["career_page_url"] = "https://example.com/jobs/"
+        expected["expected_identity"]["website_url_aliases"] = [
+            "https://example.com"
+        ]
+        expected["expected_identity"]["career_page_url_aliases"] = [
+            "https://example.com/jobs"
+        ]
+        self.assertEqual(
+            evaluate_expectations([accepted], {"Example": expected})["failed"],
+            0,
+        )
+
+        swaps = {
+            "website": ("company_website_url", "https://other.example"),
+            "tenant": ("job_list_page_url", "https://jobs.ashbyhq.com/other"),
+            "opening": ("open_position_url", "https://jobs.ashbyhq.com/acme/opening-2"),
+        }
+        expected_failures = {
+            "website": "identity:website_url_mismatch",
+            "tenant": "identity:job_board_tenant_mismatch",
+            "opening": "identity:opening_url_mismatch",
+        }
+        for name, (field, value) in swaps.items():
+            with self.subTest(name=name):
+                swapped = dict(result)
+                swapped[field] = value
+                check = evaluate_expectations([swapped], {"Example": expected})["checks"][0]
+                self.assertIn(expected_failures[name], check["failures"])
+
+    def test_identity_contract_preserves_requisition_query(self):
+        result = self._identity_result()
+        result["open_position_url"] = "https://jobs.ashbyhq.com/acme/opening?req=R-2"
+        expected = self._identity_expectation()
+        expected["expected_identity"]["opening"]["canonical_url"] = (
+            "https://jobs.ashbyhq.com/acme/opening?req=R-1"
+        )
+
+        check = evaluate_expectations([result], {"Example": expected})["checks"][0]
+
+        self.assertIn("identity:opening_url_mismatch", check["failures"])
+
+    def test_identity_contract_fails_closed_for_invalid_expected_and_actual_urls(self):
+        expected = self._identity_expectation()
+        expected["expected_identity"]["website_url"] = "https://user:pass@example.com"
+        result = self._identity_result()
+        result["open_position_url"] = "https://jobs.ashbyhq.com:bad/opening"
+
+        check = evaluate_expectations([result], {"Example": expected})["checks"][0]
+
+        self.assertIn("identity:expected_website_url_url_invalid", check["failures"])
+        self.assertIn("identity:actual_opening_url_invalid", check["failures"])
+        self.assertIsNone(check["actual_identity"]["opening"]["canonical_url"])
+
+    def test_duplicate_company_results_fail_instead_of_overwriting(self):
+        result = self._identity_result()
+
+        evaluation = evaluate_expectations(
+            [result, {**result, "open_position_url": "https://jobs.ashbyhq.com/acme/other"}],
+            {"Example": self._identity_expectation()},
+        )
+
+        self.assertEqual(evaluation["failed"], 1)
+        self.assertEqual(evaluation["duplicate_company_names"], ["Example"])
+        self.assertIn("duplicate_company_result", evaluation["checks"][0]["failures"])
+
+        unexpected = evaluate_expectations(
+            [
+                {**result, "company_name": "Unexpected"},
+                {**result, "company_name": "Unexpected"},
+            ],
+            {},
+        )
+        self.assertEqual(unexpected["failed"], 1)
+        self.assertIn("duplicate_company_result", unexpected["checks"][0]["failures"])
+
+    def test_expectations_without_identity_remain_compatible(self):
+        result = self._identity_result()
+        expectation = {
+            "expected_provider": "ashby",
+            "expected_minimum_stage": "opening_match",
+            "require_exact_opening": True,
+            "allow_job_board_fallback": False,
+        }
+
+        check = evaluate_expectations([result], {"Example": expectation})["checks"][0]
+
+        self.assertTrue(check["passed"])
+        self.assertIsNone(check["expected_identity"])
+        self.assertIsNone(check["actual_identity"])
+
+    @staticmethod
+    def _identity_result():
+        return {
+            "company_name": "Example",
+            "company_website_url": "https://example.com",
+            "career_page_url": "https://example.com/careers",
+            "job_list_page_url": "https://jobs.ashbyhq.com/acme",
+            "open_position_url": "https://jobs.ashbyhq.com/acme/opening",
+            "stages": [{"stage": "opening_match", "status": "success", "provider": "ashby"}],
+        }
+
+    @staticmethod
+    def _identity_expectation():
+        return {
+            "expected_provider": "ashby",
+            "expected_minimum_stage": "opening_match",
+            "require_exact_opening": True,
+            "allow_job_board_fallback": False,
+            "expected_identity": {
+                "website_url": "https://example.com",
+                "career_page_url": "https://example.com/careers",
+                "job_board": {
+                    "provider": "ashby",
+                    "tenant": "url:https://jobs.ashbyhq.com/acme",
+                    "canonical_url": "https://jobs.ashbyhq.com/acme",
+                },
+                "opening": {
+                    "canonical_url": "https://jobs.ashbyhq.com/acme/opening"
+                },
+            },
+        }
+
+    @staticmethod
+    def _identity_matrix_row(
+        company_name,
+        *,
+        board="https://jobs.example/acme",
+        opening="https://jobs.example/acme/1",
+    ):
+        return {
+            "company_name": company_name,
+            "website_url": "https://example.com",
+            "career_page_url": "https://example.com/careers",
+            "job_board": {
+                "provider": "example_ats",
+                "tenant": f"url:{board}",
+                "canonical_url": board,
+            },
+            "opening": {"canonical_url": opening},
+        }
 
     def test_summary_comparison_reports_rate_and_stage_deltas(self):
         baseline = {
@@ -102,6 +250,57 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(comparison["rates_delta"]["opening"], 0.3)
         self.assertEqual(comparison["pipeline_status_delta"]["success"], 3)
         self.assertEqual(comparison["stage_success_delta"]["opening_match"], 3)
+        self.assertEqual(
+            comparison["company_identity_drift"]["comparison_status"],
+            "not_available",
+        )
+
+    def test_summary_comparison_reports_company_and_field_identity_drift(self):
+        baseline = {
+            "company_identity_matrix": [
+                self._identity_matrix_row("Zulu", opening="https://jobs.example/zulu/1"),
+                self._identity_matrix_row("Alpha", board="https://jobs.example/alpha"),
+                self._identity_matrix_row("Removed"),
+            ]
+        }
+        current = {
+            "company_identity_matrix": [
+                self._identity_matrix_row("Alpha", board="https://jobs.example/other"),
+                self._identity_matrix_row("Zulu", opening="https://jobs.example/zulu/2"),
+                self._identity_matrix_row("Added"),
+            ]
+        }
+
+        drift = compare_summaries(current, baseline)["company_identity_drift"]
+
+        self.assertEqual(drift["comparison_status"], "available")
+        self.assertEqual(drift["added_companies"], ["Added"])
+        self.assertEqual(drift["removed_companies"], ["Removed"])
+        self.assertEqual(drift["changed_companies"], ["Alpha", "Zulu"])
+        self.assertEqual(
+            drift["changed_fields"],
+            {
+                "job_board.canonical_url": ["Alpha"],
+                "job_board.tenant": ["Alpha"],
+                "opening.canonical_url": ["Zulu"],
+            },
+        )
+
+    def test_summary_comparison_does_not_treat_old_summary_as_identity_removal(self):
+        current = {"company_identity_matrix": [self._identity_matrix_row("Example")]}
+
+        drift = compare_summaries(current, {})["company_identity_drift"]
+
+        self.assertEqual(
+            drift,
+            {
+                "comparison_status": "not_available",
+                "added_companies": [],
+                "removed_companies": [],
+                "changed_companies": [],
+                "changed_fields": {},
+            },
+        )
 
     def test_terminal_outcomes_use_durable_final_stage_semantics(self):
         def stage(name, status, reason_code=None, retryable=False, evidence=None):
