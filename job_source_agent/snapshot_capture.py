@@ -7,7 +7,11 @@ import threading
 from dataclasses import dataclass
 from typing import Any
 
-from .evidence_scope import EvidenceScopeRef, evidence_scope_id
+from .evidence_scope import (
+    EvidenceScopeRef,
+    evidence_records_sha256,
+    evidence_scope_id,
+)
 from .models import PIPELINE_STAGES
 from .request_identity import request_identity_from_dict
 
@@ -168,7 +172,9 @@ class SnapshotCaptureCoordinator:
             if len(active.descriptors) != request_count:
                 raise RuntimeError("Cannot finalize a scope with unterminated requests")
             descriptors = [active.descriptors[index] for index in range(1, request_count + 1)]
-            digest = _records_digest(descriptors)
+            digest = evidence_records_sha256(
+                descriptor.digest_payload() for descriptor in descriptors
+            )
             sequences = [descriptor.sequence for descriptor in descriptors]
             scope = EvidenceScopeRef(
                 snapshot_store_id=self._snapshot_store_id or "",
@@ -183,6 +189,12 @@ class SnapshotCaptureCoordinator:
             )
             self._active = None
             return scope
+
+    def abort_stage(self) -> None:
+        """Discard an unfinished scope after a stage exception."""
+
+        with self._lock:
+            self._active = None
 
     def _require_active(self) -> _ActiveScope:
         if self._active is None:
@@ -224,20 +236,6 @@ def _sha256_json(payload: object) -> str:
         ensure_ascii=True,
     ).encode("ascii")
     return hashlib.sha256(encoded).hexdigest()
-
-
-def _records_digest(descriptors: list[TerminalRecordDescriptor]) -> str:
-    digest = hashlib.sha256()
-    for descriptor in descriptors:
-        encoded = json.dumps(
-            descriptor.digest_payload(),
-            sort_keys=True,
-            separators=(",", ":"),
-            ensure_ascii=True,
-        ).encode("ascii")
-        digest.update(encoded)
-        digest.update(b"\n")
-    return digest.hexdigest()
 
 
 def _validate_scope_identity(value: Any) -> None:

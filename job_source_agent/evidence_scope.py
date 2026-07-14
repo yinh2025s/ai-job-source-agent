@@ -5,6 +5,7 @@ import json
 import re
 import uuid
 from dataclasses import dataclass
+from collections.abc import Iterable
 from typing import Any
 
 from .models import PIPELINE_STAGES
@@ -153,6 +154,35 @@ def evidence_scope_id(
     }
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode("ascii")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def evidence_records_sha256(descriptors: Iterable[dict[str, object]]) -> str:
+    """Digest ordered privacy-safe terminal descriptors for one evidence scope."""
+
+    digest = hashlib.sha256()
+    for descriptor in descriptors:
+        if not isinstance(descriptor, dict) or set(descriptor) != {
+            "kind",
+            "outcome_sha256",
+            "request_ordinal",
+            "request_sha256",
+        }:
+            raise ValueError("Evidence record descriptor fields do not match contract")
+        if descriptor["kind"] not in {"page", "fetch_failure"}:
+            raise ValueError("Evidence record descriptor kind is unknown")
+        if not _positive_int(descriptor["request_ordinal"]):
+            raise ValueError("Evidence record request ordinal must be positive")
+        _validate_sha256(descriptor["request_sha256"], "request_sha256")
+        _validate_sha256(descriptor["outcome_sha256"], "outcome_sha256")
+        encoded = json.dumps(
+            descriptor,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=True,
+        ).encode("ascii")
+        digest.update(encoded)
+        digest.update(b"\n")
+    return digest.hexdigest()
 
 
 def _validate_opaque_id(value: Any, field_name: str) -> None:

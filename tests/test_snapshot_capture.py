@@ -14,7 +14,7 @@ from job_source_agent.web import FetchError, Page
 class _Fetcher:
     def fetch(self, url, data=None, headers=None):
         if "/failure" in url:
-            raise FetchError("private token", reason_code="FETCH_TIMEOUT", retryable=True)
+            raise FetchError("private token", reason_code="NETWORK_TIMEOUT", retryable=True)
         return Page(url=url, html=f"<html>{url.rsplit('/', 1)[-1]}</html>", source="live")
 
 
@@ -165,6 +165,24 @@ class SnapshotCaptureTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "No snapshot stage scope"):
                 fetcher.fetch("https://example.com/jobs")
             self.assertFalse((Path(directory) / "snapshots.jsonl").exists())
+
+    def test_aborted_stage_drops_orphan_scope_and_allows_next_stage(self):
+        with tempfile.TemporaryDirectory() as directory:
+            coordinator, _ = self.build(directory)
+            attempt_id = new_capture_attempt_id()
+            coordinator.begin_stage(attempt_id, self.fingerprint, self.stage)
+            coordinator.begin_request()
+            coordinator.abort_stage()
+
+            coordinator.begin_stage(
+                attempt_id,
+                self.fingerprint,
+                "job_board_discovery",
+            )
+            scope = coordinator.finalize()
+
+        self.assertEqual(scope.stage, "job_board_discovery")
+        self.assertEqual(scope.request_count, 0)
 
 
 if __name__ == "__main__":

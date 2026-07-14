@@ -5,7 +5,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from .job_board import DiscoveredJobBoard
 from .homepage_navigation import HomepageNavigationEvidence
-from .evidence_scope import StageEvidenceLineage
+from .evidence_scope import EvidenceScopeRef, StageEvidenceLineage
 from .models import CompanyInput, StageResult
 from .web import Page
 
@@ -33,6 +33,25 @@ class FetchBudget(Protocol):
     def remaining_fetch_seconds(self) -> float | None:
         """Return non-negative remaining time, or None when the client is unbounded."""
 
+        ...
+
+
+@runtime_checkable
+class EvidenceCaptureCoordinator(Protocol):
+    """Optional stage-boundary capability for scoped terminal fetch capture."""
+
+    def begin_stage(
+        self,
+        attempt_id: str,
+        execution_fingerprint: str,
+        stage: str,
+    ) -> str:
+        ...
+
+    def finalize(self) -> EvidenceScopeRef:
+        ...
+
+    def abort_stage(self) -> None:
         ...
 
 

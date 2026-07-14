@@ -1001,6 +1001,8 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertIsNone(upstream_call[4])
         self.assertEqual(downstream_call[2], "career_discovery")
         self.assertIsNone(downstream_call[4])
+        self.assertEqual(upstream_call[6], downstream_call[6])
+        self.assertRegex(upstream_call[6], r"^[0-9a-f]{32}$")
 
     def test_company_completions_are_persisted_and_rendered_in_input_order(self):
         companies = {

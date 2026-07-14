@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -21,9 +22,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class PipelineApplicationTests(unittest.TestCase):
-    def build_application(self, checkpoint_dir=None, agent_config=None):
+    def build_application(self, checkpoint_dir=None, agent_config=None, snapshot_dir=None):
         return build_application(
-            FetcherConfig(fixtures_dir=ROOT / "samples" / "sites", offline=True),
+            FetcherConfig(
+                fixtures_dir=ROOT / "samples" / "sites",
+                offline=True,
+                snapshot_dir=snapshot_dir,
+            ),
             agent_config,
             checkpoint_dir=checkpoint_dir,
         )
@@ -57,6 +62,41 @@ class PipelineApplicationTests(unittest.TestCase):
             all(item["execution_fingerprint"] == result.execution_fingerprint for item in lineage)
         )
         self.assertTrue(all(item["snapshot_scope"] is None for item in lineage))
+
+    def test_snapshot_enabled_application_freezes_scope_for_every_executed_stage(self):
+        company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]
+        with tempfile.TemporaryDirectory() as directory:
+            snapshot_dir = Path(directory) / "snapshots"
+            result = self.build_application(snapshot_dir=snapshot_dir).pipeline.discover(
+                company,
+                capture_attempt_id="capture-attempt-scoped",
+            )
+            records = []
+            for filename in ("snapshots.jsonl", "fetch-failures.jsonl"):
+                path = snapshot_dir / filename
+                if path.exists():
+                    records.extend(
+                        json.loads(line)
+                        for line in path.read_text(encoding="utf-8").splitlines()
+                    )
+
+        lineage = result.trace["stage_evidence_lineage"]
+        self.assertEqual([item["stage"] for item in lineage], list(PIPELINE_STAGES))
+        scopes = [item["snapshot_scope"] for item in lineage]
+        self.assertTrue(all(scope is not None for scope in scopes))
+        self.assertEqual(sum(scope["request_count"] for scope in scopes), len(records))
+        counts_by_scope = {
+            scope["scope_id"]: sum(
+                record["scope_id"] == scope["scope_id"] for record in records
+            )
+            for scope in scopes
+        }
+        self.assertEqual(
+            counts_by_scope,
+            {scope["scope_id"]: scope["request_count"] for scope in scopes},
+        )
+        self.assertTrue(any(scope["request_count"] == 0 for scope in scopes))
+        self.assertTrue(any(scope["request_count"] > 0 for scope in scopes))
 
     def test_result_records_the_exact_deterministic_run_configuration(self):
         company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]

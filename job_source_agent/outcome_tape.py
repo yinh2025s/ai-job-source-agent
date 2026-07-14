@@ -5,7 +5,7 @@ import json
 from dataclasses import dataclass
 from typing import Any, ClassVar, Iterable, Literal, TypeAlias
 
-from .evidence_scope import EvidenceScopeRef
+from .evidence_scope import EvidenceScopeRef, evidence_records_sha256
 from .reasons import REASON_SPECS, reason_spec
 from .request_identity import (
     RequestIdentity,
@@ -230,15 +230,41 @@ class OutcomeTapeFetcher:
 
 
 def outcome_records_sha256(entries: Iterable[OutcomeTapeEntry]) -> str:
-    encoded = b"\n".join(
-        json.dumps(
-            entry.as_payload(),
-            ensure_ascii=True,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("ascii")
-        for entry in entries
+    return evidence_records_sha256(
+        _entry_digest_descriptor(entry) for entry in entries
     )
+
+
+def _entry_digest_descriptor(entry: OutcomeTapeEntry) -> dict[str, object]:
+    request_sha256 = _sha256_json(entry.request.as_dict())
+    if isinstance(entry, PageOutcomeTapeEntry):
+        outcome_sha256 = hashlib.sha256(entry.html.encode("utf-8")).hexdigest()
+    else:
+        outcome_sha256 = _sha256_json(
+            {
+                "message": entry.message,
+                "reason_code": entry.reason_code,
+                "retryable": entry.retryable,
+                "status": entry.status,
+                "taxonomy_version": entry.taxonomy_version,
+            }
+        )
+    return {
+        "kind": entry.kind,
+        "outcome_sha256": outcome_sha256,
+        "request_ordinal": entry.request_ordinal,
+        "request_sha256": request_sha256,
+    }
+
+
+def _sha256_json(payload: object) -> str:
+    encoded = json.dumps(
+        payload,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
     return hashlib.sha256(encoded).hexdigest()
 
 

@@ -6,7 +6,7 @@ from pathlib import Path
 from .application_runner import ApplicationRunner
 from .career_transport_budget import CareerTransportBudgetFetcher
 from .company_identity import CompanyIdentityResolver
-from .contracts import FetchClient
+from .contracts import EvidenceCaptureCoordinator, FetchClient
 from .identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
 from .page_cache import PageCacheFetcher
 from .pipeline import JobSourceAgent
@@ -17,6 +17,7 @@ from .rendered_fetcher import RenderedFetcher, SmartRenderedFetcher
 from .retrying_fetcher import RetryingFetcher
 from .run_configuration import AgentConfig, DeterministicRunConfig
 from .snapshot import SnapshottingFetcher
+from .snapshot_capture import SnapshotCaptureCoordinator
 from .stage_checkpoint import FilesystemCheckpointStore
 from .stages import (
     CareerDiscoveryStage,
@@ -56,7 +57,11 @@ class ApplicationComponents:
     pipeline: PipelineApplication
 
 
-def build_fetcher(config: FetcherConfig) -> FetchClient:
+def build_fetcher(
+    config: FetcherConfig,
+    *,
+    capture_coordinator: EvidenceCaptureCoordinator | None = None,
+) -> FetchClient:
     common = {
         "fixtures_dir": config.fixtures_dir,
         "offline": config.offline,
@@ -85,6 +90,13 @@ def build_fetcher(config: FetcherConfig) -> FetchClient:
             max_retries=config.retries,
             base_delay=config.retry_base_delay,
             deadline=config.retry_deadline,
+        )
+    if config.snapshot_dir and capture_coordinator is not None:
+        fetcher = PageCacheFetcher(fetcher)
+        return SnapshottingFetcher(
+            fetcher,
+            config.snapshot_dir,
+            coordinator=capture_coordinator,
         )
     if config.snapshot_dir:
         fetcher = SnapshottingFetcher(fetcher, config.snapshot_dir)
@@ -128,7 +140,13 @@ def build_application(
     run_configuration: DeterministicRunConfig | None = None,
 ) -> ApplicationComponents:
     registry = provider_registry or build_default_provider_registry()
-    fetcher = build_fetcher(fetcher_config)
+    capture_coordinator = (
+        SnapshotCaptureCoordinator() if fetcher_config.snapshot_dir else None
+    )
+    fetcher = build_fetcher(
+        fetcher_config,
+        capture_coordinator=capture_coordinator,
+    )
     settings = agent_config or (
         run_configuration.to_agent_config()
         if run_configuration is not None
@@ -177,6 +195,7 @@ def build_application(
         checkpoint_store=(
             FilesystemCheckpointStore(checkpoint_dir) if checkpoint_dir is not None else None
         ),
+        capture_coordinator=capture_coordinator,
     )
     return ApplicationComponents(
         fetcher=fetcher,

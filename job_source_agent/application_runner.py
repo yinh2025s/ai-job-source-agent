@@ -2,7 +2,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from .contracts import CheckpointStore, PipelineContext, Stage, StageExecution
+from .contracts import (
+    CheckpointStore,
+    EvidenceCaptureCoordinator,
+    PipelineContext,
+    Stage,
+    StageExecution,
+)
 from .evidence_scope import StageEvidenceLineage
 from .models import PIPELINE_STAGES, StageResult
 
@@ -19,6 +25,7 @@ class ApplicationRunner:
         self,
         stages: Iterable[Stage],
         checkpoint_store: CheckpointStore | None = None,
+        capture_coordinator: EvidenceCaptureCoordinator | None = None,
     ) -> None:
         by_name: dict[str, Stage] = {}
         for stage in stages:
@@ -32,6 +39,7 @@ class ApplicationRunner:
         self.stages = tuple(by_name[name] for name in PIPELINE_STAGES if name in by_name)
         self._stages_by_name = by_name
         self._checkpoint_store = checkpoint_store
+        self._capture_coordinator = capture_coordinator
 
     @property
     def checkpointing_enabled(self) -> bool:
@@ -134,13 +142,32 @@ class ApplicationRunner:
                 )
                 continue
 
-            execution = stage.run(context)
-            _validate_execution(execution, stage_name, source="Stage")
+            snapshot_scope = None
+            if self._capture_coordinator is not None:
+                if execution_fingerprint is None or producer_attempt_id is None:
+                    raise ValueError(
+                        "Scoped capture requires execution_fingerprint and producer_attempt_id"
+                    )
+                self._capture_coordinator.begin_stage(
+                    producer_attempt_id,
+                    execution_fingerprint,
+                    stage_name,
+                )
+            try:
+                execution = stage.run(context)
+                _validate_execution(execution, stage_name, source="Stage")
+                if self._capture_coordinator is not None:
+                    snapshot_scope = self._capture_coordinator.finalize()
+            except BaseException:
+                if self._capture_coordinator is not None:
+                    self._capture_coordinator.abort_stage()
+                raise
             if execution_fingerprint is not None and producer_attempt_id is not None:
                 execution.evidence_lineage = StageEvidenceLineage(
                     stage=stage_name,
                     execution_fingerprint=execution_fingerprint,
                     producer_attempt_id=producer_attempt_id,
+                    snapshot_scope=snapshot_scope,
                 )
             context.apply(execution)
             if self._checkpoint_store is not None:

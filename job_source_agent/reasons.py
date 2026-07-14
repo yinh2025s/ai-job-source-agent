@@ -19,6 +19,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "CONNECTION_FAILED": ReasonSpec(True, "network"),
     "FETCH_FAILED": ReasonSpec(True, "network"),
     "OFFLINE_FIXTURE_MISSING": ReasonSpec(False, "replay"),
+    "OFFLINE_TAPE_DIVERGENCE": ReasonSpec(False, "replay"),
     "HTTP_NOT_FOUND": ReasonSpec(False, "external"),
     "HTTP_FORBIDDEN": ReasonSpec(False, "external"),
     "RATE_LIMITED": ReasonSpec(True, "external"),
