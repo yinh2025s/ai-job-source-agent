@@ -207,6 +207,50 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(fetcher.requested, [career])
         self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
 
+    def test_visible_canonical_provider_board_accepts_presentation_query(self):
+        career = "https://www.example.com/careers"
+        visible_board = "https://jobs.ashbyhq.com/example?display=embedded"
+        canonical_board = "https://jobs.ashbyhq.com/example"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<a href="{visible_board}">View roles</a>',
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, canonical_board)
+        self.assertEqual(fetcher.requested, [career])
+        self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
+
+    def test_visible_provider_detail_with_query_is_not_promoted_as_board(self):
+        career = "https://www.example.com/careers"
+        generic_listing = "https://www.example.com/jobs"
+        detail = (
+            "https://jobs.ashbyhq.com/example/"
+            "06d5624e-d35c-41b1-a091-edfc79c10dba?display=embedded"
+        )
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<a href="{generic_listing}">Search jobs</a>'
+                    f'<a href="{detail}">Software Engineer</a>'
+                ),
+            ),
+            generic_listing: Page(
+                url=generic_listing,
+                html="<main>Search open roles</main>",
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, generic_listing)
+        self.assertEqual(fetcher.requested, [career, generic_listing])
+        self.assertNotEqual(trace.get("provider"), "ashby")
+
     def test_same_site_redirect_uses_final_url_without_deferred_request_key(self):
         requested = "https://www.example.com/careers"
         redirected = "https://www.example.com/join-us"

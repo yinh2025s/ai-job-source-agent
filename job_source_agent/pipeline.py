@@ -1562,16 +1562,35 @@ class JobSourceAgent:
                 if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
                 and adapter.supports_listing
                 and (board := adapter.identify_board(candidate.url)) is not None
-                and normalize_url(candidate.url)
-                == normalize_url(
+                and self._visible_url_matches_canonical_board(
+                    candidate.url,
                     self._canonical_provider_board_url(
                         adapter.name,
                         board.url,
                         board.identifier,
-                    )
+                    ),
                 )
             ),
             None,
+        )
+
+    @staticmethod
+    def _visible_url_matches_canonical_board(
+        candidate_url: str,
+        canonical_url: str,
+    ) -> bool:
+        normalized_candidate = normalize_url(candidate_url)
+        normalized_canonical = normalize_url(canonical_url)
+        if normalized_candidate == normalized_canonical:
+            return True
+
+        candidate = urlparse(normalized_candidate)
+        canonical = urlparse(normalized_canonical)
+        return bool(
+            candidate.query
+            and not canonical.query
+            and (candidate.scheme, candidate.netloc, candidate.path)
+            == (canonical.scheme, canonical.netloc, canonical.path)
         )
 
     def _career_category_priority(
