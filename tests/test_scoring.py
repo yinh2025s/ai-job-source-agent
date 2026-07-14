@@ -195,6 +195,47 @@ class ScoringTests(unittest.TestCase):
 
         self.assertFalse(is_likely_job_listing_page(candidate))
 
+    def test_first_party_all_jobs_numeric_child_is_job_detail(self):
+        source_url = "https://careers.example.com/en/all-jobs/"
+        candidate = score_job_link(
+            RawLink(
+                url=(
+                    source_url
+                    + "8036603/product-manager/?gh_jid=8036603"
+                ),
+                text="Product Manager",
+                source_url=source_url,
+            ),
+            career_page_url=source_url,
+        )
+
+        self.assertTrue(is_likely_job_detail(candidate))
+        self.assertIn("first-party numeric job detail route", candidate.reasons)
+
+    def test_all_jobs_numeric_detail_contract_rejects_ambiguous_routes(self):
+        source_url = "https://careers.example.com/en/all-jobs/"
+        invalid_urls = (
+            "https://careers.unrelated.example/en/all-jobs/8036603/product-manager/",
+            source_url + "product-manager/8036603/",
+            source_url + "803/product-manager/",
+            source_url + "8036603/product-manager/extra/",
+            source_url + "8036603/product-manager/?gh_jid=9999999",
+            source_url + "8036603/product-manager/?gh_jid=8036603&utm_source=test",
+            "https://careers.example.com/en/teams/8036603/product-manager/",
+        )
+
+        for url in invalid_urls:
+            with self.subTest(url=url):
+                candidate = score_job_link(
+                    RawLink(
+                        url=url,
+                        text="Product Manager",
+                        source_url=source_url,
+                    ),
+                    career_page_url=source_url,
+                )
+                self.assertFalse(is_likely_job_detail(candidate))
+
     def test_nested_job_results_route_is_a_listing_not_a_detail(self):
         candidate = score_job_link(
             RawLink(

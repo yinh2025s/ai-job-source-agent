@@ -24,6 +24,27 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OpeningMatcherTests(unittest.TestCase):
+    def test_first_party_all_jobs_numeric_route_matches_exact_opening(self):
+        job_list_url = "https://careers.example.com/en/all-jobs/"
+        job_url = job_list_url + "8036603/product-manager/?gh_jid=8036603"
+
+        class StaticFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=job_list_url,
+                    html=f'<a href="{job_url}">Product Manager</a>',
+                    source="fixture",
+                )
+
+        match, _trace = JobOpeningMatcher(StaticFetcher()).match(
+            job_list_url,
+            "Product Manager",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, job_url)
+
     def test_generic_same_page_job_query_matches_exact_opening(self):
         job_list_url = "https://zello.com/careers/"
         job_url = (

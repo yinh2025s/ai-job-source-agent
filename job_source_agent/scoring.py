@@ -228,6 +228,10 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
         link.url,
         link.source_url,
     )
+    first_party_numeric_detail = _looks_like_first_party_numeric_detail_route(
+        link.url,
+        link.source_url,
+    )
 
     if is_resource_url(link.url):
         return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"], link.origin)
@@ -251,7 +255,10 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
             score += 25
             reasons.append("ATS board/listing candidate")
 
-    if same_page_detail_query:
+    if first_party_numeric_detail:
+        score += 90
+        reasons.append("first-party numeric job detail route")
+    elif same_page_detail_query:
         score += 90
         reasons.append("job-detail query pattern")
     elif _looks_like_generic_listing_leaf(leaf):
@@ -299,6 +306,8 @@ def is_likely_job_detail(candidate: LinkCandidate) -> bool:
     if is_non_official_job_domain(candidate.url):
         return False
     if _looks_like_same_page_detail_query(candidate.url, candidate.source_url):
+        return True
+    if _looks_like_first_party_numeric_detail_route(candidate.url, candidate.source_url):
         return True
     if normalize_for_compare(candidate.url) == normalize_for_compare(candidate.source_url):
         return False
@@ -379,6 +388,37 @@ def _looks_like_same_page_detail_query(url: str, source_url: str) -> bool:
         and any(character.isalpha() for character in value)
         and any(character.isdigit() for character in value)
     )
+
+
+def _looks_like_first_party_numeric_detail_route(url: str, source_url: str) -> bool:
+    parsed = urlparse(url)
+    source = urlparse(source_url)
+    if (
+        parsed.scheme.casefold() != source.scheme.casefold()
+        or parsed.netloc.casefold() != source.netloc.casefold()
+    ):
+        return False
+    target_parts = [part.casefold() for part in parsed.path.split("/") if part]
+    source_parts = [part.casefold() for part in source.path.split("/") if part]
+    if (
+        not source_parts
+        or source_parts[-1] not in {"all-jobs", "all-roles"}
+        or target_parts[: len(source_parts)] != source_parts
+        or len(target_parts) != len(source_parts) + 2
+    ):
+        return False
+    job_id, slug = target_parts[-2:]
+    if not (job_id.isdigit() and 4 <= len(job_id) <= 18):
+        return False
+    if not re.fullmatch(r"[a-z0-9]+(?:-[a-z0-9]+)+", slug):
+        return False
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    if not query:
+        return True
+    if len(query) != 1:
+        return False
+    key, value = query[0]
+    return key.casefold() in {"gh_jid", "jid", "jobid", "job_id"} and value == job_id
 
 
 def _looks_like_generic_listing_leaf(leaf: str) -> bool:
