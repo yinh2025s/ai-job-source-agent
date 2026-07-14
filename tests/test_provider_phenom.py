@@ -13,13 +13,39 @@ def phenom_html(
     jobs=None,
     total_hits=None,
     base_url="https://careers.example.com/global/en/",
+    cdn_url="https://cdn.phenompeople.com/CareerConnectResources",
+    page_name="search-results",
+    url_map=None,
+    top_level_url_map=None,
+    include_eager=True,
     guarded=False,
 ):
     jobs = jobs or []
     total_hits = len(jobs) if total_hits is None else total_hits
+    config = {
+        "cdnUrl": cdn_url,
+        "pageName": page_name,
+        "refNum": ref_num,
+        "baseUrl": base_url,
+    }
+    ddo = {}
+    if include_eager:
+        ddo["eagerLoadRefineSearch"] = {
+            "hits": len(jobs),
+            "totalHits": total_hits,
+            "data": {"jobs": jobs},
+        }
+    if url_map is not None:
+        ddo["siteConfig"] = {"data": {"urlMap": url_map}}
+    url_map_assignment = (
+        f"phApp.urlMap = {json.dumps(top_level_url_map)};"
+        if top_level_url_map is not None
+        else ""
+    )
     return f'''<html><body><script>
-    var phApp = {"phApp || " if guarded else ""}{{"cdnUrl":"https://cdn.phenompeople.com/CareerConnectResources","pageName":"search-results","refNum":"{ref_num}","baseUrl":"{base_url}"}};
-    phApp.ddo = {{"eagerLoadRefineSearch":{{"hits":{len(jobs)},"totalHits":{total_hits},"data":{{"jobs":{json.dumps(jobs)}}}}}}};
+    var phApp = {"phApp || " if guarded else ""}{json.dumps(config)};
+    phApp.ddo = {json.dumps(ddo)};
+    {url_map_assignment}
     </script></body></html>'''
 
 
@@ -75,6 +101,97 @@ class PhenomAdapterTests(unittest.TestCase):
                 Page(url=self.board_url, html=phenom_html(ref_num="bad tenant"))
             )
         )
+
+    def test_hands_off_strong_customer_owned_landing_pages_to_declared_search_board(self):
+        home_url = "https://careers.example.com/global/en/"
+        route = {"home": "home", "search-results": "search-results"}
+
+        for page_url, page_name, route_kwargs in (
+            (home_url, "home", {"url_map": route}),
+            (
+                home_url + "c/engineering",
+                "category",
+                {"top_level_url_map": route},
+            ),
+        ):
+            with self.subTest(page_name=page_name):
+                board = self.adapter.identify_board_from_page(
+                    Page(
+                        url=page_url,
+                        html=phenom_html(
+                            page_name=page_name,
+                            include_eager=False,
+                            **route_kwargs,
+                        ),
+                    )
+                )
+
+                self.assertEqual(
+                    board,
+                    JobBoard(self.board_url, "phenom", "ACMEGLOBAL", replay_safe=True),
+                )
+
+    def test_landing_handoff_rejects_weak_or_cross_tenant_evidence(self):
+        home_url = "https://careers.example.com/global/en/"
+        route = {"search-results": "search-results"}
+        cases = {
+            "weak strings only": (
+                home_url,
+                '<script>var vendor = "phenompeople.com search-results";</script>',
+            ),
+            "spoofed cdn host": (
+                home_url,
+                phenom_html(
+                    page_name="home",
+                    url_map=route,
+                    cdn_url="https://cdn.phenompeople.com.evil.example/resources",
+                ),
+            ),
+            "cross origin base": (
+                home_url,
+                phenom_html(
+                    page_name="home",
+                    url_map=route,
+                    base_url="https://other.example/global/en/",
+                ),
+            ),
+            "outside tenant path": (
+                "https://careers.example.com/other/en/",
+                phenom_html(page_name="home", url_map=route),
+            ),
+            "encoded path traversal": (
+                home_url + "%2e%2e/other/",
+                phenom_html(page_name="home", url_map=route),
+            ),
+            "missing route declaration": (
+                home_url,
+                phenom_html(page_name="home"),
+            ),
+            "absolute route": (
+                home_url,
+                phenom_html(
+                    page_name="home",
+                    url_map={"search-results": "https://evil.example/search-results"},
+                ),
+            ),
+            "traversal route": (
+                home_url,
+                phenom_html(
+                    page_name="home",
+                    url_map={"search-results": "%2e%2e/search-results"},
+                ),
+            ),
+            "non landing page": (
+                home_url,
+                phenom_html(page_name="job", url_map=route),
+            ),
+        }
+
+        for label, (page_url, html) in cases.items():
+            with self.subTest(label=label):
+                self.assertIsNone(
+                    self.adapter.identify_board_from_page(Page(url=page_url, html=html))
+                )
 
     def test_lists_keyword_jobs_and_builds_same_origin_detail_urls(self):
         search_url = self.board_url + "?keywords=AI+Engineer"

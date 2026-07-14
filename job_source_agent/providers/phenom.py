@@ -3,7 +3,15 @@ from __future__ import annotations
 from html import unescape
 import json
 import re
-from urllib.parse import parse_qsl, quote, urlencode, urlparse, urlunparse
+from urllib.parse import (
+    parse_qsl,
+    quote,
+    unquote as url_unquote,
+    urlencode,
+    urljoin,
+    urlparse,
+    urlunparse,
+)
 
 from ..web import FetchError, Page
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
@@ -13,6 +21,7 @@ _MAX_PAGES = 5
 _MAX_SCRIPT_CHARS = 2_000_000
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{3,100}$")
 _JOB_ID = re.compile(r"^[A-Za-z0-9._-]{1,160}$")
+_ROUTE_SEGMENT = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 class PhenomAdapter:
@@ -28,14 +37,18 @@ class PhenomAdapter:
 
     def identify_board_from_page(self, page: Page) -> JobBoard | None:
         page_url = page.final_url or page.url
-        if not _is_safe_search_url(page_url):
-            return None
         config, ddo = _phenom_state(page.html)
         identifier = str(config.get("refNum") or "").strip()
-        if not _is_phenom_state(config, ddo) or not _IDENTIFIER.fullmatch(identifier):
+        if not _has_phenom_identity(config) or not _IDENTIFIER.fullmatch(identifier):
             return None
+        if _is_safe_search_url(page_url) and _is_phenom_search_state(config, ddo):
+            board_url = _without_query(page_url)
+        else:
+            board_url = _landing_search_url(page_url, config, ddo)
+            if board_url is None:
+                return None
         return JobBoard(
-            url=_without_query(page_url),
+            url=board_url,
             provider=self.name,
             identifier=identifier,
             replay_safe=True,
@@ -98,7 +111,7 @@ class PhenomAdapter:
                 )
 
             config, ddo = _phenom_state(page.html)
-            if not _is_phenom_state(config, ddo) or config.get("refNum") != board.identifier:
+            if not _is_phenom_search_state(config, ddo) or config.get("refNum") != board.identifier:
                 return AdapterResult(
                     provider=self.name,
                     board=board,
@@ -170,7 +183,8 @@ def _phenom_state(html: str) -> tuple[dict, dict]:
         if len(text) > _MAX_SCRIPT_CHARS:
             continue
         for match in re.finditer(
-            r"(?P<name>(?:var\s+)?phApp(?:\.ddo)?)\s*=\s*(?:phApp\s*\|\|\s*)?(?=[{])",
+            r"(?P<name>(?:var\s+)?phApp(?:\.(?:ddo|urlMap))?)\s*=\s*"
+            r"(?:phApp\s*\|\|\s*)?(?=[{])",
             text,
         ):
             try:
@@ -181,19 +195,85 @@ def _phenom_state(html: str) -> tuple[dict, dict]:
                 continue
             if match.group("name").endswith(".ddo"):
                 ddo = value
+            elif match.group("name").endswith(".urlMap"):
+                config["urlMap"] = value
             else:
                 config.update(value)
     return config, ddo
 
 
-def _is_phenom_state(config: dict, ddo: dict) -> bool:
-    cdn = str(config.get("cdnUrl") or "").casefold()
+def _has_phenom_identity(config: dict) -> bool:
+    cdn = str(config.get("cdnUrl") or "").strip()
+    try:
+        parsed = urlparse(cdn)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return False
+    hostname = (parsed.hostname or "").casefold()
+    return (
+        parsed.scheme == "https"
+        and parsed.username is None
+        and parsed.password is None
+        and port in {None, 443}
+        and (hostname == "phenompeople.com" or hostname.endswith(".phenompeople.com"))
+    )
+
+
+def _is_phenom_search_state(config: dict, ddo: dict) -> bool:
     page_name = str(config.get("pageName") or "").casefold()
     return (
-        "phenompeople.com" in cdn
+        _has_phenom_identity(config)
         and page_name == "search-results"
         and isinstance(ddo.get("eagerLoadRefineSearch"), dict)
     )
+
+
+def _landing_search_url(page_url: str, config: dict, ddo: dict) -> str | None:
+    if str(config.get("pageName") or "").casefold() not in {"home", "category"}:
+        return None
+    base_url = str(config.get("baseUrl") or "").strip()
+    route = _declared_search_route(config, ddo)
+    if not route or not _is_safe_base_url(base_url):
+        return None
+    if not _same_origin(page_url, base_url) or not _path_is_within(page_url, base_url):
+        return None
+    search_url = urljoin(base_url.rstrip("/") + "/", route)
+    if not _is_safe_search_url(search_url) or not _path_is_within(search_url, base_url):
+        return None
+    return _without_query(search_url)
+
+
+def _declared_search_route(config: dict, ddo: dict) -> str | None:
+    site_config = ddo.get("siteConfig")
+    site_data = site_config.get("data") if isinstance(site_config, dict) else None
+    maps = (
+        config.get("urlMap"),
+        ddo.get("urlMap"),
+        site_config.get("urlMap") if isinstance(site_config, dict) else None,
+        site_data.get("urlMap") if isinstance(site_data, dict) else None,
+    )
+    for url_map in maps:
+        route = url_map.get("search-results") if isinstance(url_map, dict) else None
+        if not isinstance(route, str):
+            continue
+        route = route.strip()
+        try:
+            parsed = urlparse(route)
+        except (TypeError, ValueError):
+            continue
+        parts = [part for part in parsed.path.split("/") if part]
+        if (
+            route
+            and not route.startswith("/")
+            and not parsed.scheme
+            and not parsed.netloc
+            and not parsed.query
+            and not parsed.fragment
+            and parts
+            and all(_ROUTE_SEGMENT.fullmatch(part) for part in parts)
+        ):
+            return route
+    return None
 
 
 def _jobs_from_eager(eager) -> list[dict]:
@@ -258,6 +338,44 @@ def _is_valid_board(board: JobBoard) -> bool:
         and bool(_IDENTIFIER.fullmatch(board.identifier or ""))
         and _is_safe_search_url(board.url)
     )
+
+
+def _is_safe_base_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return False
+    return (
+        parsed.scheme == "https"
+        and parsed.username is None
+        and parsed.password is None
+        and port in {None, 443}
+        and bool(parsed.hostname)
+        and not parsed.query
+        and not parsed.fragment
+        and _safe_path_parts(parsed.path) is not None
+    )
+
+
+def _path_is_within(url: str, base_url: str) -> bool:
+    try:
+        parts = _safe_path_parts(urlparse(url).path)
+        base_parts = _safe_path_parts(urlparse(base_url).path)
+    except (TypeError, ValueError):
+        return False
+    return (
+        parts is not None
+        and base_parts is not None
+        and parts[: len(base_parts)] == base_parts
+    )
+
+
+def _safe_path_parts(path: str) -> tuple[str, ...] | None:
+    parts = tuple(url_unquote(part) for part in path.split("/") if part)
+    if any(part in {".", ".."} or "/" in part or "\\" in part for part in parts):
+        return None
+    return parts
 
 
 def _is_safe_search_url(url: str) -> bool:
