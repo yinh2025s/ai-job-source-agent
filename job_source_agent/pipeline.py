@@ -700,10 +700,30 @@ class JobSourceAgent:
                 trace=trace,
             )
         offline_fixture_failure = _offline_fixture_failure(trace)
+        retryable_candidate_failure = _retryable_evidence_candidate_failure(trace)
         if not job_list_url and offline_fixture_failure is not None:
             raise DiscoveryError(
                 "OFFLINE_FIXTURE_MISSING",
                 "Offline replay evidence is incomplete for job-board discovery.",
+                step_name="find_job_board",
+                trace=trace,
+            )
+        if not job_list_url and _trace_has_fetch_budget_exhaustion(trace):
+            raise DiscoveryError(
+                "FETCH_BUDGET_EXHAUSTED",
+                "Job-board candidates remain unverified because the fetch budget was exhausted.",
+                step_name="find_job_board",
+                trace=trace,
+            )
+        if not job_list_url and retryable_candidate_failure is not None:
+            reason_code = (
+                "COMPANY_TIME_BUDGET_EXHAUSTED"
+                if _trace_has_caller_deadline_exhaustion(trace)
+                else retryable_candidate_failure["reason_code"]
+            )
+            raise DiscoveryError(
+                reason_code,
+                "An evidence-backed job-board candidate could not be verified because of a retryable fetch failure.",
                 step_name="find_job_board",
                 trace=trace,
             )
@@ -914,9 +934,23 @@ class JobSourceAgent:
             try:
                 page = self.fetcher.fetch(page_url)
             except FetchError as exc:
-                trace["fetch_errors"].append(
-                    {"url": page_url, **_fetch_failure_trace(exc)}
-                )
+                failure = {"url": page_url, **_fetch_failure_trace(exc)}
+                if incoming_candidate is not None:
+                    failure.update(
+                        {
+                            "origin": incoming_candidate.origin,
+                            "score": incoming_candidate.score,
+                            "evidence_tier": (
+                                1
+                                if incoming_candidate.origin
+                                in {"page_link", "form_action"}
+                                and "explicit job-list command"
+                                in incoming_candidate.reasons
+                                else candidate_evidence_tier(incoming_candidate)
+                            ),
+                        }
+                    )
+                trace["fetch_errors"].append(failure)
                 continue
             page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
             if content_probe:
@@ -2620,6 +2654,17 @@ def _retryable_evidence_candidate_failure(value: object) -> dict | None:
             if failure is not None:
                 return failure
     return None
+
+
+def _trace_has_caller_deadline_exhaustion(value: object) -> bool:
+    if isinstance(value, dict):
+        detail = value.get("error")
+        if isinstance(detail, str) and "caller deadline" in detail.casefold():
+            return True
+        return any(_trace_has_caller_deadline_exhaustion(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_trace_has_caller_deadline_exhaustion(item) for item in value)
+    return False
 
 
 def _legacy_error(stage: str, reason_code: str | None) -> str:

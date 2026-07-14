@@ -440,6 +440,55 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertFalse(missing_trace["provider_api"]["inventory"]["complete"])
         self.assertNotIn("search_skipped", missing_trace)
 
+    def test_native_budget_exhaustion_skips_generic_fallback(self):
+        class BudgetAdapter:
+            name = "budget_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Data Engineer",
+                            url="https://jobs.example.com/1",
+                            provider=self.name,
+                        )
+                    ],
+                    reason_code="FETCH_BUDGET_EXHAUSTED",
+                    retryable=True,
+                    inventory_scope="title_filtered",
+                    inventory_complete=False,
+                    trace={"stop_reason": "soft_deadline_reserve"},
+                )
+
+        class NoFallbackFetcher:
+            def fetch(self, url, data=None, headers=None):
+                raise AssertionError(f"unexpected generic fallback fetch: {url}")
+
+        match, trace = JobOpeningMatcher(
+            NoFallbackFetcher(),
+            ProviderRegistry([BudgetAdapter()]),
+        ).match("https://jobs.example.com", "Quantum Archaeologist")
+
+        self.assertIsNone(match)
+        self.assertEqual(trace["search_plan"], [])
+        self.assertEqual(
+            trace["search_skipped"],
+            "native_inventory_budget_exhausted",
+        )
+        self.assertEqual(
+            trace["provider_api"]["inventory"]["reason_code"],
+            "FETCH_BUDGET_EXHAUSTED",
+        )
+
     def test_native_adapter_rejects_generic_role_token_as_exact_opening(self):
         class BroadSearchAdapter:
             name = "broad_search_test"

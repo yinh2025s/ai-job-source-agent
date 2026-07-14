@@ -243,6 +243,44 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(error["origin"], "page_link")
         self.assertEqual(error["evidence_tier"], 1)
 
+    def test_evidence_backed_job_board_caller_deadline_is_budget_exhaustion(self):
+        career = "https://transient.example/careers"
+        job_list = "https://transient.example/search-results"
+
+        class TransientJobBoardFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == career:
+                    return Page(
+                        url=url,
+                        final_url=career,
+                        html=f'<html><a href="{job_list}">Search jobs</a></html>',
+                    )
+                if url.rstrip("/") == job_list:
+                    raise FetchError(
+                        "operation timed out at caller deadline",
+                        reason_code="NETWORK_TIMEOUT",
+                        retryable=True,
+                    )
+                raise FetchError(f"fixture miss: {url}")
+
+        agent = JobSourceAgent(
+            TransientJobBoardFetcher(offline=True),
+            max_job_pages=2,
+            max_ats_board_fetches=0,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_job_board(career)
+
+        self.assertEqual(raised.exception.code, "COMPANY_TIME_BUDGET_EXHAUSTED")
+        failure = raised.exception.trace["fetch_errors"][0]
+        self.assertEqual(failure["url"], job_list)
+        self.assertEqual(failure["reason_code"], "NETWORK_TIMEOUT")
+        self.assertTrue(failure["retryable"])
+        self.assertEqual(failure["origin"], "page_link")
+        self.assertLessEqual(failure["evidence_tier"], 2)
+
     def test_untried_page_link_reports_fetch_budget_exhausted(self):
         homepage = "https://evidence-budget.example"
         first = f"{homepage}/careers-primary"

@@ -116,6 +116,15 @@ class JobOpeningMatcher:
             trace["search_plan"] = []
             trace["search_skipped"] = "verified_native_inventory_no_match"
             return None, trace
+        if (
+            isinstance(inventory, dict)
+            and inventory.get("source") == "native_adapter"
+            and inventory.get("reason_code")
+            in {"COMPANY_TIME_BUDGET_EXHAUSTED", "FETCH_BUDGET_EXHAUSTED"}
+        ):
+            trace["search_plan"] = []
+            trace["search_skipped"] = "native_inventory_budget_exhausted"
+            return None, trace
 
         search_plan = _build_search_plan(job_list_url, target_title, landing_page)
         trace["search_plan"] = [
