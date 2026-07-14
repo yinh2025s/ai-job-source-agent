@@ -385,6 +385,7 @@ def build_search_queries(company_name: str, official_domain: str) -> list[str]:
 def build_ats_search_queries(company_name: str) -> list[str]:
     normalized_company = " ".join(_identity_tokens(company_name)) or company_name
     return [
+        f'"{normalized_company}" careers jobs',
         f'site:job-boards.greenhouse.io "{normalized_company}" jobs',
         f'site:myworkdayjobs.com "{normalized_company}" jobs',
         f'site:jobs.lever.co "{normalized_company}" jobs',

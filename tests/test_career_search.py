@@ -54,7 +54,7 @@ class CareerSearchTests(unittest.TestCase):
         ])
 
     def test_ats_only_queries_and_results_exclude_first_party_career_page(self):
-        self.assertTrue(build_ats_search_queries("Glean")[0].startswith("site:job-boards.greenhouse.io"))
+        self.assertEqual(build_ats_search_queries("Glean")[0], '"glean" careers jobs')
         rss = """<rss><channel>
           <item><link>https://www.glean.com/careers</link></item>
           <item><link>https://job-boards.greenhouse.io/gleanwork/jobs/4006734005</link></item>
@@ -83,7 +83,8 @@ class CareerSearchTests(unittest.TestCase):
 
         self.assertEqual(len(fetcher.calls), 5)
         self.assertTrue(all("format=rss" in url for url in fetcher.calls))
-        self.assertIn("site%3Amyworkdayjobs.com", fetcher.calls[1])
+        self.assertIn("site%3Ajob-boards.greenhouse.io", fetcher.calls[1])
+        self.assertIn("site%3Amyworkdayjobs.com", fetcher.calls[2])
         self.assertNotIn("Inc", fetcher.calls[0])
         self.assertFalse(result.trace["fetch_budget_supported"])
         self.assertEqual(result.trace["fetch_budget_checks"], 0)

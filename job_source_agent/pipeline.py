@@ -704,9 +704,14 @@ class JobSourceAgent:
         if self.enable_career_search and company_name:
             with self._career_transport_phase("search_discovery"):
                 search_result = self._search_career_candidates(company_name, homepage_url)
+            search_candidates = self._apply_search_audience_policy(
+                search_result.candidates,
+                target_title,
+            )
+            search_result.trace["candidates"] = dataclass_to_dict(search_candidates)
             trace["search_discovery"] = search_result.trace
             selected_url = self._select_verified_career_candidate(
-                search_result.candidates,
+                search_candidates,
                 trace,
                 target_title=target_title,
                 schedule_source="search",
@@ -2546,6 +2551,32 @@ class JobSourceAgent:
             candidate.score += 150
             candidate.reasons.append("sitemap source")
         return candidate
+
+    def _apply_search_audience_policy(
+        self,
+        candidates: list[LinkCandidate],
+        target_title: str | None,
+    ) -> list[LinkCandidate]:
+        adjusted: list[LinkCandidate] = []
+        for candidate in candidates:
+            ranked = LinkCandidate(
+                url=candidate.url,
+                text=candidate.text,
+                source_url=candidate.source_url,
+                score=candidate.score,
+                reasons=list(candidate.reasons),
+                origin=candidate.origin,
+            )
+            mismatch = _career_audience_mismatch(
+                ranked.url,
+                ranked.text,
+                target_title,
+            )
+            if mismatch:
+                ranked.score -= 220
+                ranked.reasons.append(f"career audience mismatch: {mismatch}")
+            adjusted.append(ranked)
+        return sorted(adjusted, key=lambda candidate: (-candidate.score, candidate.url))
 
     def _is_explicit_homepage_jobs_portal(
         self,

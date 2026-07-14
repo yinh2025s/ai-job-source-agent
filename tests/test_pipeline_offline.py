@@ -5,9 +5,10 @@ from job_source_agent.content_probe import (
     discover_first_party_career_navigation,
     probe_first_party_cms_payload,
 )
+from job_source_agent.career_search import CareerSearchResult
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.linkedin import load_company_inputs
-from job_source_agent.models import CompanyInput, LinkCandidate
+from job_source_agent.models import CompanyInput, LinkCandidate, dataclass_to_dict
 from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.web import FetchError, Fetcher, Page, RawLink
 
@@ -582,6 +583,57 @@ class OfflinePipelineTests(unittest.TestCase):
 
         self.assertEqual(career_url, "https://searchfallback.example/real-careers")
         self.assertEqual(trace["selected_from"], "search_discovery")
+
+    def test_general_role_search_penalizes_early_career_board(self):
+        homepage = "https://example.test"
+        early = "https://tenant.wd1.myworkdayjobs.com/Example_Early_Careers"
+        general = "https://careers.smartrecruiters.com/Example"
+
+        class SearchPolicyAgent(JobSourceAgent):
+            def __init__(self):
+                super().__init__(
+                    Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True),
+                    enable_sitemap_discovery=False,
+                )
+                self.search_candidates = []
+
+            def _search_career_candidates(self, *args, **kwargs):
+                return CareerSearchResult(
+                    candidates=[
+                        LinkCandidate(early, early, homepage, 550, [], "search_result"),
+                        LinkCandidate(general, general, homepage, 510, [], "search_result"),
+                    ],
+                    trace={"candidates": []},
+                )
+
+            def _select_verified_career_candidate(
+                self,
+                candidates,
+                trace,
+                *,
+                schedule_source,
+                **kwargs,
+            ):
+                if schedule_source != "search":
+                    return None
+                self.search_candidates = list(candidates)
+                trace["selected"] = dataclass_to_dict(candidates[0])
+                return candidates[0].url
+
+        agent = SearchPolicyAgent()
+        career_url, trace = agent.find_career_page(
+            homepage,
+            company_name="Example",
+            target_title="Data Scientist",
+        )
+
+        self.assertEqual(career_url, general)
+        self.assertEqual(trace["selected_from"], "search_discovery")
+        self.assertEqual(agent.search_candidates[1].url, early)
+        self.assertIn(
+            "career audience mismatch: early-career",
+            agent.search_candidates[1].reasons,
+        )
 
     def test_career_page_can_be_discovered_from_derived_ats_board(self):
         agent = JobSourceAgent(

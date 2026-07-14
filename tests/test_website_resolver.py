@@ -1228,6 +1228,55 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertIn("homepage title confirms company identity", candidate.reasons)
         self.assertIsNotNone(resolver._select_verified_candidate([candidate]))
 
+    def test_short_brand_title_late_in_bounded_head_confirms_identity(self):
+        class LateHeadTitleFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://www.visa.com.sg/",
+                    html=(
+                        "<html><head>"
+                        + '<meta name="padding" content="' + ("x" * 12000) + '">'
+                        + "<title>Visa | Global Payments</title></head>"
+                        + "<body>Regional navigation</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(LateHeadTitleFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://www.visa.com",
+            "Visa",
+            verify=True,
+        )
+
+        self.assertIn("homepage title confirms company identity", candidate.reasons)
+        self.assertNotIn("company token 'visa' in homepage", candidate.reasons)
+        self.assertIsNotNone(resolver._select_verified_candidate([candidate]))
+
+    def test_title_after_bounded_head_limit_does_not_confirm_short_brand(self):
+        class OversizedHeadFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://www.visa.com.sg/",
+                    html=(
+                        "<html><head>"
+                        + ("x" * 66000)
+                        + "<title>Visa | Unbounded Evidence</title></head>"
+                        + "<body>Regional navigation</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(OversizedHeadFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://www.visa.com",
+            "Visa",
+            verify=True,
+        )
+
+        self.assertNotIn("homepage title confirms company identity", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
     def test_short_company_name_does_not_match_inside_unrelated_text(self):
         class UnrelatedFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):

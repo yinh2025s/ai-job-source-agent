@@ -919,8 +919,8 @@ class CompanyWebsiteResolver:
             score += 25
             reasons.append(f"regional website matches job location: {target_region}")
 
-        html_head = page.html[:5000]
-        homepage_title = _html_title(html_head)
+        html_prefix = page.html[:5000]
+        homepage_title = _html_title(_bounded_html_head(page.html))
         structured_identity = _structured_organization_confirms_identity(
             page.html, company_tokens
         )
@@ -973,7 +973,7 @@ class CompanyWebsiteResolver:
         for token in company_tokens:
             if token in domain:
                 evidenced_tokens.add(token)
-            if _contains_identity_token(html_head, token):
+            if _contains_identity_token(html_prefix, token):
                 score += 15
                 token_in_homepage = True
                 evidenced_tokens.add(token)
@@ -1393,6 +1393,12 @@ def _html_title(html: str) -> str:
         return ""
     title = re.sub(r"<[^>]+>", " ", match.group(1))
     return " ".join(html_unescape(title).split())
+
+
+def _bounded_html_head(html: str, limit: int = 65536) -> str:
+    prefix = html[:limit]
+    closing = re.search(r"</head\s*>", prefix, flags=re.I)
+    return prefix[: closing.end()] if closing else prefix
 
 
 def _redirect_only_shell_target(html: str, base_url: str) -> str | None:
