@@ -3,14 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from .job_board import DiscoveredJobBoard
+from .job_board import DiscoveredJobBoard, JobBoardPortfolio
 from .homepage_navigation import HomepageNavigationEvidence
 from .evidence_scope import EvidenceScopeRef, StageEvidenceLineage
 from .models import CompanyInput, StageResult
 from .web import Page
 
 
-CONTRACT_SCHEMA_VERSION = "1.3"
+CONTRACT_SCHEMA_VERSION = "1.4"
 
 
 @runtime_checkable
@@ -67,6 +67,7 @@ class PipelineContext:
     career_page_url: str | None = None
     job_list_page_url: str | None = None
     discovered_job_board: DiscoveredJobBoard | None = None
+    job_board_portfolio: JobBoardPortfolio | None = None
     open_position_url: str | None = None
     provider: str | None = None
     stage_results: list[StageResult] = field(default_factory=list)
@@ -97,6 +98,10 @@ class PipelineContext:
                 value, DiscoveredJobBoard
             ):
                 raise TypeError("discovered_job_board update must use DiscoveredJobBoard")
+            if field_name == "job_board_portfolio" and not isinstance(
+                value, JobBoardPortfolio
+            ):
+                raise TypeError("job_board_portfolio update must use JobBoardPortfolio")
             if field_name == "homepage_navigation_evidence" and not isinstance(
                 value, HomepageNavigationEvidence
             ):
@@ -151,6 +156,7 @@ _CONTEXT_UPDATE_FIELDS = {
     "career_page_url",
     "job_list_page_url",
     "discovered_job_board",
+    "job_board_portfolio",
     "open_position_url",
     "provider",
 }

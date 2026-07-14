@@ -25,7 +25,7 @@ from .content_probe import (
 from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
 from .homepage_navigation import HomepageNavigationEvidence
-from .job_board import DiscoveredJobBoard
+from .job_board import DiscoveredJobBoard, JobBoardPortfolio
 from .listing_extraction import explicit_empty_inventory_evidence
 from .models import (
     STAGE_CAREER_DISCOVERY,
@@ -202,6 +202,7 @@ class JobSourceAgent:
         provider_registry: ProviderRegistry | None = None,
         max_candidates: int = 12,
         max_job_pages: int = 8,
+        max_job_board_attempts: int = 3,
         max_career_candidate_fetches: int | None = None,
         max_career_discovery_transport_calls: int | None = None,
         max_career_search_queries: int = 5,
@@ -215,6 +216,7 @@ class JobSourceAgent:
         self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
         self.max_candidates = max_candidates
         self.max_job_pages = max_job_pages
+        self.max_job_board_attempts = max_job_board_attempts
         self.max_career_candidate_fetches = (
             max_candidates if max_career_candidate_fetches is None else max(0, max_career_candidate_fetches)
         )
@@ -228,6 +230,7 @@ class JobSourceAgent:
         effective_agent_config = AgentConfig(
             max_candidates=max_candidates,
             max_job_pages=max_job_pages,
+            max_job_board_attempts=max_job_board_attempts,
             max_career_candidate_fetches=self.max_career_candidate_fetches,
             max_career_discovery_transport_calls=(
                 self.max_career_discovery_transport_calls
@@ -295,7 +298,11 @@ class JobSourceAgent:
             (
                 CareerDiscoveryStage(self),
                 JobBoardDiscoveryStage(self, self.provider_registry),
-                OpeningMatchStage(self, self.provider_registry),
+                OpeningMatchStage(
+                    self,
+                    self.provider_registry,
+                    max_job_board_attempts=self.max_job_board_attempts,
+                ),
             )
         ).run(context)
         result.career_page_url = context.career_page_url
@@ -774,6 +781,86 @@ class JobSourceAgent:
         )
         return job_list_url, trace
 
+    def find_job_board_portfolio(
+        self,
+        career_page_url: str,
+        company_name: str | None = None,
+        target_title: str | None = None,
+        target_location: str | None = None,
+    ) -> tuple[str, dict, JobBoardPortfolio | None]:
+        job_list_url, trace, discovered = self.find_job_board_with_evidence(
+            career_page_url,
+            company_name=company_name,
+            target_location=target_location,
+        )
+        primary = self._typed_board_evidence(job_list_url, discovered)
+        if primary is None:
+            return job_list_url, trace, None
+
+        portfolio_boards = [primary]
+        eligible_set_complete = True
+        primary_scope_mismatch = _career_audience_mismatch(
+            primary.board.url,
+            "",
+            target_title,
+        )
+        if (
+            company_name
+            and target_title
+            and self.max_job_board_attempts > 1
+            and self.max_ats_board_fetches > 0
+            and primary_scope_mismatch is not None
+        ):
+            alternatives, portfolio_trace, eligible_set_complete = (
+                self._search_verified_ats_board_options(
+                    company_name,
+                    career_page_url,
+                    target_title=target_title,
+                    target_location=target_location,
+                    excluded=primary,
+                )
+            )
+            trace["job_board_portfolio_discovery"] = portfolio_trace
+            portfolio_boards.extend(alternatives)
+
+        deduped: list[DiscoveredJobBoard] = []
+        identities: set[tuple[str, str]] = set()
+        for option in portfolio_boards:
+            identity = (option.board.provider, option.board.url.rstrip("/"))
+            if identity in identities:
+                continue
+            identities.add(identity)
+            deduped.append(option)
+
+        deduped.sort(
+            key=lambda option: (
+                _career_audience_mismatch(
+                    option.board.url,
+                    "",
+                    target_title,
+                )
+                is not None,
+                portfolio_boards.index(option),
+            )
+        )
+        portfolio = JobBoardPortfolio(
+            boards=tuple(deduped[:8]),
+            eligible_set_complete=(
+                eligible_set_complete and len(deduped) <= 8
+            ),
+        )
+        selected_url = portfolio.primary.board.url
+        trace["job_board_portfolio"] = {
+            "eligible_count": len(portfolio.boards),
+            "eligible_set_complete": portfolio.eligible_set_complete,
+            "primary_provider": portfolio.primary.board.provider,
+            "primary_url": selected_url,
+            "primary_scope_mismatch": primary_scope_mismatch,
+        }
+        trace["job_list_page_url"] = selected_url
+        trace["provider"] = portfolio.primary.board.provider
+        return selected_url, trace, portfolio
+
     def find_job_board_with_evidence(
         self,
         career_page_url: str,
@@ -911,6 +998,128 @@ class JobSourceAgent:
             return False
         adapter = self.provider_registry.adapter_named(discovered_board.board.provider)
         return adapter is not None and adapter.supports_listing
+
+    def _typed_board_evidence(
+        self,
+        job_list_url: str,
+        discovered: DiscoveredJobBoard | None,
+    ) -> DiscoveredJobBoard | None:
+        if discovered is not None:
+            return discovered
+        adapter = self.provider_registry.adapter_for(job_list_url)
+        board = adapter.identify_board(job_list_url) if adapter else None
+        if adapter is None or board is None or not adapter.supports_listing:
+            return None
+        return DiscoveredJobBoard(
+            board=board,
+            detection_method="url_evidence",
+            evidence_url=board.url,
+        )
+
+    def _search_verified_ats_board_options(
+        self,
+        company_name: str,
+        career_page_url: str,
+        *,
+        target_title: str,
+        target_location: str | None,
+        excluded: DiscoveredJobBoard,
+    ) -> tuple[list[DiscoveredJobBoard], dict, bool]:
+        search_result = self._search_career_candidates(
+            company_name,
+            career_page_url,
+            ats_only=True,
+        )
+        trace = {
+            "search": search_result.trace,
+            "candidates": [],
+            "errors": [],
+        }
+        target_region = location_region(target_location)
+        candidates = sorted(
+            search_result.candidates,
+            key=lambda candidate: (
+                _career_audience_mismatch(
+                    candidate.url,
+                    candidate.text,
+                    target_title,
+                )
+                is not None,
+                -self._target_region_priority(candidate.url, target_region),
+                -candidate.score,
+            ),
+        )
+        options: list[DiscoveredJobBoard] = []
+        seen = {(excluded.board.provider, excluded.board.url.rstrip("/"))}
+        attempts = 0
+        eligible_count = 0
+        search_trace = search_result.trace
+        complete = not bool(
+            search_trace.get("error")
+            or search_trace.get("source_fetch_budget_exhausted")
+            or search_trace.get("fetch_budget_unavailable")
+            or search_trace.get("fetch_budget_invalid")
+            or search_trace.get("source_circuit_breaks")
+            or search_trace.get("source_circuit_skips")
+            or search_trace.get("stopped_reason")
+        )
+        for candidate in candidates:
+            adapter = self.provider_registry.adapter_for(candidate.url)
+            board = adapter.identify_board(candidate.url) if adapter else None
+            if adapter is None or board is None or not adapter.supports_listing:
+                continue
+            if not self._url_matches_target_region(board.url, target_region):
+                trace.setdefault("regional_exclusions", []).append(
+                    self._regional_exclusion(board.url, target_region)
+                )
+                continue
+            identity = (adapter.name, board.url.rstrip("/"))
+            if identity in seen:
+                continue
+            seen.add(identity)
+            eligible_count += 1
+            if attempts >= self.max_ats_board_fetches:
+                complete = False
+                trace["fetch_budget_exhausted"] = self.max_ats_board_fetches
+                continue
+            attempts += 1
+            try:
+                result = adapter.list_jobs(
+                    self.fetcher,
+                    board,
+                    JobQuery(title=target_title, location=target_location),
+                )
+            except FetchError as exc:
+                complete = False
+                trace["errors"].append(
+                    {"url": board.url, **_fetch_failure_trace(exc)}
+                )
+                continue
+            verified = bool(result.candidates) or result.inventory_complete
+            trace["candidates"].append(
+                {
+                    "url": board.url,
+                    "provider": adapter.name,
+                    "candidate_count": len(result.candidates),
+                    "inventory_complete": result.inventory_complete,
+                    "reason_code": result.reason_code,
+                    "verified": verified,
+                }
+            )
+            if not verified:
+                complete = False
+                continue
+            options.append(
+                DiscoveredJobBoard(
+                    board=board,
+                    detection_method="url_evidence",
+                    evidence_url=board.url,
+                )
+            )
+        trace["eligible_count"] = eligible_count
+        trace["attempted_count"] = attempts
+        trace["eligible_set_complete"] = complete
+        return options, trace, complete
 
     def _search_verified_ats_board(
         self,
@@ -3167,7 +3376,18 @@ def _career_audience_mismatch(
         marker in target for marker in ("executive", "partner", "principal", "director")
     ):
         return "executive"
-    if any(marker in candidate_text for marker in ("student", "graduate", "internship")) and not any(
+    if any(
+        marker in candidate_text
+        for marker in (
+            "early-career",
+            "early_career",
+            "early careers",
+            "student",
+            "graduate",
+            "internship",
+            "university",
+        )
+    ) and not any(
         marker in target for marker in ("student", "graduate", "intern", "apprentice")
     ):
         return "early-career"

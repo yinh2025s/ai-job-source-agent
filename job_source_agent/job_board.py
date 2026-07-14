@@ -5,7 +5,7 @@ import ipaddress
 import json
 import re
 from typing import Any, Callable
-from urllib.parse import parse_qsl, unquote, urlparse
+from urllib.parse import parse_qsl, quote, unquote, urlparse
 
 
 _DETECTION_METHODS = {
@@ -67,6 +67,8 @@ _SECRET_VALUE = re.compile(
     re.IGNORECASE,
 )
 _HTML_CONTENT = re.compile(r"<(?:!doctype|html|script|body|head)\b", re.IGNORECASE)
+_PORTFOLIO_SCHEMA_VERSION = "1.0"
+_MAX_PORTFOLIO_BOARDS = 8
 
 
 @dataclass(frozen=True)
@@ -131,6 +133,57 @@ class DiscoveredJobBoard:
         return discovered
 
 
+@dataclass(frozen=True)
+class JobBoardPortfolio:
+    boards: tuple[DiscoveredJobBoard, ...]
+    eligible_set_complete: bool
+
+    def __post_init__(self) -> None:
+        _validate_job_board_portfolio(self)
+
+    @property
+    def primary(self) -> DiscoveredJobBoard:
+        return self.boards[0]
+
+    def to_checkpoint_payload(self) -> dict[str, Any] | None:
+        if not all(discovered.board.replay_safe for discovered in self.boards):
+            return None
+        board_payloads = []
+        for discovered in self.boards:
+            payload = discovered.to_checkpoint_payload()
+            if payload is None:
+                return None
+            board_payloads.append(payload)
+        return {
+            "schema_version": _PORTFOLIO_SCHEMA_VERSION,
+            "boards": board_payloads,
+            "eligible_set_complete": self.eligible_set_complete,
+        }
+
+    @classmethod
+    def from_checkpoint_payload(cls, payload: Any) -> JobBoardPortfolio:
+        if not isinstance(payload, dict) or set(payload) != {
+            "schema_version",
+            "boards",
+            "eligible_set_complete",
+        }:
+            raise ValueError("Job-board portfolio payload has unsupported fields")
+        if payload.get("schema_version") != _PORTFOLIO_SCHEMA_VERSION:
+            raise ValueError("Job-board portfolio schema is incompatible")
+        raw_boards = payload.get("boards")
+        if not isinstance(raw_boards, list):
+            raise ValueError("Job-board portfolio boards must be a list")
+        if not isinstance(payload.get("eligible_set_complete"), bool):
+            raise ValueError("Job-board portfolio completeness must be boolean")
+        return cls(
+            boards=tuple(
+                DiscoveredJobBoard.from_checkpoint_payload(item)
+                for item in raw_boards
+            ),
+            eligible_set_complete=payload["eligible_set_complete"],
+        )
+
+
 def _validate_discovered_board(discovered: DiscoveredJobBoard) -> None:
     board = discovered.board
     if not isinstance(board.url, str) or not _is_public_https_url(board.url):
@@ -157,6 +210,33 @@ def _validate_discovered_board(discovered: DiscoveredJobBoard) -> None:
     policy = _REPLAY_SAFE_POLICIES.get(board.provider)
     if board.replay_safe and (policy is None or not policy(board)):
         raise ValueError("Job board locator is not replay-safe for this provider")
+
+
+def _validate_job_board_portfolio(portfolio: JobBoardPortfolio) -> None:
+    if not isinstance(portfolio.boards, tuple) or not (
+        1 <= len(portfolio.boards) <= _MAX_PORTFOLIO_BOARDS
+    ):
+        raise ValueError("Job-board portfolio must contain between one and eight boards")
+    if not isinstance(portfolio.eligible_set_complete, bool):
+        raise ValueError("Job-board portfolio completeness must be boolean")
+    identities: set[tuple[str, str]] = set()
+    for discovered in portfolio.boards:
+        if not isinstance(discovered, DiscoveredJobBoard):
+            raise TypeError("Job-board portfolio members must be discovered boards")
+        _validate_discovered_board(discovered)
+        parsed_url = urlparse(discovered.board.url)
+        normalized_identity_url = parsed_url._replace(
+            scheme=parsed_url.scheme.casefold(),
+            netloc=parsed_url.netloc.casefold(),
+            path=parsed_url.path.rstrip("/") or "/",
+        ).geturl()
+        identity = (
+            discovered.board.provider.casefold(),
+            normalized_identity_url,
+        )
+        if identity in identities:
+            raise ValueError("Job-board portfolio contains duplicate public board identity")
+        identities.add(identity)
 
 
 def _is_public_https_url(value: str) -> bool:
@@ -389,6 +469,45 @@ def _talemetry_policy(board: JobBoard) -> bool:
     )
 
 
+def _smartrecruiters_policy(board: JobBoard) -> bool:
+    identifier = board.identifier or ""
+    parsed = urlparse(board.url)
+    return bool(
+        _valid_identifier_text(identifier, limit=256)
+        and parsed.hostname == "jobs.smartrecruiters.com"
+        and parsed.path == f"/{quote(identifier, safe='-._~')}"
+        and _no_query(board.url)
+    )
+
+
+def _workday_policy(board: JobBoard) -> bool:
+    identifier = board.identifier or ""
+    if identifier.count("/") != 1:
+        return False
+    tenant, site = identifier.split("/", 1)
+    if not _SEGMENT.fullmatch(tenant) or not _SEGMENT.fullmatch(site):
+        return False
+    parsed = urlparse(board.url)
+    host = _host(board.url)
+    parts = [part for part in parsed.path.split("/") if part]
+    canonical_paths = (
+        [site],
+        ["recruiting", tenant, site],
+        ["wday", "cxs", tenant, site],
+    )
+    locale_path = bool(
+        len(parts) == 2
+        and re.fullmatch(r"[a-z]{2}-[A-Z]{2}", parts[0])
+        and parts[1] == site
+    )
+    return bool(
+        host.startswith(f"{tenant.casefold()}.")
+        and host.endswith((".myworkdayjobs.com", ".workdayjobs.com"))
+        and (parts in canonical_paths or locale_path)
+        and _no_query(board.url)
+    )
+
+
 _REPLAY_SAFE_POLICIES: dict[str, Callable[[JobBoard], bool]] = {
     "avature": _avature_policy,
     "eightfold": _eightfold_policy,
@@ -396,5 +515,7 @@ _REPLAY_SAFE_POLICIES: dict[str, Callable[[JobBoard], bool]] = {
     "icims": _icims_policy,
     "phenom": _phenom_policy,
     "sitecore_next_jobs": _sitecore_policy,
+    "smartrecruiters": _smartrecruiters_policy,
     "talemetry": _talemetry_policy,
+    "workday": _workday_policy,
 }

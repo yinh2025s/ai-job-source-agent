@@ -7,9 +7,10 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RUN_CONFIGURATION_SCHEMA_VERSION = "1.1"
+RUN_CONFIGURATION_SCHEMA_VERSION = "1.2"
 BATCH_EXECUTION_SCHEMA_VERSION = "1.0"
 _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION = "1.0"
+_TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION = "1.1"
 _MAX_BUDGET = 1_000
 _MAX_TIMEOUT_SECONDS = 300.0
 
@@ -18,6 +19,7 @@ _MAX_TIMEOUT_SECONDS = 300.0
 class AgentConfig:
     max_candidates: int = 12
     max_job_pages: int = 8
+    max_job_board_attempts: int = 3
     max_career_candidate_fetches: int | None = None
     max_career_search_queries: int = 5
     max_ats_board_fetches: int = 5
@@ -33,6 +35,7 @@ class DeterministicRunConfig:
 
     max_candidates: int
     max_job_pages: int
+    max_job_board_attempts: int
     max_career_candidate_fetches: int
     max_career_search_queries: int
     max_ats_board_fetches: int
@@ -68,6 +71,7 @@ class DeterministicRunConfig:
         schema_version = payload["schema_version"]
         if schema_version not in {
             _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             raise ValueError("Run configuration schema version is incompatible")
@@ -82,13 +86,28 @@ class DeterministicRunConfig:
             "enable_career_search",
             "career_search_timeout",
         }
-        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+        if schema_version in {
+            _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             expected_fields.add("max_career_discovery_transport_calls")
+        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            expected_fields.add("max_job_board_attempts")
         if not isinstance(agent, dict) or set(agent) != expected_fields:
             raise ValueError("Run configuration agent fields are incomplete or unsupported")
 
         max_candidates = _bounded_integer(agent["max_candidates"], "max_candidates", minimum=1)
         max_job_pages = _bounded_integer(agent["max_job_pages"], "max_job_pages", minimum=1)
+        max_job_board_attempts = (
+            _bounded_integer(
+                agent["max_job_board_attempts"],
+                "max_job_board_attempts",
+                minimum=1,
+                maximum=8,
+            )
+            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            else 1
+        )
         max_career_candidate_fetches = _bounded_integer(
             agent["max_career_candidate_fetches"],
             "max_career_candidate_fetches",
@@ -100,7 +119,11 @@ class DeterministicRunConfig:
                 "max_career_discovery_transport_calls",
                 minimum=0,
             )
-            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            if schema_version
+            in {
+                _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
+                RUN_CONFIGURATION_SCHEMA_VERSION,
+            }
             else None
         )
         max_career_search_queries = _bounded_integer(
@@ -121,6 +144,7 @@ class DeterministicRunConfig:
         return cls(
             max_candidates=max_candidates,
             max_job_pages=max_job_pages,
+            max_job_board_attempts=max_job_board_attempts,
             max_career_candidate_fetches=max_career_candidate_fetches,
             max_career_discovery_transport_calls=max_career_discovery_transport_calls,
             max_career_search_queries=max_career_search_queries,
@@ -142,16 +166,22 @@ class DeterministicRunConfig:
             "enable_career_search": self.enable_career_search,
             "career_search_timeout": self.career_search_timeout,
         }
-        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+        if self._schema_version in {
+            _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             agent["max_career_discovery_transport_calls"] = (
                 self.max_career_discovery_transport_calls
             )
+        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            agent["max_job_board_attempts"] = self.max_job_board_attempts
         return {"schema_version": self._schema_version, "agent": agent}
 
     def to_agent_config(self) -> AgentConfig:
         return AgentConfig(
             max_candidates=self.max_candidates,
             max_job_pages=self.max_job_pages,
+            max_job_board_attempts=self.max_job_board_attempts,
             max_career_candidate_fetches=self.max_career_candidate_fetches,
             max_career_discovery_transport_calls=self.max_career_discovery_transport_calls,
             max_career_search_queries=self.max_career_search_queries,

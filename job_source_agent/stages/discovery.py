@@ -6,7 +6,7 @@ from typing import Protocol
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
 from ..homepage_navigation import HomepageNavigationEvidence
-from ..job_board import DiscoveredJobBoard
+from ..job_board import DiscoveredJobBoard, JobBoardPortfolio
 from ..models import (
     STAGE_CAREER_DISCOVERY,
     STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -48,6 +48,15 @@ class JobBoardDiscoveryService(Protocol):
         company_name: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str, dict, DiscoveredJobBoard | None]:
+        ...
+
+    def find_job_board_portfolio(
+        self,
+        career_page_url: str,
+        company_name: str | None = None,
+        target_title: str | None = None,
+        target_location: str | None = None,
+    ) -> tuple[str, dict, JobBoardPortfolio | None]:
         ...
 
 
@@ -196,14 +205,29 @@ class JobBoardDiscoveryStage:
 
         started = time.perf_counter()
         try:
-            find_with_evidence = getattr(self.service, "find_job_board_with_evidence", None)
-            if callable(find_with_evidence):
+            find_portfolio = getattr(self.service, "find_job_board_portfolio", None)
+            if callable(find_portfolio):
+                job_list_url, trace, portfolio = find_portfolio(
+                    context.career_page_url,
+                    company_name=context.company.company_name,
+                    target_title=context.company.job_title,
+                    target_location=context.company.job_location,
+                )
+                discovered_board = portfolio.primary if portfolio is not None else None
+            else:
+                portfolio = None
+                find_with_evidence = getattr(
+                    self.service,
+                    "find_job_board_with_evidence",
+                    None,
+                )
+            if not callable(find_portfolio) and callable(find_with_evidence):
                 job_list_url, trace, discovered_board = find_with_evidence(
                     context.career_page_url,
                     company_name=context.company.company_name,
                     target_location=context.company.job_location,
                 )
-            else:
+            elif not callable(find_portfolio):
                 job_list_url, trace = self.service.find_job_board(
                     context.career_page_url,
                     company_name=context.company.company_name,
@@ -250,6 +274,14 @@ class JobBoardDiscoveryStage:
         updates = {"job_list_page_url": job_list_url, "provider": provider}
         if discovered_board is not None:
             updates["discovered_job_board"] = discovered_board
+        if (
+            portfolio is not None
+            and (
+                len(portfolio.boards) > 1
+                or not portfolio.eligible_set_complete
+            )
+        ):
+            updates["job_board_portfolio"] = portfolio
         return StageExecution(
             result=make_stage_result(
                 self.name,
@@ -392,9 +424,15 @@ class OpeningMatchStage:
         self,
         service: OpeningMatchService,
         provider_registry: ProviderRegistry | None = None,
+        max_job_board_attempts: int = 1,
     ) -> None:
         self.service = service
         self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
+        if not isinstance(max_job_board_attempts, int) or isinstance(
+            max_job_board_attempts, bool
+        ) or not 1 <= max_job_board_attempts <= 8:
+            raise ValueError("max_job_board_attempts must be between one and eight")
+        self.max_job_board_attempts = max_job_board_attempts
 
     def run(self, context: PipelineContext) -> StageExecution:
         if not context.job_list_page_url:
@@ -405,6 +443,14 @@ class OpeningMatchStage:
                     detail="Job-board discovery did not produce an input.",
                 )
             )
+        if (
+            context.job_board_portfolio is not None
+            and (
+                len(context.job_board_portfolio.boards) > 1
+                or not context.job_board_portfolio.eligible_set_complete
+            )
+        ):
+            return self._run_portfolio(context)
         started = time.perf_counter()
         try:
             match_discovered = getattr(self.service, "match_discovered_board", None)
@@ -494,6 +540,180 @@ class OpeningMatchStage:
             updates=updates,
             trace=trace,
         )
+
+    def _run_portfolio(self, context: PipelineContext) -> StageExecution:
+        portfolio = context.job_board_portfolio
+        assert portfolio is not None
+        started = time.perf_counter()
+        attempts: list[dict] = []
+        diagnostics = []
+        match_discovered = getattr(self.service, "match_discovered_board", None)
+        for position, discovered in enumerate(
+            portfolio.boards[: self.max_job_board_attempts]
+        ):
+            board = discovered.board
+            try:
+                if callable(match_discovered):
+                    opening_url, job_list_url, trace = match_discovered(
+                        discovered,
+                        context.company.job_title,
+                        context.company.job_location,
+                    )
+                else:
+                    opening_url, job_list_url, trace = self.service.match_opening(
+                        board.url,
+                        context.company.job_title,
+                        context.company.job_location,
+                    )
+            except FetchError as exc:
+                reason_code = classify_fetch_error(str(exc))
+                attempts.append(
+                    {
+                        "position": position,
+                        "provider": board.provider,
+                        "board_url": board.url,
+                        "status": "incomplete",
+                        "reason_code": reason_code,
+                    }
+                )
+                diagnostics.append((reason_code, None))
+                continue
+            except DiscoveryError as exc:
+                reason_code = canonical_reason_code(exc.code)
+                attempts.append(
+                    {
+                        "position": position,
+                        "provider": board.provider,
+                        "board_url": board.url,
+                        "status": "incomplete",
+                        "reason_code": reason_code,
+                        "trace": exc.trace,
+                    }
+                )
+                diagnostics.append((reason_code, None))
+                continue
+
+            if opening_url:
+                attempts.append(
+                    {
+                        "position": position,
+                        "provider": board.provider,
+                        "board_url": job_list_url,
+                        "status": "exact",
+                        "trace": trace,
+                    }
+                )
+                portfolio_trace = self._portfolio_trace(portfolio, attempts, "exact")
+                return StageExecution(
+                    result=make_stage_result(
+                        self.name,
+                        "success",
+                        provider=board.provider,
+                        duration_ms=_elapsed_ms(started),
+                        input_count=len(attempts),
+                        output_count=1,
+                        evidence=[{"field": "open_position_url", "url": opening_url}],
+                    ),
+                    updates={
+                        "job_list_page_url": job_list_url,
+                        "discovered_job_board": discovered,
+                        "provider": board.provider,
+                        "open_position_url": opening_url,
+                    },
+                    trace=portfolio_trace,
+                )
+
+            diagnostic = diagnose_opening_availability(
+                trace,
+                context.company.source_trace,
+            )
+            diagnostics.append((diagnostic.reason_code, diagnostic))
+            attempts.append(
+                {
+                    "position": position,
+                    "provider": board.provider,
+                    "board_url": job_list_url,
+                    "status": diagnostic.disposition,
+                    "reason_code": diagnostic.reason_code,
+                    "trace": trace,
+                }
+            )
+
+        attempted_all = len(attempts) == len(portfolio.boards)
+        portfolio_complete = portfolio.eligible_set_complete and attempted_all
+        incomplete = next(
+            (
+                (reason_code, diagnostic)
+                for reason_code, diagnostic in diagnostics
+                if reason_code not in {"OPENING_NOT_FOUND", "NO_PUBLIC_OPENINGS"}
+            ),
+            None,
+        )
+        if incomplete is not None:
+            reason_code, diagnostic = incomplete
+            detail = (
+                diagnostic.detail
+                if diagnostic is not None
+                else "A verified job board could not be checked conclusively."
+            )
+        elif not portfolio_complete:
+            reason_code = "JOB_BOARD_PORTFOLIO_INCOMPLETE"
+            detail = (
+                "Eligible job boards remain unattempted or the bounded portfolio was "
+                "truncated; company-wide opening absence is not established."
+            )
+        elif diagnostics and all(
+            reason_code == "NO_PUBLIC_OPENINGS"
+            for reason_code, _diagnostic in diagnostics
+        ):
+            reason_code = "NO_PUBLIC_OPENINGS"
+            detail = "Every eligible verified job board returned a complete empty inventory."
+        else:
+            reason_code = "OPENING_NOT_FOUND"
+            detail = (
+                "Every eligible verified job board was checked completely, but no title "
+                "met the match threshold."
+            )
+
+        trace = self._portfolio_trace(portfolio, attempts, "no_exact")
+        return StageExecution(
+            result=make_stage_result(
+                self.name,
+                "partial",
+                reason_code=reason_code,
+                provider=context.provider,
+                duration_ms=_elapsed_ms(started),
+                input_count=len(attempts),
+                evidence=[
+                    {
+                        "type": "job_board_portfolio",
+                        "attempted_count": len(attempts),
+                        "eligible_count": len(portfolio.boards),
+                        "eligible_set_complete": portfolio.eligible_set_complete,
+                    }
+                ],
+                detail=detail,
+            ),
+            updates={"job_list_page_url": portfolio.primary.board.url},
+            trace=trace,
+        )
+
+    @staticmethod
+    def _portfolio_trace(
+        portfolio: JobBoardPortfolio,
+        attempts: list[dict],
+        stopped_reason: str,
+    ) -> dict:
+        return {
+            "board_portfolio": {
+                "eligible_count": len(portfolio.boards),
+                "eligible_set_complete": portfolio.eligible_set_complete,
+                "attempted_count": len(attempts),
+                "unattempted_count": max(0, len(portfolio.boards) - len(attempts)),
+                "stopped_reason": stopped_reason,
+                "attempts": attempts,
+            }
+        }
 
 
 def _failed_execution(

@@ -90,6 +90,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--max-ats-board-fetches", type=int, default=5)
     parser.add_argument("--max-job-pages", type=int, default=3)
+    parser.add_argument("--max-job-board-attempts", type=int, default=3)
     parser.add_argument(
         "--company-time-budget",
         type=float,
@@ -1014,6 +1015,7 @@ def _agent_config(args: argparse.Namespace) -> AgentConfig:
     return AgentConfig(
         max_candidates=int(getattr(args, "max_career_candidates", 6)),
         max_job_pages=int(getattr(args, "max_job_pages", 3)),
+        max_job_board_attempts=int(getattr(args, "max_job_board_attempts", 3)),
         max_career_candidate_fetches=int(getattr(args, "max_career_fetches", 5)),
         max_career_discovery_transport_calls=(
             None

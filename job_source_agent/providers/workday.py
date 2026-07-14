@@ -54,6 +54,7 @@ class WorkdayAdapter:
             url=board_url,
             provider=self.name,
             identifier=f"{tenant}/{site}",
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:

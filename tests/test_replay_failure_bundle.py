@@ -391,7 +391,10 @@ class FailureReplayBundleTests(unittest.TestCase):
                 "agent": {
                     key: value
                     for key, value in current["agent"].items()
-                    if key != "max_career_discovery_transport_calls"
+                    if key not in {
+                        "max_career_discovery_transport_calls",
+                        "max_job_board_attempts",
+                    }
                 },
             }
             legacy_config = DeterministicRunConfig.from_payload(legacy_payload)
@@ -452,7 +455,10 @@ class FailureReplayBundleTests(unittest.TestCase):
                 "agent": {
                     key: value
                     for key, value in current["agent"].items()
-                    if key != "max_career_discovery_transport_calls"
+                    if key not in {
+                        "max_career_discovery_transport_calls",
+                        "max_job_board_attempts",
+                    }
                 },
             }
             legacy_config = DeterministicRunConfig.from_payload(legacy_payload)

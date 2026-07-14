@@ -10,7 +10,7 @@ from unittest.mock import patch
 from job_source_agent.checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from job_source_agent.contracts import CheckpointStore, StageExecution
 from job_source_agent.evidence_scope import StageEvidenceLineage
-from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
 from job_source_agent.models import PIPELINE_STAGES, StageResult
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
@@ -166,6 +166,135 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         restored = self.store.load(self.fingerprint, "job_board_discovery")
         self.assertNotIn("do-not-persist", payload_text)
         self.assertNotIn("discovered_job_board", restored.updates)
+
+    def test_replay_safe_job_board_portfolio_round_trips_as_typed_context_update(self):
+        portfolio = JobBoardPortfolio(
+            boards=(
+                DiscoveredJobBoard(
+                    board=JobBoard(
+                        url="https://jobs.example.test/search-results",
+                        provider="phenom",
+                        identifier="PRIMARY-TENANT",
+                        replay_safe=True,
+                    ),
+                    detection_method="page_evidence",
+                    evidence_url="https://jobs.example.test/search-results",
+                ),
+                DiscoveredJobBoard(
+                    board=JobBoard(
+                        url="https://jobs.example.test/general/search-results",
+                        provider="phenom",
+                        identifier="GENERAL-TENANT",
+                        replay_safe=True,
+                    ),
+                    detection_method="page_evidence",
+                    evidence_url="https://jobs.example.test/general/search-results",
+                ),
+            ),
+            eligible_set_complete=True,
+        )
+        execution = StageExecution(
+            StageResult(stage="job_board_discovery", status="success"),
+            updates={"job_board_portfolio": portfolio},
+        )
+
+        self.store.save(self.fingerprint, execution)
+
+        restored = self.store.load(self.fingerprint, "job_board_discovery")
+        self.assertEqual(restored, execution)
+        self.assertIsInstance(restored.updates["job_board_portfolio"], JobBoardPortfolio)
+
+    def test_runtime_only_member_prevents_s5_checkpoint_without_secret(self):
+        portfolio = JobBoardPortfolio(
+            boards=(
+                DiscoveredJobBoard(
+                    board=JobBoard(
+                        url="https://jobs.example.test/search-results",
+                        provider="phenom",
+                        identifier="PUBLIC-TENANT",
+                        replay_safe=True,
+                    ),
+                    detection_method="page_evidence",
+                    evidence_url="https://jobs.example.test/search-results",
+                ),
+                DiscoveredJobBoard(
+                    board=JobBoard(
+                        url="https://jobs.example.test/runtime",
+                        provider="ceipal",
+                        identifier='{"api_key":"portfolio-do-not-persist"}',
+                    ),
+                    detection_method="page_evidence",
+                    evidence_url="https://jobs.example.test/runtime",
+                ),
+            ),
+            eligible_set_complete=False,
+        )
+        execution = StageExecution(
+            StageResult(stage="job_board_discovery", status="success"),
+            updates={"job_board_portfolio": portfolio},
+        )
+
+        self.store.save(self.fingerprint, execution)
+
+        restored = self.store.load(self.fingerprint, "job_board_discovery")
+        self.assertIsNone(restored)
+        self.assertEqual(list(self.root.rglob("job_board_discovery.json")), [])
+
+    def test_invalid_job_board_portfolio_update_type_is_rejected(self):
+        execution = StageExecution(
+            StageResult(stage="job_board_discovery", status="success"),
+            updates={"job_board_portfolio": {"boards": []}},
+        )
+
+        with self.assertRaisesRegex(TypeError, "job_board_portfolio.*invalid type"):
+            self.store.save(self.fingerprint, execution)
+
+        self.assertEqual(list(self.root.rglob("job_board_discovery.json")), [])
+
+    def test_corrupt_job_board_portfolio_payload_is_a_safe_cache_miss(self):
+        portfolio = JobBoardPortfolio(
+            boards=(
+                DiscoveredJobBoard(
+                    board=JobBoard(
+                        url="https://jobs.example.test/search-results",
+                        provider="phenom",
+                        identifier="PUBLIC-TENANT",
+                        replay_safe=True,
+                    ),
+                    detection_method="page_evidence",
+                    evidence_url="https://jobs.example.test/search-results",
+                ),
+            ),
+            eligible_set_complete=True,
+        )
+        execution = StageExecution(
+            StageResult(stage="job_board_discovery", status="success"),
+            updates={"job_board_portfolio": portfolio},
+        )
+        corrupt_payloads = (
+            {"boards": []},
+            {
+                "schema_version": "1.0",
+                "boards": "not-a-list",
+                "eligible_set_complete": True,
+            },
+            {
+                **portfolio.to_checkpoint_payload(),
+                "raw_html": "<html>secret</html>",
+            },
+        )
+
+        for corrupt in corrupt_payloads:
+            with self.subTest(corrupt=corrupt):
+                self.store.save(self.fingerprint, execution)
+                path = next(self.root.rglob("job_board_discovery.json"))
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                payload["execution"]["updates"]["job_board_portfolio"] = corrupt
+                path.write_text(json.dumps(payload), encoding="utf-8")
+
+                self.assertIsNone(
+                    self.store.load(self.fingerprint, "job_board_discovery")
+                )
 
     def test_incompatible_or_mismatched_metadata_is_not_loaded(self):
         execution = StageExecution(StageResult(stage="career_discovery", status="success"))

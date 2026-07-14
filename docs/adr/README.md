@@ -28,3 +28,4 @@ NNNN-short-decision-title.md
 - [ADR-0014: Scope Snapshot Evidence By Attempt And Stage](0014-scope-snapshot-evidence-by-attempt-and-stage.md)
 - [ADR-0015: Gate Result Identity And Checkpoint Prefix](0015-gate-result-identity-and-checkpoint-prefix.md)
 - [ADR-0016: Prioritize Direct Website Evidence Before Speculation](0016-prioritize-direct-website-evidence.md)
+- [ADR-0017: Bound Multi-Board Opening Discovery](0017-bound-multi-board-opening-discovery.md)

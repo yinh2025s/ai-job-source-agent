@@ -88,6 +88,9 @@ class WebsiteResolutionStage:
 
     def run(self, context: PipelineContext) -> StageExecution:
         started = time.perf_counter()
+        clear_unverified_website = not bool(
+            context.company.career_root_url or context.company.external_apply_url
+        )
         try:
             provided_website = (
                 context.company_website_url or context.company.company_website_url
@@ -117,16 +120,27 @@ class WebsiteResolutionStage:
                 else None
             )
         except FetchError as exc:
-            return _failed_execution(classify_fetch_error(str(exc)), started, str(exc))
+            return _failed_execution(
+                classify_fetch_error(str(exc)),
+                started,
+                str(exc),
+                clear_unverified_website=clear_unverified_website,
+            )
         except DiscoveryError as exc:
             return _failed_execution(
                 canonical_reason_code(exc.code),
                 started,
                 str(exc),
                 trace=exc.trace,
+                clear_unverified_website=clear_unverified_website,
             )
         except (TypeError, ValueError) as exc:
-            return _failed_execution("WEBSITE_NOT_RESOLVED", started, str(exc))
+            return _failed_execution(
+                "WEBSITE_NOT_RESOLVED",
+                started,
+                str(exc),
+                clear_unverified_website=clear_unverified_website,
+            )
 
         if not website_url:
             return _failed_execution(
@@ -134,6 +148,7 @@ class WebsiteResolutionStage:
                 started,
                 "No official company website could be resolved.",
                 trace=trace,
+                clear_unverified_website=clear_unverified_website,
             )
 
         return StageExecution(
@@ -288,6 +303,8 @@ def _failed_execution(
     started: float,
     detail: str,
     trace: dict | None = None,
+    *,
+    clear_unverified_website: bool = False,
 ) -> StageExecution:
     return StageExecution(
         result=make_stage_result(
@@ -297,6 +314,11 @@ def _failed_execution(
             duration_ms=_elapsed_ms(started),
             input_count=1,
             detail=detail,
+        ),
+        updates=(
+            {"company_website_url": ""}
+            if clear_unverified_website
+            else {}
         ),
         trace=trace or {"error": detail},
     )

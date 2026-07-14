@@ -3,7 +3,7 @@ import unittest
 from job_source_agent.contracts import PipelineContext
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
-from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.models import (
     STAGE_HIRING_IDENTITY_RESOLUTION,
     CompanyInput,
@@ -408,6 +408,159 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(context.discovered_job_board, discovered)
         self.assertIs(service.received, discovered)
         self.assertEqual(context.open_position_url, discovered.board.url + "/job/123")
+
+    def test_opening_portfolio_continues_after_board_local_empty_to_exact(self):
+        early = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://early.example.test/search-results",
+                provider="phenom",
+            ),
+            detection_method="url_evidence",
+            evidence_url="https://early.example.test/search-results",
+        )
+        general = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://general.example.test/search-results",
+                provider="phenom",
+            ),
+            detection_method="url_evidence",
+            evidence_url="https://general.example.test/search-results",
+        )
+
+        class PortfolioService(FakeDiscoveryService):
+            def __init__(self):
+                self.attempted = []
+
+            def match_discovered_board(self, discovered, target_title=None, target_location=None):
+                self.attempted.append(discovered.board.url)
+                if discovered is early:
+                    return None, discovered.board.url, {
+                        "provider_api": {
+                            "inventory": {
+                                "status": "verified_filtered_empty",
+                                "scope": "title_filtered",
+                                "candidate_count": 0,
+                            }
+                        }
+                    }
+                return (
+                    discovered.board.url + "/job/123",
+                    discovered.board.url,
+                    {"provider_api": {"inventory": {"status": "verified"}}},
+                )
+
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Data Scientist")
+        )
+        context.job_list_page_url = early.board.url
+        context.job_board_portfolio = JobBoardPortfolio(
+            boards=(early, general),
+            eligible_set_complete=True,
+        )
+        service = PortfolioService()
+
+        execution = OpeningMatchStage(
+            service,
+            max_job_board_attempts=2,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.provider, "phenom")
+        self.assertEqual(service.attempted, [early.board.url, general.board.url])
+        self.assertEqual(
+            execution.updates["open_position_url"],
+            general.board.url + "/job/123",
+        )
+        self.assertEqual(execution.trace["board_portfolio"]["attempted_count"], 2)
+
+    def test_opening_portfolio_does_not_claim_no_match_with_unattempted_board(self):
+        boards = tuple(
+            DiscoveredJobBoard(
+                board=JobBoard(
+                    url=f"https://jobs{index}.example.test/search-results",
+                    provider="phenom",
+                ),
+                detection_method="url_evidence",
+                evidence_url=f"https://jobs{index}.example.test/search-results",
+            )
+            for index in range(2)
+        )
+
+        class EmptyPortfolioService(FakeDiscoveryService):
+            def match_discovered_board(self, discovered, target_title=None, target_location=None):
+                return None, discovered.board.url, {
+                    "provider_api": {
+                        "inventory": {
+                            "status": "verified_filtered_empty",
+                            "scope": "title_filtered",
+                            "candidate_count": 0,
+                        }
+                    }
+                }
+
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.job_list_page_url = boards[0].board.url
+        context.job_board_portfolio = JobBoardPortfolio(
+            boards=boards,
+            eligible_set_complete=True,
+        )
+
+        execution = OpeningMatchStage(
+            EmptyPortfolioService(),
+            max_job_board_attempts=1,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "JOB_BOARD_PORTFOLIO_INCOMPLETE",
+        )
+        self.assertEqual(execution.trace["board_portfolio"]["unattempted_count"], 1)
+
+    def test_opening_portfolio_claims_no_match_only_after_complete_attempt_set(self):
+        boards = tuple(
+            DiscoveredJobBoard(
+                board=JobBoard(
+                    url=f"https://jobs{index}.example.test/search-results",
+                    provider="phenom",
+                ),
+                detection_method="url_evidence",
+                evidence_url=f"https://jobs{index}.example.test/search-results",
+            )
+            for index in range(2)
+        )
+
+        class EmptyPortfolioService(FakeDiscoveryService):
+            def match_discovered_board(self, discovered, target_title=None, target_location=None):
+                return None, discovered.board.url, {
+                    "provider_api": {
+                        "inventory": {
+                            "status": "verified_filtered_empty",
+                            "scope": "title_filtered",
+                            "candidate_count": 0,
+                        }
+                    }
+                }
+
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.job_list_page_url = boards[0].board.url
+        context.job_board_portfolio = JobBoardPortfolio(
+            boards=boards,
+            eligible_set_complete=True,
+        )
+
+        execution = OpeningMatchStage(
+            EmptyPortfolioService(),
+            max_job_board_attempts=2,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(execution.result.reason_code, "OPENING_NOT_FOUND")
+        self.assertEqual(execution.trace["board_portfolio"]["unattempted_count"], 0)
 
     def test_opening_no_match_is_partial_not_failed(self):
         class NoMatchService(FakeDiscoveryService):

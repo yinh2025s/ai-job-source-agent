@@ -3,7 +3,9 @@ import html
 import json
 from pathlib import Path
 
+from job_source_agent.career_search import CareerSearchResult
 from job_source_agent.job_board import JobBoard
+from job_source_agent.models import LinkCandidate
 from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.providers.registry import ProviderRegistry
@@ -27,6 +29,75 @@ class MappingFetcher:
 
 
 class HiddenJobBoardDiscoveryTests(unittest.TestCase):
+    def test_scoped_workday_board_builds_replay_safe_general_portfolio(self):
+        early = "https://visa.wd1.myworkdayjobs.com/en-US/Visa_Early_Careers"
+        general = "https://visa.wd1.myworkdayjobs.com/en-US/Visa_Careers"
+        general_api = "https://visa.wd1.myworkdayjobs.com/wday/cxs/visa/Visa_Careers/jobs"
+        fetcher = MappingFetcher({
+            general_api: Page(
+                url=general_api,
+                final_url=general_api,
+                html=json.dumps({"total": 0, "jobPostings": []}),
+            ),
+        })
+        agent = JobSourceAgent(fetcher, max_job_board_attempts=3)
+        agent._search_career_candidates = lambda *args, **kwargs: CareerSearchResult(
+            candidates=[
+                LinkCandidate(
+                    url=early,
+                    text="University jobs",
+                    source_url="https://www.visa.com/careers",
+                    score=550,
+                ),
+                LinkCandidate(
+                    url=general,
+                    text="Search jobs",
+                    source_url="https://www.visa.com/careers",
+                    score=355,
+                ),
+            ],
+            trace={"error": None},
+        )
+
+        selected, trace, portfolio = agent.find_job_board_portfolio(
+            early,
+            company_name="Visa",
+            target_title="Data Scientist",
+            target_location="United States",
+        )
+
+        self.assertIsNotNone(portfolio)
+        assert portfolio is not None
+        self.assertEqual(selected, general)
+        self.assertEqual(
+            [item.board.url for item in portfolio.boards],
+            [general, early],
+        )
+        self.assertTrue(portfolio.eligible_set_complete)
+        self.assertIsNotNone(portfolio.to_checkpoint_payload())
+        self.assertEqual(fetcher.requested, [general_api])
+        self.assertEqual(trace["job_board_portfolio"]["eligible_count"], 2)
+
+    def test_interrupted_portfolio_search_is_not_marked_complete(self):
+        early = "https://visa.wd1.myworkdayjobs.com/en-US/Visa_Early_Careers"
+        agent = JobSourceAgent(MappingFetcher({}), max_job_board_attempts=3)
+        agent._search_career_candidates = lambda *args, **kwargs: CareerSearchResult(
+            candidates=[],
+            trace={"error": "search timed out"},
+        )
+
+        _selected, trace, portfolio = agent.find_job_board_portfolio(
+            early,
+            company_name="Visa",
+            target_title="Data Scientist",
+            target_location="United States",
+        )
+
+        self.assertIsNotNone(portfolio)
+        assert portfolio is not None
+        self.assertFalse(portfolio.eligible_set_complete)
+        self.assertFalse(trace["job_board_portfolio"]["eligible_set_complete"])
+
     def test_page_evidence_native_board_skips_blind_ats_search(self):
         career = "https://careers.example.com/open-roles"
 

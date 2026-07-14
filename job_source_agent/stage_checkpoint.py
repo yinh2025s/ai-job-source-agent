@@ -15,7 +15,7 @@ from .checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from .contracts import CONTRACT_SCHEMA_VERSION, StageExecution
 from .evidence_scope import StageEvidenceLineage
 from .homepage_navigation import HomepageNavigationEvidence
-from .job_board import DiscoveredJobBoard
+from .job_board import DiscoveredJobBoard, JobBoardPortfolio
 from .models import PIPELINE_STAGES, StageResult
 
 
@@ -52,6 +52,19 @@ class FilesystemCheckpointStore:
                     execution_payload["updates"].pop("discovered_job_board", None)
                 else:
                     execution_payload["updates"]["discovered_job_board"] = checkpoint_board
+            job_board_portfolio = execution.updates.get("job_board_portfolio")
+            if "job_board_portfolio" in execution.updates and not isinstance(
+                job_board_portfolio, JobBoardPortfolio
+            ):
+                raise TypeError("job_board_portfolio checkpoint update has an invalid type")
+            if isinstance(job_board_portfolio, JobBoardPortfolio):
+                checkpoint_portfolio = job_board_portfolio.to_checkpoint_payload()
+                if checkpoint_portfolio is None:
+                    self._cleanup_temporary_files(path.parent, stage)
+                    path.unlink(missing_ok=True)
+                    return
+                else:
+                    execution_payload["updates"]["job_board_portfolio"] = checkpoint_portfolio
             homepage_evidence = execution.updates.get("homepage_navigation_evidence")
             if "homepage_navigation_evidence" in execution.updates and not isinstance(
                 homepage_evidence, HomepageNavigationEvidence
@@ -224,6 +237,11 @@ def _deserialize_checkpoint(
         updates = dict(updates)
         updates["discovered_job_board"] = DiscoveredJobBoard.from_checkpoint_payload(
             updates["discovered_job_board"]
+        )
+    if "job_board_portfolio" in updates:
+        updates = dict(updates)
+        updates["job_board_portfolio"] = JobBoardPortfolio.from_checkpoint_payload(
+            updates["job_board_portfolio"]
         )
     if "homepage_navigation_evidence" in updates:
         updates = dict(updates)

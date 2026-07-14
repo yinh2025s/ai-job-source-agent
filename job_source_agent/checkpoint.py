@@ -9,8 +9,8 @@ from .models import RESULT_SCHEMA_VERSION
 from .source_posting import source_posting_fingerprint_payload
 
 
-CHECKPOINT_SCHEMA_VERSION = "1.5"
-ADAPTER_VERSION = "2026-07-14.83"
+CHECKPOINT_SCHEMA_VERSION = "1.6"
+ADAPTER_VERSION = "2026-07-14.84"
 
 FINGERPRINT_FIELDS = (
     "company_name",

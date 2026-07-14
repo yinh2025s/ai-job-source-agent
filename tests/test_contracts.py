@@ -10,6 +10,11 @@ from job_source_agent.contracts import (
 )
 from job_source_agent.models import CompanyInput, StageResult
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
+from job_source_agent.job_board import (
+    DiscoveredJobBoard,
+    JobBoard as DiscoveredBoardLocator,
+    JobBoardPortfolio,
+)
 from job_source_agent.providers import AdapterResult, JobBoard, JobCandidate, JobQuery, ProviderAdapter
 from job_source_agent.providers.base import (
     has_fetch_reserve,
@@ -158,6 +163,65 @@ class ContractTests(unittest.TestCase):
                     }
                 },
             ))
+
+    def test_pipeline_context_accepts_typed_job_board_portfolio(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        discovered = DiscoveredJobBoard(
+            board=DiscoveredBoardLocator(
+                url="https://jobs.example.com/acme",
+                provider="greenhouse",
+            ),
+            detection_method="url_evidence",
+            evidence_url="https://jobs.example.com/acme",
+        )
+        portfolio = JobBoardPortfolio(
+            boards=(discovered,),
+            eligible_set_complete=True,
+        )
+
+        self.assertIsNone(context.job_board_portfolio)
+        context.apply(StageExecution(
+            result=StageResult(stage="job_board_discovery", status="success"),
+            updates={"job_board_portfolio": portfolio},
+        ))
+
+        self.assertIs(context.job_board_portfolio, portfolio)
+
+    def test_pipeline_context_rejects_untyped_job_board_portfolio(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+
+        with self.assertRaisesRegex(
+            TypeError,
+            "job_board_portfolio update must use JobBoardPortfolio",
+        ):
+            context.apply(StageExecution(
+                result=StageResult(stage="job_board_discovery", status="success"),
+                updates={
+                    "job_board_portfolio": {
+                        "boards": [],
+                        "eligible_set_complete": True,
+                    }
+                },
+            ))
+
+    def test_pipeline_context_preserves_discovered_job_board_compatibility(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        discovered = DiscoveredJobBoard(
+            board=DiscoveredBoardLocator(
+                url="https://jobs.example.com/acme",
+                provider="greenhouse",
+            ),
+            detection_method="url_evidence",
+            evidence_url="https://jobs.example.com/acme",
+        )
+
+        context.apply(StageExecution(
+            result=StageResult(stage="job_board_discovery", status="success"),
+            updates={"discovered_job_board": discovered},
+        ))
+
+        self.assertIs(context.discovered_job_board, discovered)
+        self.assertIsNone(context.job_board_portfolio)
 
     def test_stage_checkpoint_and_provider_protocols_are_structural(self):
         class FakeStage:

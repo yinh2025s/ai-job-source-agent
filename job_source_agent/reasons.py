@@ -38,6 +38,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "PARSING_FAILED": ReasonSpec(False, "parser"),
     "INVALID_STRUCTURED_DATA": ReasonSpec(False, "parser"),
     "EMPTY_PROVIDER_RESPONSE": ReasonSpec(False, "provider"),
+    "JOB_BOARD_PORTFOLIO_INCOMPLETE": ReasonSpec(False, "matcher"),
     "OPENING_NOT_FOUND": ReasonSpec(False, "matcher"),
     "TITLE_MISMATCH": ReasonSpec(False, "matcher"),
     "LOCATION_MISMATCH": ReasonSpec(False, "matcher"),

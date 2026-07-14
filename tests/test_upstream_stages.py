@@ -147,13 +147,58 @@ class UpstreamStageTests(unittest.TestCase):
         )
 
     def test_s2_missing_result_has_existing_failure_semantics(self):
-        context = PipelineContext.from_company(CompanyInput(company_name="Missing"))
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Missing",
+                company_website_url="https://unverified.example",
+            )
+        )
 
         execution = WebsiteResolutionStage(FakeWebsiteResolver(None)).run(context)
 
         self.assertEqual(execution.result.status, "failed")
         self.assertEqual(execution.result.reason_code, "WEBSITE_NOT_RESOLVED")
         self.assertEqual(execution.result.output_count, 0)
+        self.assertEqual(execution.updates["company_website_url"], "")
+
+    def test_s2_failure_clears_unverified_input_before_identity_stage(self):
+        identity = FakeIdentityResolver()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Missing",
+                company_website_url="https://unverified.example",
+            )
+        )
+
+        PipelineStageRunner(
+            [
+                WebsiteResolutionStage(FakeWebsiteResolver(None)),
+                HiringIdentityResolutionStage(identity),
+            ]
+        ).run(context)
+
+        self.assertEqual(context.company_website_url, "")
+        self.assertEqual(
+            [result.status for result in context.stage_results],
+            ["failed", "not_run"],
+        )
+        self.assertEqual(identity.calls, [])
+
+    def test_s2_failure_preserves_direct_career_handoff(self):
+        career_root = "https://jobs.example/direct"
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Direct",
+                company_website_url="https://unverified.example",
+                career_root_url=career_root,
+            )
+        )
+
+        execution = WebsiteResolutionStage(FakeWebsiteResolver(None)).run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertNotIn("company_website_url", execution.updates)
+        self.assertEqual(context.career_root_url, career_root)
 
     def test_s3_is_not_run_without_resolved_website(self):
         resolver = FakeIdentityResolver()

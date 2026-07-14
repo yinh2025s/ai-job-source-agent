@@ -117,6 +117,7 @@ def build_agent(
         provider_registry=registry,
         max_candidates=settings.max_candidates,
         max_job_pages=settings.max_job_pages,
+        max_job_board_attempts=settings.max_job_board_attempts,
         max_career_candidate_fetches=settings.max_career_candidate_fetches,
         max_career_discovery_transport_calls=(
             settings.max_career_discovery_transport_calls
@@ -214,7 +215,11 @@ def build_application_from_fetcher(
             ),
             CareerDiscoveryStage(agent),
             JobBoardDiscoveryStage(agent, registry),
-            OpeningMatchStage(agent, registry),
+            OpeningMatchStage(
+                agent,
+                registry,
+                max_job_board_attempts=settings.max_job_board_attempts,
+            ),
             ResultValidationStage(),
         ),
         checkpoint_store=(

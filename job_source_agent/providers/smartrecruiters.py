@@ -43,6 +43,7 @@ class SmartRecruitersAdapter:
             url=f"https://{_PUBLIC_HOST}/{quote(identifier, safe='-._~')}",
             provider=self.name,
             identifier=identifier,
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
