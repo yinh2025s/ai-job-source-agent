@@ -74,4 +74,3 @@ headers. Trace does not persist volatile timing, page bodies, cookies, tokens, o
 - This ADR does not define a cross-process handoff of S2 LinkedIn website evidence into S4.
   Any durable S2-to-S4 homepage-evidence reuse requires a separate contract; the current
   process-local cache and existing stage evidence rules remain unchanged.
-

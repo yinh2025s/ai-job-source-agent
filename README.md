@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-14.74`. The registry auto-discovers 24 adapter modules: 23 provide native inventory or constrained positive evidence, while only Talemetry remains detection-only. S4 now gives an HTTPS same-host embedded route explicitly scored as a job list the same scheduling weight as visible first-party career navigation; identity evidence still wins, and every candidate still requires the existing page/provider verification. S5 validates strong safe same-site listing routes before speculative provider assets or page probes. Final offline gates pass 1027 tests, 25/25 provider cases, 6/6 resolver cases, and 24 adapters / 0 architecture issues. The latest full serialized frozen-30 live baseline remains 30 verified websites, 29 career pages, 28 verified job lists, and 24 exact openings; replay under the `.74` ordering is 30/30 with zero fixture gaps or mismatches. In a fresh Akkodis focused live run, the explicit job-list route moved ahead of the generic careers page, S4 completed in 10.1 seconds, and S6 read all 83 official Sitecore records before returning verified `OPENING_NOT_FOUND`. Authenticated LinkedIn extension Scan/Run acceptance remains deferred while backend reliability work continues.
+Current adapter iteration: `2026-07-14.75`. The registry auto-discovers 24 adapter modules: 23 provide native inventory or constrained positive evidence, while only Talemetry remains detection-only. ADR-0011 gives each CLI/live S4 career-discovery run a default budget of 32 actual transport dispatches across homepage, bundle, sitemap, search, candidate, and blind-ATS phases; cache hits are free, retries count per attempt, and typed exhaustion never becomes a false claim that no careers page exists. Run-configuration schema `1.1` records this policy, while legacy `1.0` payloads and digests replay unchanged. Final offline gates pass 1045 tests, 25/25 provider cases, 6/6 resolver cases, and 24 adapters / 0 architecture issues. The `.75` frozen-30 replay is 30/30 with zero fixture gaps or mismatches; live S4 peaked at 22/32 calls with no rejection. The serialized live run recorded 30 websites, 28 career pages, 27 job lists, and 23 exact openings after one retryable Dematic timeout; an immediate same-configuration Dematic run recovered the exact Workday opening in 16.1 seconds using 2/32 S4 calls. The last complete published baseline therefore remains 30/29/28/24. Authenticated LinkedIn extension Scan/Run acceptance remains deferred while backend reliability work continues.
 
 ## What It Returns
 
@@ -330,6 +330,7 @@ python3 scripts/live_batch_eval.py \
   --verify-limit 3 \
   --max-career-candidates 5 \
   --max-career-fetches 5 \
+  --max-career-transport-calls 32 \
   --max-ats-board-fetches 5 \
   --max-job-pages 2 \
   --company-time-budget 45 \
@@ -409,6 +410,7 @@ python3 scripts/live_batch_eval.py \
   --limit 51 \
   --fetch-timeout 5 \
   --career-search-timeout 7 \
+  --max-career-transport-calls 32 \
   --company-time-budget 45 \
   --website-time-budget 20 \
   --fetch-retries 1 \
