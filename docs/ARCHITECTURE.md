@@ -60,6 +60,19 @@ changes, and exact-opening changes remain strict mismatches. A typed fixture gap
 partial, or identity-drifting replay remains incomplete, while an unused probe may be ignored only
 when both source and replay have identical complete success identity.
 
+ADR-0014 extends execution identity to the captured evidence itself. One company
+invocation owns an opaque attempt ID shared across its process phases; every executed
+stage publishes typed lineage containing its execution fingerprint, producer attempt,
+and an optional exact snapshot scope. Restored checkpoints retain the producer that
+created them, so selective retry may intentionally produce a mixed-attempt completion
+without making evidence ambiguous. Snapshot v3 scope membership is defined by stage-local
+request ordinals plus a terminal-descriptor digest, not by timestamps or global sequence
+bounds. Scoped replay bundle v6 consumes one strict ordered tape per referenced scope and
+isolates every source occurrence by record ID, checkpoint root, application, cache, and
+tape cursor. Legacy v1/v2 snapshots use explicit bundle v5 materialization; scoped and
+legacy records cannot be mixed. Missing, extra, corrupt, cross-stage, or unconsumed
+outcomes fail closed, and unreferenced records from interrupted stages remain orphans.
+
 ## Standard Pipeline
 
 | Stage | Owner | Input | Output |
@@ -266,6 +279,7 @@ Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、ow
 - Stage store 通过 fingerprint 级进程锁和原子替换保证并发安全；checkpoint trace 明确记录 save、restore、miss 和 invalidate。
 - Sanitized live snapshots 使用跨进程发布锁、全局 sequence 和内容寻址的不可变 page/artifact blobs；canonical fixture view 保持 Fetcher 兼容。`scripts/replay_snapshots.py` 验证 blob、request identity、failure taxonomy 与 canonical view，并按完整 request identity 生成 deterministic fixture tree。
 - `.77` 将 batch completion 与 typed stage retryability 接通。兼容 success 和明确 non-retryable outcome 继续恢复；只有完整 stage chain 的首个 non-success 明确 `retryable=true` 才自动重提，并只 invalidate 该 stage 及下游 checkpoint。旧 completion 保留到新结果原子发布，trace/summary 只记录 privacy-safe action、stage 和 reason code。Snapshot materialization 同时按完整 request identity 在 page/failure 共享 sequence 中选择唯一最新终态，修复旧 failure 压过后来 success 的 replay 漂移。跨 live invocation、跨 stage 的 attempt evidence lineage 仍需独立 versioned scope contract；缺少该 contract 的 outcome mismatch 继续由 replay gate fail closed。
+- ADR-0014 / `.78` 完成 attempt/stage-scoped evidence lineage。Context contract `1.3`、stage checkpoint `1.5` 和 batch completion `1.2` 保存每个 stage 的 producer 与 scope；snapshot v3 记录 exact membership，zero-request stage 也发布空 scope。Bundle v6 使用严格 outcome tape 和 per-record runtime isolation，legacy bundle v5 保持显式兼容。真实 `SIGKILL` 验收确认 S1-S4 可从旧 attempt 恢复、S5-S7 由新 attempt 重算，被杀前未 finalize 的 S5 记录不会进入 replay。最终门禁为 1138 tests、25/25 provider、6/6 resolver、24 adapters / 0 issues；frozen-30 live baseline 仍为 30/29/28/24，本轮不声称产品命中率变化，登录态插件验收继续 deferred。
 - `scripts/replay_failure_bundle.py` 将结果筛选、snapshot replay、authoritative upstream checkpoint seed 和离线 `PipelineApplication` 串成自包含失败复现 bundle；outcome gate 比较原始与 replay 的 pipeline/failure-stage signature，未声明变化非零退出。Live batch 可在运行结束后自动调用该边界，reporting 汇总 checkpoint activity、bundle 状态和按规模排序的 `stage x provider x reason_code` failure cluster。
 - S4 career candidate verification 对明确 homepage navigation evidence 增加执行优先级，但仍保留原 score 作为同层排序；generated path 不再先耗尽强证据预算。Candidate 发生跨站 redirect 时，只有 registry URL adapter 或无额外网络探测的 page-aware provider evidence 才能确认，普通内容/媒体站被拒绝。S6 generic matcher 在一次调用内复用已抓取 landing page，并只把同主机 HTTPS GET form 的白名单关键词字段加入 bounded search plan；页面声明 action 先于推测 query，跨站/POST/敏感 query 不进入 fetch。Native adapter 的 unsupported variant 保留 adapter trace 和 incomplete inventory，不再退化成无类型 generic miss。
 - Failure replay 以 allowlist 合并稳定 source-posting evidence，排除 cookie、token、原始认证 HTML 和任意 payload。Live summary 写入实际 company 与有效 expectations digest；evaluation history 和直接 `--baseline-summary` 只比较兼容 cohort，旧无 identity history 仅与旧无 identity history 比较。
