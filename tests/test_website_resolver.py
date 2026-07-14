@@ -1,6 +1,7 @@
 import unittest
 import time
 
+from job_source_agent.request_identity import build_request_identity
 from job_source_agent.web import FetchError, Fetcher, Page, domain_of
 from job_source_agent.website_resolver import (
     CompanyWebsiteResolver,
@@ -1066,6 +1067,141 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertIsNone(website_url)
         self.assertNotIn("selected", trace)
+
+    def test_search_fetch_error_is_retained_when_fallback_resolves_website(self):
+        class SearchFallbackFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "format=rss" in url:
+                    raise FetchError(
+                        "search rate limited",
+                        status=429,
+                        reason_code="RATE_LIMITED",
+                        retryable=True,
+                        request_identity=build_request_identity(url).as_dict(),
+                    )
+                if "bing.com" in url:
+                    return Page(url=url, final_url=url, html="<html></html>")
+                if "duckduckgo.com" in url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            '<a class="result__a" href="https://acme.example/about">'
+                            "Acme official website</a>"
+                        ),
+                    )
+                if domain_of(url) == "acme.example":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<html><head><title>Acme</title></head><body>Acme</body></html>",
+                    )
+                raise FetchError(
+                    "HTTP Error 404: Not Found",
+                    status=404,
+                    reason_code="HTTP_NOT_FOUND",
+                    retryable=False,
+                )
+
+        website_url, trace = CompanyWebsiteResolver(
+            SearchFallbackFetcher(offline=True),
+            verify_limit=1,
+        ).resolve("Acme")
+
+        self.assertEqual(website_url, "https://acme.example")
+        search_failure = next(
+            failure
+            for failure in trace["fetch_errors"]
+            if failure["phase"] == "search" and failure["status"] == 429
+        )
+        self.assertEqual(search_failure["reason_code"], "RATE_LIMITED")
+        self.assertTrue(search_failure["retryable"])
+        self.assertEqual(search_failure["evidence_tier"], 2)
+        self.assertIsNotNone(search_failure["request_identity"])
+        self.assertNotIn("resolution_failure", trace)
+
+    def test_linkedin_fetch_error_is_retained_when_trailing_slash_fallback_succeeds(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class LinkedInFallbackFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == linkedin_url:
+                    raise FetchError(
+                        "LinkedIn temporarily unavailable",
+                        reason_code="SERVER_ERROR",
+                        retryable=True,
+                        status=503,
+                        request_identity=build_request_identity(url).as_dict(),
+                    )
+                if url == f"{linkedin_url}/":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme",'
+                            '"url":"https://acme.com"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "acme.com":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<html><head><title>Acme</title></head><body>Acme</body></html>",
+                    )
+                raise FetchError("HTTP Error 404: Not Found", status=404)
+
+        website_url, trace = CompanyWebsiteResolver(
+            LinkedInFallbackFetcher(offline=True),
+            verify_limit=1,
+        ).resolve("Acme", linkedin_url, preferred_url="https://acme.com")
+
+        self.assertEqual(website_url, "https://acme.com")
+        linkedin_failure = next(
+            failure
+            for failure in trace["fetch_errors"]
+            if failure["phase"] == "linkedin_company"
+        )
+        self.assertEqual(linkedin_failure["url"], linkedin_url)
+        self.assertEqual(linkedin_failure["reason_code"], "SERVER_ERROR")
+        self.assertEqual(linkedin_failure["evidence_tier"], 1)
+        self.assertIsNotNone(linkedin_failure["request_identity"])
+
+    def test_retryable_direct_evidence_blocks_ordinary_not_found_resolution(self):
+        preferred_url = "https://acme.example"
+        identity = build_request_identity(preferred_url).as_dict()
+
+        class BlockedVerificationFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == preferred_url:
+                    raise FetchError(
+                        "homepage timed out",
+                        reason_code="NETWORK_TIMEOUT",
+                        retryable=True,
+                        request_identity=identity,
+                    )
+                raise FetchError(
+                    "HTTP Error 404: Not Found",
+                    status=404,
+                    reason_code="HTTP_NOT_FOUND",
+                    retryable=False,
+                    request_identity=build_request_identity(url).as_dict(),
+                )
+
+        website_url, trace = CompanyWebsiteResolver(
+            BlockedVerificationFetcher(offline=True),
+            verify_limit=1,
+        ).resolve("Acme", preferred_url=preferred_url)
+
+        self.assertIsNone(website_url)
+        self.assertNotIn("selected", trace)
+        failure = trace["resolution_failure"]
+        self.assertEqual(failure["kind"], "verification_blocked")
+        self.assertEqual(failure["reason_code"], "NETWORK_TIMEOUT")
+        self.assertTrue(failure["retryable"])
+        self.assertEqual(failure["evidence_tier"], 1)
+        self.assertEqual(failure["request_identity"], identity)
 
     def test_duckduckgo_search_is_used_when_bing_has_no_results(self):
         class SearchFallbackFetcher(Fetcher):

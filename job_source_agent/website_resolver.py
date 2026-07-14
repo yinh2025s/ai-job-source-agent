@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from xml.etree import ElementTree as ET
 
 from .contracts import FetchClient
+from .fetch_failure import project_fetch_error
 from .homepage_navigation import HomepageNavigationEvidence, evidence_from_verified_homepage
 from .identity_evidence import LinkedInWebsiteEvidenceStore
 from .web import FetchError, Page, domain_of, normalize_url
@@ -160,7 +161,9 @@ class CompanyWebsiteResolver:
             "preferred_url": preferred_url,
             "target_region": location_region(job_location),
             "candidates": [],
+            "fetch_errors": [],
         }
+        fetch_errors = trace["fetch_errors"]
 
         if normalized_name in self.overrides:
             url = normalize_url(self.overrides[normalized_name])
@@ -182,6 +185,7 @@ class CompanyWebsiteResolver:
             linkedin_evidence = self._linkedin_company_candidates(
                 linkedin_company_url,
                 company_name,
+                fetch_errors=fetch_errors,
             )
             linkedin_official_candidates = list(linkedin_evidence.official_urls)
             linkedin_candidates = list(linkedin_evidence.outbound_urls)
@@ -211,6 +215,7 @@ class CompanyWebsiteResolver:
             linkedin_company_url,
             job_location=job_location,
             candidate_sources=fast_sources,
+            fetch_errors=fetch_errors,
         )
         fast_selected = self._select_verified_candidate(
             fast_scored,
@@ -270,6 +275,7 @@ class CompanyWebsiteResolver:
                 linkedin_company_url,
                 job_location=job_location,
                 candidate_sources=regional_sources,
+                fetch_errors=fetch_errors,
             )
             trace["candidates"].extend(
                 {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
@@ -293,6 +299,7 @@ class CompanyWebsiteResolver:
             linkedin_evidence = self._linkedin_company_candidates(
                 linkedin_company_url,
                 company_name,
+                fetch_errors=fetch_errors,
             )
             linkedin_official_candidates = list(linkedin_evidence.official_urls)
             linkedin_candidates = list(linkedin_evidence.outbound_urls)
@@ -346,6 +353,7 @@ class CompanyWebsiteResolver:
                         linkedin_company_url,
                         job_location=job_location,
                         candidate_sources=official_sources,
+                        fetch_errors=fetch_errors,
                     )
                 )
             official_selected = self._select_verified_candidate(
@@ -374,7 +382,11 @@ class CompanyWebsiteResolver:
                 trace,
                 self._navigation_evidence_for_selected(fast_selected),
             )
-        search_evidence = self._search_candidates_with_evidence(company_name, job_location)
+        search_evidence = self._search_candidates_with_evidence(
+            company_name,
+            job_location,
+            fetch_errors=fetch_errors,
+        )
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
         all_candidates = dedupe_urls(
@@ -402,6 +414,7 @@ class CompanyWebsiteResolver:
             job_location=job_location,
             search_evidence=evidence_by_domain,
             candidate_sources=candidate_sources,
+            fetch_errors=fetch_errors,
         )
         seen_domains = {domain_of(str(item.get("url") or "")) for item in trace["candidates"]}
         trace["candidates"].extend(
@@ -419,6 +432,12 @@ class CompanyWebsiteResolver:
             }
             return selected.url, trace, self._navigation_evidence_for_selected(selected)
 
+        retryable_failure = _strongest_retryable_fetch_failure(fetch_errors)
+        if retryable_failure is not None:
+            trace["resolution_failure"] = {
+                "kind": "verification_blocked",
+                **retryable_failure,
+            }
         return None, trace, None
 
     @staticmethod
@@ -440,6 +459,7 @@ class CompanyWebsiteResolver:
         job_location: str | None = None,
         search_evidence: dict[str, SearchEvidence] | None = None,
         candidate_sources: dict[str, set[str]] | None = None,
+        fetch_errors: list[dict] | None = None,
     ) -> list[WebsiteCandidate]:
         search_evidence = search_evidence or {}
         candidate_sources = candidate_sources or {}
@@ -484,26 +504,37 @@ class CompanyWebsiteResolver:
         def verify_wave(wave: list[WebsiteCandidate]) -> list[WebsiteCandidate]:
             if not wave:
                 return []
+
+            def verify_candidate(
+                candidate: WebsiteCandidate,
+            ) -> tuple[WebsiteCandidate, list[dict]]:
+                candidate_fetch_errors: list[dict] = []
+                verified_candidate = _append_candidate_sources(
+                    self._score_candidate(
+                        candidate.url,
+                        company_name,
+                        linkedin_company_url=linkedin_company_url,
+                        job_location=job_location,
+                        verify=True,
+                        search_evidence=search_evidence.get(domain_of(candidate.url)),
+                        fetch_errors=candidate_fetch_errors,
+                        evidence_tier=_candidate_evidence_tier(
+                            candidate_sources.get(domain_of(candidate.url), set())
+                        ),
+                    ),
+                    candidate_sources.get(domain_of(candidate.url), set()),
+                )
+                return verified_candidate, candidate_fetch_errors
+
             with ThreadPoolExecutor(
                 max_workers=len(wave),
                 thread_name_prefix="website-verify",
             ) as executor:
-                return list(
-                    executor.map(
-                        lambda candidate: _append_candidate_sources(
-                            self._score_candidate(
-                                candidate.url,
-                                company_name,
-                                linkedin_company_url=linkedin_company_url,
-                                job_location=job_location,
-                                verify=True,
-                                search_evidence=search_evidence.get(domain_of(candidate.url)),
-                            ),
-                            candidate_sources.get(domain_of(candidate.url), set()),
-                        ),
-                        wave,
-                    )
-                )
+                outcomes = list(executor.map(verify_candidate, wave))
+            if fetch_errors is not None:
+                for _candidate, candidate_fetch_errors in outcomes:
+                    fetch_errors.extend(candidate_fetch_errors)
+            return [candidate for candidate, _errors in outcomes]
 
         verified = verify_wave(direct_to_verify)
         directly_selectable_domains = {
@@ -526,6 +557,7 @@ class CompanyWebsiteResolver:
         self,
         company_name: str,
         job_location: str | None = None,
+        fetch_errors: list[dict] | None = None,
     ) -> list[SearchEvidence]:
         region = location_region(job_location)
         region_query = " United States" if region == "us" else ""
@@ -544,7 +576,14 @@ class CompanyWebsiteResolver:
         for search_url, extract_urls in searches:
             try:
                 page = self.fetcher.fetch(search_url)
-            except FetchError:
+            except FetchError as exc:
+                _retain_fetch_error(
+                    fetch_errors,
+                    exc,
+                    phase="search",
+                    url=search_url,
+                    evidence_tier=2,
+                )
                 continue
             raw_results = extract_urls(page.html)
             for result in raw_results:
@@ -564,6 +603,7 @@ class CompanyWebsiteResolver:
         self,
         linkedin_company_url: str | None,
         company_name: str,
+        fetch_errors: list[dict] | None = None,
     ) -> _LinkedInCompanyCandidates:
         if not linkedin_company_url:
             return _LinkedInCompanyCandidates()
@@ -580,7 +620,14 @@ class CompanyWebsiteResolver:
         for attempt_url in attempt_urls:
             try:
                 candidate_page = self.fetcher.fetch(attempt_url)
-            except FetchError:
+            except FetchError as exc:
+                _retain_fetch_error(
+                    fetch_errors,
+                    exc,
+                    phase="linkedin_company",
+                    url=attempt_url,
+                    evidence_tier=1,
+                )
                 continue
             pages.append(candidate_page)
             if not _linkedin_company_page_incomplete(candidate_page.html):
@@ -786,6 +833,8 @@ class CompanyWebsiteResolver:
         job_location: str | None = None,
         verify: bool = True,
         search_evidence: SearchEvidence | None = None,
+        fetch_errors: list[dict] | None = None,
+        evidence_tier: int = 3,
     ) -> WebsiteCandidate:
         score = 0
         reasons: list[str] = []
@@ -852,6 +901,13 @@ class CompanyWebsiteResolver:
         try:
             page = self.fetcher.fetch(url)
         except FetchError as exc:
+            _retain_fetch_error(
+                fetch_errors,
+                exc,
+                phase="homepage_verification",
+                url=url,
+                evidence_tier=evidence_tier,
+            )
             if _is_access_controlled_institutional_acronym(
                 domain,
                 company_tokens,
@@ -880,7 +936,14 @@ class CompanyWebsiteResolver:
                 return WebsiteCandidate(resolved_url, score, reasons)
             try:
                 page = self.fetcher.fetch(client_redirect_url)
-            except FetchError:
+            except FetchError as exc:
+                _retain_fetch_error(
+                    fetch_errors,
+                    exc,
+                    phase="client_redirect_verification",
+                    url=client_redirect_url,
+                    evidence_tier=evidence_tier,
+                )
                 score -= 100
                 reasons.append("same-origin client redirect target fetch failed")
                 reasons.append("redirect-only shell rejected")
@@ -1669,6 +1732,59 @@ def _has_direct_identity_source(candidate: WebsiteCandidate) -> bool:
         "candidate source: preferred_input",
     }
     return any(reason in direct_sources for reason in candidate.reasons)
+
+
+def _candidate_evidence_tier(sources: set[str]) -> int:
+    if sources.intersection(
+        {
+            "linkedin_cached_official_website",
+            "linkedin_official_website",
+            "preferred_input",
+        }
+    ):
+        return 1
+    if sources.intersection(
+        {
+            "linkedin_evidence",
+            "linkedin_slug",
+            "regional_recovery",
+            "search_evidence",
+        }
+    ):
+        return 2
+    return 3
+
+
+def _retain_fetch_error(
+    fetch_errors: list[dict] | None,
+    error: FetchError,
+    *,
+    phase: str,
+    url: str,
+    evidence_tier: int,
+) -> None:
+    if fetch_errors is None:
+        return
+    fetch_errors.append(
+        {
+            "phase": phase,
+            "url": url,
+            "evidence_tier": evidence_tier,
+            **project_fetch_error(error),
+        }
+    )
+
+
+def _strongest_retryable_fetch_failure(fetch_errors: list[dict]) -> dict | None:
+    retryable = [
+        failure
+        for failure in fetch_errors
+        if failure.get("retryable") is True
+        and failure.get("evidence_tier") in {1, 2}
+    ]
+    if not retryable:
+        return None
+    return dict(min(retryable, key=lambda failure: failure["evidence_tier"]))
 
 
 def _candidate_source_map(*groups: tuple[str, list[str]]) -> dict[str, set[str]]:
