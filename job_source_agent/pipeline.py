@@ -950,6 +950,13 @@ class JobSourceAgent:
                             ),
                         }
                     )
+                elif normalized_page_url == career_page_url.rstrip("/"):
+                    failure.update(
+                        {
+                            "origin": "verified_career_page",
+                            "evidence_tier": 0,
+                        }
+                    )
                 trace["fetch_errors"].append(failure)
                 continue
             page, content_probe = probe_first_party_cms_payload(self.fetcher, page)

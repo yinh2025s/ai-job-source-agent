@@ -189,6 +189,34 @@ class OfflinePipelineTests(unittest.TestCase):
         failure = raised.exception.trace["fetch_errors"][0]
         self.assertEqual(failure["reason_code_source"], "exception")
 
+    def test_verified_career_root_timeout_remains_retryable(self):
+        career = "https://transient.example/careers"
+
+        class TransientCareerRootFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                raise FetchError(
+                    "The read operation timed out",
+                    reason_code="NETWORK_TIMEOUT",
+                    retryable=True,
+                )
+
+        agent = JobSourceAgent(
+            TransientCareerRootFetcher(offline=True),
+            max_job_pages=1,
+            max_ats_board_fetches=0,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_job_board(career)
+
+        self.assertEqual(raised.exception.code, "NETWORK_TIMEOUT")
+        failure = raised.exception.trace["fetch_errors"][0]
+        self.assertEqual(failure["url"], career)
+        self.assertEqual(failure["origin"], "verified_career_page")
+        self.assertEqual(failure["evidence_tier"], 0)
+        self.assertTrue(failure["retryable"])
+
     def test_provider_career_entry_is_canonicalized_to_listing_board(self):
         career = "https://www.google.com/about/careers/applications/"
 
