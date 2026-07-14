@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import OrderedDict
 from dataclasses import replace
 from threading import Lock
+from urllib.parse import urlsplit
 
 from .web import Page
 
@@ -31,7 +32,7 @@ class PageCacheFetcher:
         cacheable = self.max_entries > 0 and data is None and not headers
         if cacheable:
             with self._lock:
-                entry_id = self._aliases.get(url)
+                entry_id = self._aliases.get(_canonical_cache_alias(url))
                 cached = self._pages.get(entry_id) if entry_id is not None else None
                 if cached is not None and entry_id is not None:
                     self._pages.move_to_end(entry_id)
@@ -45,7 +46,7 @@ class PageCacheFetcher:
                 self._next_entry_id += 1
                 entry_id = self._next_entry_id
                 aliases = {
-                    alias
+                    _canonical_cache_alias(alias)
                     for alias in (url, page.url, page.final_url)
                     if isinstance(alias, str) and alias
                 }
@@ -73,3 +74,16 @@ class PageCacheFetcher:
 
 def _copy_page(page: Page) -> Page:
     return replace(page, artifacts=dict(page.artifacts))
+
+
+def _canonical_cache_alias(url: str) -> str:
+    """Treat the two spellings of an HTTP(S) origin root as one cache key."""
+    try:
+        parsed = urlsplit(url)
+    except ValueError:
+        return url
+    if parsed.scheme.lower() not in {"http", "https"} or not parsed.netloc or parsed.path:
+        return url
+
+    authority_end = url.find("://") + 3 + len(parsed.netloc)
+    return f"{url[:authority_end]}/{url[authority_end:]}"
