@@ -160,6 +160,134 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("## Checkpoint Activity", report)
         self.assertEqual(report.count("| none | none | 0 |"), 3)
 
+    def test_render_company_identity_drift_when_available(self):
+        summary = {
+            "regression": {
+                "company_identity_drift": {
+                    "comparison_status": "available",
+                    "added_companies": ["Zulu", "Alpha"],
+                    "removed_companies": ["Removed"],
+                    "changed_companies": ["Zulu", "Alpha"],
+                    "changed_fields": {
+                        "opening.canonical_url": ["Zulu"],
+                        "job_board.tenant": ["Alpha"],
+                    },
+                }
+            }
+        }
+
+        report = render_markdown_report(summary)
+
+        self.assertIn("### Company Identity Drift", report)
+        self.assertIn("| Added | 2 | Alpha, Zulu |", report)
+        self.assertIn("| Removed | 1 | Removed |", report)
+        self.assertIn("| Changed | 2 | Alpha, Zulu |", report)
+        self.assertIn("| job_board.tenant | 1 | Alpha |", report)
+        self.assertIn("| opening.canonical_url | 1 | Zulu |", report)
+        self.assertLess(report.index("| job_board.tenant"), report.index("| opening.canonical_url"))
+
+    def test_render_company_identity_drift_unavailable_for_legacy_baseline(self):
+        summary = {
+            "regression": {
+                "company_identity_drift": {
+                    "comparison_status": "not_available",
+                    "added_companies": [],
+                    "removed_companies": [],
+                    "changed_companies": [],
+                    "changed_fields": {},
+                }
+            }
+        }
+
+        report = render_markdown_report(summary)
+
+        self.assertIn("### Company Identity Drift", report)
+        self.assertIn("Not available: the baseline does not contain company identity data.", report)
+        self.assertNotIn("| Added | 0 |", report)
+
+    def test_render_failed_identity_expectations_without_sensitive_details(self):
+        summary = {
+            "expectation_checks": {
+                "total": 3,
+                "passed": 1,
+                "failed": 2,
+                "checks": [
+                    {
+                        "company_name": "Zulu",
+                        "passed": False,
+                        "failures": ["stage:opening_match=partial", "identity:opening_url_mismatch"],
+                        "actual_identity": {"runtime_id": "secret-runtime-id"},
+                    },
+                    {
+                        "company_name": "Alpha",
+                        "passed": False,
+                        "failures": [
+                            "identity:website_url_mismatch",
+                            "identity:job_board_tenant_mismatch",
+                        ],
+                        "trace": {"token": "sensitive-token"},
+                    },
+                    {"company_name": "Passing", "passed": True, "failures": []},
+                ],
+            }
+        }
+
+        report = render_markdown_report(summary)
+
+        self.assertIn("### Failed Identity Expectations", report)
+        self.assertIn(
+            "| Alpha | identity:job_board_tenant_mismatch, identity:website_url_mismatch |",
+            report,
+        )
+        self.assertIn("| Zulu | identity:opening_url_mismatch |", report)
+        self.assertLess(report.index("| Alpha |"), report.index("| Zulu |"))
+        self.assertNotIn("secret-runtime-id", report)
+        self.assertNotIn("sensitive-token", report)
+        self.assertNotIn("stage:opening_match=partial", report)
+
+    def test_new_identity_sections_handle_absent_fields(self):
+        report = render_markdown_report({"regression": {}, "expectation_checks": {"total": 0}})
+
+        self.assertNotIn("Company Identity Drift", report)
+        self.assertNotIn("Failed Identity Expectations", report)
+
+    def test_identity_detail_lists_use_report_row_limit(self):
+        summary = {
+            "regression": {
+                "company_identity_drift": {
+                    "comparison_status": "available",
+                    "added_companies": ["Zulu", "Alpha"],
+                    "removed_companies": [],
+                    "changed_companies": [],
+                    "changed_fields": {},
+                }
+            },
+            "expectation_checks": {
+                "total": 2,
+                "passed": 0,
+                "failed": 2,
+                "checks": [
+                    {
+                        "company_name": "Alpha",
+                        "passed": False,
+                        "failures": ["identity:z_failure", "identity:a_failure"],
+                    },
+                    {
+                        "company_name": "Zulu",
+                        "passed": False,
+                        "failures": ["identity:opening_url_mismatch"],
+                    },
+                ],
+            },
+        }
+
+        report = render_markdown_report(summary, max_matrix_rows=1)
+
+        self.assertIn("| Added | 2 | Alpha, ... 1 more |", report)
+        self.assertIn("| Alpha | identity:a_failure, ... 1 more |", report)
+        self.assertIn("| ... 1 more rows | |", report)
+        self.assertNotIn("identity:z_failure", report)
+
     def test_cli_writes_report_file(self):
         with tempfile.TemporaryDirectory() as directory:
             summary_path = Path(directory) / "summary.json"

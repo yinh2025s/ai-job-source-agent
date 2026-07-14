@@ -61,7 +61,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
             "Outcome",
         )
     )
-    lines.extend(_regression(summary))
+    lines.extend(_regression(summary, max_rows=max_matrix_rows))
     lines.extend(_stage_funnel(summary))
     lines.extend(_stage_durations(summary))
     lines.extend(_simple_count_table("Provider Distribution", summary.get("provider_counts", {}), "Provider"))
@@ -77,7 +77,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
         )
     )
     lines.extend(_checkpoint_activity(summary))
-    lines.extend(_expectations(summary))
+    lines.extend(_expectations(summary, max_rows=max_matrix_rows))
     lines.extend(_company_matrix(summary, max_rows=max_matrix_rows))
     return "\n".join(lines).rstrip() + "\n"
 
@@ -107,7 +107,7 @@ def _rates(summary: dict) -> list[str]:
     return lines
 
 
-def _regression(summary: dict) -> list[str]:
+def _regression(summary: dict, max_rows: int = 50) -> list[str]:
     regression = summary.get("regression") or {}
     if not regression:
         return []
@@ -136,6 +136,40 @@ def _regression(summary: dict) -> list[str]:
         for stage in PIPELINE_STAGES:
             if stage in stage_delta:
                 lines.append(f"| {STAGE_LABELS.get(stage, stage)} {stage} | {_signed_number(stage_delta[stage])} |")
+        lines.append("")
+    lines.extend(_company_identity_drift(regression.get("company_identity_drift"), max_rows=max_rows))
+    return lines
+
+
+def _company_identity_drift(drift: object, max_rows: int) -> list[str]:
+    lines = ["### Company Identity Drift", ""]
+    if not isinstance(drift, dict) or drift.get("comparison_status") != "available":
+        return lines + ["Not available: the baseline does not contain company identity data.", ""]
+
+    lines.extend([
+        "| Change | Count | Companies |",
+        "| --- | ---: | --- |",
+    ])
+    for label, key in (
+        ("Added", "added_companies"),
+        ("Removed", "removed_companies"),
+        ("Changed", "changed_companies"),
+    ):
+        companies = _sorted_strings(drift.get(key))
+        lines.append(f"| {label} | {len(companies)} | {_bounded_values(companies, max_rows)} |")
+    lines.append("")
+
+    changed_fields = drift.get("changed_fields")
+    if isinstance(changed_fields, dict) and changed_fields:
+        lines.extend([
+            "| Changed field | Companies | Names |",
+            "| --- | ---: | --- |",
+        ])
+        for field, names in sorted(changed_fields.items(), key=lambda item: str(item[0])):
+            companies = _sorted_strings(names)
+            lines.append(
+                f"| {_escape(field)} | {len(companies)} | {_bounded_values(companies, max_rows)} |"
+            )
         lines.append("")
     return lines
 
@@ -303,11 +337,11 @@ def _format_status_counts(counts: dict) -> str:
     return ", ".join(f"{counts[status]} {STATUS_LABELS.get(status, status)}" for status in ordered_statuses)
 
 
-def _expectations(summary: dict) -> list[str]:
+def _expectations(summary: dict, max_rows: int = 50) -> list[str]:
     checks = summary.get("expectation_checks") or {}
     if not checks:
         return []
-    return [
+    lines = [
         "## Expectations",
         "",
         "| Total | Passed | Failed |",
@@ -315,6 +349,33 @@ def _expectations(summary: dict) -> list[str]:
         f"| {checks.get('total', 0)} | {checks.get('passed', 0)} | {checks.get('failed', 0)} |",
         "",
     ]
+    failed_identity_checks = []
+    for check in checks.get("checks") or []:
+        if not isinstance(check, dict) or check.get("passed", False):
+            continue
+        failure_codes = sorted(
+            {
+                str(code)
+                for code in check.get("failures") or []
+                if str(code).startswith("identity:")
+            }
+        )
+        if failure_codes:
+            failed_identity_checks.append((str(check.get("company_name") or "unknown"), failure_codes))
+    failed_identity_checks.sort(key=lambda item: (item[0].casefold(), item[0], item[1]))
+    if failed_identity_checks:
+        lines.extend([
+            "### Failed Identity Expectations",
+            "",
+            "| Company | Failure codes |",
+            "| --- | --- |",
+        ])
+        for company, failure_codes in failed_identity_checks[:max_rows]:
+            lines.append(f"| {_escape(company)} | {_bounded_values(failure_codes, max_rows)} |")
+        if len(failed_identity_checks) > max_rows:
+            lines.append(f"| ... {len(failed_identity_checks) - max_rows} more rows | |")
+        lines.append("")
+    return lines
 
 
 def _company_matrix(summary: dict, max_rows: int) -> list[str]:
@@ -351,6 +412,19 @@ def _percent(value) -> str:
 
 def _escape(value: str) -> str:
     return str(value).replace("|", "\\|")
+
+
+def _sorted_strings(values: object) -> list[str]:
+    if not isinstance(values, (list, tuple, set)):
+        return []
+    return sorted((str(value) for value in values), key=lambda value: (value.casefold(), value))
+
+
+def _bounded_values(values: list[str], max_rows: int) -> str:
+    visible = [_escape(value) for value in values[:max_rows]]
+    if len(values) > max_rows:
+        visible.append(f"... {len(values) - max_rows} more")
+    return ", ".join(visible) or "-"
 
 
 def _number_or_dash(value) -> str:
