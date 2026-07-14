@@ -132,6 +132,46 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "career_page_not_found")
         self.assertNotIn("candidate_fetch_budget_exhausted", raised.exception.trace)
 
+    def test_evidence_backed_candidate_timeout_remains_retryable(self):
+        homepage = "https://transient.example"
+        career = f"{homepage}/about/careers"
+
+        class TransientCareerFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=f'<html><a href="{career}">Careers</a></html>',
+                    )
+                if url.rstrip("/") == career:
+                    raise FetchError(
+                        "The read operation timed out",
+                        reason_code="NETWORK_TIMEOUT",
+                        retryable=True,
+                    )
+                raise FetchError(f"fixture miss: {url}")
+
+        agent = JobSourceAgent(
+            TransientCareerFetcher(offline=True),
+            max_candidates=6,
+            max_career_candidate_fetches=5,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(raised.exception.code, "NETWORK_TIMEOUT")
+        error = raised.exception.trace["candidate_fetch_errors"][0]
+        self.assertEqual(error["url"], career)
+        self.assertEqual(error["reason_code"], "NETWORK_TIMEOUT")
+        self.assertTrue(error["retryable"])
+        self.assertEqual(error["origin"], "page_link")
+        self.assertEqual(error["evidence_tier"], 1)
+
     def test_untried_page_link_reports_fetch_budget_exhausted(self):
         homepage = "https://evidence-budget.example"
         first = f"{homepage}/careers-primary"

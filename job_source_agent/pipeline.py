@@ -48,7 +48,12 @@ from .opening_matcher import (
     structured_job_links,
 )
 from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
-from .reasons import canonical_reason_code, make_stage_result
+from .reasons import (
+    canonical_reason_code,
+    classify_fetch_error,
+    make_stage_result,
+    reason_spec,
+)
 from .run_configuration import AgentConfig, DeterministicRunConfig
 from .scoring import (
     is_ats_url,
@@ -510,16 +515,19 @@ class JobSourceAgent:
         else:
             trace["ats_board_discovery"] = {"skipped": True}
 
-        reason_code = (
-            "FETCH_BUDGET_EXHAUSTED"
-            if _trace_has_fetch_budget_exhaustion(trace)
-            else "career_page_not_found"
-        )
-        detail = (
-            "Career candidates remain unverified because the fetch budget was exhausted."
-            if reason_code == "FETCH_BUDGET_EXHAUSTED"
-            else "No reliable career page candidate found."
-        )
+        retryable_candidate_failure = _retryable_evidence_candidate_failure(trace)
+        if _trace_has_fetch_budget_exhaustion(trace):
+            reason_code = "FETCH_BUDGET_EXHAUSTED"
+            detail = "Career candidates remain unverified because the fetch budget was exhausted."
+        elif retryable_candidate_failure is not None:
+            reason_code = retryable_candidate_failure["reason_code"]
+            detail = (
+                "An evidence-backed career candidate could not be verified because of a "
+                "retryable fetch failure."
+            )
+        else:
+            reason_code = "career_page_not_found"
+            detail = "No reliable career page candidate found."
         raise DiscoveryError(
             reason_code,
             detail,
@@ -1527,7 +1535,22 @@ class JobSourceAgent:
                     trace["selected"] = dataclass_to_dict(candidate)
                     trace["selected_page_source"] = "provider_adapter"
                     return verified_provider[0]
-                trace["candidate_fetch_errors"].append({"url": candidate.url, "error": str(exc)})
+                reason_code = exc.reason_code or classify_fetch_error(str(exc))
+                retryable = (
+                    exc.retryable
+                    if exc.retryable is not None
+                    else reason_spec(reason_code).retryable
+                )
+                trace["candidate_fetch_errors"].append(
+                    {
+                        "url": candidate.url,
+                        "error": str(exc),
+                        "reason_code": reason_code,
+                        "retryable": retryable,
+                        "origin": candidate.origin,
+                        "evidence_tier": candidate_evidence_tier(candidate),
+                    }
+                )
                 continue
             actual_url = page.final_url or page.url
             if self._looks_like_error_page(actual_url, page.html):
@@ -2092,6 +2115,29 @@ def _trace_has_fetch_budget_exhaustion(value: object, key: str = "") -> bool:
     if isinstance(value, list):
         return any(_trace_has_fetch_budget_exhaustion(item) for item in value)
     return False
+
+
+def _retryable_evidence_candidate_failure(value: object) -> dict | None:
+    if isinstance(value, dict):
+        reason_code = value.get("reason_code")
+        evidence_tier = value.get("evidence_tier")
+        if (
+            value.get("retryable") is True
+            and isinstance(reason_code, str)
+            and isinstance(evidence_tier, int)
+            and evidence_tier <= 2
+        ):
+            return value
+        for item in value.values():
+            failure = _retryable_evidence_candidate_failure(item)
+            if failure is not None:
+                return failure
+    elif isinstance(value, list):
+        for item in value:
+            failure = _retryable_evidence_candidate_failure(item)
+            if failure is not None:
+                return failure
+    return None
 
 
 def _legacy_error(stage: str, reason_code: str | None) -> str:
