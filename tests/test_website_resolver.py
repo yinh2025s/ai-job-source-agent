@@ -1211,6 +1211,84 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertIn("homepage body confirms company identity", candidate.reasons)
         self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
 
+    def test_stash_onload_wrapper_redirect_shell_is_followed_and_revalidated(self):
+        shell = (
+            "<html><body><script>window.onload=function(){"
+            'window.location.href="/lander"'
+            "}</script></body></html>"
+        )
+
+        class StashWrapperFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == "https://stash.com":
+                    return Page(url=url, final_url=url, html=shell)
+                if url == "https://stash.com/lander":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<html><head><title>Stash</title></head><body></body></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = StashWrapperFetcher()
+        resolver = CompanyWebsiteResolver(fetcher)
+        candidate = resolver._score_candidate("https://stash.com", "Stash")
+
+        self.assertEqual(fetcher.calls, ["https://stash.com", "https://stash.com/lander"])
+        self.assertEqual(candidate.url, "https://stash.com/lander")
+        self.assertIn("same-origin client redirect followed", candidate.reasons)
+        self.assertIn("homepage title confirms company identity", candidate.reasons)
+        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
+    def test_onload_wrapper_with_other_script_or_logic_is_not_a_redirect_shell(self):
+        cases = (
+            (
+                "additional script",
+                "<html><head><title>Stash</title></head><body>"
+                "<script>window.analyticsLoaded=true</script>"
+                "<script>window.onload=function(){window.location.href='/lander'}</script>"
+                "</body></html>",
+            ),
+            (
+                "additional function logic",
+                "<html><head><title>Stash</title></head><body><script>"
+                "window.onload=function(){console.log('loading');"
+                "window.location.replace('/lander')}"
+                "</script></body></html>",
+            ),
+            (
+                "visible page content",
+                "<html><head><title>Stash</title></head><body>"
+                "Stash customer account overview"
+                "<script>window.onload=function(){window.location.href='/lander'}</script>"
+                "</body></html>",
+            ),
+        )
+
+        for label, shell in cases:
+            with self.subTest(label=label):
+                class NonShellFetcher(Fetcher):
+                    def __init__(self):
+                        super().__init__(offline=True)
+                        self.calls = []
+
+                    def fetch(self, url, data=None, headers=None):
+                        self.calls.append(url)
+                        return Page(url=url, final_url=url, html=shell)
+
+                fetcher = NonShellFetcher()
+                candidate = CompanyWebsiteResolver(fetcher)._score_candidate(
+                    "https://stash.com", "Stash"
+                )
+
+                self.assertEqual(fetcher.calls, ["https://stash.com"])
+                self.assertNotIn("same-origin client redirect followed", candidate.reasons)
+
     def test_cross_origin_redirect_shell_is_not_followed_or_trusted(self):
         class CrossOriginRedirectFetcher(Fetcher):
             def __init__(self):

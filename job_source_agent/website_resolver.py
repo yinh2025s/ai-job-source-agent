@@ -1191,21 +1191,26 @@ def _redirect_only_shell_target(html: str, base_url: str) -> str | None:
             break
 
     script_target = ""
-    for script in re.findall(r"<script\b[^>]*>(.*?)</script>", html[:20000], flags=re.I | re.S):
-        match = re.fullmatch(
-            r"\s*(?:window\.)?location(?:\.href)?\s*=\s*(['\"])([^'\"]+)\1\s*;?\s*"
-            r"|\s*(?:window\.)?location\.replace\(\s*(['\"])([^'\"]+)\3\s*\)\s*;?\s*",
-            script,
-            flags=re.I,
-        )
-        if match:
-            script_target = match.group(2) or match.group(4)
-            break
+    script_is_onload_wrapper = False
+    scripts = re.findall(
+        r"<script\b([^>]*)>(.*?)</script>", html[:20000], flags=re.I | re.S
+    )
+    if len(scripts) == 1:
+        attrs, script = scripts[0]
+        if not re.search(r"\bsrc\s*=", attrs, flags=re.I):
+            script_target = _literal_location_redirect(script)
+            if not script_target:
+                script_target = _literal_location_redirect(
+                    script, allow_onload_wrapper=True
+                )
+                script_is_onload_wrapper = bool(script_target)
 
     target = meta_target or script_target
     if not target:
         return None
     visible_body = _visible_body_text(html)
+    if script_is_onload_wrapper and visible_body:
+        return None
     if len(visible_body) > 200:
         return None
     try:
@@ -1215,6 +1220,34 @@ def _redirect_only_shell_target(html: str, base_url: str) -> str | None:
     if urlparse(normalized).scheme not in {"http", "https"} or not domain_of(normalized):
         return None
     return normalized
+
+
+def _literal_location_redirect(script: str, allow_onload_wrapper: bool = False) -> str:
+    direct = re.fullmatch(
+        r"\s*(?:window\.)?location(?:\.href)?\s*=\s*(['\"])([^'\"]+)\1\s*;?\s*"
+        r"|\s*(?:window\.)?location\.replace\(\s*(['\"])([^'\"]+)\3\s*\)\s*;?\s*",
+        script,
+        flags=re.I,
+    )
+    if direct:
+        return direct.group(2) or direct.group(4)
+    if not allow_onload_wrapper:
+        return ""
+    wrapper = re.fullmatch(
+        r"\s*window\.onload\s*=\s*function\s*\(\s*\)\s*\{(.*?)\}\s*;?\s*",
+        script,
+        flags=re.I | re.S,
+    )
+    if not wrapper:
+        return ""
+    body = wrapper.group(1)
+    assignment = re.fullmatch(
+        r"\s*(?:window\.)?location\.href\s*=\s*(['\"])([^'\"]+)\1\s*;?\s*"
+        r"|\s*(?:window\.)?location\.replace\(\s*(['\"])([^'\"]+)\3\s*\)\s*;?\s*",
+        body,
+        flags=re.I,
+    )
+    return (assignment.group(2) or assignment.group(4)) if assignment else ""
 
 
 def _visible_body_text(html: str) -> str:
