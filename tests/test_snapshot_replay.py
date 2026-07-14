@@ -3,10 +3,20 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 
+from job_source_agent.outcome_tape import (
+    FetchFailureOutcomeTapeEntry,
+    PageOutcomeTapeEntry,
+)
 from job_source_agent.snapshot import SnapshotStore
-from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
+from job_source_agent.snapshot_capture import SnapshotCaptureCoordinator
+from job_source_agent.snapshot_replay import (
+    SnapshotReplayError,
+    load_scoped_outcome_tapes,
+    replay_snapshots,
+)
 from job_source_agent.web import FetchError, Fetcher, Page, fixture_path_candidates
 
 
@@ -24,6 +34,39 @@ class SnapshotReplayTests(unittest.TestCase):
                 artifacts=artifacts or {},
             ),
             request_url="https://jobs.example.com/search?token=secret",
+        )
+
+    def _capture_scope(self, store, attempt, stage, outcomes):
+        coordinator = SnapshotCaptureCoordinator(store)
+        coordinator.begin_stage(attempt, "a" * 64, stage)
+        for kind, url, value in outcomes:
+            capture = coordinator.begin_request()
+            if kind == "page":
+                record = store.write_page(
+                    Page(url=url, html=value, source="live"),
+                    request_url=url,
+                    capture=capture,
+                )
+            else:
+                record = store.write_failure(
+                    FetchError(
+                        value,
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    ),
+                    url,
+                    capture=capture,
+                )
+            coordinator.accept_terminal_record(record)
+        return coordinator.finalize()
+
+    def _rewrite_record(self, path, mutate, index=0):
+        records = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+        mutate(records[index])
+        path.write_text(
+            "".join(json.dumps(record, sort_keys=True) + "\n" for record in records),
+            encoding="utf-8",
         )
 
     def test_replay_creates_fixture_fetcher_can_consume_and_manifests(self):
@@ -765,6 +808,217 @@ class SnapshotReplayTests(unittest.TestCase):
 
             with self.assertRaisesRegex(SnapshotReplayError, "Line 2: invalid JSON"):
                 replay_snapshots(snapshots, root / "replay")
+
+    def test_scoped_tapes_isolate_attempts_and_stages(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshots = Path(directory) / "snapshots"
+            store = SnapshotStore(snapshots)
+            url = "https://jobs.example.com/shared"
+            first = self._capture_scope(
+                store,
+                "attempt-first-0001",
+                "career_discovery",
+                [("page", url, "first attempt")],
+            )
+            second = self._capture_scope(
+                store,
+                "attempt-second-001",
+                "career_discovery",
+                [("failure", url, "forbidden")],
+            )
+            other_stage = self._capture_scope(
+                store,
+                "attempt-first-0001",
+                "job_board_discovery",
+                [("page", url, "other stage")],
+            )
+
+            tapes = load_scoped_outcome_tapes(snapshots, [first, second, other_stage])
+
+        self.assertEqual(tapes[first.scope_id].entries[0].html, "first attempt")
+        self.assertIsInstance(tapes[first.scope_id].entries[0], PageOutcomeTapeEntry)
+        self.assertIsInstance(tapes[second.scope_id].entries[0], FetchFailureOutcomeTapeEntry)
+        self.assertEqual(tapes[other_stage.scope_id].entries[0].html, "other stage")
+
+    def test_scoped_tape_preserves_repeated_identity_in_ordinal_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshots = Path(directory) / "snapshots"
+            store = SnapshotStore(snapshots)
+            url = "https://jobs.example.com/repeated"
+            scope = self._capture_scope(
+                store,
+                "attempt-repeat-0001",
+                "opening_match",
+                [("page", url, "first"), ("page", url, "second")],
+            )
+
+            tape = load_scoped_outcome_tapes(snapshots, [scope])[scope.scope_id]
+
+        self.assertEqual([entry.request_ordinal for entry in tape.entries], [1, 2])
+        self.assertEqual([entry.html for entry in tape.entries], ["first", "second"])
+        self.assertEqual(tape.entries[0].request, tape.entries[1].request)
+
+    def test_scoped_zero_request_scope_and_orphan_are_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshots = Path(directory) / "snapshots"
+            store = SnapshotStore(snapshots)
+            zero = self._capture_scope(
+                store,
+                "attempt-zero-000001",
+                "result_validation",
+                [],
+            )
+            orphan = self._capture_scope(
+                store,
+                "attempt-orphan-0001",
+                "career_discovery",
+                [("page", "https://orphan.example/jobs", "orphan")],
+            )
+            record = json.loads((snapshots / "snapshots.jsonl").read_text(encoding="utf-8"))
+            (snapshots / record["blob_path"]).unlink()
+
+            tapes = load_scoped_outcome_tapes(snapshots, [zero])
+
+        self.assertEqual(tapes[zero.scope_id].entries, ())
+        self.assertNotIn(orphan.scope_id, tapes)
+
+    def test_scoped_tape_rejects_missing_count_digest_and_bounds(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshots = Path(directory) / "snapshots"
+            scope = self._capture_scope(
+                SnapshotStore(snapshots),
+                "attempt-errors-0001",
+                "career_discovery",
+                [("page", "https://jobs.example.com", "jobs")],
+            )
+            index = snapshots / "snapshots.jsonl"
+            original = index.read_text(encoding="utf-8")
+
+            index.unlink()
+            with self.assertRaisesRegex(SnapshotReplayError, "count"):
+                load_scoped_outcome_tapes(snapshots, [scope])
+            index.write_text(original, encoding="utf-8")
+
+            with self.assertRaisesRegex(SnapshotReplayError, "digest"):
+                load_scoped_outcome_tapes(
+                    snapshots,
+                    [replace(scope, records_sha256="b" * 64)],
+                )
+            with self.assertRaisesRegex(SnapshotReplayError, "sequence bounds"):
+                load_scoped_outcome_tapes(
+                    snapshots,
+                    [replace(scope, last_sequence=scope.last_sequence + 1)],
+                )
+
+    def test_scoped_tape_rejects_duplicate_and_mixed_kind_ordinal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshots = Path(directory) / "snapshots"
+            scope = self._capture_scope(
+                SnapshotStore(snapshots),
+                "attempt-ordinal-001",
+                "career_discovery",
+                [
+                    ("page", "https://jobs.example.com/one", "one"),
+                    ("failure", "https://jobs.example.com/two", "forbidden"),
+                ],
+            )
+            self._rewrite_record(
+                snapshots / "fetch-failures.jsonl",
+                lambda record: record.__setitem__("request_ordinal", 1),
+            )
+
+            with self.assertRaisesRegex(SnapshotReplayError, "duplicate request ordinal"):
+                load_scoped_outcome_tapes(snapshots, [scope])
+
+    def test_scoped_tape_rejects_wrong_membership_fields(self):
+        mutations = {
+            "snapshot_store_id": "different-store-0001",
+            "capture_attempt_id": "different-attempt-01",
+            "execution_fingerprint": "b" * 64,
+            "stage": "opening_match",
+        }
+        for field, value in mutations.items():
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                snapshots = Path(directory) / "snapshots"
+                scope = self._capture_scope(
+                    SnapshotStore(snapshots),
+                    "attempt-member-0001",
+                    "career_discovery",
+                    [("page", "https://jobs.example.com", "jobs")],
+                )
+                self._rewrite_record(
+                    snapshots / "snapshots.jsonl",
+                    lambda record, field=field, value=value: record.__setitem__(field, value),
+                )
+
+                with self.assertRaisesRegex(SnapshotReplayError, "different evidence scope"):
+                    load_scoped_outcome_tapes(snapshots, [scope])
+
+    def test_scoped_tape_rejects_unknown_fields_and_schema(self):
+        for mutation in (
+            lambda record: record.__setitem__("unknown", True),
+            lambda record: record.__setitem__("schema_version", 99),
+        ):
+            with tempfile.TemporaryDirectory() as directory:
+                snapshots = Path(directory) / "snapshots"
+                scope = self._capture_scope(
+                    SnapshotStore(snapshots),
+                    "attempt-schema-0001",
+                    "career_discovery",
+                    [("page", "https://jobs.example.com", "jobs")],
+                )
+                self._rewrite_record(snapshots / "snapshots.jsonl", mutation)
+
+                with self.assertRaises(SnapshotReplayError):
+                    load_scoped_outcome_tapes(snapshots, [scope])
+
+    def test_scoped_tape_rejects_unsafe_path_corrupt_hash_and_private_body(self):
+        cases = ("path", "hash", "privacy")
+        for case in cases:
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                snapshots = Path(directory) / "snapshots"
+                scope = self._capture_scope(
+                    SnapshotStore(snapshots),
+                    "attempt-safety-0001",
+                    "career_discovery",
+                    [("page", "https://jobs.example.com", "jobs")],
+                )
+                record = json.loads((snapshots / "snapshots.jsonl").read_text(encoding="utf-8"))
+                if case == "path":
+                    self._rewrite_record(
+                        snapshots / "snapshots.jsonl",
+                        lambda item: item.__setitem__("path", "sites/../../private"),
+                    )
+                elif case == "hash":
+                    self._rewrite_record(
+                        snapshots / "snapshots.jsonl",
+                        lambda item: item.__setitem__("sha256", "b" * 64),
+                    )
+                else:
+                    (snapshots / record["blob_path"]).write_text(
+                        "token=private-secret",
+                        encoding="utf-8",
+                    )
+
+                with self.assertRaises(SnapshotReplayError):
+                    load_scoped_outcome_tapes(snapshots, [scope])
+
+    def test_legacy_materialization_ignores_schema_v3_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._capture_scope(
+                SnapshotStore(snapshots),
+                "attempt-v3-only-001",
+                "career_discovery",
+                [("page", "https://jobs.example.com", "scoped only")],
+            )
+
+            result = replay_snapshots(snapshots, root / "legacy")
+
+        self.assertEqual(result.manifest["entries"], [])
+        self.assertEqual(result.summary["snapshot_records"], 0)
+        self.assertEqual(result.summary["evidence_mode"], "legacy_global_latest")
 
     def test_cli_writes_summary_and_manifest(self):
         with tempfile.TemporaryDirectory() as directory:

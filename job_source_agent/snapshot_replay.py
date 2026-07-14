@@ -5,11 +5,20 @@ import json
 import math
 import os
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
+from .evidence_scope import EvidenceScopeRef
+from .outcome_tape import (
+    FetchFailureOutcomeTapeEntry,
+    OutcomeTape,
+    OutcomeTapeEntry,
+    OutcomeTapeError,
+    PageOutcomeTapeEntry,
+)
 from .reasons import REASON_SPECS, reason_spec
 from .request_identity import RequestIdentity, request_identity_from_dict
 from .snapshot import (
@@ -35,6 +44,31 @@ REQUIRED_RECORD_FIELDS = {
     "byte_count",
     "captured_at_epoch",
 }
+SCOPE_MEMBERSHIP_FIELDS = {
+    "snapshot_store_id",
+    "scope_id",
+    "capture_attempt_id",
+    "execution_fingerprint",
+    "stage",
+    "request_ordinal",
+}
+V3_PAGE_RECORD_FIELDS = REQUIRED_RECORD_FIELDS | {
+    "schema_version",
+    "kind",
+    "sequence",
+    "request",
+    "blob_path",
+    "artifact_blob_paths",
+} | SCOPE_MEMBERSHIP_FIELDS
+V3_FAILURE_RECORD_FIELDS = {
+    "schema_version",
+    "kind",
+    "sequence",
+    "request",
+    "failure",
+    "captured_at_epoch",
+    "terminal",
+} | SCOPE_MEMBERSHIP_FIELDS
 
 
 class SnapshotReplayError(ValueError):
@@ -47,6 +81,79 @@ class ReplayResult:
     summary: dict[str, Any]
     manifest_path: Path
     summary_path: Path
+
+
+def load_scoped_outcome_tapes(
+    snapshot_dir: str | Path,
+    scopes: Iterable[EvidenceScopeRef],
+) -> dict[str, OutcomeTape]:
+    """Load exact schema-v3 terminal outcomes for finalized evidence scopes."""
+    source_root = Path(snapshot_dir).resolve()
+    requested: dict[str, EvidenceScopeRef] = {}
+    for scope in scopes:
+        if not isinstance(scope, EvidenceScopeRef):
+            raise TypeError("scopes must contain EvidenceScopeRef values")
+        if scope.scope_id in requested:
+            raise SnapshotReplayError(f"Duplicate requested evidence scope: {scope.scope_id}")
+        requested[scope.scope_id] = scope
+    if not requested:
+        return {}
+
+    index_path = source_root / "snapshots.jsonl"
+    failure_index_path = source_root / "fetch-failures.jsonl"
+    _validate_index_path(index_path, "Snapshot index")
+    _validate_index_path(failure_index_path, "Snapshot failure index")
+    page_records, _ = _read_optional_records(index_path)
+    failure_records, _ = _read_optional_records(failure_index_path)
+
+    selected: dict[str, list[tuple[int, OutcomeTapeEntry]]] = {
+        scope_id: [] for scope_id in requested
+    }
+    for line_number, record in page_records:
+        if not _is_v3_record(record, line_number, "snapshot"):
+            continue
+        _validate_v3_fields(record, V3_PAGE_RECORD_FIELDS, "page", line_number, "Snapshot")
+        scope_id = record["scope_id"]
+        if scope_id not in requested:
+            continue
+        entry = _parse_v3_page_record(source_root, record, line_number)
+        selected[scope_id].append((record["sequence"], entry))
+
+    for line_number, record in failure_records:
+        if not _is_v3_record(record, line_number, "failure"):
+            continue
+        _validate_v3_fields(
+            record,
+            V3_FAILURE_RECORD_FIELDS,
+            "fetch_failure",
+            line_number,
+            "Failure",
+        )
+        scope_id = record["scope_id"]
+        if scope_id not in requested:
+            continue
+        entry = _parse_v3_failure_record(record, line_number)
+        selected[scope_id].append((record["sequence"], entry))
+
+    tapes: dict[str, OutcomeTape] = {}
+    for scope_id, scope in requested.items():
+        records = selected[scope_id]
+        records.sort(key=lambda item: item[1].request_ordinal)
+        ordinals = [item[1].request_ordinal for item in records]
+        if len(ordinals) != len(set(ordinals)):
+            raise SnapshotReplayError(f"Evidence scope {scope_id} has a duplicate request ordinal")
+        sequences = [sequence for sequence, _ in records]
+        try:
+            tapes[scope_id] = OutcomeTape(scope, (entry for _, entry in records))
+        except (OutcomeTapeError, TypeError, ValueError) as exc:
+            raise SnapshotReplayError(f"Invalid evidence scope {scope_id}: {exc}") from exc
+        if sequences and (
+            min(sequences) != scope.first_sequence or max(sequences) != scope.last_sequence
+        ):
+            raise SnapshotReplayError(
+                f"Evidence scope {scope_id} sequence bounds do not match its records"
+            )
+    return tapes
 
 
 def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> ReplayResult:
@@ -71,6 +178,8 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
 
     records, skipped_corrupt_tail = _read_records(index_path) if index_path.exists() else ([], 0)
     failure_records, skipped_failure_tail = _read_optional_records(failure_index_path)
+    records = _legacy_records(records)
+    failure_records = _legacy_records(failure_records)
     page_records: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
     observed_by_path: dict[str, dict[str, Any]] = {}
     latest_sequence_by_request: dict[str, int] = {}
@@ -192,6 +301,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
     ]
     manifest = {
         "schema_version": REPLAY_SCHEMA_VERSION,
+        "evidence_mode": "legacy_global_latest",
         "fixtures_dir": "sites",
         "entries": fixture_entries,
         "artifacts": public_artifacts,
@@ -199,6 +309,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
     }
     summary = {
         "schema_version": REPLAY_SCHEMA_VERSION,
+        "evidence_mode": "legacy_global_latest",
         "snapshot_records": len(records),
         "fixture_count": len(fixture_entries),
         "artifact_count": len(artifacts),
@@ -221,6 +332,109 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         {"schema_version": REPLAY_SCHEMA_VERSION, "entries": failures},
     )
     return ReplayResult(manifest, summary, manifest_path, summary_path)
+
+
+def _validate_index_path(path: Path, label: str) -> None:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise SnapshotReplayError(f"{label} is unsafe: {path}")
+
+
+def _legacy_records(
+    records: list[tuple[int, dict[str, Any]]],
+) -> list[tuple[int, dict[str, Any]]]:
+    return [
+        (line_number, record)
+        for line_number, record in records
+        if record.get("schema_version", 1) != 3
+    ]
+
+
+def _is_v3_record(record: dict[str, Any], line_number: int, label: str) -> bool:
+    schema_version = record.get("schema_version", 1)
+    if schema_version in {1, 2}:
+        return False
+    if schema_version != 3:
+        raise SnapshotReplayError(
+            f"{label.title()} line {line_number}: unsupported record schema"
+        )
+    return True
+
+
+def _validate_v3_fields(
+    record: dict[str, Any],
+    expected_fields: set[str],
+    expected_kind: str,
+    line_number: int,
+    label: str,
+) -> None:
+    if set(record) != expected_fields:
+        raise SnapshotReplayError(f"{label} line {line_number}: fields do not match schema v3")
+    if record["kind"] != expected_kind:
+        raise SnapshotReplayError(f"{label} line {line_number}: invalid schema-v3 record kind")
+
+
+def _v3_common(record: dict[str, Any]) -> dict[str, Any]:
+    try:
+        request = request_identity_from_dict(record["request"])
+    except (TypeError, ValueError) as exc:
+        raise SnapshotReplayError(f"Invalid schema-v3 request identity: {exc}") from exc
+    return {
+        "snapshot_store_id": record["snapshot_store_id"],
+        "scope_id": record["scope_id"],
+        "capture_attempt_id": record["capture_attempt_id"],
+        "execution_fingerprint": record["execution_fingerprint"],
+        "stage": record["stage"],
+        "request_ordinal": record["request_ordinal"],
+        "request": request,
+    }
+
+
+def _parse_v3_page_record(
+    source_root: Path,
+    record: dict[str, Any],
+    line_number: int,
+) -> PageOutcomeTapeEntry:
+    legacy_record = {
+        key: value for key, value in record.items() if key not in SCOPE_MEMBERSHIP_FIELDS
+    }
+    legacy_record["schema_version"] = 2
+    try:
+        validated = _validate_record(source_root, legacy_record, line_number)
+        _validate_artifacts(source_root, legacy_record, line_number)
+        html = validated["source_path"].read_text(encoding="utf-8")
+        return PageOutcomeTapeEntry(
+            **_v3_common(record),
+            page_url=record["page_url"],
+            html=html,
+            final_url=record["final_url"],
+            source=record["source"],
+        )
+    except (OutcomeTapeError, TypeError, ValueError, OSError) as exc:
+        if isinstance(exc, SnapshotReplayError):
+            raise
+        raise SnapshotReplayError(f"Snapshot line {line_number}: invalid schema-v3 page: {exc}") from exc
+
+
+def _parse_v3_failure_record(
+    record: dict[str, Any],
+    line_number: int,
+) -> FetchFailureOutcomeTapeEntry:
+    legacy_record = {
+        key: value for key, value in record.items() if key not in SCOPE_MEMBERSHIP_FIELDS
+    }
+    legacy_record["schema_version"] = 2
+    try:
+        validated = _validate_failure_record(legacy_record, line_number)
+        return FetchFailureOutcomeTapeEntry(
+            **_v3_common(record),
+            **validated["failure"],
+        )
+    except (OutcomeTapeError, TypeError, ValueError) as exc:
+        if isinstance(exc, SnapshotReplayError):
+            raise
+        raise SnapshotReplayError(
+            f"Failure line {line_number}: invalid schema-v3 failure: {exc}"
+        ) from exc
 
 
 def _read_records(index_path: Path) -> tuple[list[tuple[int, dict[str, Any]]], int]:
