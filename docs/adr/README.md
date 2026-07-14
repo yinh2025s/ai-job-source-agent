@@ -22,3 +22,4 @@ NNNN-short-decision-title.md
 - [ADR-0008: Publish Budgeted Results Before The Deadline](0008-publish-budgeted-results-before-deadline.md)
 - [ADR-0009: Distinguish Budget Recovery From Replay Drift](0009-distinguish-budget-recovery-from-replay-drift.md)
 - [ADR-0010: Expose Cooperative Fetch Budget To Paginated Providers](0010-expose-cooperative-fetch-budget.md)
+- [ADR-0011: Bound Career Discovery Transport Calls](0011-bound-career-discovery-transport.md)
