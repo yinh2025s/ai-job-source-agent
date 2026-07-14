@@ -297,13 +297,10 @@ def main() -> None:
         }
     replay_manifest = build_automatic_replay_bundle(args, trace_path)
     if replay_manifest is not None:
-        summary["replay_bundle"] = {
-            "status": replay_manifest["status"],
-            "reason": replay_manifest.get("reason"),
-            "selected": int(replay_manifest.get("summary", {}).get("total", 0)),
-            "manifest": str(Path(args.replay_bundle_dir) / "bundle-manifest.json"),
-            "outcome_gate": replay_manifest.get("outcome_gate", {}).get("status"),
-        }
+        summary["replay_bundle"] = _replay_bundle_summary(
+            replay_manifest,
+            Path(args.replay_bundle_dir) / "bundle-manifest.json",
+        )
     _atomic_write_json(summary_path, summary)
     print_summary(summary)
     print(f"results: {output_path}", flush=True)
@@ -375,6 +372,25 @@ def build_automatic_replay_bundle(args: argparse.Namespace, trace_path: Path) ->
         legacy_run_config=None,
     )
     return replay_failure_bundle(replay_args, allow_empty=True)
+
+
+def _replay_bundle_summary(manifest: dict, manifest_path: Path) -> dict:
+    replayed = int(manifest.get("summary", {}).get("total", 0))
+    integrity_counts = manifest.get("record_integrity", {}).get("counts", {})
+    selected = int(integrity_counts.get("selected_count", replayed))
+    exported = int(integrity_counts.get("exported_count", selected))
+    return {
+        "status": manifest["status"],
+        "reason": manifest.get("reason"),
+        "filter_matched": int(
+            integrity_counts.get("filter_matched_count", selected)
+        ),
+        "selected": selected,
+        "exported": exported,
+        "replayed": int(integrity_counts.get("result_count", replayed)),
+        "manifest": str(manifest_path),
+        "outcome_gate": manifest.get("outcome_gate", {}).get("status"),
+    }
 
 
 def load_batch_companies(args: argparse.Namespace, linkedin_fetcher: FetchClient) -> list[CompanyInput]:
@@ -1360,6 +1376,18 @@ def print_summary(summary: dict) -> None:
     if expectation_checks:
         print(
             f"  expectations: {expectation_checks['passed']}/{expectation_checks['total']} passed",
+            flush=True,
+        )
+    replay_bundle = summary.get("replay_bundle")
+    if replay_bundle:
+        print(
+            "  replay_bundle: "
+            f"filter_matched={replay_bundle['filter_matched']} "
+            f"selected={replay_bundle['selected']} "
+            f"exported={replay_bundle['exported']} "
+            f"replayed={replay_bundle['replayed']} "
+            f"status={replay_bundle['status']} "
+            f"reason={replay_bundle.get('reason')}",
             flush=True,
         )
 

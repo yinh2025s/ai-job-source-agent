@@ -462,7 +462,18 @@ def _run_scoped_replay_records(
             if lineage.snapshot_scope is not None
             and PIPELINE_STAGES.index(lineage.stage) >= start_index
         }
-        expected_stages = set(PIPELINE_STAGES[start_index:])
+        captured_stages = [
+            lineage.stage
+            for lineage in plan.stage_evidence_lineage
+            if PIPELINE_STAGES.index(lineage.stage) >= start_index
+        ]
+        if not captured_stages:
+            raise FailureReplayError(
+                f"Scoped replay record {plan.record_id} has no captured execution boundary"
+            )
+        stop_stage = captured_stages[-1]
+        stop_index = PIPELINE_STAGES.index(stop_stage)
+        expected_stages = set(PIPELINE_STAGES[start_index : stop_index + 1])
         if set(scopes_by_stage) != expected_stages:
             missing = sorted(expected_stages - set(scopes_by_stage), key=PIPELINE_STAGES.index)
             raise FailureReplayError(
@@ -485,6 +496,7 @@ def _run_scoped_replay_records(
             discovery = application.pipeline.discover(
                 company,
                 start_at=resume_stage,
+                stop_after=stop_stage,
                 capture_attempt_id=f"scoped-replay-{plan.record_id[:16]}",
                 execution_fingerprint_override=execution_fingerprint_value,
             )

@@ -38,6 +38,15 @@ _LINKEDIN_POSTING_FIELDS = (
     "job_url",
 )
 
+_SCOPED_REPLAY_SOURCE_KINDS = frozenset(
+    {
+        "input",
+        "fixed_input",
+        "linkedin_public_jobs",
+        "linkedin_browser_extension",
+    }
+)
+
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Export prior results into clean replay input records.")
@@ -91,7 +100,13 @@ def export_replay_records(records: list[dict], args: argparse.Namespace) -> list
         if not _matches_filters(record, args):
             continue
         replay_record = _to_replay_record(record, source_path=args.input)
-        if not _has_required_source(replay_record, include_missing_website=args.include_missing_website):
+        if not (
+            _has_required_source(
+                replay_record,
+                include_missing_website=args.include_missing_website,
+            )
+            or _has_scoped_original_source(record)
+        ):
             continue
         exported.append(replay_record)
         if args.limit and len(exported) >= args.limit:
@@ -222,6 +237,19 @@ def _has_required_source(record: dict, include_missing_website: bool) -> bool:
     if record.get("external_apply_url"):
         return True
     return include_missing_website and bool(record.get("linkedin_company_url"))
+
+
+def _has_scoped_original_source(record: dict) -> bool:
+    lineage = _stable_stage_evidence_lineage(record)
+    if not lineage:
+        return False
+    trace = record.get("trace")
+    stages = trace.get("stages") if isinstance(trace, dict) else None
+    linkedin_stage = (
+        stages.get("linkedin_discovery") if isinstance(stages, dict) else None
+    )
+    source = linkedin_stage.get("source") if isinstance(linkedin_stage, dict) else None
+    return source in _SCOPED_REPLAY_SOURCE_KINDS
 
 
 def _stage_by_name(record: dict) -> dict[str, dict]:

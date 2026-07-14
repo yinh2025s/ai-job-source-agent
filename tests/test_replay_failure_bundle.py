@@ -294,6 +294,54 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertNotIn("fixtures", manifest["paths"])
         self.assertEqual(manifest["paths"]["tapes"], "offline/tapes")
 
+    def test_scoped_capture_replays_upstream_terminal_boundary_without_website(self):
+        company = CompanyInput(
+            company_name="Missing Identity Example",
+            linkedin_job_url="fixed-input-marker",
+            job_title="AI Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            application = build_application(
+                FetcherConfig(
+                    fixtures_dir=Path(__file__).resolve().parents[1] / "samples" / "sites",
+                    offline=True,
+                    snapshot_dir=root / "snapshots",
+                )
+            )
+            source = application.pipeline.discover(
+                company,
+                stop_after="hiring_identity_resolution",
+                capture_attempt_id="capture-upstream-terminal",
+            )
+            self.assertFalse(source.company_website_url)
+            self.assertEqual(source.stage_status("website_resolution"), "failed")
+            (root / "results.json").write_text(
+                json.dumps([dataclass_to_dict(source.trace_record())]),
+                encoding="utf-8",
+            )
+
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    pipeline_status=None,
+                    stage=None,
+                    stage_status=None,
+                    reason_code=None,
+                    legacy_run_config=None,
+                )
+            )
+
+        self.assertEqual(manifest["status"], "success")
+        self.assertEqual(manifest["summary"]["total"], 1)
+        self.assertEqual(manifest["record_integrity"]["status"], "passed")
+        self.assertEqual(manifest["outcome_gate"]["status"], "passed")
+        self.assertEqual(
+            manifest["outcome_gate"]["classification_counts"]["reproduced"],
+            1,
+        )
+        self.assertEqual(manifest["snapshot_summary"]["scope_count"], 3)
+
     def test_scoped_duplicate_inputs_use_independent_tape_cursors_and_checkpoints(self):
         company = CompanyInput(
             company_name="Aurora Data",

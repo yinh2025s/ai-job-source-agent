@@ -26,6 +26,7 @@ from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.web import Fetcher, Page
 from scripts.live_batch_eval import (
     _automatic_retry_start_stage,
+    _replay_bundle_summary,
     build_automatic_failure_bundle,
     build_automatic_replay_bundle,
     build_summary,
@@ -72,6 +73,38 @@ class LiveBatchEvalTests(unittest.TestCase):
             print_summary(summary)
 
         self.assertIn("baseline_comparison: no_compatible_baseline", output.getvalue())
+
+    def test_print_summary_distinguishes_replay_bundle_counts(self):
+        summary = {
+            "total": 15,
+            "success": 0,
+            "pipeline_status_counts": {"failed": 15},
+            "with_job_list": 0,
+            "with_opening": 0,
+            "elapsed_sec": 1.0,
+            "rates": {},
+            "error_counts": {},
+            "reason_code_counts": {},
+            "provider_counts": {},
+            "replay_bundle": {
+                "filter_matched": 15,
+                "selected": 13,
+                "exported": 13,
+                "replayed": 0,
+                "status": "failed",
+                "reason": "record_integrity_failed",
+            },
+        }
+
+        output = io.StringIO()
+        with redirect_stdout(output):
+            print_summary(summary)
+
+        self.assertIn(
+            "replay_bundle: filter_matched=15 selected=13 exported=13 replayed=0 "
+            "status=failed reason=record_integrity_failed",
+            output.getvalue(),
+        )
 
     def test_inner_deadline_leaves_bounded_checkpoint_reserve(self):
         self.assertEqual(_inner_deadline_budget(45), 44)
@@ -1373,6 +1406,41 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual(replay_args.limit, 11)
         self.assertTrue(replay_args.include_missing_website)
         self.assertEqual(replay.call_args.kwargs, {"allow_empty": True})
+
+    def test_replay_bundle_summary_preserves_preflight_integrity_counts(self):
+        manifest = {
+            "status": "failed",
+            "reason": "record_integrity_failed",
+            "summary": {"total": 0},
+            "record_integrity": {
+                "counts": {
+                    "filter_matched_count": 15,
+                    "selected_count": 13,
+                    "exported_count": 13,
+                    "result_count": 0,
+                }
+            },
+            "outcome_gate": {"status": "failed"},
+        }
+
+        summary = _replay_bundle_summary(manifest, Path("bundle-manifest.json"))
+
+        self.assertEqual(summary["filter_matched"], 15)
+        self.assertEqual(summary["selected"], 13)
+        self.assertEqual(summary["exported"], 13)
+        self.assertEqual(summary["replayed"], 0)
+        self.assertEqual(summary["outcome_gate"], "failed")
+
+    def test_replay_bundle_summary_keeps_success_total_compatibility(self):
+        summary = _replay_bundle_summary(
+            {"status": "success", "summary": {"total": 4}},
+            Path("bundle-manifest.json"),
+        )
+
+        self.assertEqual(summary["filter_matched"], 4)
+        self.assertEqual(summary["selected"], 4)
+        self.assertEqual(summary["exported"], 4)
+        self.assertEqual(summary["replayed"], 4)
 
     def test_automatic_failure_bundle_records_skipped_when_batch_is_green(self):
         with tempfile.TemporaryDirectory() as directory:

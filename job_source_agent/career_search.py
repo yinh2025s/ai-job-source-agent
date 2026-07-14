@@ -111,7 +111,6 @@ class CareerSearchResolver:
                     for source in sources
                     if source.name in {"bing_rss", "duckduckgo_html"}
                 ]
-            skip_bing_html = False
             use_ats_secondary = False
             for source in sources:
                 if ats_only and source.name == "duckduckgo_html" and not use_ats_secondary:
@@ -123,8 +122,6 @@ class CareerSearchResolver:
                             "reason": SOURCE_CIRCUIT_REASON,
                         }
                     )
-                    continue
-                if source.name == "bing_html" and skip_bing_html:
                     continue
                 if source_fetches >= self.max_source_fetches:
                     trace["source_fetch_budget_exhausted"] = True
@@ -181,14 +178,14 @@ class CareerSearchResolver:
                     trace["stopped_reason"] = "search_candidate_found"
                     break
                 if source.name == "bing_rss" and raw_urls:
-                    skip_bing_html = True
                     use_ats_secondary = ats_only
-                    query_trace["skipped_sources"] = [
-                        {
-                            "source": "bing_html",
-                            "reason": "rss_returned_results_without_valid_candidate",
-                        }
-                    ]
+                    if ats_only:
+                        query_trace["skipped_sources"] = [
+                            {
+                                "source": "bing_html",
+                                "reason": "rss_returned_results_without_valid_candidate",
+                            }
+                        ]
             if candidates:
                 break
             if trace["source_fetch_budget_exhausted"]:

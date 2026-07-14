@@ -213,11 +213,13 @@ class CareerSearchTests(unittest.TestCase):
                 return Page(url, fixture("bing_rss_mixed.xml"), final_url=url)
             raise AssertionError(url)
 
-        result = CareerSearchResolver(MappingFetcher(handler), max_queries=1).search(
+        fetcher = MappingFetcher(handler)
+        result = CareerSearchResolver(fetcher, max_queries=1).search(
             "Acme Co", "https://acme.example"
         )
 
         self.assertEqual([item.url for item in result.candidates], ["https://acme.example/company/careers"])
+        self.assertEqual(len(fetcher.calls), 1)
         self.assertEqual(result.trace["queries"][0]["source"], "bing_rss")
         self.assertEqual(result.trace["queries"][0]["result_count"], 2)
 
@@ -299,14 +301,15 @@ class CareerSearchTests(unittest.TestCase):
 
         self.assertEqual(result.candidates, [])
 
-    def test_nonempty_rss_drift_skips_bing_html_but_uses_duckduckgo(self):
+    def test_nonempty_rss_drift_falls_back_to_bing_html_for_same_query(self):
         rss = "<rss><channel><item><link>https://unrelated.example/careers</link></item></channel></rss>"
 
         def handler(url):
             if "format=rss" in url:
                 return Page(url, rss, final_url=url)
-            if "duckduckgo.com" in url:
-                return Page(url, fixture("duckduckgo_results.html"), final_url=url)
+            if "bing.com" in url:
+                html = '<html><h2><a href="https://acme.example/careers">Careers</a></h2></html>'
+                return Page(url, html, final_url=url)
             raise AssertionError(url)
 
         fetcher = MappingFetcher(handler)
@@ -320,20 +323,32 @@ class CareerSearchTests(unittest.TestCase):
             ["https://acme.example/careers"],
         )
         self.assertEqual(len(fetcher.calls), 2)
-        self.assertFalse(any("bing.com" in url and "format=rss" not in url for url in fetcher.calls))
+        self.assertTrue(any("bing.com" in url and "format=rss" not in url for url in fetcher.calls))
         self.assertEqual(
             [item["source"] for item in result.trace["queries"]],
-            ["bing_rss", "duckduckgo_html"],
+            ["bing_rss", "bing_html"],
         )
         self.assertEqual(
-            result.trace["queries"][0]["skipped_sources"],
-            [
-                {
-                    "source": "bing_html",
-                    "reason": "rss_returned_results_without_valid_candidate",
-                }
-            ],
+            result.trace["queries"][0]["query"],
+            result.trace["queries"][1]["query"],
         )
+
+    def test_nonempty_rss_drift_respects_transport_deadline_before_html(self):
+        rss = "<rss><channel><item><link>https://unrelated.example/careers</link></item></channel></rss>"
+        fetcher = BudgetMappingFetcher(
+            lambda url: Page(url, rss, final_url=url),
+            [1.0, 0.0],
+        )
+
+        result = CareerSearchResolver(fetcher, max_queries=1).search(
+            "Acme Co", "https://acme.example"
+        )
+
+        self.assertEqual(len(fetcher.calls), 1)
+        self.assertIn("format=rss", fetcher.calls[0])
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(result.trace["stopped_reason"], "deadline_exhausted")
+        self.assertEqual(result.trace["fetch_budget_checks"], 2)
 
     def test_nonempty_rss_drift_and_empty_duckduckgo_stay_bounded(self):
         rss = "<rss><channel><item><link>https://unrelated.example/careers</link></item></channel></rss>"
@@ -352,7 +367,7 @@ class CareerSearchTests(unittest.TestCase):
         self.assertEqual(result.candidates, [])
         self.assertEqual(len(fetcher.calls), 3)
         self.assertTrue(result.trace["source_fetch_budget_exhausted"])
-        self.assertFalse(any("bing.com" in url and "format=rss" not in url for url in fetcher.calls))
+        self.assertTrue(any("bing.com" in url and "format=rss" not in url for url in fetcher.calls))
 
     def test_generic_search_caps_redundant_queries_but_ats_search_keeps_provider_sweep(self):
         fetcher = MappingFetcher(
@@ -369,7 +384,12 @@ class CareerSearchTests(unittest.TestCase):
 
         self.assertEqual(len(generic.trace["queries"]), 6)
         self.assertEqual(generic.trace["effective_query_limit"], 3)
-        self.assertFalse(any("bing.com" in url and "format=rss" not in url for url in fetcher.calls))
+        self.assertEqual(sum("format=rss" in url for url in fetcher.calls), 2)
+        self.assertEqual(
+            sum("bing.com" in url and "format=rss" not in url for url in fetcher.calls),
+            2,
+        )
+        self.assertEqual(sum("duckduckgo.com" in url for url in fetcher.calls), 2)
 
         fetcher.calls.clear()
         ats = CareerSearchResolver(fetcher, max_queries=5, max_source_fetches=6).search(
