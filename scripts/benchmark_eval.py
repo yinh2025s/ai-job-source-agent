@@ -9,12 +9,12 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+from job_source_agent.composition import FetcherConfig, build_application
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
 from job_source_agent.evaluation_history import cohort_identities_compatible, derive_cohort_identity
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import dataclass_to_dict
-from job_source_agent.pipeline import JobSourceAgent
-from job_source_agent.web import Fetcher
+from job_source_agent.run_configuration import AgentConfig
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -54,21 +54,23 @@ def main() -> None:
         "expectations_sha256": _json_digest(expectations),
     }
     fixtures_dir = args.fixtures_dir or (str(ROOT / "samples" / "sites") if not args.live else None)
-    fetcher = Fetcher(
-        fixtures_dir=fixtures_dir,
-        offline=not args.live,
-        timeout=args.fetch_timeout,
+    application = build_application(
+        FetcherConfig(
+            fixtures_dir=fixtures_dir,
+            offline=not args.live,
+            timeout=args.fetch_timeout,
+        ),
+        AgentConfig(
+            max_candidates=args.max_career_candidates,
+            max_job_pages=args.max_job_pages,
+            max_career_candidate_fetches=args.max_career_fetches,
+            max_career_search_queries=args.max_career_search_queries,
+            max_ats_board_fetches=args.max_ats_board_fetches,
+            enable_sitemap_discovery=not args.skip_sitemap,
+        ),
     )
-    agent = JobSourceAgent(
-        fetcher,
-        max_candidates=args.max_career_candidates,
-        max_job_pages=args.max_job_pages,
-        max_career_candidate_fetches=args.max_career_fetches,
-        max_career_search_queries=args.max_career_search_queries,
-        max_ats_board_fetches=args.max_ats_board_fetches,
-        enable_sitemap_discovery=not args.skip_sitemap,
-    )
-    evaluation_manifest["run_configuration_digest"] = agent.run_configuration.digest
+    run_configuration = application.pipeline.run_configuration
+    evaluation_manifest["run_configuration_digest"] = run_configuration.digest
     output_path = Path(args.output)
     trace_path = Path(args.trace_output)
     summary_path = Path(args.summary_output)
@@ -77,12 +79,12 @@ def main() -> None:
 
     for index, company in enumerate(companies, start=1):
         item_started = time.time()
-        result = agent.discover(company)
+        result = application.pipeline.discover(company)
         result_records.append(result.result_record())
         trace_records.append(dataclass_to_dict(result.trace_record()))
         summary = summarize_results(result_records, elapsed_sec=round(time.time() - started, 3))
-        summary["run_configuration"] = agent.run_configuration.to_payload()
-        summary["run_configuration_digest"] = agent.run_configuration.digest
+        summary["run_configuration"] = run_configuration.to_payload()
+        summary["run_configuration_digest"] = run_configuration.digest
         summary["expectation_checks"] = evaluate_expectations(result_records, expectations)
         summary["evaluation_manifest"] = evaluation_manifest
 
@@ -101,8 +103,8 @@ def main() -> None:
         )
 
     summary = summarize_results(result_records, elapsed_sec=round(time.time() - started, 3))
-    summary["run_configuration"] = agent.run_configuration.to_payload()
-    summary["run_configuration_digest"] = agent.run_configuration.digest
+    summary["run_configuration"] = run_configuration.to_payload()
+    summary["run_configuration_digest"] = run_configuration.digest
     summary["expectation_checks"] = evaluate_expectations(result_records, expectations)
     summary["evaluation_manifest"] = evaluation_manifest
     if args.baseline_summary:
