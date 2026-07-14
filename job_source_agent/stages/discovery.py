@@ -38,6 +38,7 @@ class JobBoardDiscoveryService(Protocol):
         self,
         career_page_url: str,
         company_name: str | None = None,
+        target_location: str | None = None,
     ) -> tuple[str, dict]:
         ...
 
@@ -45,6 +46,7 @@ class JobBoardDiscoveryService(Protocol):
         self,
         career_page_url: str,
         company_name: str | None = None,
+        target_location: str | None = None,
     ) -> tuple[str, dict, DiscoveredJobBoard | None]:
         ...
 
@@ -198,11 +200,13 @@ class JobBoardDiscoveryStage:
                 job_list_url, trace, discovered_board = find_with_evidence(
                     context.career_page_url,
                     company_name=context.company.company_name,
+                    target_location=context.company.job_location,
                 )
             else:
                 job_list_url, trace = self.service.find_job_board(
                     context.career_page_url,
                     company_name=context.company.company_name,
+                    target_location=context.company.job_location,
                 )
                 discovered_board = None
         except FetchError as exc:

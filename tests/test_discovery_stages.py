@@ -28,7 +28,7 @@ class FakeDiscoveryService:
     ):
         return f"{company_website_url}/careers", {"method": "fake-career"}
 
-    def find_job_board(self, career_page_url, company_name=None):
+    def find_job_board(self, career_page_url, company_name=None, target_location=None):
         return "https://boards.greenhouse.io/acme", {"method": "fake-board"}
 
     def match_opening(self, job_list_url, target_title=None, target_location=None):
@@ -116,6 +116,35 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(execution.result.status, "success")
         self.assertEqual(execution.updates["job_list_page_url"], "https://boards.greenhouse.io/acme")
 
+    def test_job_board_stage_passes_target_location(self):
+        class LocationAwareService(FakeDiscoveryService):
+            def __init__(self):
+                self.target_location = None
+
+            def find_job_board(
+                self,
+                career_page_url,
+                company_name=None,
+                target_location=None,
+            ):
+                self.target_location = target_location
+                return super().find_job_board(
+                    career_page_url,
+                    company_name=company_name,
+                    target_location=target_location,
+                )
+
+        service = LocationAwareService()
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_location="Brussels, Belgium")
+        )
+        context.career_page_url = "https://acme.example/careers"
+
+        execution = JobBoardDiscoveryStage(service).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(service.target_location, "Brussels, Belgium")
+
     def test_job_board_stage_uses_native_external_apply_without_career_page(self):
         external = (
             "https://company.wd5.myworkdayjobs.com/en-US/acme/job/New-York-NY/"
@@ -202,7 +231,7 @@ class DiscoveryStageTests(unittest.TestCase):
 
     def test_job_board_stage_accepts_provider_from_verified_page_evidence(self):
         class PageAwareService(FakeDiscoveryService):
-            def find_job_board(self, career_page_url, company_name=None):
+            def find_job_board(self, career_page_url, company_name=None, target_location=None):
                 return career_page_url, {
                     "provider": "icims",
                     "provider_detection": {"method": "page_evidence"},
@@ -232,7 +261,9 @@ class DiscoveryStageTests(unittest.TestCase):
             def __init__(self):
                 self.received = None
 
-            def find_job_board_with_evidence(self, career_page_url, company_name=None):
+            def find_job_board_with_evidence(
+                self, career_page_url, company_name=None, target_location=None
+            ):
                 return discovered.board.url, {"provider": "phenom"}, discovered
 
             def match_discovered_board(
@@ -359,7 +390,7 @@ class DiscoveryStageTests(unittest.TestCase):
 
     def test_deterministic_job_board_miss_reports_linkedin_native_only(self):
         class MissingBoardService(FakeDiscoveryService):
-            def find_job_board(self, career_page_url, company_name=None):
+            def find_job_board(self, career_page_url, company_name=None, target_location=None):
                 raise DiscoveryError("job_board_not_found", "missing", trace={"searched": True})
 
         job_url = "https://www.linkedin.com/jobs/view/123"
@@ -409,7 +440,7 @@ class DiscoveryStageTests(unittest.TestCase):
 
     def test_incomplete_job_board_trace_is_not_hidden_by_native_source(self):
         class IncompleteBoardService(FakeDiscoveryService):
-            def find_job_board(self, career_page_url, company_name=None):
+            def find_job_board(self, career_page_url, company_name=None, target_location=None):
                 raise DiscoveryError(
                     "job_board_not_found",
                     "incomplete",
@@ -462,7 +493,7 @@ class DiscoveryStageTests(unittest.TestCase):
 
     def test_explicit_empty_official_career_page_is_not_rewritten_as_native_only(self):
         class EmptyService(FakeDiscoveryService):
-            def find_job_board(self, career_page_url, company_name=None):
+            def find_job_board(self, career_page_url, company_name=None, target_location=None):
                 raise DiscoveryError(
                     "NO_PUBLIC_OPENINGS",
                     "official empty state",

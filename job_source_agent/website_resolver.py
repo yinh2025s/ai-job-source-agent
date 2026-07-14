@@ -1656,6 +1656,18 @@ _NON_US_REGION_SEGMENTS = {
     "uk": "uk",
     "united-kingdom": "uk",
 }
+_LOCATION_REGION_NAMES = {
+    "australia": "au",
+    "belgium": "be",
+    "canada": "ca",
+    "france": "fr",
+    "germany": "de",
+    "india": "in",
+    "ireland": "ie",
+    "japan": "jp",
+    "spain": "es",
+    "united kingdom": "uk",
+}
 
 
 def location_region(location: str | None) -> str | None:
@@ -1667,6 +1679,12 @@ def location_region(location: str | None) -> str | None:
     parts = [part.strip().upper() for part in location.split(",")]
     if any(part in _US_STATE_CODES for part in parts[1:]):
         return "us"
+    known_region_codes = set(_LOCATION_REGION_NAMES.values())
+    if len(parts) > 1 and parts[-1].casefold() in known_region_codes:
+        return parts[-1].casefold()
+    for name, region in _LOCATION_REGION_NAMES.items():
+        if re.search(rf"\b{re.escape(name)}\b", normalized):
+            return region
     return None
 
 
@@ -1679,11 +1697,15 @@ def url_region(url: str) -> str | None:
     if any(label in {"jobsus", "usjobs"} for label in host_labels):
         return "us"
     segments = [unquote(part).casefold() for part in parsed.path.split("/") if part]
-    if any(segment in {"us", "en-us", "en_us"} for segment in segments[:3]):
+    if not segments:
+        return None
+    locale_match = re.fullmatch(r"[a-z]{2,3}[-_]([a-z]{2})", segments[0])
+    if locale_match:
+        return locale_match.group(1)
+    if segments[0] == "us":
         return "us"
-    for segment in segments[:2]:
-        if segment in _NON_US_REGION_SEGMENTS:
-            return _NON_US_REGION_SEGMENTS[segment]
+    if segments[0] in _NON_US_REGION_SEGMENTS:
+        return _NON_US_REGION_SEGMENTS[segments[0]]
     return None
 
 

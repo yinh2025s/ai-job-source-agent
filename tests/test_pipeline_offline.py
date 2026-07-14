@@ -492,6 +492,39 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(job_list_url, "https://jobs.lever.co/titlefilter")
         self.assertEqual(trace["opening_error"], "specific_opening_not_found")
 
+    def test_find_open_position_passes_location_to_board_discovery(self):
+        class CapturingAgent(JobSourceAgent):
+            def __init__(self):
+                super().__init__(Fetcher(offline=True))
+                self.board_location = None
+
+            def find_job_board_with_evidence(
+                self,
+                career_page_url,
+                company_name=None,
+                target_location=None,
+            ):
+                self.board_location = target_location
+                return career_page_url, {}, None
+
+            def _match_opening(
+                self,
+                job_list_url,
+                target_title,
+                target_location,
+                discovered_board=None,
+            ):
+                return None, job_list_url, {}
+
+        agent = CapturingAgent()
+
+        agent.find_open_position(
+            "https://acme.example/careers",
+            target_location="Brussels, Belgium",
+        )
+
+        self.assertEqual(agent.board_location, "Brussels, Belgium")
+
     def test_rippling_board_is_not_mistaken_for_a_job_detail(self):
         agent = JobSourceAgent(
             Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
@@ -877,6 +910,147 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(job_list_url, us_listing)
         self.assertEqual(trace["selected_from"], "explicit_first_party_listing_route")
         self.assertEqual([page["url"] for page in trace["pages_visited"]], [career, us_listing])
+
+    def test_job_board_excludes_conflicting_region_and_preserves_matching_timeout(self):
+        career = "https://routes.example/careers"
+        us_listing = "https://routes.example/en-us/careers/job-results"
+        belgium_listing = "https://routes.example/en-be/careers/job-results"
+
+        class RegionalTimeoutFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.urls.append(url)
+                if url == career:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            f'<a href="{us_listing}">US jobs</a>'
+                            f'<a href="{belgium_listing}">Belgium jobs</a>'
+                        ),
+                    )
+                if url == us_listing:
+                    raise FetchError(
+                        "regional listing timed out",
+                        reason_code="NETWORK_TIMEOUT",
+                        retryable=True,
+                    )
+                if url == belgium_listing:
+                    raise AssertionError("conflicting regional board must not be fetched")
+                raise FetchError(f"not this route: {url}")
+
+        fetcher = RegionalTimeoutFetcher()
+        agent = JobSourceAgent(
+            fetcher,
+            max_job_pages=4,
+            max_ats_board_fetches=0,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_job_board(career, target_location="United States")
+
+        self.assertEqual(raised.exception.code, "NETWORK_TIMEOUT")
+        self.assertEqual(fetcher.urls, [career, us_listing])
+        conflicting = next(
+            item
+            for item in raised.exception.trace["candidates"]
+            if item["url"] == belgium_listing
+        )
+        self.assertIn(
+            "conflicts with target location region 'us': 'be'",
+            conflicting["reasons"],
+        )
+
+    def test_job_board_uses_neutral_fallback_after_matching_region_timeout(self):
+        career = "https://routes.example/careers"
+        us_listing = "https://routes.example/en-us/careers/job-results"
+        neutral_listing = "https://routes.example/careers/job-results"
+
+        class NeutralFallbackFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.urls.append(url)
+                if url == career:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            f'<a href="{neutral_listing}">All jobs</a>'
+                            f'<a href="{us_listing}">US jobs</a>'
+                        ),
+                    )
+                if url == us_listing:
+                    raise FetchError(
+                        "regional listing timed out",
+                        reason_code="NETWORK_TIMEOUT",
+                        retryable=True,
+                    )
+                if url == neutral_listing:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html='<html><body><div id="jobs"></div></body></html>',
+                    )
+                raise FetchError(f"not this route: {url}")
+
+        fetcher = NeutralFallbackFetcher()
+        job_list_url, trace = JobSourceAgent(
+            fetcher,
+            max_job_pages=4,
+            max_ats_board_fetches=0,
+        ).find_job_board(career, target_location="United States")
+
+        self.assertEqual(job_list_url, neutral_listing)
+        self.assertEqual(fetcher.urls, [career, us_listing, neutral_listing])
+        self.assertEqual(trace["target_region"], "us")
+
+    def test_job_board_without_location_preserves_first_regional_candidate(self):
+        career = "https://routes.example/careers"
+        belgium_listing = "https://routes.example/en-be/careers/job-results"
+        us_listing = "https://routes.example/en-us/careers/job-results"
+
+        class LegacyRegionalFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.urls.append(url)
+                if url == career:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            f'<a href="{belgium_listing}">Belgium jobs</a>'
+                            f'<a href="{us_listing}">US jobs</a>'
+                        ),
+                    )
+                if url == belgium_listing:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html='<html><body><div id="jobs"></div></body></html>',
+                    )
+                if url == us_listing:
+                    raise AssertionError("legacy order should stop at the first verified board")
+                raise FetchError(f"not this route: {url}")
+
+        fetcher = LegacyRegionalFetcher()
+        job_list_url, trace = JobSourceAgent(
+            fetcher,
+            max_job_pages=4,
+            max_ats_board_fetches=0,
+        ).find_job_board(career)
+
+        self.assertEqual(job_list_url, belgium_listing)
+        self.assertEqual(fetcher.urls, [career, belgium_listing])
+        self.assertNotIn("target_region", trace)
 
     def test_verified_career_listing_route_is_checked_once_for_page_provider(self):
         listing = "https://routes.example/en-us/careers/job-results"

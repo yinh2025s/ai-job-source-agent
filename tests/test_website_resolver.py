@@ -8,10 +8,17 @@ from job_source_agent.website_resolver import (
     clean_search_url,
     is_blocked_domain,
     tokenize_company_name,
+    url_region,
 )
 
 
 class WebsiteResolverTests(unittest.TestCase):
+    def test_url_region_accepts_only_leading_language_region_locales(self):
+        self.assertEqual(url_region("https://example.com/en-be/jobs"), "be")
+        self.assertEqual(url_region("https://example.com/es-es/jobs"), "es")
+        self.assertIsNone(url_region("https://example.com/jobs/en-be/openings"))
+        self.assertIsNone(url_region("https://example.com/careers/us/engineering"))
+
     def test_navigation_evidence_comes_only_from_the_selected_verified_homepage(self):
         class CandidateFetcher(Fetcher):
             def __init__(self):

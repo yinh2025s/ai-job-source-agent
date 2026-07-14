@@ -764,10 +764,12 @@ class JobSourceAgent:
         self,
         career_page_url: str,
         company_name: str | None = None,
+        target_location: str | None = None,
     ) -> tuple[str, dict]:
         job_list_url, trace, _discovered_board = self.find_job_board_with_evidence(
             career_page_url,
             company_name=company_name,
+            target_location=target_location,
         )
         return job_list_url, trace
 
@@ -775,8 +777,25 @@ class JobSourceAgent:
         self,
         career_page_url: str,
         company_name: str | None = None,
+        target_location: str | None = None,
     ) -> tuple[str, dict, DiscoveredJobBoard | None]:
+        target_region = location_region(target_location)
         if self._is_provider_job_board_url(career_page_url):
+            if not self._url_matches_target_region(career_page_url, target_region):
+                trace = {
+                    "career_page_url": career_page_url,
+                    "job_list_page_url": None,
+                    "target_region": target_region,
+                    "regional_exclusions": [
+                        self._regional_exclusion(career_page_url, target_region)
+                    ],
+                }
+                raise DiscoveryError(
+                    "job_board_not_found",
+                    "The provider board conflicts with the target location region.",
+                    step_name="find_job_board",
+                    trace=trace,
+                )
             adapter = self.provider_registry.adapter_for(career_page_url)
             board = adapter.identify_board(career_page_url) if adapter else None
             job_list_page_url = (
@@ -803,7 +822,8 @@ class JobSourceAgent:
                 None,
             )
         _opening_url, job_list_url, trace, discovered_board = self._discover_job_board_legacy(
-            career_page_url
+            career_page_url,
+            target_location=target_location,
         )
         if (
             company_name
@@ -820,6 +840,7 @@ class JobSourceAgent:
             searched_url, search_trace = self._search_verified_ats_board(
                 company_name,
                 career_page_url,
+                target_location=target_location,
             )
             trace["ats_search_fallback"] = search_trace
             if searched_url:
@@ -888,6 +909,7 @@ class JobSourceAgent:
         self,
         company_name: str,
         career_page_url: str,
+        target_location: str | None = None,
     ) -> tuple[str | None, dict]:
         search_result = self._search_career_candidates(
             company_name,
@@ -900,13 +922,27 @@ class JobSourceAgent:
             "errors": [],
         }
         attempts = 0
-        for candidate in search_result.candidates:
+        target_region = location_region(target_location)
+        search_candidates = sorted(
+            search_result.candidates,
+            key=lambda candidate: self._target_region_priority(
+                candidate.url,
+                target_region,
+            ),
+            reverse=True,
+        )
+        for candidate in search_candidates:
             if attempts >= self.max_ats_board_fetches:
                 trace["fetch_budget_exhausted"] = self.max_ats_board_fetches
                 break
             adapter = self.provider_registry.adapter_for(candidate.url)
             board = adapter.identify_board(candidate.url) if adapter else None
             if adapter is None or board is None or not adapter.supports_listing:
+                continue
+            if not self._url_matches_target_region(candidate.url, target_region):
+                trace.setdefault("regional_exclusions", []).append(
+                    self._regional_exclusion(candidate.url, target_region)
+                )
                 continue
             attempts += 1
             try:
@@ -1019,7 +1055,10 @@ class JobSourceAgent:
         target_title: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str | None, str | None, dict]:
-        job_list_url, trace, discovered_board = self.find_job_board_with_evidence(career_page_url)
+        job_list_url, trace, discovered_board = self.find_job_board_with_evidence(
+            career_page_url,
+            target_location=target_location,
+        )
         opening_url, resolved_job_list_url, match_trace = self._match_opening(
             job_list_url,
             target_title,
@@ -1037,8 +1076,24 @@ class JobSourceAgent:
     def _discover_job_board_legacy(
         self,
         career_page_url: str,
+        target_location: str | None = None,
     ) -> tuple[str | None, str | None, dict, DiscoveredJobBoard | None]:
+        target_region = location_region(target_location)
         if self._looks_like_job_detail_url(career_page_url):
+            if not self._url_matches_target_region(career_page_url, target_region):
+                return (
+                    None,
+                    None,
+                    {
+                        "career_page_url": career_page_url,
+                        "job_list_page_url": None,
+                        "target_region": target_region,
+                        "regional_exclusions": [
+                            self._regional_exclusion(career_page_url, target_region)
+                        ],
+                    },
+                    None,
+                )
             return (
                 career_page_url,
                 career_page_url,
@@ -1060,6 +1115,8 @@ class JobSourceAgent:
             "candidates": [],
             "fetch_errors": [],
         }
+        if target_region:
+            trace["target_region"] = target_region
 
         queue: list[tuple[str, Page | None]] = [(career_page_url, None)]
         queued_candidates: dict[str, LinkCandidate] = {}
@@ -1072,6 +1129,11 @@ class JobSourceAgent:
             page_url, deferred_page = queue.pop(0)
             normalized_page_url = page_url.rstrip("/")
             incoming_candidate = queued_candidates.get(normalized_page_url)
+            if not self._url_matches_target_region(page_url, target_region):
+                trace.setdefault("regional_exclusions", []).append(
+                    self._regional_exclusion(page_url, target_region)
+                )
+                continue
             if deferred_page is not None:
                 page = deferred_page
             elif pages_checked >= self.max_job_pages:
@@ -1096,8 +1158,15 @@ class JobSourceAgent:
                                     1
                                     if incoming_candidate.origin
                                     in {"page_link", "form_action"}
-                                    and "explicit job-list command"
-                                    in incoming_candidate.reasons
+                                    and (
+                                        "explicit job-list command"
+                                        in incoming_candidate.reasons
+                                        or (
+                                            target_region
+                                            and url_region(incoming_candidate.url)
+                                            == target_region
+                                        )
+                                    )
                                     else candidate_evidence_tier(incoming_candidate)
                                 ),
                             }
@@ -1117,6 +1186,10 @@ class JobSourceAgent:
 
             actual_page_url = page.final_url or page.url
             normalized_actual_url = actual_page_url.rstrip("/")
+            actual_page_compatible = self._url_matches_target_region(
+                actual_page_url,
+                target_region,
+            )
             redirects_to_visited_page = (
                 normalized_actual_url != normalized_page_url
                 and normalized_actual_url in visited
@@ -1126,7 +1199,7 @@ class JobSourceAgent:
                 if redirects_to_visited_page
                 else self.provider_registry.board_for_page(page)
             )
-            if page_board is not None:
+            if page_board is not None and actual_page_compatible:
                 adapter, board = page_board
                 trace["provider"] = adapter.name
                 trace["provider_detection"] = {
@@ -1228,8 +1301,13 @@ class JobSourceAgent:
                     reverse=True,
                 )
                 priority_deduped = self._dedupe_candidates(priority_scored)
+                priority_compatible = self._region_compatible_candidates(
+                    priority_deduped,
+                    target_region,
+                    trace,
+                )
                 visible_provider_board = self._visible_canonical_provider_board(
-                    priority_deduped
+                    priority_compatible
                 )
                 if visible_provider_board is not None:
                     adapter, board, candidate = visible_provider_board
@@ -1258,9 +1336,10 @@ class JobSourceAgent:
 
             if can_prioritize_page_links and pages_checked < self.max_job_pages:
                 priority_candidate = self._strong_same_site_listing_candidate(
-                    priority_deduped,
+                    priority_compatible,
                     actual_page_url,
                     career_page_url,
+                    target_region,
                 )
                 if (
                     priority_candidate is not None
@@ -1296,9 +1375,13 @@ class JobSourceAgent:
                 trace.setdefault("content_payload_probes", []).append(provider_asset_probe)
             actual_page_url = page.final_url or page.url
             normalized_actual_url = actual_page_url.rstrip("/")
+            actual_page_compatible = self._url_matches_target_region(
+                actual_page_url,
+                target_region,
+            )
             visited.add(normalized_actual_url)
             page_board = self.provider_registry.board_for_page(page, self.fetcher)
-            if page_board is not None:
+            if page_board is not None and actual_page_compatible:
                 adapter, board = page_board
                 trace["provider"] = adapter.name
                 trace["provider_detection"] = {
@@ -1322,7 +1405,12 @@ class JobSourceAgent:
                 )
             url_adapter = self.provider_registry.adapter_for(actual_page_url)
             url_board = url_adapter.identify_board(actual_page_url) if url_adapter else None
-            if url_adapter is not None and url_board is not None and url_adapter.supports_listing:
+            if (
+                actual_page_compatible
+                and url_adapter is not None
+                and url_board is not None
+                and url_adapter.supports_listing
+            ):
                 canonical_board_url = url_board.url
                 trace["provider"] = url_adapter.name
                 trace["provider_detection"] = {
@@ -1331,7 +1419,7 @@ class JobSourceAgent:
                     "url": canonical_board_url,
                 }
                 trace["job_list_page_url"] = canonical_board_url
-            elif self._is_provider_job_board_url(actual_page_url):
+            elif actual_page_compatible and self._is_provider_job_board_url(actual_page_url):
                 trace["job_list_page_url"] = actual_page_url
             elif not self._same_site_host(
                 urlparse(actual_page_url).hostname or "",
@@ -1365,6 +1453,11 @@ class JobSourceAgent:
                 reverse=True,
             )
             deduped = self._dedupe_candidates(scored)
+            compatible_candidates = self._region_compatible_candidates(
+                deduped,
+                target_region,
+                trace,
+            )
             if provider_asset_probe:
                 for candidate in deduped:
                     if self._provider_asset_confirms_candidate(
@@ -1379,9 +1472,13 @@ class JobSourceAgent:
                 and "explicit all-jobs route" in incoming_candidate.reasons
                 and normalize_url(incoming_candidate.url) == normalize_url(actual_page_url)
             )
-            if self._has_job_list_evidence(actual_page_url, deduped) and not trace["job_list_page_url"]:
+            if (
+                actual_page_compatible
+                and self._has_job_list_evidence(actual_page_url, compatible_candidates)
+                and not trace["job_list_page_url"]
+            ):
                 trace["job_list_page_url"] = actual_page_url
-            elif verified_generic_listing:
+            elif actual_page_compatible and verified_generic_listing:
                 trace["job_list_page_url"] = actual_page_url
             visited_page = {
                 "url": actual_page_url,
@@ -1411,16 +1508,18 @@ class JobSourceAgent:
                 ] = serialized_candidates
             else:
                 trace["candidates"].extend(serialized_candidates)
-            if verified_generic_listing:
+            if actual_page_compatible and verified_generic_listing:
                 trace["selected_from"] = "explicit_first_party_listing_route"
                 trace["selected_page_source"] = page.source
                 return None, actual_page_url, trace, None
 
-            visible_linked_provider_board = self._visible_canonical_provider_board(deduped)
+            visible_linked_provider_board = self._visible_canonical_provider_board(
+                compatible_candidates
+            )
             linked_provider_board = visible_linked_provider_board or next(
                 (
                     (adapter, board, candidate)
-                    for candidate in deduped
+                    for candidate in compatible_candidates
                     if url_adapter is None or url_board is None
                     if not candidate.text
                     and is_likely_job_detail(candidate)
@@ -1450,7 +1549,7 @@ class JobSourceAgent:
             official_portal = next(
                 (
                     candidate
-                    for candidate in deduped
+                    for candidate in compatible_candidates
                     if self._is_first_party_job_portal(candidate, actual_page_url)
                 ),
                 None,
@@ -1462,8 +1561,9 @@ class JobSourceAgent:
                 return None, official_portal.url, trace, None
 
             traversal_candidates = sorted(
-                deduped[: self.max_candidates],
+                compatible_candidates[: self.max_candidates],
                 key=lambda candidate: (
+                    self._target_region_priority(candidate.url, target_region),
                     candidate.score,
                     self._career_category_priority(
                         candidate,
@@ -1522,12 +1622,14 @@ class JobSourceAgent:
         candidates: list[LinkCandidate],
         source_url: str,
         career_root_url: str,
+        target_region: str | None = None,
     ) -> LinkCandidate | None:
         source_host = urlparse(source_url).hostname or ""
         bounded = candidates[: self.max_candidates]
         prioritized = sorted(
             bounded,
             key=lambda candidate: (
+                self._target_region_priority(candidate.url, target_region),
                 candidate.score,
                 self._career_category_priority(
                     candidate,
@@ -1549,6 +1651,64 @@ class JobSourceAgent:
             ):
                 return candidate
         return None
+
+    @staticmethod
+    def _target_region_priority(url: str, target_region: str | None) -> int:
+        if not target_region:
+            return 0
+        return 1 if url_region(url) == target_region else 0
+
+    @staticmethod
+    def _url_matches_target_region(url: str, target_region: str | None) -> bool:
+        candidate_region = url_region(url)
+        return not target_region or not candidate_region or candidate_region == target_region
+
+    @staticmethod
+    def _regional_exclusion(url: str, target_region: str | None) -> dict:
+        return {
+            "url": url,
+            "candidate_region": url_region(url),
+            "target_region": target_region,
+            "reason": "conflicts_with_target_region",
+        }
+
+    def _region_compatible_candidates(
+        self,
+        candidates: list[LinkCandidate],
+        target_region: str | None,
+        trace: dict | None = None,
+    ) -> list[LinkCandidate]:
+        if not target_region:
+            return candidates
+        compatible: list[LinkCandidate] = []
+        for candidate in candidates:
+            candidate_region = url_region(candidate.url)
+            if candidate_region and candidate_region != target_region:
+                reason = (
+                    f"conflicts with target location region '{target_region}': "
+                    f"'{candidate_region}'"
+                )
+                if reason not in candidate.reasons:
+                    candidate.reasons.append(reason)
+                if trace is not None:
+                    exclusion = self._regional_exclusion(candidate.url, target_region)
+                    exclusions = trace.setdefault("regional_exclusions", [])
+                    if exclusion not in exclusions:
+                        exclusions.append(exclusion)
+                continue
+            if candidate_region == target_region:
+                reason = f"matches target location region '{target_region}'"
+                if reason not in candidate.reasons:
+                    candidate.reasons.append(reason)
+            compatible.append(candidate)
+        return sorted(
+            compatible,
+            key=lambda candidate: self._target_region_priority(
+                candidate.url,
+                target_region,
+            ),
+            reverse=True,
+        )
 
     def _visible_canonical_provider_board(
         self,
