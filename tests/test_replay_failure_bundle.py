@@ -298,7 +298,7 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["restore"], 5)
         self.assertNotIn("do-not-copy", checkpoint_text)
 
-    def test_page_aware_provider_replay_reruns_job_board_discovery_from_snapshot(self):
+    def test_results_only_page_aware_provider_reruns_job_board_discovery(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             board_url = "https://careers.example.com/global/en/search-results"
@@ -350,12 +350,6 @@ class FailureReplayBundleTests(unittest.TestCase):
                     },
                     {"stage": "result_validation", "status": "success"},
                 ],
-                "trace": {"stages": {"job_board_discovery": {
-                    "provider_detection": {
-                        "method": "page_evidence",
-                        "provider": "phenom",
-                    }
-                }}},
             }]
             (root / "results.json").write_text(json.dumps(results), encoding="utf-8")
             snapshots = SnapshotStore(root / "snapshots")
@@ -422,19 +416,85 @@ class FailureReplayBundleTests(unittest.TestCase):
             ],
         )
 
-    def test_url_native_provider_handoff_resumes_at_opening_match(self):
-        source_record = {
-            "trace": {"stages": {"job_board_discovery": {
-                "provider_detection": {
-                    "method": "linked_url_evidence",
-                    "provider": "greenhouse",
+    def test_trace_page_derived_methods_resume_at_job_board_discovery(self):
+        for method in ("page_evidence", "page_probe"):
+            with self.subTest(method=method):
+                source_record = {
+                    "trace": {"stages": {"job_board_discovery": {
+                        "provider_detection": {"method": method},
+                    }}},
                 }
-            }}}
+
+                self.assertEqual(
+                    _replay_resume_stage(source_record, "opening_match"),
+                    "job_board_discovery",
+                )
+
+    def test_results_only_url_native_provider_resumes_at_opening_match(self):
+        source_record = {
+            "job_list_page_url": "https://boards.greenhouse.io/example/jobs/123",
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "greenhouse",
+            }],
         }
 
         self.assertEqual(
             _replay_resume_stage(source_record, "opening_match"),
             "opening_match",
+        )
+
+    def test_results_fallback_fails_closed_for_invalid_provider_data(self):
+        records = (
+            {
+                "job_list_page_url": "https://careers.example.com/search-results",
+                "stages": [{"stage": "job_board_discovery", "provider": "unknown"}],
+            },
+            {
+                "job_list_page_url": "https://careers.example.com/search-results",
+                "stages": [{"stage": "job_board_discovery"}],
+            },
+            {
+                "job_list_page_url": {"url": "https://careers.example.com"},
+                "stages": [{"stage": "job_board_discovery", "provider": "phenom"}],
+            },
+            {
+                "job_list_page_url": "not-a-url",
+                "stages": [{"stage": "job_board_discovery", "provider": "phenom"}],
+            },
+        )
+
+        for source_record in records:
+            with self.subTest(source_record=source_record):
+                self.assertEqual(
+                    _replay_resume_stage(source_record, "opening_match"),
+                    "opening_match",
+                )
+
+    def test_explicit_trace_method_does_not_use_results_fallback(self):
+        source_record = {
+            "job_list_page_url": "https://careers.example.com/search-results",
+            "stages": [{"stage": "job_board_discovery", "provider": "phenom"}],
+            "trace": {"stages": {"job_board_discovery": {
+                "provider_detection": {"method": "linked_url_evidence"},
+            }}},
+        }
+
+        self.assertEqual(
+            _replay_resume_stage(source_record, "opening_match"),
+            "opening_match",
+        )
+
+    def test_non_opening_failure_keeps_original_resume_stage(self):
+        source_record = {
+            "job_list_page_url": "https://careers.example.com/search-results",
+            "stages": [{"stage": "job_board_discovery", "provider": "phenom"}],
+        }
+
+        self.assertEqual(
+            _replay_resume_stage(source_record, "job_board_discovery"),
+            "job_board_discovery",
         )
 
     def test_improved_replay_is_mismatch_and_cli_exits_nonzero(self):

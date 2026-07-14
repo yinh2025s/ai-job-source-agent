@@ -8,6 +8,7 @@ import sys
 from dataclasses import asdict, fields
 from pathlib import Path
 from types import SimpleNamespace
+from urllib.parse import urlparse
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
@@ -25,6 +26,10 @@ from job_source_agent.models import (
     RESULT_SCHEMA_VERSION,
     StageResult,
     dataclass_to_dict,
+)
+from job_source_agent.providers.base import (
+    PageAwareProviderAdapter,
+    PageProbeProviderAdapter,
 )
 from job_source_agent.providers.registry import DEFAULT_PROVIDER_REGISTRY
 from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
@@ -491,7 +496,48 @@ def _replay_resume_stage(source_record: dict, failure_stage: str | None) -> str 
     )
     if method in {"page_evidence", "page_probe"}:
         return "job_board_discovery"
+    if method is None and _results_require_page_derived_board(source_record):
+        return "job_board_discovery"
     return failure_stage
+
+
+def _results_require_page_derived_board(source_record: dict) -> bool:
+    stages = source_record.get("stages")
+    job_list_url = source_record.get("job_list_page_url")
+    if not isinstance(stages, list) or not isinstance(job_list_url, str) or not job_list_url:
+        return False
+    try:
+        parsed_url = urlparse(job_list_url)
+        if (
+            parsed_url.scheme not in {"http", "https"}
+            or not parsed_url.hostname
+            or parsed_url.username
+            or parsed_url.password
+        ):
+            return False
+    except (TypeError, ValueError):
+        return False
+    job_board_result = next(
+        (
+            stage
+            for stage in stages
+            if isinstance(stage, dict) and stage.get("stage") == "job_board_discovery"
+        ),
+        None,
+    )
+    provider = job_board_result.get("provider") if isinstance(job_board_result, dict) else None
+    if not isinstance(provider, str) or not provider:
+        return False
+    adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(provider)
+    if adapter is None or not isinstance(
+        adapter,
+        (PageAwareProviderAdapter, PageProbeProviderAdapter),
+    ):
+        return False
+    try:
+        return adapter.identify_board(job_list_url) is None
+    except (TypeError, ValueError):
+        return False
 
 
 def _authoritative_upstream_executions(
