@@ -75,6 +75,45 @@ class SnapshotReplayError(ValueError):
     """Raised when a snapshot set cannot be replayed safely."""
 
 
+class ScopedSnapshotRequiresBundleV6Error(SnapshotReplayError):
+    """Raised when legacy materialization is asked to consume scoped evidence."""
+
+    code = "SCOPED_SNAPSHOT_REQUIRES_BUNDLE_V6"
+    record_sample_limit = 20
+
+    def __init__(self, records: Iterable[tuple[str, int]]) -> None:
+        all_records = tuple(
+            {"index": index_name, "line": line_number, "schema_version": 3}
+            for index_name, line_number in records
+        )
+        self.record_count = len(all_records)
+        self.records = all_records[: self.record_sample_limit]
+        locations = ", ".join(
+            f"{record['index']} line {record['line']}" for record in self.records
+        )
+        if self.record_count > len(self.records):
+            locations += f", ... ({self.record_count - len(self.records)} more)"
+        super().__init__(
+            "Legacy snapshot materialization cannot consume schema-v3 scoped records"
+            f" ({locations}). Use scripts/replay_failure_bundle.py with a bundle v6/scoped "
+            "replay instead."
+        )
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "status": "failed",
+            "error": {
+                "type": type(self).__name__,
+                "code": self.code,
+                "message": str(self),
+                "record_count": self.record_count,
+                "records": list(self.records),
+                "records_truncated": self.record_count > len(self.records),
+                "required_replay": "bundle_v6_scoped",
+            },
+        }
+
+
 @dataclass(frozen=True)
 class ReplayResult:
     manifest: dict[str, Any]
@@ -178,6 +217,7 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
 
     records, skipped_corrupt_tail = _read_records(index_path) if index_path.exists() else ([], 0)
     failure_records, skipped_failure_tail = _read_optional_records(failure_index_path)
+    _reject_scoped_records(records, failure_records)
     records = _legacy_records(records)
     failure_records = _legacy_records(failure_records)
     page_records: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
@@ -347,6 +387,23 @@ def _legacy_records(
         for line_number, record in records
         if record.get("schema_version", 1) != 3
     ]
+
+
+def _reject_scoped_records(
+    page_records: list[tuple[int, dict[str, Any]]],
+    failure_records: list[tuple[int, dict[str, Any]]],
+) -> None:
+    scoped_records = [
+        (index_name, line_number)
+        for index_name, records in (
+            ("snapshots.jsonl", page_records),
+            ("fetch-failures.jsonl", failure_records),
+        )
+        for line_number, record in records
+        if record.get("schema_version", 1) == 3
+    ]
+    if scoped_records:
+        raise ScopedSnapshotRequiresBundleV6Error(scoped_records)
 
 
 def _is_v3_record(record: dict[str, Any], line_number: int, label: str) -> bool:

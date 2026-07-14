@@ -7,7 +7,11 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
+from job_source_agent.snapshot_replay import (
+    ScopedSnapshotRequiresBundleV6Error,
+    SnapshotReplayError,
+    replay_snapshots,
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -27,6 +31,9 @@ def main() -> None:
     args = build_parser().parse_args()
     try:
         result = replay_snapshots(args.snapshot_dir, args.output_dir)
+    except ScopedSnapshotRequiresBundleV6Error as exc:
+        print(json.dumps(exc.as_dict(), sort_keys=True), file=sys.stderr, flush=True)
+        raise SystemExit(2) from exc
     except SnapshotReplayError as exc:
         raise SystemExit(f"snapshot replay failed: {exc}") from exc
     print(json.dumps(result.summary, sort_keys=True), flush=True)

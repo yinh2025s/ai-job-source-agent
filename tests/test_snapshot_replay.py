@@ -13,6 +13,7 @@ from job_source_agent.outcome_tape import (
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.snapshot_capture import SnapshotCaptureCoordinator
 from job_source_agent.snapshot_replay import (
+    ScopedSnapshotRequiresBundleV6Error,
     SnapshotReplayError,
     load_scoped_outcome_tapes,
     replay_snapshots,
@@ -1018,7 +1019,7 @@ class SnapshotReplayTests(unittest.TestCase):
                 with self.assertRaises(SnapshotReplayError):
                     load_scoped_outcome_tapes(snapshots, [scope])
 
-    def test_legacy_materialization_ignores_schema_v3_records(self):
+    def test_legacy_materialization_rejects_schema_v3_only(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             snapshots = root / "snapshots"
@@ -1029,11 +1030,84 @@ class SnapshotReplayTests(unittest.TestCase):
                 [("page", "https://jobs.example.com", "scoped only")],
             )
 
+            with self.assertRaises(ScopedSnapshotRequiresBundleV6Error) as raised:
+                replay_snapshots(snapshots, root / "legacy")
+
+        self.assertEqual(raised.exception.code, "SCOPED_SNAPSHOT_REQUIRES_BUNDLE_V6")
+        self.assertEqual(
+            raised.exception.records,
+            ({"index": "snapshots.jsonl", "line": 1, "schema_version": 3},),
+        )
+        self.assertIn("bundle v6/scoped replay", str(raised.exception))
+
+    def test_legacy_materialization_rejects_mixed_legacy_and_v3_records(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            store = SnapshotStore(snapshots)
+            store.write_page(
+                Page(url="https://legacy.example/jobs", html="legacy", source="live")
+            )
+            self._capture_scope(
+                store,
+                "attempt-mixed-0001",
+                "career_discovery",
+                [("failure", "https://scoped.example/jobs", "forbidden")],
+            )
+
+            with self.assertRaises(ScopedSnapshotRequiresBundleV6Error) as raised:
+                replay_snapshots(snapshots, root / "legacy")
+
+        self.assertEqual(
+            raised.exception.records,
+            ({"index": "fetch-failures.jsonl", "line": 1, "schema_version": 3},),
+        )
+
+    def test_scoped_rejection_diagnostic_bounds_record_samples(self):
+        error = ScopedSnapshotRequiresBundleV6Error(
+            ("snapshots.jsonl", line_number) for line_number in range(1, 26)
+        )
+
+        payload = error.as_dict()["error"]
+        self.assertEqual(payload["record_count"], 25)
+        self.assertEqual(len(payload["records"]), error.record_sample_limit)
+        self.assertTrue(payload["records_truncated"])
+        self.assertIn("5 more", payload["message"])
+
+    def test_legacy_materialization_preserves_existing_output_when_v3_is_rejected(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "legacy"
+            self._capture_scope(
+                SnapshotStore(snapshots),
+                "attempt-preserve-001",
+                "career_discovery",
+                [("page", "https://scoped.example/jobs", "scoped")],
+            )
+            fixture = output / "sites" / "existing.html"
+            fixture.parent.mkdir(parents=True)
+            fixture.write_text("existing fixture", encoding="utf-8")
+            manifest = output / "replay-manifest.json"
+            manifest.write_text('{"existing": true}\n', encoding="utf-8")
+
+            with self.assertRaises(ScopedSnapshotRequiresBundleV6Error):
+                replay_snapshots(snapshots, output)
+
+            self.assertEqual(fixture.read_text(encoding="utf-8"), "existing fixture")
+            self.assertEqual(manifest.read_text(encoding="utf-8"), '{"existing": true}\n')
+
+    def test_legacy_only_materialization_remains_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            self._write_snapshot(snapshots)
+
             result = replay_snapshots(snapshots, root / "legacy")
 
-        self.assertEqual(result.manifest["entries"], [])
-        self.assertEqual(result.summary["snapshot_records"], 0)
-        self.assertEqual(result.summary["evidence_mode"], "legacy_global_latest")
+        self.assertEqual(result.summary["status"], "success")
+        self.assertEqual(result.summary["snapshot_records"], 1)
+        self.assertGreaterEqual(result.summary["fixture_count"], 1)
 
     def test_cli_writes_summary_and_manifest(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1061,6 +1135,48 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertIn('"status": "success"', completed.stdout)
         self.assertTrue(manifest_exists)
         self.assertTrue(summary_exists)
+
+    def test_cli_rejects_schema_v3_without_overwriting_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            self._capture_scope(
+                SnapshotStore(snapshots),
+                "attempt-cli-v3-0001",
+                "career_discovery",
+                [("page", "https://scoped.example/jobs", "scoped")],
+            )
+            fixture = output / "sites" / "existing.html"
+            fixture.parent.mkdir(parents=True)
+            fixture.write_text("existing fixture", encoding="utf-8")
+            manifest = output / "replay-manifest.json"
+            manifest.write_text('{"existing": true}\n', encoding="utf-8")
+
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    str(ROOT / "scripts" / "replay_snapshots.py"),
+                    "--snapshot-dir",
+                    str(snapshots),
+                    "--output-dir",
+                    str(output),
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+            error = json.loads(completed.stderr)
+
+            self.assertEqual(completed.returncode, 2)
+            self.assertEqual(error["status"], "failed")
+            self.assertEqual(
+                error["error"]["code"],
+                "SCOPED_SNAPSHOT_REQUIRES_BUNDLE_V6",
+            )
+            self.assertEqual(error["error"]["required_replay"], "bundle_v6_scoped")
+            self.assertEqual(fixture.read_text(encoding="utf-8"), "existing fixture")
+            self.assertEqual(manifest.read_text(encoding="utf-8"), '{"existing": true}\n')
 
 
 if __name__ == "__main__":
