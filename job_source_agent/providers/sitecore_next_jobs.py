@@ -79,7 +79,7 @@ class SitecoreNextJobsAdapter:
         stopped_on_exact_title = False
         stop_reason: str | None = None
 
-        for page_number in range(_MAX_PAGES):
+        for _ in range(_MAX_PAGES):
             if current_range in ranges:
                 failure_reason = "INVALID_STRUCTURED_DATA"
                 errors.append({"range": current_range, "error": "repeated pagination range"})
@@ -95,17 +95,16 @@ class SitecoreNextJobsAdapter:
                 "Content-Type": "text/plain;charset=UTF-8",
             }
             try:
-                if page_number > 0:
-                    require_fetch_reserve(
+                require_fetch_reserve(
+                    fetcher,
+                    pagination_fetch_reserve_seconds(
                         fetcher,
-                        pagination_fetch_reserve_seconds(
-                            fetcher,
-                            publication_reserve_seconds=1.0,
-                        ),
-                        url=api_url,
-                        data=request_data,
-                        headers=request_headers,
-                    )
+                        publication_reserve_seconds=1.0,
+                    ),
+                    url=api_url,
+                    data=request_data,
+                    headers=request_headers,
+                )
                 ranges.append(current_range)
                 response = fetcher.fetch(
                     api_url,
