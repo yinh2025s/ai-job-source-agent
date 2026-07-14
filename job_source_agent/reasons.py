@@ -39,6 +39,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "INVALID_STRUCTURED_DATA": ReasonSpec(False, "parser"),
     "EMPTY_PROVIDER_RESPONSE": ReasonSpec(False, "provider"),
     "JOB_BOARD_PORTFOLIO_INCOMPLETE": ReasonSpec(False, "matcher"),
+    "OPENING_DISCOVERY_INCOMPLETE": ReasonSpec(False, "matcher"),
     "OPENING_NOT_FOUND": ReasonSpec(False, "matcher"),
     "TITLE_MISMATCH": ReasonSpec(False, "matcher"),
     "LOCATION_MISMATCH": ReasonSpec(False, "matcher"),
@@ -48,6 +49,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "COMPANY_TIME_BUDGET_EXHAUSTED": ReasonSpec(True, "budget"),
     "FETCH_BUDGET_EXHAUSTED": ReasonSpec(True, "budget"),
     "RESULT_VALIDATION_FAILED": ReasonSpec(False, "parser"),
+    "RESULT_IDENTITY_MISMATCH": ReasonSpec(False, "identity"),
 }
 
 

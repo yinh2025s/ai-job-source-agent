@@ -7,10 +7,15 @@ from .job_board import DiscoveredJobBoard, JobBoardPortfolio
 from .homepage_navigation import HomepageNavigationEvidence
 from .evidence_scope import EvidenceScopeRef, StageEvidenceLineage
 from .models import CompanyInput, StageResult
+from .identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    ProviderIdentity,
+)
 from .web import Page
 
 
-CONTRACT_SCHEMA_VERSION = "1.4"
+CONTRACT_SCHEMA_VERSION = "1.5"
 
 
 @runtime_checkable
@@ -62,13 +67,16 @@ class PipelineContext:
     company: CompanyInput
     company_website_url: str = ""
     hiring_entity_name: str | None = None
+    hiring_identity_evidence: HiringIdentityEvidence | None = None
     career_root_url: str | None = None
     homepage_navigation_evidence: HomepageNavigationEvidence | None = None
     career_page_url: str | None = None
     job_list_page_url: str | None = None
     discovered_job_board: DiscoveredJobBoard | None = None
+    provider_identity: ProviderIdentity | None = None
     job_board_portfolio: JobBoardPortfolio | None = None
     open_position_url: str | None = None
+    opening_identity: OpeningIdentity | None = None
     provider: str | None = None
     stage_results: list[StageResult] = field(default_factory=list)
     stage_evidence_lineage: dict[str, StageEvidenceLineage] = field(default_factory=dict)
@@ -108,6 +116,20 @@ class PipelineContext:
                 raise TypeError(
                     "homepage_navigation_evidence update must use HomepageNavigationEvidence"
                 )
+            if field_name == "hiring_identity_evidence" and not isinstance(
+                value, HiringIdentityEvidence
+            ):
+                raise TypeError(
+                    "hiring_identity_evidence update must use HiringIdentityEvidence"
+                )
+            if field_name == "provider_identity" and not isinstance(
+                value, ProviderIdentity
+            ):
+                raise TypeError("provider_identity update must use ProviderIdentity")
+            if field_name == "opening_identity" and not isinstance(
+                value, OpeningIdentity
+            ):
+                raise TypeError("opening_identity update must use OpeningIdentity")
             setattr(self, field_name, value)
         self.stage_results.append(execution.result)
         self.trace.setdefault("stages", {})[execution.result.stage] = execution.trace
@@ -151,12 +173,15 @@ class CheckpointStore(Protocol):
 _CONTEXT_UPDATE_FIELDS = {
     "company_website_url",
     "hiring_entity_name",
+    "hiring_identity_evidence",
     "career_root_url",
     "homepage_navigation_evidence",
     "career_page_url",
     "job_list_page_url",
     "discovered_job_board",
+    "provider_identity",
     "job_board_portfolio",
     "open_position_url",
+    "opening_identity",
     "provider",
 }

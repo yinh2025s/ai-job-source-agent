@@ -574,7 +574,10 @@ class DiscoveryStageTests(unittest.TestCase):
         execution = OpeningMatchStage(NoMatchService()).run(context)
 
         self.assertEqual(execution.result.status, "partial")
-        self.assertEqual(execution.result.reason_code, "OPENING_NOT_FOUND")
+        self.assertEqual(
+            execution.result.reason_code,
+            "OPENING_DISCOVERY_INCOMPLETE",
+        )
 
     def test_career_failure_makes_downstream_stages_not_run(self):
         class MissingCareerService(FakeDiscoveryService):

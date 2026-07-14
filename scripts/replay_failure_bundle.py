@@ -1334,6 +1334,8 @@ def _terminal_outcome_fields(record: dict) -> dict:
     trace = trace if isinstance(trace, dict) else {}
     terminal = trace.get("terminal")
     terminal = terminal if isinstance(terminal, dict) else {}
+    evaluation = record.get("evaluation")
+    evaluation = evaluation if isinstance(evaluation, dict) else {}
     for target, names in (
         ("terminal_semantic", ("terminal_semantic", "semantic")),
         ("terminal_disposition", ("terminal_disposition", "disposition")),
@@ -1345,6 +1347,11 @@ def _terminal_outcome_fields(record: dict) -> dict:
                     _first_present_value(record, names),
                     _first_present_value(trace, names),
                     _first_present_value(terminal, names),
+                    (
+                        evaluation.get("record_disposition")
+                        if target == "terminal_disposition"
+                        else None
+                    ),
                 )
                 if candidate is not None
             ),
@@ -1406,6 +1413,7 @@ def _identity_candidates(record: dict | None) -> list[dict]:
     validation = stages.get("result_validation") if isinstance(stages, dict) else None
     candidates = [
         record,
+        record.get("identity_assertion"),
         record.get("identity"),
         trace,
         trace.get("identity"),
@@ -1431,6 +1439,15 @@ def _normalize_identity_contract(value: object) -> dict | None:
             "chain",
         ),
     )
+    if chain is None and any(
+        isinstance(value.get(name), dict)
+        for name in ("hiring", "provider", "opening")
+    ):
+        chain = {
+            name: value.get(name)
+            for name in ("hiring", "provider", "opening")
+            if isinstance(value.get(name), dict)
+        }
     conflicts = _first_present_value(
         value,
         ("conflicting_fields", "identity_conflicting_fields"),

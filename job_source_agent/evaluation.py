@@ -15,6 +15,21 @@ from .result_identity import (
 
 
 FAILURE_CLUSTER_COMPANY_LIMIT = 20
+EVALUATION_SCHEMA_VERSION = "1.0"
+EVALUATION_DISPOSITIONS = frozenset(
+    {
+        "exact_public",
+        "verified_closed",
+        "no_public_opening",
+        "recruiter_client_undisclosed",
+        "external_blocked",
+        "system_gap",
+    }
+)
+EVALUATION_ELIGIBILITY_VALUES = frozenset({True, False, "unknown"})
+_IDENTITY_VERDICTS = frozenset(
+    {"verified", "rejected", "unreviewed", "not_applicable"}
+)
 _FAILURE_STATUSES = {"failed", "partial", "unsupported"}
 _VERIFIED_NO_MATCH_DISPOSITIONS = {
     "verified_inventory_no_match",
@@ -40,6 +55,7 @@ _DISCOVERY_UNRESOLVED_REASONS = {
     "EMPTY_PROVIDER_RESPONSE",
     "JOB_BOARD_NOT_FOUND",
     "LOCATION_MISMATCH",
+    "OPENING_DISCOVERY_INCOMPLETE",
     "OPENING_NOT_FOUND",
     "TITLE_MISMATCH",
     "WEBSITE_NOT_RESOLVED",
@@ -83,6 +99,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
     terminal_outcomes = [_terminal_outcome(result) for result in results]
     terminal_outcome_counts = Counter(terminal_outcomes)
     failure_clusters = _failure_clusters(results)
+    evaluation_metrics = summarize_evaluation_metrics(results)
 
     summary = {
         "total": total,
@@ -116,10 +133,153 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
         "failure_clusters": failure_clusters,
         "company_stage_matrix": _company_stage_matrix(results),
         "company_identity_matrix": _company_identity_matrix(results),
+        "evaluation_schema_version": EVALUATION_SCHEMA_VERSION,
+        "evaluation_metrics": evaluation_metrics,
+        "record_disposition_counts": evaluation_metrics["record_disposition_counts"],
+        "evaluation_annotation_coverage": evaluation_metrics["annotation_coverage"],
     }
     if elapsed_sec is not None:
         summary["elapsed_sec"] = elapsed_sec
     return summary
+
+
+def validate_evaluation_record(record: dict) -> dict:
+    """Validate one externally annotated result without inferring eligibility."""
+
+    if not isinstance(record, dict):
+        raise ValueError("evaluation record must be a mapping")
+    annotation = record.get("evaluation")
+    if not isinstance(annotation, dict):
+        raise ValueError("evaluation annotation must be a mapping")
+    if annotation.get("schema_version") != EVALUATION_SCHEMA_VERSION:
+        raise ValueError(
+            f"evaluation schema_version must be {EVALUATION_SCHEMA_VERSION!r}"
+        )
+    disposition = annotation.get("record_disposition")
+    if disposition not in EVALUATION_DISPOSITIONS:
+        raise ValueError("evaluation record_disposition is invalid")
+    eligibility = annotation.get("eligible_exact_opening")
+    if (
+        eligibility is not True
+        and eligibility is not False
+        and eligibility != "unknown"
+    ):
+        raise ValueError(
+            "evaluation eligible_exact_opening must be true, false, or 'unknown'"
+        )
+    identity_verdict = annotation.get("identity_verdict")
+    if identity_verdict not in _IDENTITY_VERDICTS:
+        raise ValueError("evaluation identity_verdict is invalid")
+
+    exact_output = bool(record.get("open_position_url"))
+    if disposition == "exact_public":
+        if not exact_output:
+            raise ValueError("exact_public requires an open_position_url")
+        if eligibility is not True:
+            raise ValueError("exact_public requires eligible_exact_opening=true")
+        if identity_verdict != "verified":
+            raise ValueError("exact_public requires a verified identity verdict")
+        if _s7_failed(record):
+            raise ValueError("an S7 failure with an URL cannot be exact_public")
+    return {
+        "schema_version": EVALUATION_SCHEMA_VERSION,
+        "record_disposition": disposition,
+        "eligible_exact_opening": eligibility,
+        "identity_verdict": identity_verdict,
+        "exact_output": exact_output,
+    }
+
+
+def summarize_evaluation_metrics(records: list[dict]) -> dict:
+    """Aggregate trustworthy metrics while making missing review explicit."""
+
+    total = len(records)
+    annotated = [record for record in records if isinstance(record.get("evaluation"), dict)]
+    validated = [validate_evaluation_record(record) for record in annotated]
+    exact_outputs = [record for record in validated if record["exact_output"]]
+    reviewed_exact = [
+        record
+        for record in exact_outputs
+        if record["identity_verdict"] in {"verified", "rejected"}
+    ]
+    correct_exact = sum(
+        record["record_disposition"] == "exact_public" for record in reviewed_exact
+    )
+    eligible = [record for record in validated if record["eligible_exact_opening"] is True]
+    disposition_counts = Counter(
+        record["record_disposition"] for record in validated
+    )
+    annotation_missing = total - len(validated)
+    exact_output_count = sum(bool(record.get("open_position_url")) for record in records)
+
+    precision_status = (
+        "available"
+        if annotation_missing == 0 and len(reviewed_exact) == len(exact_outputs)
+        else "not_reportable"
+    )
+    recall_status = "available" if annotation_missing == 0 and eligible else "not_reportable"
+    disposition_status = "available" if annotation_missing == 0 else "not_reportable"
+    return {
+        "schema_version": EVALUATION_SCHEMA_VERSION,
+        "annotation_coverage": _metric(len(validated), total),
+        "record_disposition_counts": {
+            disposition: disposition_counts.get(disposition, 0)
+            for disposition in sorted(EVALUATION_DISPOSITIONS)
+        },
+        "record_disposition_status": disposition_status,
+        "raw_exact_rate": _metric(exact_output_count, total),
+        "exact_precision": _metric(
+            correct_exact,
+            len(reviewed_exact),
+            unknown_count=(
+                annotation_missing + len(exact_outputs) - len(reviewed_exact)
+            ),
+            status=precision_status,
+        ),
+        "conditional_exact_recall": _metric(
+            sum(record["record_disposition"] == "exact_public" for record in eligible),
+            len(eligible),
+            unknown_count=(
+                annotation_missing
+                + sum(
+                    record["eligible_exact_opening"] == "unknown"
+                    for record in validated
+                )
+            ),
+            status=recall_status,
+        ),
+        "system_defect_rate": _metric(
+            disposition_counts.get("system_gap", 0),
+            total,
+            unknown_count=annotation_missing,
+            status=disposition_status,
+        ),
+    }
+
+
+def _metric(
+    numerator: int,
+    denominator: int,
+    unknown_count: int = 0,
+    status: str | None = None,
+) -> dict:
+    metric_status = status or ("available" if denominator else "not_reportable")
+    return {
+        "value": (
+            round(numerator / denominator, 3)
+            if denominator and metric_status == "available"
+            else None
+        ),
+        "numerator": numerator,
+        "denominator": denominator,
+        "unknown_count": unknown_count,
+        "status": metric_status,
+    }
+
+
+def _s7_failed(record: dict) -> bool:
+    stage = _stage_by_name(record).get("result_validation")
+    return isinstance(stage, dict) and stage.get("status") in _FAILURE_STATUSES
 
 
 def compare_summaries(current: dict, baseline: dict) -> dict:

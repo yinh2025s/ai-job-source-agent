@@ -208,9 +208,17 @@ class FailureReplayBundleTests(unittest.TestCase):
             results_path = root / "results.json"
             results = json.loads(results_path.read_text(encoding="utf-8"))
             results[0]["linkedin_job_title"] = "Missing Role"
+            results[0]["stages"][0]["reason_code"] = (
+                "OPENING_DISCOVERY_INCOMPLETE"
+            )
             results_path.write_text(json.dumps(results), encoding="utf-8")
 
-            manifest = replay_failure_bundle(self._args(root))
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    reason_code=["OPENING_DISCOVERY_INCOMPLETE"],
+                )
+            )
             replay_results = json.loads(
                 (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
             )

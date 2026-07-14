@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RESULT_SCHEMA_VERSION = "2.1"
+RESULT_SCHEMA_VERSION = "2.2"
 
 STAGE_LINKEDIN_DISCOVERY = "linkedin_discovery"
 STAGE_WEBSITE_RESOLUTION = "website_resolution"
@@ -82,6 +82,7 @@ class DiscoveryResult:
     career_page_url: str | None = None
     job_list_page_url: str | None = None
     open_position_url: str | None = None
+    identity_assertion: dict[str, Any] | None = None
     # `status` and `error` remain for existing demo consumers. New callers
     # should use `pipeline_status`, `error_code`, and `stage_results`.
     status: str = "failed"
@@ -116,6 +117,7 @@ class DiscoveryResult:
             "career_page_url": self.career_page_url,
             "job_list_page_url": self.job_list_page_url,
             "open_position_url": self.open_position_url,
+            "identity_assertion": self.identity_assertion,
             "status": self.status,
             "error": self.error,
             "error_code": self.error_code,

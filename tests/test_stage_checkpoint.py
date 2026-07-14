@@ -12,11 +12,60 @@ from job_source_agent.contracts import CheckpointStore, StageExecution
 from job_source_agent.evidence_scope import StageEvidenceLineage
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
+from job_source_agent.identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    ProviderIdentity,
+)
 from job_source_agent.models import PIPELINE_STAGES, StageResult
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 
 
 class FilesystemCheckpointStoreTests(unittest.TestCase):
+    def test_identity_contracts_round_trip_as_typed_context_updates(self):
+        hiring = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://acme.example/careers",
+        )
+        provider = ProviderIdentity(
+            hiring_entity_name="Acme",
+            provider="lever",
+            tenant="acme",
+            canonical_board_url="https://jobs.lever.co/acme",
+            evidence_url="https://jobs.lever.co/acme",
+            verification_method="tenant_name_match",
+            relationship_verified=True,
+        )
+        opening = OpeningIdentity(
+            hiring_entity_name="Acme",
+            provider="lever",
+            tenant="acme",
+            canonical_board_url="https://jobs.lever.co/acme",
+            canonical_opening_url="https://jobs.lever.co/acme/role-123",
+        )
+        execution = StageExecution(
+            result=StageResult(stage="opening_match", status="success"),
+            updates={
+                "hiring_identity_evidence": hiring,
+                "provider_identity": provider,
+                "opening_identity": opening,
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = FilesystemCheckpointStore(directory)
+            store.save("fingerprint", execution)
+            restored = store.load("fingerprint", "opening_match")
+
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored.updates["hiring_identity_evidence"], hiring)
+        self.assertEqual(restored.updates["provider_identity"], provider)
+        self.assertEqual(restored.updates["opening_identity"], opening)
+
     def test_homepage_navigation_round_trips_as_typed_context_update(self):
         evidence = HomepageNavigationEvidence(
             homepage_url="https://company.example/",

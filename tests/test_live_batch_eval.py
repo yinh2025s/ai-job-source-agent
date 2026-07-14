@@ -107,8 +107,9 @@ class LiveBatchEvalTests(unittest.TestCase):
         )
 
     def test_inner_deadline_leaves_bounded_checkpoint_reserve(self):
-        self.assertEqual(_inner_deadline_budget(45), 44)
-        self.assertEqual(_inner_deadline_budget(10), 9.5)
+        self.assertEqual(_inner_deadline_budget(45), 43)
+        self.assertEqual(_inner_deadline_budget(20), 18)
+        self.assertEqual(_inner_deadline_budget(10), 9)
         self.assertEqual(_inner_deadline_budget(0.5), 0.45)
 
     def pipeline_args(self, directory):

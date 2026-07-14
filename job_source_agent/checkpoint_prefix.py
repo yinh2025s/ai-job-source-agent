@@ -10,9 +10,15 @@ from .models import (
     PIPELINE_STAGES,
     STAGE_CAREER_DISCOVERY,
     STAGE_JOB_BOARD_DISCOVERY,
+    STAGE_HIRING_IDENTITY_RESOLUTION,
     STAGE_OPENING_MATCH,
     STAGE_WEBSITE_RESOLUTION,
     StageResult,
+)
+from .identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    ProviderIdentity,
 )
 from .web import safe_normalize_url
 
@@ -24,6 +30,14 @@ _REQUIRED_SUCCESS_OUTPUTS = {
     STAGE_CAREER_DISCOVERY: "career_page_url",
     STAGE_JOB_BOARD_DISCOVERY: "job_list_page_url",
     STAGE_OPENING_MATCH: "open_position_url",
+}
+_REQUIRED_IDENTITY_OUTPUTS = {
+    STAGE_HIRING_IDENTITY_RESOLUTION: (
+        "hiring_identity_evidence",
+        HiringIdentityEvidence,
+    ),
+    STAGE_JOB_BOARD_DISCOVERY: ("provider_identity", ProviderIdentity),
+    STAGE_OPENING_MATCH: ("opening_identity", OpeningIdentity),
 }
 _URL_UPDATE_FIELDS = {
     "company_website_url",
@@ -218,6 +232,17 @@ def _validate_checkpoint(
                 stage=stage,
                 defect_class="missing_required_output",
                 detail="Successful checkpoint is missing its required public URL output.",
+            )
+    required_identity = _REQUIRED_IDENTITY_OUTPUTS.get(stage)
+    if execution.result.status == "success" and required_identity is not None:
+        field_name, expected_type = required_identity
+        if not isinstance(execution.updates.get(field_name), expected_type):
+            return CheckpointPrefixDefect(
+                stage=stage,
+                defect_class="missing_identity_output",
+                detail=(
+                    "Successful checkpoint is missing its required typed identity output."
+                ),
             )
     for field_name in _URL_UPDATE_FIELDS:
         if field_name not in execution.updates or execution.updates[field_name] is None:

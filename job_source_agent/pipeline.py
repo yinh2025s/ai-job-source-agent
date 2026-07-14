@@ -27,7 +27,10 @@ from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
 from .homepage_navigation import HomepageNavigationEvidence
 from .job_board import DiscoveredJobBoard, JobBoardPortfolio
-from .listing_extraction import explicit_empty_inventory_evidence
+from .listing_extraction import (
+    explicit_empty_inventory_evidence,
+    extract_listing_candidates,
+)
 from .models import (
     STAGE_CAREER_DISCOVERY,
     STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -498,6 +501,7 @@ class JobSourceAgent:
         homepage_navigation_evidence: HomepageNavigationEvidence | None = None,
     ) -> tuple[str, dict]:
         homepage_url = normalize_url(company_website_url)
+        requested_homepage_url = homepage_url
         homepage: Page | None = None
         raw_candidates: list[RawLink] = []
         attempted_candidate_urls: set[str] | None = None
@@ -563,6 +567,18 @@ class JobSourceAgent:
             with self._career_transport_phase("homepage"):
                 homepage = self.fetcher.fetch(company_website_url)
             homepage_url = homepage.final_url or homepage.url
+            homepage_surface_verification = self._verify_official_homepage_career_surface(
+                requested_homepage_url,
+                homepage,
+                company_name=company_name,
+                target_location=target_location,
+            )
+            trace["homepage_career_surface_verification"] = homepage_surface_verification
+            if homepage_surface_verification["verified"]:
+                trace["homepage_url"] = homepage_url
+                trace["selected_from"] = "verified_official_homepage"
+                trace["selected_page_source"] = homepage.source
+                return homepage_url, trace
             raw_candidates = extract_links(homepage)
         except FetchError as exc:
             trace["homepage_fetch_error"] = str(exc)
@@ -1697,6 +1713,24 @@ class JobSourceAgent:
                     }
                 )
                 continue
+
+            first_party_listing_candidates = extract_listing_candidates(
+                page.html,
+                actual_page_url,
+            )
+            if actual_page_compatible and first_party_listing_candidates:
+                trace["first_party_listing_inventory"] = {
+                    "status": "verified",
+                    "candidate_count": len(first_party_listing_candidates),
+                    "source": "semantic_title_url_binding",
+                    "candidates": dataclass_to_dict(
+                        first_party_listing_candidates[:5]
+                    ),
+                }
+                trace["job_list_page_url"] = actual_page_url
+                trace["selected_from"] = "verified_first_party_listing_inventory"
+                trace["selected_page_source"] = page.source
+                return None, actual_page_url, trace, None
 
             acquired_handoff = (
                 parse_acquired_brand_portal_evidence(page, company_name)
@@ -2861,7 +2895,11 @@ class JobSourceAgent:
                 trace["selected"] = dataclass_to_dict(candidate)
                 trace["selected_page_source"] = page.source
                 return actual_url
-            if self._looks_like_career_page(candidate, page.html):
+            if self._looks_like_career_page(
+                candidate,
+                page.html,
+                company_name=company_name,
+            ):
                 trace["selected"] = dataclass_to_dict(candidate)
                 trace["selected_page_source"] = page.source
                 return actual_url
@@ -2947,7 +2985,7 @@ class JobSourceAgent:
             verification["reason"] = "invalid redirect page markup"
             return verification
 
-        company_tokens = self._company_identity_tokens(company_name)
+        company_tokens = self._career_surface_identity_tokens(company_name)
         identity_matches = [
             value
             for value in metadata.identity_values
@@ -3371,7 +3409,96 @@ class JobSourceAgent:
             deduped.append(candidate)
         return deduped
 
-    def _looks_like_career_page(self, candidate: LinkCandidate, html: str) -> bool:
+    def _verify_official_homepage_career_surface(
+        self,
+        requested_homepage_url: str,
+        page: Page,
+        *,
+        company_name: str | None,
+        target_location: str | None,
+    ) -> dict:
+        actual_url = page.final_url or page.url
+        verification = {
+            "url": actual_url,
+            "verified": False,
+            "kind": "official_homepage_career_surface",
+        }
+        if not self._same_site_host(
+            urlparse(requested_homepage_url).hostname or "",
+            urlparse(actual_url).hostname or "",
+        ):
+            verification["reason"] = "homepage redirected outside the verified official site"
+            return verification
+        target_region = location_region(target_location)
+        if not self._url_matches_target_region(actual_url, target_region):
+            verification["reason"] = "homepage redirect conflicts with target region"
+            return verification
+        if not company_name:
+            verification["reason"] = "company identity unavailable"
+            return verification
+
+        metadata = self._career_surface_metadata(page.html)
+        company_tokens = self._career_surface_identity_tokens(company_name)
+        identity_matches = [
+            value
+            for value in metadata.identity_values
+            if company_tokens
+            and company_tokens.issubset(
+                set(re.findall(r"[a-z0-9]+", value.casefold()))
+            )
+        ]
+        if not identity_matches:
+            verification["reason"] = "homepage company identity mismatch"
+            return verification
+        surface_matches = [
+            value
+            for value in metadata.identity_values
+            if re.search(r"\b(?:careers|jobs)\b|\bopen positions\b", value, flags=re.I)
+        ]
+        if not surface_matches:
+            verification["reason"] = "homepage lacks strong career-surface metadata"
+            return verification
+        verification.update(
+            {
+                "verified": True,
+                "identity_evidence": identity_matches[:3],
+                "surface_evidence": surface_matches[:3],
+            }
+        )
+        return verification
+
+    @staticmethod
+    def _career_surface_metadata(html: str) -> _CareerRedirectMetadataParser:
+        metadata = _CareerRedirectMetadataParser()
+        try:
+            metadata.feed(html[:500000])
+            metadata.close()
+        except (TypeError, ValueError):
+            pass
+        return metadata
+
+    def _career_surface_identity_tokens(self, company_name: str) -> set[str]:
+        tokens = self._company_identity_tokens(company_name)
+        generic_descriptors = {
+            "global",
+            "group",
+            "labs",
+            "services",
+            "solutions",
+            "tech",
+            "technologies",
+            "technology",
+        }
+        distinctive = tokens - generic_descriptors
+        return distinctive or tokens
+
+    def _looks_like_career_page(
+        self,
+        candidate: LinkCandidate,
+        html: str,
+        *,
+        company_name: str | None = None,
+    ) -> bool:
         if is_ats_url(candidate.url):
             return self._is_provider_job_board_url(candidate.url)
         text = html[:200000].lower()
@@ -3383,6 +3510,19 @@ class JobSourceAgent:
             for link in page_links
         ):
             return True
+        metadata = self._career_surface_metadata(html)
+        metadata_values = metadata.identity_values
+        if company_name:
+            company_tokens = self._career_surface_identity_tokens(company_name)
+            if any(
+                re.search(r"\bcareer\b", value, flags=re.I)
+                and company_tokens
+                and company_tokens.issubset(
+                    set(re.findall(r"[a-z0-9]+", value.casefold()))
+                )
+                for value in metadata_values
+            ):
+                return True
         if any(
             reason in candidate.reasons
             for reason in (
@@ -3416,9 +3556,10 @@ class JobSourceAgent:
             )
             if any(signal in text for signal in non_employment_surface_signals):
                 return False
-            title_match = re.search(r"<title\b[^>]*>(.*?)</title\s*>", text, flags=re.I | re.S)
-            title = re.sub(r"<[^>]+>", " ", title_match.group(1)) if title_match else ""
-            return re.search(r"\b(?:careers?|jobs?)\b", title, flags=re.I) is not None
+            return any(
+                re.search(r"\b(?:careers|jobs?)\b|\bopen positions\b", value, flags=re.I)
+                for value in metadata_values
+            )
         career_signals = (
             "open roles",
             "open positions",
@@ -3428,11 +3569,15 @@ class JobSourceAgent:
             "apply now",
             "join our team",
             "join us",
-            "life at",
-            "careers",
         )
         generic_job_only = candidate.score < 120 and "career keyword 'jobs'" in " ".join(candidate.reasons)
-        return not generic_job_only and any(signal in text for signal in career_signals)
+        metadata_surface = any(
+            re.search(r"\b(?:careers|jobs?)\b|\bopen positions\b", value, flags=re.I)
+            for value in metadata_values
+        )
+        return not generic_job_only and (
+            metadata_surface or any(signal in text for signal in career_signals)
+        )
 
     def _looks_like_error_page(self, url: str, html: str) -> bool:
         path = urlparse(url).path.lower()

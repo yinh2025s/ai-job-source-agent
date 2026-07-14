@@ -58,7 +58,7 @@ def diagnose_opening_availability(
     provider_errors = _provider_errors(trace)
     provider_failure_reason = _provider_failure_reason(trace, provider_errors)
     if provider_errors or provider_failure_reason:
-        reason_code = provider_failure_reason or "OPENING_NOT_FOUND"
+        reason_code = provider_failure_reason or "OPENING_DISCOVERY_INCOMPLETE"
         return OpeningAvailabilityDiagnostic(
             disposition="discovery_incomplete",
             confidence="low",
@@ -73,10 +73,16 @@ def diagnose_opening_availability(
 
     provider_api = trace.get("provider_api")
     inventory = provider_api.get("inventory") if isinstance(provider_api, dict) else None
-    if isinstance(inventory, dict) and inventory.get("status") in {
-        "verified",
-        "verified_filtered_empty",
-    }:
+    if (
+        isinstance(inventory, dict)
+        and (
+            (
+                inventory.get("status") == "verified"
+                and _nonnegative_int(inventory.get("candidate_count")) > 0
+            )
+            or inventory.get("status") == "verified_filtered_empty"
+        )
+    ):
         candidate_count = _nonnegative_int(inventory.get("candidate_count"))
         strongest_score = _nonnegative_int(inventory.get("strongest_title_score"))
         return OpeningAvailabilityDiagnostic(
@@ -107,7 +113,7 @@ def diagnose_opening_availability(
     return OpeningAvailabilityDiagnostic(
         disposition="discovery_incomplete",
         confidence="low",
-        reason_code="OPENING_NOT_FOUND",
+        reason_code="OPENING_DISCOVERY_INCOMPLETE",
         detail="No exact opening was verified, and the available evidence cannot establish that the posting is closed.",
         evidence={"provider_error_count": 0, "provider_errors": []},
     )

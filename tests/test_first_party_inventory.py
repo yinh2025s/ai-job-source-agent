@@ -385,6 +385,56 @@ class FirstPartyInventoryPipelineTests(unittest.TestCase):
         self.assertEqual(probe["method"], "first_party_dynamic_inventory")
         self.assertEqual(probe["status"], "verified")
 
+    def test_pipeline_promotes_semantically_bound_first_party_cards(self):
+        html = """
+            <main>
+              <div class="card">
+                <h3 class="card-title">AI/ML Engineer</h3>
+                <a href="apply?id=role-123">Apply</a>
+              </div>
+              <div class="card">
+                <h3 class="card-title">Platform Engineer</h3>
+                <a href="apply?id=role-456">Apply</a>
+              </div>
+            </main>
+        """
+        fetcher = RecordingFetcher(
+            {self.career: Page(url=self.career, html=html)}
+        )
+
+        job_list, trace = JobSourceAgent(
+            fetcher,
+            max_job_pages=1,
+        ).find_job_board(self.career)
+
+        self.assertEqual(job_list, self.career)
+        self.assertEqual(
+            trace["selected_from"],
+            "verified_first_party_listing_inventory",
+        )
+        self.assertEqual(
+            trace["first_party_listing_inventory"]["candidate_count"],
+            2,
+        )
+
+    def test_pipeline_does_not_promote_hidden_first_party_cards(self):
+        html = """
+            <main>
+              <div class="card" hidden>
+                <h3 class="card-title">AI/ML Engineer</h3>
+                <a href="apply?id=role-123">Apply</a>
+              </div>
+            </main>
+        """
+        fetcher = RecordingFetcher(
+            {self.career: Page(url=self.career, html=html)}
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            JobSourceAgent(fetcher, max_job_pages=1).find_job_board(self.career)
+
+        self.assertEqual(raised.exception.code, "job_board_not_found")
+
     def test_pipeline_prioritizes_tail_route_chunk_with_three_asset_cap(self):
         opening = "https://jobs.ashbyhq.com/example/11111111-1111-1111-1111-111111111111"
         decoys = [f"https://www.example.com/_nuxt/hash-{index}.js" for index in range(4)]

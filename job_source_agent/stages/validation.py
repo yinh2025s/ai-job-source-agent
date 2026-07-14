@@ -10,6 +10,7 @@ from ..models import (
 )
 from ..pipeline_status import derive_pipeline_status
 from ..reasons import make_stage_result
+from ..identity_continuity import validate_opening_identity_chain
 
 
 class ResultValidationService(Protocol):
@@ -23,7 +24,12 @@ class DefaultResultValidationService:
         duplicates = sorted(stage for stage, count in counts.items() if count > 1)
         if duplicates:
             return ["Duplicate stage results were produced."]
-        return []
+        return validate_opening_identity_chain(
+            hiring=context.hiring_identity_evidence,
+            provider=context.provider_identity,
+            opening=context.opening_identity,
+            open_position_url=context.open_position_url,
+        )
 
 
 class ResultValidationStage:
@@ -42,7 +48,17 @@ class ResultValidationStage:
                 result=make_stage_result(
                     self.name,
                     "failed",
-                    reason_code="RESULT_VALIDATION_FAILED",
+                    reason_code=(
+                        "RESULT_IDENTITY_MISMATCH"
+                        if any(
+                            issue.endswith("MISMATCH")
+                            or issue.endswith("MISSING")
+                            or issue.endswith("UNVERIFIED")
+                            or issue == "OPENING_URL_INVALID"
+                            for issue in issues
+                        )
+                        else "RESULT_VALIDATION_FAILED"
+                    ),
                     duration_ms=_elapsed_ms(started),
                     input_count=1,
                     evidence=[{"field": "pipeline_status", "value": pipeline_status}],

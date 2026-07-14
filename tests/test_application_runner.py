@@ -22,6 +22,11 @@ from job_source_agent.models import (
     StageResult,
 )
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
+from job_source_agent.identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    ProviderIdentity,
+)
 
 
 REQUIRED_OUTPUTS = {
@@ -38,6 +43,33 @@ def authoritative_execution(stage, *, status=None, updates=None):
     if updates is None:
         required = REQUIRED_OUTPUTS.get(stage)
         updates = {required[0]: required[1]} if required else {}
+        if stage == STAGE_HIRING_IDENTITY_RESOLUTION:
+            updates["hiring_identity_evidence"] = HiringIdentityEvidence(
+                source_company_name="Acme",
+                hiring_entity_name="Acme",
+                relationship_type="same_entity",
+                verification_method="same_entity",
+                verified=True,
+                evidence_url="https://acme.example/careers",
+            )
+        elif stage == STAGE_JOB_BOARD_DISCOVERY:
+            updates["provider_identity"] = ProviderIdentity(
+                hiring_entity_name="Acme",
+                provider="generic",
+                tenant="url:https://jobs.acme.example",
+                canonical_board_url="https://jobs.acme.example",
+                evidence_url="https://jobs.acme.example",
+                verification_method="first_party_same_site",
+                relationship_verified=True,
+            )
+        elif stage == STAGE_OPENING_MATCH:
+            updates["opening_identity"] = OpeningIdentity(
+                hiring_entity_name="Acme",
+                provider="generic",
+                tenant="url:https://jobs.acme.example",
+                canonical_board_url="https://jobs.acme.example",
+                canonical_opening_url="https://jobs.acme.example/123",
+            )
     return StageExecution(
         StageResult(stage=stage, status=status),
         updates=updates,
@@ -596,7 +628,16 @@ class ApplicationRunnerTests(unittest.TestCase):
         seed_prefix(store, fingerprint, STAGE_CAREER_DISCOVERY)
         store.executions[(fingerprint, STAGE_HIRING_IDENTITY_RESOLUTION)] = StageExecution(
             StageResult(stage=STAGE_HIRING_IDENTITY_RESOLUTION, status="success"),
-            updates={"unsupported_field": "value"},
+            updates={
+                "unsupported_field": "value",
+                "hiring_identity_evidence": HiringIdentityEvidence(
+                    source_company_name="Acme",
+                    hiring_entity_name="Acme",
+                    relationship_type="same_entity",
+                    verification_method="same_entity",
+                    verified=True,
+                ),
+            },
         )
         context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
 

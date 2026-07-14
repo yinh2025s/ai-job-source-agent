@@ -40,6 +40,158 @@
 - 外部阻塞：登录墙、验证码、robots/权限限制等当前无法自动完成。
 - 正常空结果：公司没有公开职位、目标职位已下线，不能当成系统 Bug。
 
+## 当前稳定化阶段（2026-07-14）
+
+### 阶段结论
+
+从本节生效起，暂停“看到一个失败样本就继续增加 heuristic、provider 或公司规则”的开发方式。当前主线进入 correctness-first stabilization；在本节验收标准全部满足前：
+
+- 不新增 provider。
+- 不增加 company-specific branch 或单公司例外。
+- 不以提高当前 cohort 的表面 exact rate 为目标。
+- 不扩大 `pipeline.py` 的职责；跨 stage 行为必须先冻结 contract。
+- 不把 provider benchmark、focused replay、已观察样本或预填 website/career root 的结果称为 blind success。
+
+触发本阶段的事实基线：
+
+- 最新动态 LinkedIn 查询请求 30 家，实际只冻结到 24 家；原始漏斗为 22 website、16 career page、13 job list、7 exact opening。
+- 17 个 non-exact 不能统一视为系统缺陷，必须区分正常关闭、无公开岗位、招聘客户未披露、外部阻塞、临时失败和真实 system gap。
+- `/private/tmp/.89-budget2-results.json` 中 Fresh Ventures 被错误匹配到 Notion Ashby tenant 的 `Software Engineer, New Grad` opening，S5-S7 却全部成功。这证明当前 exact success 缺少连续 identity evidence chain，历史单一 success-rate 指标不能证明正确性。
+- 25/25 provider fixture benchmark 主要证明 adapter 回归稳定，不证明陌生公司的 website/career/tenant discovery 泛化能力。
+- `pipeline.py` 仍集中承担 S4-S6 多项职责，legacy `JobSourceAgent.discover()` 与 production `PipelineApplication` 尚未完全收口；本轮只做必要的 contract extraction，不全面重写。
+
+### 阶段入口工作区
+
+进入本阶段时的未提交 `.89` 工作必须完整保留并逐项审查，不得 reset、checkout 或用格式化覆盖：
+
+| 未完成工作 | 文件范围 | 稳定化处理 |
+| --- | --- | --- |
+| listing/hydration 与 semantic-card extraction | `listing_extraction.py`、`card_listing_extraction.py` 及测试 | 只在 identity gate 后保留；不得仅凭 title/URL pair 产生跨 tenant exact success |
+| Career 首页和单数 `Career` evidence | `pipeline.py`、`test_career_surface_detection.py` | 作为 S4 evidence 审查，不得隐式授权任意下游 provider tenant |
+| opening incomplete reason contract | `reasons.py`、`opening_availability.py`、`stages/discovery.py`、`evaluation.py` 及测试 | 与 replay/outcome contract 一起冻结，不能只改旧断言求绿 |
+| deadline publication reserve | `live_batch_eval.py` 及测试 | 保留为 runner reliability 变更，独立验证，不参与 exact identity 判定 |
+| `.89` adapter version | `checkpoint.py` | 最终 contract 确定后统一失效；当前不是发布完成标志 |
+
+所有上述变化在 P0 contract test 和全量门禁完成前均属于 pending integration，不计入已发布能力。
+
+### P0-A：Opening Identity Continuity Contract
+
+exact success 必须存在以下连续、可验证且版本化的 identity chain：
+
+```text
+source company identity
+  -> resolved hiring entity / verified relationship
+  -> official career source
+  -> provider + tenant + canonical board
+  -> opening provider + tenant + canonical board
+  -> validated opening URL
+```
+
+冻结规则：
+
+1. S3 必须输出招聘主体，或明确记录继续使用 source company；母公司、收购品牌和统一招聘体系必须有显式 verified relationship evidence。
+2. S4 只证明 career source 的官方性，不自动信任页面中出现的任意 ATS tenant。
+3. S5 成功必须输出结构化 `provider_identity`：provider、tenant、canonical board URL、evidence URL、verification method 和 hiring-entity relationship provenance。
+4. Native adapter 成功不得只返回字符串 URL；其 provider、tenant 和 canonical board identity 必须可重新验证。
+5. S6 opening 必须绑定 S5 已验证的 provider/tenant/canonical board；标题相同、ATS 相同但 tenant 不同仍必须拒绝。
+6. S7 必须独立检查 S3-S6 identity continuity。identity 缺失、冲突或无法证明时 fail closed，不得输出 exact success。
+7. acquired-brand/parent-company 路径只在 S3/S4 已冻结的显式关系下通过，不能用“一律同域”或“一律同 provider”代替关系证据。
+8. Identity failure 必须进入结构化 reason/evidence，并可由 snapshot/replay 原样复现。
+
+P0-A 必须先写以下通用 contract tests：
+
+- Fresh Ventures 页面链接到 Notion tenant 时拒绝 opening，且代码中不存在公司名特例。
+- 正确 company/hiring entity、board tenant 和 opening tenant 连续时继续通过。
+- 有显式 verified acquisition/parent relationship 时可受约束通过。
+- 标题完全相同但 tenant 不同仍拒绝。
+- S5 board 与 S6 opening tenant 不一致时由 S7 拒绝。
+- 缺失 provider/tenant identity 的 native success 不能成为 exact success。
+- 同一 identity failure 可通过 scoped replay 复现，且 outcome gate 不把它当作普通 opening miss。
+
+### P0-B：Opening Availability And Replay Contract
+
+三个 availability reason 的唯一语义：
+
+| Reason | 使用条件 | 禁止条件 |
+| --- | --- | --- |
+| `OPENING_NOT_FOUND` | eligible boards 已全部尝试，相关 inventory 已验证完整且非空，但没有可信 title/location match | 未完成 board、分页、provider fetch 或 identity 验证 |
+| `NO_PUBLIC_OPENINGS` | 官方完整 inventory 被明确验证为空，且 scope 是 company-wide public inventory | 仅 title-filtered empty、页面解析不到岗位、网络失败 |
+| `OPENING_DISCOVERY_INCOMPLETE` | 无 exact opening，且 inventory/eligible boards/identity 证据不足但没有更具体 retryable typed error | 已有完整 no-match/no-public 证据 |
+
+附加规则：
+
+- provider/network/timeout/403/budget error 优先保留具体 typed reason 和 retryable 字段，不得降级成以上三个业务结果。
+- portfolio 中任一 eligible board 不完整时，company-wide 结论保持 incomplete。
+- production result、stage result、evaluation terminal semantic 和 replay outcome gate 必须使用同一 availability contract。
+- 修改旧测试期望前，先用 contract test 证明 fixture 属于 complete、empty、incomplete 或 retryable 的哪一种。
+
+### P1-A：Typed Error Fidelity
+
+- Stage 首先消费 `FetchError.reason_code`、`retryable`、HTTP status 和 typed metadata；`classify_fetch_error(str(exc))` 只允许作为 legacy/untyped fallback。
+- 候选回退可以继续尝试，但每次 `FetchError` 必须进入结构化 evidence；不得吞掉异常后返回 `None`。
+- 最终 reason 按 evidence tier 和 typed priority 聚合，不能让后续弱 not-found 覆盖前面的 timeout、403、预算耗尽或 provider failure。
+- 增加 timeout、403、budget exhausted、fixture missing 和真实 candidate absence 的跨 stage contract tests。
+
+### P1-B：可信评测口径
+
+后续 summary/report 必须同时提供：
+
+1. `exact_precision`：所有 exact 输出中，company/hiring entity/provider/tenant/opening identity 全部正确的比例；目标至少 98%，cross-company URL 必须为 0。
+2. `conditional_exact_recall`：仅在人工或独立证据确认存在公开、可访问 official opening 的 eligible 样本中计算 exact recall。
+3. `raw_exact_rate`：全部输入中的 exact rate，同时展示各 failure disposition，不能单独报告。
+4. `system_defect_rate`：错误公司、错误 URL、parser bug、错误失败分类和可恢复超时的比例。
+
+每个 blind/live record 必须且只能标注为：
+
+- `exact_public`
+- `verified_closed`
+- `no_public_opening`
+- `recruiter_client_undisclosed`
+- `external_blocked`
+- `system_gap`
+
+评测报告还必须记录 cohort provenance：dynamic requested count、actual frozen count、是否预填 website/career root、是否已被开发者观察、是否 focused，以及 eligible-label 的证据来源。focused、replay、provider fixture 和预填输入不得标记为 blind。
+
+### 并行 Workstream 与 Ownership
+
+本阶段 contract 由主线先冻结，之后才允许以下互斥工作线进入独立 worktree：
+
+| Workstream | 目标 | 唯一 ownership | 独立临时根 | 局部验收 |
+| --- | --- | --- | --- | --- |
+| Main / Contract | identity dataclass/schema、S7 continuity、composition 与最终集成 | 公共 contract、composition root、S7、ADR、中央文档 | `/private/tmp/stabilize-main-*` | identity contract suite |
+| A / Stage identity | S3-S6 只通过 contract 传递 identity，不读取别的 stage 私有 trace | stage-owned modules 和新 stage tests；不修改中央 schema | `/private/tmp/stabilize-identity-*` | stage continuity tests |
+| B / Typed errors | typed FetchError propagation 和 final reason priority | error/fetch/stage error tests；不修改 identity contract | `/private/tmp/stabilize-errors-*` | typed-error tests |
+| C / Evaluation | precision/recall/raw/defect 与 disposition schema/report | evaluation/reporting 模块和 fixtures | `/private/tmp/stabilize-eval-*` | metric contract tests |
+| D / Replay audit | identity failure capture/outcome comparison，只读调查后再分配写集 | replay tests 或只读 artifact audit；不修改 production stage | `/private/tmp/stabilize-replay-*` | scoped replay identity tests |
+
+中央共享文件、`pipeline.py`、schema/version、registry、ADR、`IMPLEMENTATION_PLAN.md` 和最终 Git 操作由主线统一修改。完整 live benchmark、登录态 Chrome 和共享网络出口始终串行。
+
+### 执行顺序与门禁
+
+1. 审计 dirty diff、Fresh→Notion trace、现有 identity objects、typed error 丢失点和 replay comparison；不先实现。
+2. 新增 ADR 冻结 identity continuity、availability/replay 和兼容策略；若 schema 变化，先冻结 schema/version contract test。
+3. 先写 P0 失败测试，再实现最小 contract extraction 和 fail-closed validation。
+4. P0 局部全绿后并行推进 typed error、evaluation 和 replay 适配；不得新增 provider/heuristic。
+5. 主线集成后统一运行：全量 unittest、25-case provider regression、6-case resolver regression、architecture validator。
+6. 上述离线门禁全绿后，冻结一个未继续调参的 cohort，并且只运行一次；不得边看结果边修改后继续称为同一次 blind evaluation。
+7. 统一报告修复前后 `exact_precision`、`conditional_exact_recall`、`raw_exact_rate`、`system_defect_rate` 和六类 disposition。正确性修复导致 exact rate 下降时如实保留。
+8. 完成本轮文档、分组 commit 和 push 后停止，不自动进入下一 provider/company 修复轮。
+
+### 本轮验收标准
+
+- Fresh Ventures→Notion 跨 tenant opening 被稳定拒绝，无公司特例。
+- 正确 provider/tenant/opening 链路和受约束 acquired-brand 链路无回归。
+- every exact success 都携带并通过完整 identity chain。
+- availability、evaluation 和 replay 使用同一 complete/incomplete/retryable contract。
+- typed provider/network failure 不再退化为普通 not-found。
+- 全量离线门禁通过后只执行一次冻结 cohort。
+- 报告四个可信指标和六类 record disposition，不再只报告单一 success rate。
+- 本轮结束时列出修改文件、contract 变化、测试结果、未解决 failure clusters，并按“覆盖样本数 × 风险 × 预计收益”只给出最多三个下一轮候选任务。
+
+### Provider 扩展暂停条件
+
+只有本轮全部验收标准满足、Fresh→Notion 回归长期为绿、冻结 cohort 的 cross-company exact 为 0，且用户明确进入下一开发轮后，才重新按 failure cluster 评估 provider/heuristic 工作。历史 Phase 3 provider backlog 保留为参考，但当前不执行。
+
 ## 标准七关 Pipeline
 
 所有代码、trace、benchmark 和汇报统一使用下面七个关卡，避免不同模块对“成功”有不同理解。
@@ -744,7 +896,9 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 | Fetch | browser、retry、snapshot、budget | network reliability |
 | Evaluation | benchmark、summary、reports | regression governance |
 
-### Phase 3: Complete Provider Adapters
+### Phase 3: Complete Provider Adapters（当前暂停）
+
+本 Phase 仅保留历史 backlog。根据 2026-07-14 correctness-first stabilization 决策，在 opening identity continuity、typed error、可信评测和冻结 cohort gate 完成前，不启动任何新 provider 或单公司 heuristic 工作。
 
 以下是已知 adapter backlog，不代表固定执行顺序。进入本 Phase 后，应由 Phase 1 的失败分布选择优先项。
 

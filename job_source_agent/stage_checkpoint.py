@@ -16,6 +16,11 @@ from .contracts import CONTRACT_SCHEMA_VERSION, StageExecution
 from .evidence_scope import StageEvidenceLineage
 from .homepage_navigation import HomepageNavigationEvidence
 from .job_board import DiscoveredJobBoard, JobBoardPortfolio
+from .identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    ProviderIdentity,
+)
 from .models import PIPELINE_STAGES, StageResult
 
 
@@ -76,6 +81,20 @@ class FilesystemCheckpointStore:
                 execution_payload["updates"]["homepage_navigation_evidence"] = (
                     homepage_evidence.to_checkpoint_payload()
                 )
+            for field_name, expected_type in (
+                ("hiring_identity_evidence", HiringIdentityEvidence),
+                ("provider_identity", ProviderIdentity),
+                ("opening_identity", OpeningIdentity),
+            ):
+                identity = execution.updates.get(field_name)
+                if field_name in execution.updates and not isinstance(
+                    identity, expected_type
+                ):
+                    raise TypeError(f"{field_name} checkpoint update has an invalid type")
+                if identity is not None:
+                    execution_payload["updates"][field_name] = (
+                        identity.to_checkpoint_payload()
+                    )
             payload = {
                 "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
                 "adapter_version": ADAPTER_VERSION,
@@ -250,6 +269,16 @@ def _deserialize_checkpoint(
                 updates["homepage_navigation_evidence"]
             )
         )
+    for field_name, identity_type in (
+        ("hiring_identity_evidence", HiringIdentityEvidence),
+        ("provider_identity", ProviderIdentity),
+        ("opening_identity", OpeningIdentity),
+    ):
+        if field_name in updates:
+            updates = dict(updates)
+            updates[field_name] = identity_type.from_checkpoint_payload(
+                updates[field_name]
+            )
 
     lineage_payload = execution.get("evidence_lineage")
     lineage = (

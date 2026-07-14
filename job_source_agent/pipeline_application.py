@@ -17,6 +17,7 @@ from .models import (
     DiscoveryResult,
 )
 from .pipeline_status import derive_pipeline_status
+from .identity_continuity import IDENTITY_CONTRACT_VERSION
 from .run_configuration import AgentConfig, DeterministicRunConfig
 
 
@@ -80,6 +81,30 @@ def discovery_result_from_context(
 ) -> DiscoveryResult:
     company = context.company
     settings = run_configuration or DeterministicRunConfig.from_agent_config(AgentConfig())
+    validation_result = next(
+        (
+            item
+            for item in context.stage_results
+            if item.stage == STAGE_RESULT_VALIDATION
+        ),
+        None,
+    )
+    validation_trace = context.trace.get("stages", {}).get(
+        STAGE_RESULT_VALIDATION, {}
+    )
+    identity_issues = (
+        list(validation_trace.get("issues", []))
+        if isinstance(validation_trace, dict)
+        and isinstance(validation_trace.get("issues", []), list)
+        else []
+    )
+    identity_rejected = bool(
+        context.open_position_url
+        and validation_result is not None
+        and validation_result.status != "success"
+    )
+    public_opening_url = None if identity_rejected else context.open_position_url
+    identity_assertion = _identity_assertion(context, identity_issues)
     result = DiscoveryResult(
         company_name=company.company_name,
         company_website_url=context.company_website_url,
@@ -92,7 +117,8 @@ def discovery_result_from_context(
         linkedin_job_location=company.job_location,
         career_page_url=context.career_page_url,
         job_list_page_url=context.job_list_page_url,
-        open_position_url=context.open_position_url,
+        open_position_url=public_opening_url,
+        identity_assertion=identity_assertion,
         stage_results=list(context.stage_results),
         run_configuration=settings.to_payload(),
         run_configuration_digest=settings.digest,
@@ -153,7 +179,9 @@ def discovery_result_from_context(
         result.trace["failure_detail"] = terminal_stage.detail
 
     result.pipeline_status = _pipeline_status(context)
-    if result.job_list_page_url:
+    if result.pipeline_status == "failed" and result.job_list_page_url:
+        result.status = "partial"
+    elif result.job_list_page_url:
         result.status = "success"
     elif result.pipeline_status == "partial":
         result.status = "partial"
@@ -165,10 +193,34 @@ def discovery_result_from_context(
 
 
 def _pipeline_status(context: PipelineContext) -> str:
-    validation_trace = context.trace.get("stages", {}).get(STAGE_RESULT_VALIDATION, {})
-    if validation_trace.get("pipeline_status"):
-        return str(validation_trace["pipeline_status"])
     return derive_pipeline_status(context.stage_results)
+
+
+def _identity_assertion(
+    context: PipelineContext,
+    failure_codes: list[str],
+) -> dict:
+    hiring = context.hiring_identity_evidence
+    provider = context.provider_identity
+    opening = context.opening_identity
+    has_candidate = bool(context.open_position_url)
+    if not has_candidate:
+        verdict = "not_applicable"
+    elif failure_codes:
+        verdict = "rejected"
+    elif hiring is not None and provider is not None and opening is not None:
+        verdict = "verified"
+    else:
+        verdict = "unavailable"
+    return {
+        "schema_version": IDENTITY_CONTRACT_VERSION,
+        "verdict": verdict,
+        "failure_codes": failure_codes,
+        "hiring": asdict(hiring) if hiring is not None else None,
+        "provider": asdict(provider) if provider is not None else None,
+        "opening": asdict(opening) if opening is not None else None,
+        "candidate_opening_url": context.open_position_url,
+    }
 
 
 def _legacy_step_name(stage: str) -> str:

@@ -54,6 +54,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines = [f"# {title}", ""]
     lines.extend(_overview(summary))
     lines.extend(_rates(summary))
+    lines.extend(_evaluation_metrics(summary))
     lines.extend(
         _simple_count_table(
             "Terminal Outcomes",
@@ -103,6 +104,40 @@ def _rates(summary: dict) -> list[str]:
     lines = ["## Rates", "", "| Stage | Rate |", "| --- | ---: |"]
     for key, value in (summary.get("rates") or {}).items():
         lines.append(f"| {key} | {_percent(value)} |")
+    lines.append("")
+    return lines
+
+
+def _evaluation_metrics(summary: dict) -> list[str]:
+    metrics = summary.get("evaluation_metrics")
+    lines = [
+        "## Trustworthy Evaluation Metrics",
+        "",
+        "| Metric | Value | Numerator | Denominator | Unknown | Status |",
+        "| --- | ---: | ---: | ---: | ---: | --- |",
+    ]
+    for name in (
+        "raw_exact_rate",
+        "exact_precision",
+        "conditional_exact_recall",
+        "system_defect_rate",
+    ):
+        metric = metrics.get(name) if isinstance(metrics, dict) else None
+        if not isinstance(metric, dict):
+            lines.append(f"| {name} | unavailable | - | - | - | unavailable |")
+            continue
+        status = str(metric.get("status") or "unavailable")
+        value = _percent(metric.get("value")) if status == "available" else status
+        lines.append(
+            "| {name} | {value} | {numerator} | {denominator} | {unknown} | {status} |".format(
+                name=name,
+                value=value,
+                numerator=_number_or_dash(metric.get("numerator")),
+                denominator=_number_or_dash(metric.get("denominator")),
+                unknown=_number_or_dash(metric.get("unknown_count")),
+                status=status,
+            )
+        )
     lines.append("")
     return lines
 

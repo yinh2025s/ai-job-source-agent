@@ -280,12 +280,16 @@ def _reset_checkpoint_context(context: PipelineContext) -> None:
     baseline = PipelineContext.from_company(context.company)
     context.company_website_url = baseline.company_website_url
     context.hiring_entity_name = baseline.hiring_entity_name
+    context.hiring_identity_evidence = None
     context.career_root_url = baseline.career_root_url
     context.homepage_navigation_evidence = None
     context.career_page_url = None
     context.job_list_page_url = None
     context.discovered_job_board = None
+    context.provider_identity = None
+    context.job_board_portfolio = None
     context.open_position_url = None
+    context.opening_identity = None
     context.provider = None
     context.stage_results = []
     context.stage_evidence_lineage = {}

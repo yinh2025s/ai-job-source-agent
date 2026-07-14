@@ -37,6 +37,43 @@ def _identity_failure(*, reason_code="RESULT_IDENTITY_MISMATCH", identity=None):
 
 
 class ReplayIdentityContractTests(unittest.TestCase):
+    def test_public_identity_assertion_and_evaluation_disposition_are_compared(self):
+        assertion = {
+            "verdict": "rejected",
+            "failure_codes": ["OPENING_TENANT_MISMATCH"],
+            "provider": {
+                "provider": "ashby",
+                "tenant": "notion",
+                "canonical_board_url": "https://jobs.ashbyhq.com/notion",
+            },
+            "opening": {
+                "provider": "ashby",
+                "tenant": "notion",
+                "canonical_opening_url": "https://jobs.ashbyhq.com/notion/role",
+            },
+        }
+        source = {
+            "company_name": "Fresh Ventures",
+            "pipeline_status": "failed",
+            "evaluation": {"record_disposition": "system_gap"},
+            "identity_assertion": assertion,
+            "stages": [{
+                "stage": "result_validation",
+                "status": "failed",
+                "reason_code": "RESULT_IDENTITY_MISMATCH",
+            }],
+        }
+        replay = {**source, "identity_assertion": {**assertion, "failure_codes": ["OPENING_BOARD_MISMATCH"]}}
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Fresh Ventures"}],
+            [replay],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "failed")
+        self.assertEqual(gate["records"][0]["reason"], "identity_outcome_changed")
+
     def test_legacy_records_use_the_legacy_gate_when_identity_is_absent(self):
         source = {
             "company_name": "Acme",

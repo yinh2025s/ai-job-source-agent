@@ -645,7 +645,12 @@ class OpeningMatchStage:
             (
                 (reason_code, diagnostic)
                 for reason_code, diagnostic in diagnostics
-                if reason_code not in {"OPENING_NOT_FOUND", "NO_PUBLIC_OPENINGS"}
+                if reason_code
+                not in {
+                    "OPENING_DISCOVERY_INCOMPLETE",
+                    "OPENING_NOT_FOUND",
+                    "NO_PUBLIC_OPENINGS",
+                }
             ),
             None,
         )
@@ -661,6 +666,15 @@ class OpeningMatchStage:
             detail = (
                 "Eligible job boards remain unattempted or the bounded portfolio was "
                 "truncated; company-wide opening absence is not established."
+            )
+        elif any(
+            reason_code == "OPENING_DISCOVERY_INCOMPLETE"
+            for reason_code, _diagnostic in diagnostics
+        ):
+            reason_code = "OPENING_DISCOVERY_INCOMPLETE"
+            detail = (
+                "Every eligible job board was attempted, but at least one inventory "
+                "could not be verified as complete."
             )
         elif diagnostics and all(
             reason_code == "NO_PUBLIC_OPENINGS"

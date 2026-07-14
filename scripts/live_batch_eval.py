@@ -1080,7 +1080,7 @@ def build_company_fetcher(args: argparse.Namespace):
 def _inner_deadline_budget(outer_budget: float) -> float:
     """Leave time to finalize stage results and publish checkpoints before hard kill."""
 
-    reserve = min(1.0, max(0.05, outer_budget * 0.05))
+    reserve = min(2.0, max(0.05, outer_budget * 0.10))
     return max(0.001, outer_budget - reserve)
 
 
