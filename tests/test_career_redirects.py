@@ -54,7 +54,15 @@ class RedirectFetcher(Fetcher):
 
 
 class GenericOfficialCareerRedirectTests(unittest.TestCase):
-    def select(self, *, request_url=REQUEST_URL, final_url=CAREER_URL, html=None):
+    def select(
+        self,
+        *,
+        request_url=REQUEST_URL,
+        final_url=CAREER_URL,
+        html=None,
+        company_name="Acme Corporation",
+        homepage_url=OFFICIAL_URL,
+    ):
         agent = JobSourceAgent(
             RedirectFetcher(final_url, html or redirect_html(final_url)),
             max_career_candidate_fetches=1,
@@ -65,15 +73,15 @@ class GenericOfficialCareerRedirectTests(unittest.TestCase):
                 LinkCandidate(
                     request_url,
                     "Careers",
-                    OFFICIAL_URL,
+                    homepage_url,
                     300,
                     ["homepage navigation link"],
                 )
             ],
             trace,
             max_fetches=1,
-            company_name="Acme Corporation",
-            homepage_url=OFFICIAL_URL,
+            company_name=company_name,
+            homepage_url=homepage_url,
         )
         return selected, trace
 
@@ -190,6 +198,83 @@ class GenericOfficialCareerRedirectTests(unittest.TestCase):
         for backlink in ("", "https://about.other-company.test"):
             with self.subTest(backlink=backlink):
                 reason = self.assert_redirect_rejected(html=redirect_html(backlink=backlink))
+                self.assertIn("official source-origin backlink", reason)
+
+    def test_accepts_company_bound_regional_corporate_sibling_backlink(self):
+        regional_homepage = "https://www.acme.com.sg"
+        selected, trace = self.select(
+            request_url=f"{regional_homepage}/careers",
+            homepage_url=regional_homepage,
+            html=redirect_html(backlink="https://www.acme.com/about"),
+        )
+
+        self.assertEqual(selected, CAREER_URL)
+        self.assertEqual(
+            trace["generic_career_redirect_verification"][0]["official_backlinks"],
+            ["https://www.acme.com/about"],
+        )
+
+    def test_rejects_unrelated_and_lookalike_corporate_sibling_backlinks(self):
+        regional_homepage = "https://www.acme.com.sg"
+        unsafe_siblings = (
+            "https://www.other.com/about",
+            "https://www.acme-careers.com/about",
+            "https://www.acmes.com/about",
+            "https://www.acme.evil.com/about",
+        )
+        for backlink in unsafe_siblings:
+            with self.subTest(backlink=backlink):
+                reason = self.assert_redirect_rejected(
+                    request_url=f"{regional_homepage}/careers",
+                    homepage_url=regional_homepage,
+                    html=redirect_html(backlink=backlink),
+                )
+                self.assertIn("official source-origin backlink", reason)
+
+    def test_rejects_sibling_brand_not_bound_to_company_identity(self):
+        regional_homepage = "https://www.acme.com.sg"
+        reason = self.assert_redirect_rejected(
+            request_url=f"{regional_homepage}/careers",
+            homepage_url=regional_homepage,
+            company_name="Other Corporation",
+            html=redirect_html(
+                company="Other Corporation",
+                backlink="https://www.acme.com/about",
+            ),
+        )
+        self.assertIn("official source-origin backlink", reason)
+
+    def test_same_origin_career_links_do_not_count_as_corporate_backlink(self):
+        regional_homepage = "https://www.acme.com.sg"
+        same_brand_career_url = "https://careers.acme.com/careers"
+        reason = self.assert_redirect_rejected(
+            request_url=f"{regional_homepage}/careers",
+            homepage_url=regional_homepage,
+            final_url=same_brand_career_url,
+            html=redirect_html(
+                same_brand_career_url,
+                backlink="",
+            ),
+        )
+        self.assertIn("official source-origin backlink", reason)
+
+    def test_rejects_unsafe_company_bound_sibling_backlinks(self):
+        regional_homepage = "https://www.acme.com.sg"
+        unsafe_siblings = (
+            "http://www.acme.com/about",
+            "https://user:secret@www.acme.com/about",
+            "https://www.acme.com:8443/about",
+            "https://www.acme.com/blog",
+            "https://news.acme.com/about",
+            "https://www.acme.com/about?continue=https%3A%2F%2Fevil.example",
+        )
+        for backlink in unsafe_siblings:
+            with self.subTest(backlink=backlink):
+                reason = self.assert_redirect_rejected(
+                    request_url=f"{regional_homepage}/careers",
+                    homepage_url=regional_homepage,
+                    html=redirect_html(backlink=backlink),
+                )
                 self.assertIn("official source-origin backlink", reason)
 
     def test_data_attribute_does_not_count_as_official_backlink(self):

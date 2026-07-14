@@ -137,6 +137,7 @@ _CAREER_REDIRECT_SURFACE_MARKERS = {
     "images",
     "login",
     "media",
+    "news",
     "oauth",
     "press",
     "signin",
@@ -1849,8 +1850,13 @@ class JobSourceAgent:
             link.url
             for link in page_links
             if link.origin == "page_link"
-            and self._same_url_origin(link.url, source_url)
+            and not self._same_url_origin(link.url, actual_url)
             and self._is_safe_generic_redirect_link(link.url)
+            and self._is_company_bound_corporate_backlink(
+                link.url,
+                source_url,
+                company_tokens,
+            )
         ]
         if not official_backlinks:
             verification["reason"] = "redirect page lacks official source-origin backlink"
@@ -1913,6 +1919,24 @@ class JobSourceAgent:
     def _is_safe_generic_redirect_link(self, url: str) -> bool:
         parsed = urlparse(url)
         return self._generic_career_redirect_url_rejection(parsed, require_career_intent=False) is None
+
+    def _is_company_bound_corporate_backlink(
+        self,
+        backlink_url: str,
+        source_url: str,
+        company_tokens: set[str],
+    ) -> bool:
+        if self._same_url_origin(backlink_url, source_url):
+            return True
+        source_host = urlparse(source_url).hostname or ""
+        backlink_host = urlparse(backlink_url).hostname or ""
+        source_brand = self._registrable_site(source_host).split(".", 1)[0]
+        backlink_brand = self._registrable_site(backlink_host).split(".", 1)[0]
+        return (
+            bool(source_brand)
+            and source_brand == backlink_brand
+            and source_brand in company_tokens
+        )
 
     def _is_actionable_career_route(self, link: RawLink) -> bool:
         path_parts = {part.casefold() for part in urlparse(link.url).path.split("/") if part}
