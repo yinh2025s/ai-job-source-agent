@@ -2,6 +2,7 @@ import unittest
 
 from job_source_agent.contracts import (
     CheckpointStore,
+    FetchBudget,
     FetchClient,
     PipelineContext,
     Stage,
@@ -9,12 +10,73 @@ from job_source_agent.contracts import (
 )
 from job_source_agent.models import CompanyInput, StageResult
 from job_source_agent.providers import AdapterResult, JobBoard, JobCandidate, JobQuery, ProviderAdapter
+from job_source_agent.providers.base import (
+    has_fetch_reserve,
+    pagination_fetch_reserve_seconds,
+)
+from job_source_agent.retrying_fetcher import RetryingFetcher
 from job_source_agent.web import Fetcher
 
 
 class ContractTests(unittest.TestCase):
     def test_existing_fetcher_satisfies_minimal_fetch_contract(self):
         self.assertIsInstance(Fetcher(offline=True), FetchClient)
+        self.assertNotIsInstance(Fetcher(offline=True), FetchBudget)
+
+    def test_retrying_fetcher_exposes_optional_budget_contract(self):
+        fetcher = RetryingFetcher(
+            Fetcher(offline=True),
+            max_retries=0,
+            clock=lambda: 10.0,
+            deadline=12.5,
+        )
+
+        self.assertIsInstance(fetcher, FetchClient)
+        self.assertIsInstance(fetcher, FetchBudget)
+        self.assertEqual(fetcher.remaining_fetch_seconds(), 2.5)
+
+    def test_provider_reserve_accounts_for_request_timeout_and_publication(self):
+        now = [0.0]
+        fetcher = RetryingFetcher(
+            Fetcher(offline=True, timeout=6),
+            max_retries=0,
+            clock=lambda: now[0],
+            deadline=8.0,
+        )
+        reserve = pagination_fetch_reserve_seconds(
+            fetcher,
+            publication_reserve_seconds=1.0,
+        )
+
+        self.assertEqual(reserve, 7.0)
+        self.assertTrue(has_fetch_reserve(fetcher, reserve))
+        now[0] = 1.5
+        self.assertFalse(has_fetch_reserve(fetcher, reserve))
+        self.assertTrue(has_fetch_reserve(Fetcher(offline=True), 1000.0))
+
+    def test_provider_reserve_fails_closed_for_unknown_or_nonfinite_values(self):
+        now = [0.0]
+
+        class UnknownTimeoutFetcher:
+            timeout = None
+
+            def fetch(self, url, data=None, headers=None):
+                raise AssertionError("fetch should not run")
+
+        bounded = RetryingFetcher(
+            UnknownTimeoutFetcher(),
+            max_retries=0,
+            clock=lambda: now[0],
+            deadline=10.0,
+        )
+
+        self.assertEqual(pagination_fetch_reserve_seconds(bounded), float("inf"))
+        self.assertEqual(
+            pagination_fetch_reserve_seconds(bounded, publication_reserve_seconds=float("nan")),
+            float("inf"),
+        )
+        self.assertFalse(has_fetch_reserve(bounded, float("inf")))
+        self.assertFalse(has_fetch_reserve(bounded, float("nan")))
 
     def test_pipeline_context_applies_only_declared_stage_outputs(self):
         context = PipelineContext.from_company(

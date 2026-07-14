@@ -232,6 +232,10 @@ class SnapshottingFetcher:
         page.source = f"{page.source}|snapshot:{record.path}"
         return page
 
+    def remaining_fetch_seconds(self) -> float | None:
+        remaining = getattr(self.fetcher, "remaining_fetch_seconds", None)
+        return remaining() if callable(remaining) else None
+
     def __getattr__(self, name: str):
         return getattr(self.fetcher, name)
 

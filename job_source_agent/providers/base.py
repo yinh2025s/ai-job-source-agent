@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Any, Protocol, runtime_checkable
 
-from ..contracts import FetchClient
+from ..contracts import FetchBudget, FetchClient
 from ..job_board import JobBoard
 from ..web import Page
 
@@ -69,3 +70,45 @@ class PageProbeProviderAdapter(Protocol):
 
     def probe_board(self, fetcher: FetchClient, page: Page) -> JobBoard | None:
         ...
+
+
+def pagination_fetch_reserve_seconds(
+    fetcher: FetchClient,
+    *,
+    publication_reserve_seconds: float = 1.0,
+) -> float:
+    try:
+        publication_reserve = float(publication_reserve_seconds)
+    except (TypeError, ValueError):
+        return float("inf")
+    if not math.isfinite(publication_reserve):
+        return float("inf")
+    publication_reserve = max(0.0, publication_reserve)
+    request_timeout = getattr(fetcher, "timeout", None)
+    if (
+        isinstance(request_timeout, bool)
+        or not isinstance(request_timeout, (int, float))
+        or not math.isfinite(request_timeout)
+    ):
+        return float("inf")
+    return publication_reserve + max(0.0, float(request_timeout))
+
+
+def has_fetch_reserve(fetcher: FetchClient, reserve_seconds: float) -> bool:
+    if not isinstance(fetcher, FetchBudget):
+        return True
+    remaining = fetcher.remaining_fetch_seconds()
+    if remaining is None:
+        return True
+    try:
+        reserve = float(reserve_seconds)
+    except (TypeError, ValueError):
+        return False
+    if (
+        isinstance(remaining, bool)
+        or not isinstance(remaining, (int, float))
+        or not math.isfinite(remaining)
+        or not math.isfinite(reserve)
+    ):
+        return False
+    return max(0.0, float(remaining)) > max(0.0, reserve)

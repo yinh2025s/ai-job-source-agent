@@ -162,6 +162,14 @@ class FetchClient(Protocol):
         ...
 ```
 
+ADR-0010 另定义可选 `FetchBudget` capability，只由具有 cooperative deadline 的
+wrapper 暴露 `remaining_fetch_seconds()`；无 deadline 返回 `None`，有 deadline
+返回非负剩余秒数。它不改变 `FetchClient`，也不暴露绝对 monotonic deadline。
+分页 provider 在下一次请求前可通过共享 reserve helper 留出当前 request timeout
+和 publication reserve；reserve 不足必须返回 retryable
+`FETCH_BUDGET_EXHAUSTED`、保留正向候选并标记 incomplete，不能形成 empty/no-match
+负向结论。
+
 HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。Rendered fetcher 为 DOM settle 保留独立预算；`networkidle` timeout 后不会立即放弃当前页面，而会在剩余 settle budget 内继续等待强 job-detail links，包括 Lever、Ashby、Workable、SmartRecruiters 和 Meta 的原生详情路径。Generic career search 的 source fallback 以有效候选而非原始结果数量为准，Bing RSS 返回结果但全部验证失败时仍继续 DuckDuckGo。
 
 Composition root 最外层使用每公司进程内的 bounded LRU page cache，只缓存成功、无 body、无 headers 的 GET response，使 S4/S5/S6 可以复用同一公开 landing page。POST、带 headers 请求、失败响应、credential-bearing evidence 和跨进程状态不进入 cache；snapshot/retry 仍位于 cache 内层并保持各自 contract。

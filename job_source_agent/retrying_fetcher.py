@@ -146,5 +146,11 @@ class RetryingFetcher:
             return float("inf")
         return deadline - self._clock()
 
+    def remaining_fetch_seconds(self) -> float | None:
+        remaining = self._remaining_time()
+        if remaining == float("inf"):
+            return None
+        return max(0.0, remaining)
+
     def __getattr__(self, name: str):
         return getattr(self.fetcher, name)

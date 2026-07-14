@@ -24,6 +24,16 @@ class FetchClient(Protocol):
         ...
 
 
+@runtime_checkable
+class FetchBudget(Protocol):
+    """Optional capability for clients with a cooperative fetch deadline."""
+
+    def remaining_fetch_seconds(self) -> float | None:
+        """Return non-negative remaining time, or None when the client is unbounded."""
+
+        ...
+
+
 @dataclass
 class PipelineContext:
     """Versioned data exchanged between pipeline stages."""

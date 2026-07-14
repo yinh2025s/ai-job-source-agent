@@ -10,6 +10,8 @@
 
 ### Added
 
+- ADR-0010 / `.64` cooperative fetch-budget contract 保持 `FetchClient` 最小接口不变，新增独立 runtime-checkable `FetchBudget.remaining_fetch_seconds()`；`RetryingFetcher` 只暴露非负剩余时长或 unbounded `None`，不泄漏绝对 monotonic deadline。Provider 基础设施新增统一 pagination reserve 计算与能力检测，让分页 adapter 能在下一次请求前为 request timeout 和结果发布保留时间。现有普通 fetcher/fixture 无需实现预算接口，cache/snapshot wrapper 继续通过委托透传可选能力。Sitecore adapter 迁移正在独立工作线进行。
+
 - `.63` evidence-backed career fetch classification 修复 S4 的错误确定性：candidate fetch error 现在保存 canonical reason、retryability、origin 与 evidence tier；当 tier 0-2 的官方/首页/search/sitemap career 候选因可重试网络错误未能验证时，pipeline 保留 `NETWORK_TIMEOUT` 等真实失败，不再在继续尝试 speculative path 后误报不可重试的 `CAREER_PAGE_NOT_FOUND`。同一冻结 30-company `.62` live 仍为 30 website、28 career、27 job list、23 exact；Smart Bricks 的 WhiteCarrot exact 增益被 Dematic 的瞬时 career timeout 抵消。Dematic focused live 已验证新结果为 retryable `NETWORK_TIMEOUT`，而 speculative probe failure 继续保持确定性 not-found。`ADAPTER_VERSION` 提升到 `2026-07-14.63`；最终门禁为 901 tests、25/25 provider、6/6 resolver、24 adapters / 0 issues。真实登录态插件验收按用户决定暂缓。
 
 - `.62` hard-timeout durable-stage recovery 修复 live runner 的错误归因：父进程在 child timeout 或 remote error 后按 execution fingerprint 从 stage store 读取连续、schema/version-compatible 的 `success`/`not_applicable` checkpoint prefix，保留已发布的 website、hiring identity、career、job-list、provider 与 trace，并把失败放到第一个缺失 stage；损坏、不兼容、语义非法或中间缺口会立即截断，gap 后 URL/trace/checkpoint 不可泄漏。完整 S1-S7 chain 可直接恢复真实结果，S7 failure 会统一把 pipeline 标为 failed。Akkodis 同配置 focused live 在 43.6 秒内完整读取 Sitecore 9 页、83 条 inventory，得到 verified `OPENING_NOT_FOUND`；16 fixtures、0 privacy exclusion 的离线 bundle 1/1 reproduced、0 gap。`ADAPTER_VERSION` 提升到 `2026-07-14.62`；最终门禁为 900 tests、25/25 provider、6/6 resolver、24 adapters / 0 issues。

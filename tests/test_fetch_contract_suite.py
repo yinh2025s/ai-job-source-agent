@@ -2,7 +2,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from job_source_agent.contracts import FetchClient
+from job_source_agent.contracts import FetchBudget, FetchClient
 from job_source_agent.page_cache import PageCacheFetcher
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
 from job_source_agent.retrying_fetcher import RetryingFetcher
@@ -97,6 +97,23 @@ class FetchClientContractSuite(unittest.TestCase):
             for client in clients:
                 with self.subTest(client=type(client).__name__):
                     self.assertIsInstance(client, FetchClient)
+
+    def test_optional_fetch_budget_is_visible_through_production_wrappers(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client = PageCacheFetcher(
+                SnapshottingFetcher(
+                    RetryingFetcher(
+                        RecordingFetcher(),
+                        max_retries=0,
+                        clock=lambda: 10.0,
+                        deadline=12.5,
+                    ),
+                    directory,
+                )
+            )
+
+            self.assertIsInstance(client, FetchBudget)
+            self.assertEqual(client.remaining_fetch_seconds(), 2.5)
 
     def test_successful_clients_preserve_page_semantics(self):
         expected_pages = [contract_page() for _ in range(5)]

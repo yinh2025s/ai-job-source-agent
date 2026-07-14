@@ -169,6 +169,25 @@ class RetryFetcherTests(unittest.TestCase):
 
         self.assertEqual(base.calls, 0)
 
+    def test_remaining_fetch_seconds_is_bounded_and_hides_absolute_deadline(self):
+        now = [10.0]
+        bounded = RetryingFetcher(
+            SequenceFetcher([Page("u", "ok")]),
+            max_retries=0,
+            clock=lambda: now[0],
+            deadline=12.5,
+        )
+        unbounded = RetryingFetcher(
+            SequenceFetcher([Page("u", "ok")]),
+            max_retries=0,
+            clock=lambda: now[0],
+        )
+
+        self.assertEqual(bounded.remaining_fetch_seconds(), 2.5)
+        now[0] = 20.0
+        self.assertEqual(bounded.remaining_fetch_seconds(), 0.0)
+        self.assertIsNone(unbounded.remaining_fetch_seconds())
+
 
 if __name__ == "__main__":
     unittest.main()
