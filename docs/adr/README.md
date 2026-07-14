@@ -34,3 +34,4 @@ NNNN-short-decision-title.md
 - [ADR-0020: Bind Public Runtime Provider Credentials](0020-bind-public-runtime-provider-credentials.md)
 - [ADR-0021: Probe Acquired-Brand Job Portals](0021-probe-acquired-brand-job-portals.md)
 - [ADR-0022: Verify TalentBrew Search Inventory](0022-verify-talentbrew-search-inventory.md)
+- [ADR-0023: Preflight Scoped Replay Execution Boundaries](0023-preflight-scoped-replay-boundaries.md)

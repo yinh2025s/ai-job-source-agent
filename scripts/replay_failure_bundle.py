@@ -184,6 +184,24 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         record_plans = build_replay_record_plans(source_records, replay_records)
     except (TypeError, ValueError) as error:
         raise FailureReplayError(f"Invalid replay evidence plan: {error}") from error
+    boundary_errors = _scoped_execution_boundary_errors(
+        source_records,
+        replay_records,
+        record_plans,
+    )
+    if boundary_errors:
+        record_integrity = _record_integrity_with_boundary_errors(
+            preflight_integrity,
+            boundary_errors,
+        )
+        manifest = _empty_bundle_manifest(
+            args,
+            status="failed",
+            reason="replay_plan_integrity_failed",
+            record_integrity=record_integrity,
+        )
+        _write_json_atomic(output_root / "bundle-manifest.json", manifest)
+        return manifest
     evidence_mode = record_plans[0].evidence_mode
     for replay_record, plan in zip(replay_records, record_plans, strict=True):
         replay_record.setdefault("source_trace", {}).setdefault("replay", {})[
@@ -685,6 +703,86 @@ def _selection_integrity_failed(record_integrity: dict) -> bool:
         reason.get("code") in selection_reason_codes
         for reason in record_integrity.get("reasons", [])
     )
+
+
+def _scoped_execution_boundary_errors(
+    source_records: list[dict],
+    replay_records: list[dict],
+    record_plans: tuple[ReplayRecordPlan, ...],
+) -> list[dict[str, object]]:
+    errors: list[dict[str, object]] = []
+    for source_record, replay_record, plan in zip(
+        source_records,
+        replay_records,
+        record_plans,
+        strict=True,
+    ):
+        if plan.evidence_mode != "scoped_outcome_tape":
+            continue
+        requested_start = _replay_resume_stage(
+            source_record,
+            _first_non_success_stage_name(replay_record),
+        )
+        resumable = (
+            requested_start is not None
+            and _authoritative_upstream_executions(source_record, requested_start)
+            is not None
+        )
+        start_stage = requested_start if resumable else PIPELINE_STAGES[0]
+        start_index = PIPELINE_STAGES.index(start_stage)
+        captured_stages = [
+            lineage.stage
+            for lineage in plan.stage_evidence_lineage
+            if PIPELINE_STAGES.index(lineage.stage) >= start_index
+        ]
+        if not captured_stages:
+            errors.append(
+                {
+                    "record_id": plan.record_id,
+                    "company_name": source_record.get("company_name") or "",
+                    "start_stage": start_stage,
+                    "missing_stages": [start_stage],
+                }
+            )
+            continue
+        stop_index = PIPELINE_STAGES.index(captured_stages[-1])
+        expected_stages = list(PIPELINE_STAGES[start_index : stop_index + 1])
+        missing_stages = [
+            stage for stage in expected_stages if stage not in captured_stages
+        ]
+        if missing_stages:
+            errors.append(
+                {
+                    "record_id": plan.record_id,
+                    "company_name": source_record.get("company_name") or "",
+                    "start_stage": start_stage,
+                    "missing_stages": missing_stages,
+                }
+            )
+    return errors
+
+
+def _record_integrity_with_boundary_errors(
+    record_integrity: dict,
+    boundary_errors: list[dict[str, object]],
+) -> dict:
+    updated = {
+        **record_integrity,
+        "counts": {
+            **record_integrity.get("counts", {}),
+            "boundary_invalid_count": len(boundary_errors),
+        },
+        "reasons": list(record_integrity.get("reasons", [])),
+        "status": "failed",
+    }
+    updated["reasons"].append(
+        {
+            "code": "captured_execution_boundary_missing",
+            "count": len(boundary_errors),
+            "records": boundary_errors[:20],
+        }
+    )
+    return updated
 
 
 def _seed_authoritative_handoffs(

@@ -342,6 +342,81 @@ class FailureReplayBundleTests(unittest.TestCase):
         )
         self.assertEqual(manifest["snapshot_summary"]["scope_count"], 3)
 
+    def test_scoped_timeout_without_failure_stage_boundary_writes_failed_manifest(self):
+        company = CompanyInput(
+            company_name="Aurora Data",
+            company_website_url="https://aurora-data.example",
+            job_title="AI Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            application = build_application(
+                FetcherConfig(
+                    fixtures_dir=Path(__file__).resolve().parents[1] / "samples" / "sites",
+                    offline=True,
+                    snapshot_dir=root / "snapshots",
+                )
+            )
+            source = application.pipeline.discover(
+                company,
+                capture_attempt_id="capture-killed-during-s2",
+            )
+            record = dataclass_to_dict(source.trace_record())
+            record["pipeline_status"] = "failed"
+            record["status"] = "failed"
+            for stage in record["stages"]:
+                if stage["stage"] == "website_resolution":
+                    stage.update(
+                        {
+                            "status": "failed",
+                            "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                            "retryable": True,
+                        }
+                    )
+                elif stage["stage"] not in {"linkedin_discovery", "result_validation"}:
+                    stage.update({"status": "not_run", "reason_code": None})
+            lineage = record["trace"]["stage_evidence_lineage"]
+            record["trace"]["stage_evidence_lineage"] = lineage[:1]
+            (root / "results.json").write_text(
+                json.dumps([record]),
+                encoding="utf-8",
+            )
+
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    pipeline_status=["failed"],
+                    stage=None,
+                    stage_status=None,
+                    reason_code=["COMPANY_TIME_BUDGET_EXHAUSTED"],
+                    include_missing_website=True,
+                    legacy_run_config=None,
+                ),
+                allow_empty=True,
+            )
+            written = json.loads(
+                (root / "bundle" / "bundle-manifest.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(manifest, written)
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(manifest["reason"], "replay_plan_integrity_failed")
+        self.assertEqual(manifest["outcome_gate"]["status"], "failed")
+        self.assertEqual(
+            manifest["record_integrity"]["counts"]["boundary_invalid_count"],
+            1,
+        )
+        boundary_reason = next(
+            reason
+            for reason in manifest["record_integrity"]["reasons"]
+            if reason["code"] == "captured_execution_boundary_missing"
+        )
+        self.assertEqual(boundary_reason["records"][0]["start_stage"], "website_resolution")
+        self.assertEqual(boundary_reason["records"][0]["missing_stages"], ["website_resolution"])
+        self.assertFalse((root / "bundle" / "replay-input.json").exists())
+
     def test_scoped_duplicate_inputs_use_independent_tape_cursors_and_checkpoints(self):
         company = CompanyInput(
             company_name="Aurora Data",

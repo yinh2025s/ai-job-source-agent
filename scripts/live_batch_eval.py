@@ -288,13 +288,10 @@ def main() -> None:
             summary["regression"] = {"comparison_status": "no_compatible_baseline"}
     bundle_manifest = build_automatic_failure_bundle(args, trace_path)
     if bundle_manifest is not None:
-        summary["failure_bundle"] = {
-            "status": bundle_manifest["status"],
-            "reason": bundle_manifest.get("reason"),
-            "selected": int(bundle_manifest.get("summary", {}).get("total", 0)),
-            "manifest": str(Path(args.failure_bundle_dir) / "bundle-manifest.json"),
-            "outcome_gate": bundle_manifest.get("outcome_gate", {}).get("status"),
-        }
+        summary["failure_bundle"] = _replay_bundle_summary(
+            bundle_manifest,
+            Path(args.failure_bundle_dir) / "bundle-manifest.json",
+        )
     replay_manifest = build_automatic_replay_bundle(args, trace_path)
     if replay_manifest is not None:
         summary["replay_bundle"] = _replay_bundle_summary(
