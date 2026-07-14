@@ -24,6 +24,14 @@ class _Adapter:
         return JobBoard(f"https://jobs.example/{tenant}", self.name, tenant)
 
 
+class _SameTenantDifferentBoardAdapter(_Adapter):
+    def identify_board(self, url):
+        board = super().identify_board(url)
+        if "/alternate/" in url:
+            return JobBoard("https://jobs.example/alternate", self.name, "acme")
+        return board
+
+
 class _Service:
     def __init__(self, board, opening=None):
         self.board = board
@@ -148,6 +156,39 @@ class StageIdentityContinuityTests(unittest.TestCase):
             _Service(board, "https://jobs.example/notion/jobs/123"), self.registry
         ).run(context)
         self.assertNotIn("opening_identity", wrong.updates)
+
+    def test_s6_rejects_same_provider_and_tenant_on_different_canonical_board(self):
+        board = DiscoveredJobBoard(
+            JobBoard("https://jobs.example/acme", "example", "acme"),
+            "url_evidence",
+            "https://careers.example/jobs",
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.discovered_job_board = board
+        context.job_list_page_url = board.board.url
+        context.provider_identity = ProviderIdentity(
+            hiring_entity_name="Acme",
+            provider="example",
+            tenant="acme",
+            canonical_board_url="https://jobs.example/acme",
+            evidence_url="https://careers.example/jobs",
+            verification_method="tenant_name_match",
+            relationship_verified=True,
+        )
+        registry = ProviderRegistry((_SameTenantDifferentBoardAdapter(),))
+
+        execution = OpeningMatchStage(
+            _Service(board, "https://jobs.example/alternate/jobs/123"), registry
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.updates["open_position_url"],
+            "https://jobs.example/alternate/jobs/123",
+        )
+        self.assertNotIn("opening_identity", execution.updates)
 
 
 if __name__ == "__main__":

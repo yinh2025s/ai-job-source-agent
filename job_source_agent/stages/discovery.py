@@ -979,6 +979,8 @@ def _opening_identity(
             _identity_aliases(tenant) & _identity_aliases(provider_identity.tenant)
         ):
             return None
+        if canonical_board != provider_identity.canonical_board_url:
+            return None
         tenant = provider_identity.tenant
     return OpeningIdentity(
         hiring_entity_name=provider_identity.hiring_entity_name,
