@@ -11,7 +11,7 @@ from job_source_agent.models import (
 )
 from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.reasons import classify_fetch_error, make_stage_result
-from job_source_agent.web import Fetcher
+from job_source_agent.web import FetchError, Fetcher
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -71,7 +71,20 @@ class StageResultTests(unittest.TestCase):
         )
 
     def test_speculative_career_miss_marks_later_stages_not_run(self):
-        result = self.agent.discover(
+        class MissingPageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                raise FetchError(
+                    f"HTTP Error 404: Not Found for {url}",
+                    status=404,
+                    reason_code="HTTP_NOT_FOUND",
+                    retryable=False,
+                )
+
+        agent = JobSourceAgent(
+            MissingPageFetcher(offline=True),
+            enable_career_search=False,
+        )
+        result = agent.discover(
             CompanyInput(
                 company_name="Missing Company",
                 company_website_url="https://missing-company.example",

@@ -132,6 +132,77 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(raised.exception.code, "career_page_not_found")
         self.assertNotIn("candidate_fetch_budget_exhausted", raised.exception.trace)
 
+    def test_explicit_offline_fixture_gap_survives_career_failure_aggregation(self):
+        homepage = "https://fixture-gap.example"
+        career = f"{homepage}/careers"
+
+        class FixtureGapFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=f'<html><a href="{career}">Careers</a></html>',
+                    )
+                raise FetchError(
+                    f"No fixture found for {url}",
+                    reason_code="OFFLINE_FIXTURE_MISSING",
+                    retryable=False,
+                )
+
+        agent = JobSourceAgent(
+            FixtureGapFetcher(offline=True),
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(raised.exception.code, "OFFLINE_FIXTURE_MISSING")
+        failure = raised.exception.trace["candidate_fetch_errors"][0]
+        self.assertEqual(failure["reason_code_source"], "exception")
+
+    def test_explicit_offline_fixture_gap_survives_job_board_aggregation(self):
+        career = "https://fixture-gap.example/careers"
+
+        class FixtureGapFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                raise FetchError(
+                    f"No fixture found for {url}",
+                    reason_code="OFFLINE_FIXTURE_MISSING",
+                    retryable=False,
+                )
+
+        agent = JobSourceAgent(
+            FixtureGapFetcher(offline=True),
+            max_job_pages=1,
+            max_ats_board_fetches=0,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_job_board(career)
+
+        self.assertEqual(raised.exception.code, "OFFLINE_FIXTURE_MISSING")
+        failure = raised.exception.trace["fetch_errors"][0]
+        self.assertEqual(failure["reason_code_source"], "exception")
+
+    def test_provider_career_entry_is_canonicalized_to_listing_board(self):
+        career = "https://www.google.com/about/careers/applications/"
+
+        job_list_url, trace = JobSourceAgent(Fetcher(offline=True)).find_job_board(
+            career
+        )
+
+        self.assertEqual(
+            job_list_url,
+            "https://www.google.com/about/careers/applications/jobs/results/",
+        )
+        self.assertEqual(trace["career_page_url"], career)
+        self.assertEqual(trace["job_list_page_url"], job_list_url)
+
     def test_evidence_backed_candidate_timeout_remains_retryable(self):
         homepage = "https://transient.example"
         career = f"{homepage}/about/careers"

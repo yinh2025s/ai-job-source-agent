@@ -54,7 +54,11 @@ CLI state. Per-company replay input remains configuration-free. See ADR-0007.
 Successful replay is a data-contract check as well as a control-flow check: canonical website,
 hiring entity, career page, job list, opening, and provider identity must remain equal. Focused
 failure replay may compare the first non-success signature, while full-outcome replay applies
-the stronger identity gate to successful records.
+the stronger identity gate to successful records. Listing-capable adapters define canonical
+provider-board identity for career/job-list route comparison; unknown routes, provider or tenant
+changes, and exact-opening changes remain strict mismatches. A typed fixture gap in failed,
+partial, or identity-drifting replay remains incomplete, while an unused probe may be ignored only
+when both source and replay have identical complete success identity.
 
 ## Standard Pipeline
 
@@ -182,7 +186,7 @@ HTTP、browser、retry 和 snapshot 通过组合实现相同 contract。Rendered
 
 Composition root 最外层使用每公司进程内的 bounded LRU page cache，只缓存成功、无 body、无 headers 的 GET response，使 S4/S5/S6 可以复用同一公开 landing page。POST、带 headers 请求、失败响应、credential-bearing evidence 和跨进程状态不进入 cache；snapshot/retry 仍位于 cache 内层并保持各自 contract。
 
-Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、owner `replay` 的基础设施结果；availability diagnostics 必须保留该 typed reason，不能改写为网络失败或岗位不存在。Embedded URL 与 provider-config 扫描在 escape decoding 前剥离 HTML comments，避免 retired integration 进入活动证据集。
+Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、owner `replay` 的基础设施结果；Fetcher 在 exception 边界直接携带 typed reason 和脱敏 request identity，S4/S5 aggregation 与 availability diagnostics 必须保留它，不能改写为网络失败、官网不存在或岗位不存在。Replay manifest 将 request identity 与 `Page.url`、跨域 `final_url`、body hash/length 绑定；现代 manifest 缺项、歧义或损坏 fail closed，legacy GET 和 failure-only capture 保持兼容。Embedded URL 与 provider-config 扫描在 escape decoding 前剥离 HTML comments，避免 retired integration 进入活动证据集。
 
 ## SOLID Rules
 
@@ -226,6 +230,7 @@ Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、ow
 - ADR-0008 将 process hard budget 定义为 durable-publication deadline：worker 在独立 POSIX process group 中运行，大结果先写入 attempt-local、destination-atomic envelope，pipe 只发送 readiness；父进程只接受 deadline 前已 fsync/replace 完成的 envelope，并在 timeout/final cleanup 终止整个进程组。完整 stage checkpoint 保持可复用，不因下游 timeout 回滚；snapshot 按 blob/view/artifact/sequence 在前、durable JSONL index 在后的顺序发布，company completion 继续作为最后的 authoritative commit marker。`.56` 离线门禁为 859 tests、24/24 provider、6/6 resolver、23 adapters / 0 issues；Akkodis 在 45 秒 focused live 内 34.5 秒 exact，并由 8 fixtures 对完整 URL/provider identity 做 1/1 replay。
 - `.62` 将 ADR-0008 的“stage checkpoint 不回滚”落实到 parent timeout result：只恢复同一 execution fingerprint 下连续、兼容且已完成的 stage prefix，首个 gap 标记 `COMPANY_TIME_BUDGET_EXHAUSTED`，不读取 gap 后 checkpoint。Akkodis 即使在 S6 分页撞 hard deadline也不再丢失已完成的 S4/S5；本轮网络下 43.6 秒完整读取 9 页/83 条 inventory 并得到 verified no-match，16-fixture replay 1/1 reproduced。
 - ADR-0010 / `.64` 在 hard process deadline 内增加 provider cooperative stop：`FetchBudget` 与最小 `FetchClient` 分离，分页 guard 以 request timeout + publication reserve 决定是否允许下一请求；PageCache/Snapshot 显式透传 capability，未知/nonfinite timeout fail closed。被 guard 拒绝的 request 不发网络，但按 ADR-0006 保存脱敏 request identity 和 `FETCH_BUDGET_EXHAUSTED` terminal outcome，使离线 replay 复现同一 partial boundary。Sitecore 首个迁移；Akkodis 45 秒 focused live 保留 8 页/80 条正向 inventory 和 verified job list，bundle 1/1 reproduced。同一冻结 30-company 统一回归为 30/29/28/24，6 个 non-success 全部 reproduced、0 fixture gap、0 mismatch。
+- `.66` 将 replay response identity、fixture-gap propagation 和 provider board canonicalization 收口到同一 contract：Airbnb 跨域 redirect 不再在 fixture 中退化为请求 URL；Netflix 未采用 homepage probe 不再污染完整成功；Google 的 provider 入口和 listing route 由 adapter 统一映射为同一 board identity。新的 17-company Product Manager 样本为 17/10/10/7，回放达到 16 reproduced、1 个真实 Adobe capture gap、0 mismatch；最终门禁为 936 tests、25/25 provider、6/6 resolver、24 adapters / 0 issues。登录态 extension gate 继续独立 deferred。
 - `.57` 将 evidence strength 与执行预算绑定：只有 scheduler tier 0-2 的未尝试候选构成 retryable career fetch exhaustion，tier 3 speculative truncation 是确定性 miss。S5 direct provider handoff 接受官网可见链接和 registry listing-capable adapter，并要求输入 URL 已是 provider canonical board root；`.60` 移除会误伤 opaque tenant path 的通用 detail heuristic，因为 canonical equality 已经使 detail 和 legacy URL 继续走原有 fetch/redirect 验证。S6 对 native adapter 的完整 verified inventory 使用 terminal no-match，不再进入 generic HTML fallback；incomplete/unsupported provider 仍允许 fallback。该边界使 Percepta 越过 generic cap 到 Taleo、Smart Bricks 进入 WhiteCarrot API，同时不绕过 Paycom/Lever 既有 contract。
 - ADR-0009 / bundle schema `4` 将 outer live budget 与 domain outcome 分开：只有 `COMPANY_TIME_BUDGET_EXHAUSTED`、完整 authoritative upstream chain、replay 越过超时 stage、无 fixture gap 且 source identity prefix 不漂移时才输出 passing `budget_recovery`。Manifest 保存该 prefix 和 replay full identity；expected transition 也不能绕过 URL/provider 检查。Snapshot body 的 unquoted sensitive key 使用 JavaScript identifier 左边界，standalone `code` 仍脱敏而 `urlCode` 不再损坏。旧过度脱敏 blob 不能猜测修复，必须重新 capture；Percepta 新 capture 的 9 fixtures 可 1/1 复现 Taleo HTTP 500。`.58` 门禁为 876 tests、24/24 provider、6/6 resolver、23 adapters / 0 issues。
 - WhiteCarrot adapter 具有两个互斥 locator mode。App mode 将 `/careers/{tenant}` 与 `/share/careers/{tenant}` 规范化为稳定 tenant board，只读取匿名 `GET /api/careers/{tenant}` 的一次性完整 `roles` inventory；custom mode 将单标签 `*.whitecarrot.ai/jobs` 规范化为 same-origin board，只接受 Next SSR 中带 `career-job-item-name-*` 强标记的同源 UUID detail。两者都拒绝 credentials、异常端口、query/fragment redirect、cross-origin/mismatched detail、profile-builder Talent Pool 和 malformed record；只有 schema-valid API `roles=[]` 可形成 complete empty。Trace 仅保存 URL、计数及 job id/status，不保存 description、申请表、cookie、token 或登录态。`.60` 门禁为 892 tests、25/25 provider、6/6 resolver、24 adapters / 0 issues；Smart Bricks canonical handoff focused live/replay 均为 exact。

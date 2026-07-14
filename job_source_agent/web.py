@@ -358,7 +358,12 @@ class Fetcher:
                 source=str(fixture_path),
             )
         if self.offline:
-            raise FetchError(f"No fixture found for {normalized}")
+            raise FetchError(
+                f"No fixture found for {normalized}",
+                reason_code="OFFLINE_FIXTURE_MISSING",
+                retryable=False,
+                request_identity=identity.as_dict(),
+            )
         return self._fetch_live(normalized, data=data, headers=headers)
 
     def _fetch_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
@@ -490,17 +495,17 @@ class Fetcher:
             request = _validated_replay_manifest_entry(entry)
             if entry["fixture_path"] != selected_relative_path:
                 continue
-            if request == expected_request:
+            if _replay_manifest_entry_matches(identity, expected_request, request, entry):
                 matching_entries.append(entry)
 
         if len(matching_entries) > 1:
             raise _invalid_replay_manifest()
         if not matching_entries:
-            return None
+            raise _invalid_replay_manifest()
 
         entry = matching_entries[0]
         page_urls = entry["page_urls"]
-        if len(page_urls) != 1 or identity.sanitized_url not in entry["request_urls"]:
+        if len(page_urls) != 1:
             raise _invalid_replay_manifest()
         if fixture_path.is_symlink() or not fixture_path.is_file():
             raise _invalid_replay_manifest()
@@ -695,6 +700,71 @@ def _validated_replay_manifest_entry(entry: object) -> dict | None:
     ):
         raise _invalid_replay_manifest()
     return request.as_dict()
+
+
+def _legacy_replay_request_matches(identity: RequestIdentity, entry: dict) -> bool:
+    return (
+        identity.replayable
+        and identity.method == "GET"
+        and identity.body_fingerprint is None
+        and not identity.semantic_headers
+        and identity.sanitized_url in entry["request_urls"]
+    )
+
+
+def _replay_manifest_entry_matches(
+    identity: RequestIdentity,
+    expected_request: dict,
+    recorded_request: dict | None,
+    entry: dict,
+) -> bool:
+    if recorded_request == expected_request:
+        return True
+    if recorded_request is None:
+        return _legacy_replay_request_matches(identity, entry)
+    if not _is_default_get_identity(identity) or not _is_default_get_request(
+        recorded_request
+    ):
+        return False
+    response_urls = [recorded_request["sanitized_url"], entry["final_url"]]
+    response_urls.extend(entry["page_urls"])
+    return any(
+        _matches_with_omitted_sensitive_query(identity.sanitized_url, recorded_url)
+        for recorded_url in response_urls
+    )
+
+
+def _is_default_get_identity(identity: RequestIdentity) -> bool:
+    return (
+        identity.method == "GET"
+        and identity.body_fingerprint is None
+        and not identity.semantic_headers
+    )
+
+
+def _is_default_get_request(request: dict) -> bool:
+    return (
+        request.get("method") == "GET"
+        and request.get("body_fingerprint") is None
+        and request.get("semantic_headers") == {}
+    )
+
+
+def _matches_with_omitted_sensitive_query(expected_url: str, recorded_url: str) -> bool:
+    if expected_url == recorded_url:
+        return True
+    expected = urlparse(expected_url)
+    recorded = urlparse(recorded_url)
+    if (
+        expected.scheme != recorded.scheme
+        or expected.netloc != recorded.netloc
+        or expected.path != recorded.path
+        or expected.query
+        or not recorded.query
+    ):
+        return False
+    recorded_query = parse_qsl(recorded.query, keep_blank_values=True)
+    return bool(recorded_query) and all(is_sensitive_key(key) for key, _ in recorded_query)
 
 
 def _validated_replay_urls(value: object) -> list[str]:

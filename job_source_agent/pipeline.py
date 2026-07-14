@@ -355,6 +355,7 @@ class JobSourceAgent:
             raw_candidates = extract_links(homepage)
         except FetchError as exc:
             trace["homepage_fetch_error"] = str(exc)
+            trace["homepage_fetch_failure"] = _fetch_failure_trace(exc)
         if preferred_url:
             raw_candidates.insert(
                 0,
@@ -515,8 +516,12 @@ class JobSourceAgent:
         else:
             trace["ats_board_discovery"] = {"skipped": True}
 
+        offline_fixture_failure = _offline_fixture_failure(trace)
         retryable_candidate_failure = _retryable_evidence_candidate_failure(trace)
-        if _trace_has_fetch_budget_exhaustion(trace):
+        if offline_fixture_failure is not None:
+            reason_code = "OFFLINE_FIXTURE_MISSING"
+            detail = "Offline replay evidence is incomplete for career discovery."
+        elif _trace_has_fetch_budget_exhaustion(trace):
             reason_code = "FETCH_BUDGET_EXHAUSTED"
             detail = "Career candidates remain unverified because the fetch budget was exhausted."
         elif retryable_candidate_failure is not None:
@@ -552,13 +557,26 @@ class JobSourceAgent:
         company_name: str | None = None,
     ) -> tuple[str, dict, DiscoveredJobBoard | None]:
         if self._is_provider_job_board_url(career_page_url):
+            adapter = self.provider_registry.adapter_for(career_page_url)
+            board = adapter.identify_board(career_page_url) if adapter else None
+            job_list_page_url = (
+                self._canonical_provider_board_url(
+                    adapter.name,
+                    board.url,
+                    board.identifier,
+                )
+                if adapter is not None
+                and board is not None
+                and adapter.supports_listing
+                else career_page_url
+            )
             return (
-                career_page_url,
+                job_list_page_url,
                 {
                     "career_page_url": career_page_url,
-                    "job_list_page_url": career_page_url,
+                    "job_list_page_url": job_list_page_url,
                     "selected": {
-                        "url": career_page_url,
+                        "url": job_list_page_url,
                         "reason": "career page is already a provider job board",
                     },
                 },
@@ -593,6 +611,14 @@ class JobSourceAgent:
             raise DiscoveryError(
                 "NO_PUBLIC_OPENINGS",
                 "The official career page explicitly reports no current public openings.",
+                step_name="find_job_board",
+                trace=trace,
+            )
+        offline_fixture_failure = _offline_fixture_failure(trace)
+        if not job_list_url and offline_fixture_failure is not None:
+            raise DiscoveryError(
+                "OFFLINE_FIXTURE_MISSING",
+                "Offline replay evidence is incomplete for job-board discovery.",
                 step_name="find_job_board",
                 trace=trace,
             )
@@ -636,7 +662,9 @@ class JobSourceAgent:
             try:
                 result = adapter.list_jobs(self.fetcher, board, JobQuery())
             except FetchError as exc:
-                trace["errors"].append({"url": candidate.url, "error": str(exc)})
+                trace["errors"].append(
+                    {"url": candidate.url, **_fetch_failure_trace(exc)}
+                )
                 continue
             trace["candidates"].append(
                 {
@@ -798,7 +826,9 @@ class JobSourceAgent:
             try:
                 page = self.fetcher.fetch(page_url)
             except FetchError as exc:
-                trace["fetch_errors"].append({"url": page_url, "error": str(exc)})
+                trace["fetch_errors"].append(
+                    {"url": page_url, **_fetch_failure_trace(exc)}
+                )
                 continue
             page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
             if content_probe:
@@ -1002,7 +1032,10 @@ class JobSourceAgent:
                     continue
                 try:
                     opened = self.fetcher.fetch(candidate.url)
-                except FetchError:
+                except FetchError as exc:
+                    trace["fetch_errors"].append(
+                        {"url": candidate.url, **_fetch_failure_trace(exc)}
+                    )
                     continue
                 trace["selected"] = dataclass_to_dict(candidate)
                 trace["job_list_page_url"] = actual_page_url
@@ -1546,6 +1579,9 @@ class JobSourceAgent:
                         "url": candidate.url,
                         "error": str(exc),
                         "reason_code": reason_code,
+                        "reason_code_source": (
+                            "exception" if exc.reason_code is not None else "classified_message"
+                        ),
                         "retryable": retryable,
                         "origin": candidate.origin,
                         "evidence_tier": candidate_evidence_tier(candidate),
@@ -2115,6 +2151,42 @@ def _trace_has_fetch_budget_exhaustion(value: object, key: str = "") -> bool:
     if isinstance(value, list):
         return any(_trace_has_fetch_budget_exhaustion(item) for item in value)
     return False
+
+
+def _fetch_failure_trace(error: FetchError) -> dict:
+    reason_code = error.reason_code or classify_fetch_error(str(error))
+    retryable = (
+        error.retryable
+        if error.retryable is not None
+        else reason_spec(reason_code).retryable
+    )
+    return {
+        "error": str(error),
+        "reason_code": reason_code,
+        "reason_code_source": (
+            "exception" if error.reason_code is not None else "classified_message"
+        ),
+        "retryable": retryable,
+    }
+
+
+def _offline_fixture_failure(value: object) -> dict | None:
+    if isinstance(value, dict):
+        if (
+            value.get("reason_code") == "OFFLINE_FIXTURE_MISSING"
+            and value.get("reason_code_source") == "exception"
+        ):
+            return value
+        for item in value.values():
+            failure = _offline_fixture_failure(item)
+            if failure is not None:
+                return failure
+    elif isinstance(value, list):
+        for item in value:
+            failure = _offline_fixture_failure(item)
+            if failure is not None:
+                return failure
+    return None
 
 
 def _retryable_evidence_candidate_failure(value: object) -> dict | None:

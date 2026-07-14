@@ -26,6 +26,7 @@ from job_source_agent.models import (
     StageResult,
     dataclass_to_dict,
 )
+from job_source_agent.providers.registry import DEFAULT_PROVIDER_REGISTRY
 from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.run_configuration import DeterministicRunConfig
@@ -483,7 +484,16 @@ def _build_outcome_gate(
             include_identity=True,
         )
         source_identity_prefix = _successful_identity_prefix(source_record)
-        if _contains_reason_code(
+        successful_outcome_reproduced = bool(
+            source_record is not None
+            and original is not None
+            and original.get("pipeline_status") == "success"
+            and original == replayed_original
+        )
+        if successful_outcome_reproduced:
+            classification = "reproduced"
+            reason = "outcome_equal"
+        elif _contains_reason_code(
             (replay_result, replay_trace),
             "OFFLINE_FIXTURE_MISSING",
         ):
@@ -665,14 +675,37 @@ def _first_non_success_result_stage(record: dict) -> dict | None:
 
 
 def _result_identity(record: dict) -> dict:
+    provider = _optional_string(result_provider(record))
     return {
         "company_website_url": _canonical_public_url(record.get("company_website_url")),
         "hiring_entity_name": _normalized_identity_text(record.get("hiring_entity_name")),
-        "career_page_url": _canonical_public_url(record.get("career_page_url")),
-        "job_list_page_url": _canonical_public_url(record.get("job_list_page_url")),
+        "career_page_url": _canonical_provider_board_identity(
+            record.get("career_page_url"),
+            provider,
+        ),
+        "job_list_page_url": _canonical_provider_board_identity(
+            record.get("job_list_page_url"),
+            provider,
+        ),
         "open_position_url": _canonical_public_url(record.get("open_position_url")),
-        "provider": _optional_string(result_provider(record)),
+        "provider": provider,
     }
+
+
+def _canonical_provider_board_identity(
+    value: object,
+    provider: str | None,
+) -> str | None:
+    canonical_url = _canonical_public_url(value)
+    if canonical_url is None or provider is None:
+        return canonical_url
+    adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(provider)
+    if adapter is None or not adapter.supports_listing:
+        return canonical_url
+    board = adapter.identify_board(canonical_url)
+    if board is None or board.provider != provider:
+        return canonical_url
+    return _canonical_public_url(board.url)
 
 
 def _successful_identity_prefix(record: dict | None) -> dict | None:

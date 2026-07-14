@@ -122,6 +122,19 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(post_page.html, "legacy response")
         self.assertEqual(post_page.final_url, url)
 
+    def test_missing_offline_fixture_has_explicit_replay_failure_metadata(self):
+        url = "https://jobs.example.com/missing?token=secret"
+
+        with self.assertRaises(FetchError) as raised:
+            Fetcher(offline=True).fetch(url)
+
+        self.assertEqual(raised.exception.reason_code, "OFFLINE_FIXTURE_MISSING")
+        self.assertFalse(raised.exception.retryable)
+        self.assertEqual(
+            raised.exception.request_identity["sanitized_url"],
+            "https://jobs.example.com/missing?token=%5BREDACTED%5D",
+        )
+
     def test_fixture_fetcher_rejects_unsafe_replay_response_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -159,6 +172,55 @@ class SnapshotReplayTests(unittest.TestCase):
                 Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
                     "https://jobs.example.com/search?token=secret"
                 )
+
+    def test_fixture_fetcher_rejects_manifest_missing_selected_request_entry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            self._write_snapshot(snapshots)
+            replay_snapshots(snapshots, output)
+            manifest_path = output / "replay-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["entries"] = []
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaises(FetchError) as raised:
+                Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                    "https://jobs.example.com/search?token=secret"
+                )
+
+        self.assertEqual(raised.exception.reason_code, "OFFLINE_FIXTURE_MISSING")
+
+    def test_schema_one_snapshot_manifest_preserves_redirect_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            request_url = "https://legacy.example/careers"
+            final_url = "https://careers.legacy.example/"
+            SnapshotStore(snapshots).write_page(
+                Page(
+                    url=request_url,
+                    final_url=final_url,
+                    html="<html>Legacy careers</html>",
+                    source="live",
+                ),
+                request_url=request_url,
+            )
+            index_path = snapshots / "snapshots.jsonl"
+            record = json.loads(index_path.read_text(encoding="utf-8"))
+            record["schema_version"] = 1
+            for field in ("kind", "sequence", "request"):
+                record.pop(field)
+            index_path.write_text(json.dumps(record) + "\n", encoding="utf-8")
+
+            result = replay_snapshots(snapshots, output)
+            page = Fetcher(fixtures_dir=output / "sites", offline=True).fetch(request_url)
+
+        self.assertEqual(result.manifest["entries"][0]["request"], None)
+        self.assertEqual(page.url, request_url)
+        self.assertEqual(page.final_url, final_url)
 
     def test_redirect_alias_keeps_its_blob_when_final_url_is_recaptured(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -8,6 +8,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from job_source_agent.snapshot import SnapshotStore
+from job_source_agent.models import PIPELINE_STAGES
 from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 from job_source_agent.web import Page
 from scripts.replay_failure_bundle import (
@@ -58,6 +59,16 @@ class FailureReplayBundleTests(unittest.TestCase):
             }
         ]
         (root / "results.json").write_text(json.dumps(results), encoding="utf-8")
+        homepage_url = "https://example.test"
+        SnapshotStore(root / "snapshots").write_page(
+            Page(
+                url=homepage_url,
+                final_url=homepage_url,
+                html=f'<html><a href="{board_url}">Careers</a></html>',
+                source="live",
+            ),
+            request_url=homepage_url,
+        )
         SnapshotStore(root / "snapshots").write_page(
             Page(
                 url=board_url,
@@ -70,6 +81,32 @@ class FailureReplayBundleTests(unittest.TestCase):
             ),
             request_url=board_url,
         )
+        detail_url = "https://jobs.example.test/jobs/123-data-analyst"
+        SnapshotStore(root / "snapshots").write_page(
+            Page(
+                url=detail_url,
+                final_url=detail_url,
+                html="<html><h1>Data Analyst</h1><p>Example Data</p></html>",
+                source="live",
+            ),
+            request_url=detail_url,
+        )
+        for query_url in (
+            f"{board_url}?q=Missing+Role",
+            f"{board_url}?search=Missing+Role",
+        ):
+            SnapshotStore(root / "snapshots").write_page(
+                Page(
+                    url=query_url,
+                    final_url=query_url,
+                    html=(
+                        '<html><body><a href="/jobs/123-data-analyst">'
+                        "Data Analyst</a></body></html>"
+                    ),
+                    source="live",
+                ),
+                request_url=query_url,
+            )
 
     def test_reproduced_failure_passes_outcome_gate(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -516,6 +553,117 @@ class FailureReplayBundleTests(unittest.TestCase):
                 self.assertEqual(gate["classification_counts"]["fixture_gap"], 1)
                 self.assertEqual(gate["classification_counts"]["reproduced"], 0)
                 self.assertEqual(gate["records"][0]["classification"], "fixture_gap")
+
+    def test_equal_success_identity_ignores_unused_fixture_probe_gap(self):
+        source = {
+            "company_name": "Example Streaming",
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://jobs.example.test",
+            "job_list_page_url": "https://jobs.example.test/careers",
+            "open_position_url": "https://jobs.example.test/careers/job/123",
+            "pipeline_status": "success",
+            "stages": [
+                {"stage": stage, "status": "success"}
+                for stage in PIPELINE_STAGES
+            ],
+        }
+        replay_trace = {
+            "trace": {
+                "unused_probe": {
+                    "reason_code": "OFFLINE_FIXTURE_MISSING",
+                },
+            },
+        }
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Example Streaming"}],
+            [source],
+            trace_records=[replay_trace],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["classification_counts"]["reproduced"], 1)
+        self.assertEqual(gate["classification_counts"]["fixture_gap"], 0)
+
+    def test_success_identity_drift_does_not_hide_fixture_gap(self):
+        source = {
+            "company_name": "Example Streaming",
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://jobs.example.test",
+            "job_list_page_url": "https://jobs.example.test/careers",
+            "open_position_url": "https://jobs.example.test/careers/job/123",
+            "pipeline_status": "success",
+            "stages": [
+                {"stage": stage, "status": "success"}
+                for stage in PIPELINE_STAGES
+            ],
+        }
+        replayed = {
+            **source,
+            "career_page_url": "https://jobs.example.test/search",
+        }
+        replay_trace = {
+            "trace": {
+                "probe": {
+                    "reason_code": "OFFLINE_FIXTURE_MISSING",
+                },
+            },
+        }
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Example Streaming"}],
+            [replayed],
+            trace_records=[replay_trace],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "incomplete")
+        self.assertEqual(gate["classification_counts"]["fixture_gap"], 1)
+
+    def test_provider_declared_board_routes_have_equal_replay_identity(self):
+        stages = [
+            {
+                "stage": stage,
+                "status": "success",
+                **(
+                    {"provider": "google_careers"}
+                    if stage in {"job_board_discovery", "opening_match"}
+                    else {}
+                ),
+            }
+            for stage in PIPELINE_STAGES
+        ]
+        source = {
+            "company_name": "Example Search",
+            "company_website_url": "https://www.google.com",
+            "career_page_url": "https://www.google.com/about/careers/applications/",
+            "job_list_page_url": "https://www.google.com/about/careers/applications/",
+            "open_position_url": (
+                "https://www.google.com/about/careers/applications/jobs/results/"
+                "123-product-manager"
+            ),
+            "pipeline_status": "success",
+            "stages": stages,
+        }
+        replayed = {
+            **source,
+            "career_page_url": (
+                "https://www.google.com/about/careers/applications/jobs/results/"
+            ),
+            "job_list_page_url": (
+                "https://www.google.com/about/careers/applications/jobs/results/"
+            ),
+        }
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Example Search"}],
+            [replayed],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["classification_counts"]["reproduced"], 1)
 
     def test_offline_fixture_text_without_typed_reason_is_not_fixture_gap(self):
         replay_inputs = [{
