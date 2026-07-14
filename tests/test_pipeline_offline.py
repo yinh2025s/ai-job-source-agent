@@ -1049,6 +1049,55 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(len(trace["candidate_fetch_errors"]), 1)
         self.assertEqual(trace["candidate_fetch_budget_exhausted"]["limit"], 1)
 
+    def test_legacy_candidate_selection_can_retry_across_phases_without_evidence(self):
+        candidate_url = "https://company.example/careers"
+
+        class TransientFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = 0
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls += 1
+                if self.calls == 1:
+                    raise FetchError(
+                        "temporary timeout",
+                        reason_code="NETWORK_TIMEOUT",
+                        retryable=True,
+                    )
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html="<html><body>Browse careers and open roles.</body></html>",
+                )
+
+        fetcher = TransientFetcher()
+        agent = JobSourceAgent(fetcher, max_candidates=1, max_career_candidate_fetches=1)
+        candidates = [
+            LinkCandidate(
+                candidate_url,
+                "Careers",
+                "https://company.example",
+                100,
+                ["homepage navigation link"],
+            )
+        ]
+
+        first = agent._select_verified_career_candidate(
+            candidates,
+            {"candidate_fetch_errors": []},
+            schedule_source="homepage_and_common_paths",
+        )
+        second = agent._select_verified_career_candidate(
+            candidates,
+            {"candidate_fetch_errors": []},
+            schedule_source="search",
+        )
+
+        self.assertIsNone(first)
+        self.assertEqual(second, candidate_url)
+        self.assertEqual(fetcher.calls, 2)
+
     def test_homepage_navigation_evidence_precedes_higher_scored_path_probe(self):
         explicit_url = "https://company.example/team"
 

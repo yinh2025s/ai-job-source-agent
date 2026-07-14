@@ -491,7 +491,7 @@ class JobSourceAgent:
         homepage_url = normalize_url(company_website_url)
         homepage: Page | None = None
         raw_candidates: list[RawLink] = []
-        attempted_candidate_urls: set[str] = set()
+        attempted_candidate_urls: set[str] | None = None
         trace = {
             "homepage_url": homepage_url,
             "homepage_fetch_error": None,
@@ -509,6 +509,7 @@ class JobSourceAgent:
         elif homepage_navigation_evidence.homepage_url != homepage_url:
             evidence_trace["status"] = "homepage_url_mismatch"
         else:
+            attempted_candidate_urls = set()
             evidence_candidates = self._dedupe_candidates(
                 sorted(
                     [
