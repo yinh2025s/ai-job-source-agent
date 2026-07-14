@@ -143,17 +143,17 @@ class ApplicationRunner:
                 continue
 
             snapshot_scope = None
-            if self._capture_coordinator is not None:
-                if execution_fingerprint is None or producer_attempt_id is None:
-                    raise ValueError(
-                        "Scoped capture requires execution_fingerprint and producer_attempt_id"
-                    )
-                self._capture_coordinator.begin_stage(
-                    producer_attempt_id,
-                    execution_fingerprint,
-                    stage_name,
-                )
             try:
+                if self._capture_coordinator is not None:
+                    if execution_fingerprint is None or producer_attempt_id is None:
+                        raise ValueError(
+                            "Scoped capture requires execution_fingerprint and producer_attempt_id"
+                        )
+                    self._capture_coordinator.begin_stage(
+                        producer_attempt_id,
+                        execution_fingerprint,
+                        stage_name,
+                    )
                 execution = stage.run(context)
                 _validate_execution(execution, stage_name, source="Stage")
                 if self._capture_coordinator is not None:
@@ -163,10 +163,15 @@ class ApplicationRunner:
                     self._capture_coordinator.abort_stage()
                 raise
             if execution_fingerprint is not None and producer_attempt_id is not None:
+                lineage_attempt_id = (
+                    snapshot_scope.capture_attempt_id
+                    if snapshot_scope is not None
+                    else producer_attempt_id
+                )
                 execution.evidence_lineage = StageEvidenceLineage(
                     stage=stage_name,
                     execution_fingerprint=execution_fingerprint,
-                    producer_attempt_id=producer_attempt_id,
+                    producer_attempt_id=lineage_attempt_id,
                     snapshot_scope=snapshot_scope,
                 )
             context.apply(execution)

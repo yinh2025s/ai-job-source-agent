@@ -139,7 +139,6 @@ def build_application(
     linkedin_evidence_cache_path: str | Path | None = None,
     run_configuration: DeterministicRunConfig | None = None,
 ) -> ApplicationComponents:
-    registry = provider_registry or build_default_provider_registry()
     capture_coordinator = (
         SnapshotCaptureCoordinator() if fetcher_config.snapshot_dir else None
     )
@@ -147,6 +146,32 @@ def build_application(
         fetcher_config,
         capture_coordinator=capture_coordinator,
     )
+    return build_application_from_fetcher(
+        fetcher,
+        agent_config,
+        provider_registry,
+        checkpoint_dir=checkpoint_dir,
+        website_overrides=website_overrides,
+        linkedin_evidence_cache_path=linkedin_evidence_cache_path,
+        run_configuration=run_configuration,
+        capture_coordinator=capture_coordinator,
+    )
+
+
+def build_application_from_fetcher(
+    fetcher: FetchClient,
+    agent_config: AgentConfig | None = None,
+    provider_registry: ProviderRegistry | None = None,
+    *,
+    checkpoint_dir: str | Path | None = None,
+    website_overrides: str | Path | None = None,
+    linkedin_evidence_cache_path: str | Path | None = None,
+    run_configuration: DeterministicRunConfig | None = None,
+    capture_coordinator: EvidenceCaptureCoordinator | None = None,
+) -> ApplicationComponents:
+    """Assemble the product pipeline around an injected fetch boundary."""
+
+    registry = provider_registry or build_default_provider_registry()
     settings = agent_config or (
         run_configuration.to_agent_config()
         if run_configuration is not None
