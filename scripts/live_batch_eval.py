@@ -17,6 +17,10 @@ from job_source_agent.company_identity import CompanyIdentityResolver
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.batch_discovery import LinkedInDiscoveryManifestStore
 from job_source_agent.checkpoint import execution_fingerprint
+from job_source_agent.completion_resume import (
+    classify_completion_resume,
+    completion_resume_marker,
+)
 from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
 from job_source_agent.contracts import FetchClient, PipelineContext, StageExecution
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
@@ -202,7 +206,10 @@ def main() -> None:
         )
     print(
         f"unique companies: {len(companies)} "
-        f"restored: {len(completed)} pending: {len(pending)}",
+        f"restored: {len(completed)} "
+        f"retryable_resubmitted: "
+        f"{getattr(args, 'batch_completion_resume_stats', {}).get('retryable_resubmit', 0)} "
+        f"pending: {len(pending)}",
         flush=True,
     )
     if args.workers <= 1:
@@ -423,6 +430,9 @@ def build_summary(
             "action": manifest_action,
             "path": getattr(args, "linkedin_manifest_resolved_path", None),
         }
+    completion_resume_stats = getattr(args, "batch_completion_resume_stats", None)
+    if completion_resume_stats is not None:
+        summary["batch_completion_resume"] = dict(completion_resume_stats)
     if args.expectations:
         expectations = json.loads(Path(args.expectations).read_text(encoding="utf-8"))
         if not getattr(args, "require_all_expectations", False):
@@ -462,15 +472,42 @@ def _load_completed_companies(
     store: FilesystemBatchCompletionStore,
     args: argparse.Namespace,
 ) -> dict[int, tuple[dict, dict, float]]:
+    stats = {
+        "compatible_completions": 0,
+        "completion_restore": 0,
+        "non_retryable_restore": 0,
+        "unclassified_restore": 0,
+        "retryable_resubmit": 0,
+    }
+    args.batch_completion_resume_stats = stats
+    args.batch_completion_resume_decisions = {}
     if getattr(args, "no_resume", False) or getattr(args, "rerun_stage", None):
         return {}
     input_records = [dataclass_to_dict(company) for company in companies]
     saved = store.scan(input_records)
+    stats["compatible_completions"] = len(saved)
     completed: dict[int, tuple[dict, dict, float]] = {}
+    stage_store = FilesystemCheckpointStore(_checkpoint_dir(args))
+    run_configuration = _run_configuration(args)
     for index, input_record in enumerate(input_records, start=1):
         completion = saved.get(store.fingerprint(input_record))
-        if completion is not None:
-            completed[index] = (completion.result, completion.trace, completion.elapsed)
+        if completion is None:
+            continue
+        decision = classify_completion_resume(completion.result, completion.trace)
+        marker = completion_resume_marker(decision)
+        args.batch_completion_resume_decisions[index] = marker
+        stats[decision.action] += 1
+        if decision.action == "retryable_resubmit":
+            fingerprint = execution_fingerprint(input_record, run_configuration.digest)
+            stage_store.invalidate_from(fingerprint, decision.retry_stage or PIPELINE_STAGES[0])
+            continue
+        restored_trace = copy.deepcopy(completion.trace)
+        trace_payload = restored_trace.get("trace")
+        if not isinstance(trace_payload, dict):
+            trace_payload = {}
+            restored_trace["trace"] = trace_payload
+        trace_payload["batch_completion_resume"] = marker
+        completed[index] = (completion.result, restored_trace, completion.elapsed)
     return completed
 
 
@@ -490,6 +527,13 @@ def _record_company_completion(
 ) -> None:
     result_record = result.result_record()
     trace_record = dataclass_to_dict(result.trace_record())
+    resume_marker = getattr(args, "batch_completion_resume_decisions", {}).get(index)
+    if resume_marker is not None:
+        trace_payload = trace_record.get("trace")
+        if not isinstance(trace_payload, dict):
+            trace_payload = {}
+            trace_record["trace"] = trace_payload
+        trace_payload["batch_completion_resume"] = resume_marker
     store.save(dataclass_to_dict(company), result_record, trace_record, elapsed)
     completed[index] = (result_record, trace_record, elapsed)
     _write_completed_artifacts(

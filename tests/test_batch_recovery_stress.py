@@ -11,6 +11,7 @@ import unittest
 from pathlib import Path
 
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
+from job_source_agent.completion_resume import classify_completion_resume
 from job_source_agent.run_configuration import (
     AgentConfig,
     BatchExecutionConfig,
@@ -180,6 +181,19 @@ class BatchRecoveryStressTests(unittest.TestCase):
                 for record in records
                 if store.load(record) is None
             }
+            retryable_names = {
+                completion.result["company_name"]
+                for completion in completed_after_crash.values()
+                if classify_completion_resume(
+                    completion.result,
+                    completion.trace,
+                ).action
+                == "retryable_resubmit"
+            }
+            self.assertEqual(
+                retryable_names,
+                {f"Stress Company {FAILED_INDEX:02d}"},
+            )
 
             second = self._run_batch(
                 phase="second",
@@ -207,8 +221,9 @@ class BatchRecoveryStressTests(unittest.TestCase):
                 if phase == "second" and event == "start"
             ]
             self.assertNotEqual(first_finished, sorted(first_finished))
-            self.assertEqual(set(second_names), missing_names)
-            self.assertEqual(len(second_names), len(missing_names))
+            expected_second_names = missing_names | retryable_names
+            self.assertEqual(set(second_names), expected_second_names)
+            self.assertEqual(len(second_names), len(expected_second_names))
             self.assertTrue(set(first_names) - missing_names)
 
             results = json.loads(output_path.read_text(encoding="utf-8"))
@@ -219,6 +234,10 @@ class BatchRecoveryStressTests(unittest.TestCase):
             self.assertEqual([item["company_name"] for item in traces], expected_names)
             self.assertEqual(len(set(expected_names)), COMPANY_COUNT)
             self.assertEqual(summary["total"], COMPANY_COUNT)
+            self.assertEqual(
+                summary["batch_completion_resume"]["retryable_resubmit"],
+                1,
+            )
 
             failures = [item for item in results if item["status"] == "failed"]
             self.assertEqual(len(failures), 1)

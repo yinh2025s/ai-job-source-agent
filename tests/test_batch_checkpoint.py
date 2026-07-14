@@ -137,6 +137,19 @@ class FilesystemBatchCompletionStoreTests(unittest.TestCase):
         self.assertEqual(self.store.load(self.input_record), old)
         self.assertEqual(list(path.parent.glob("*.tmp")), [])
 
+    def test_load_removes_only_stale_temporary_files_for_its_fingerprint(self):
+        completion = self.store.save(self.input_record, self.result, self.trace, 1)
+        path = self.store._completion_path(completion.execution_fingerprint)
+        stale = path.parent / f".{completion.execution_fingerprint}.crashed.tmp"
+        unrelated = path.parent / ".another-fingerprint.active.tmp"
+        stale.write_text("partial", encoding="utf-8")
+        unrelated.write_text("partial", encoding="utf-8")
+
+        self.assertEqual(self.store.load(self.input_record), completion)
+
+        self.assertFalse(stale.exists())
+        self.assertTrue(unrelated.exists())
+
     def test_save_rejects_invalid_payloads(self):
         invalid_cases = [
             ([], {}, 1),

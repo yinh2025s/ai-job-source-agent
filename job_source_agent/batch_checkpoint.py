@@ -72,6 +72,7 @@ class FilesystemBatchCompletionStore:
 
         with self._completion_lock(completion.execution_fingerprint):
             path.parent.mkdir(parents=True, exist_ok=True)
+            self._cleanup_temporary_files(path.parent, completion.execution_fingerprint)
             temporary_path: str | None = None
             try:
                 with tempfile.NamedTemporaryFile(
@@ -102,8 +103,10 @@ class FilesystemBatchCompletionStore:
     def load(self, input_record: dict[str, Any]) -> BatchCompletion | None:
         fingerprint = self.fingerprint(input_record)
         with self._completion_lock(fingerprint):
+            path = self._completion_path(fingerprint)
+            self._cleanup_temporary_files(path.parent, fingerprint)
             return self._load_path(
-                self._completion_path(fingerprint),
+                path,
                 fingerprint,
                 input_fingerprint(input_record),
             )
@@ -134,6 +137,18 @@ class FilesystemBatchCompletionStore:
 
     def _completion_path(self, fingerprint: str) -> Path:
         return self.root / fingerprint[:2] / f"{fingerprint}.json"
+
+    @staticmethod
+    def _cleanup_temporary_files(directory: Path, fingerprint: str) -> None:
+        try:
+            temporary_paths = directory.glob(f".{fingerprint}.*.tmp")
+            for path in temporary_paths:
+                try:
+                    path.unlink()
+                except FileNotFoundError:
+                    pass
+        except OSError:
+            pass
 
     @staticmethod
     def _load_path(

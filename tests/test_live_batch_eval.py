@@ -36,6 +36,7 @@ from scripts.live_batch_eval import (
     _ordered_records,
     _recover_checkpoint_prefix,
     _record_company_completion,
+    _run_configuration,
     load_batch_companies,
     prepare_replay_company_for_resume,
     prepare_company,
@@ -811,6 +812,80 @@ class LiveBatchEvalTests(unittest.TestCase):
                 {},
             )
 
+    def test_retryable_completion_invalidates_failed_stage_and_preserves_upstream(self):
+        company = CompanyInput(company_name="A", company_website_url="https://a.example")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = SimpleNamespace(
+                no_resume=False,
+                rerun_stage=None,
+                checkpoint_dir=str(root / "stages"),
+            )
+            store = FilesystemBatchCompletionStore(root / "completed")
+            stages = []
+            for stage in PIPELINE_STAGES:
+                if stage == "career_discovery":
+                    stages.append(
+                        {
+                            "stage": stage,
+                            "status": "failed",
+                            "retryable": True,
+                            "reason_code": "NETWORK_TIMEOUT",
+                        }
+                    )
+                elif len(stages) >= 4 and stage != "result_validation":
+                    stages.append({"stage": stage, "status": "not_run", "retryable": False})
+                else:
+                    stages.append({"stage": stage, "status": "success", "retryable": False})
+            input_record = {
+                "linkedin_job_url": "",
+                "external_apply_url": None,
+                "company_name": "A",
+                "company_website_url": "https://a.example",
+                "hiring_entity_name": None,
+                "career_root_url": None,
+                "linkedin_html_path": None,
+                "linkedin_company_url": None,
+                "job_title": None,
+                "job_location": None,
+                "source": "input",
+                "source_trace": {},
+            }
+            store.save(
+                input_record,
+                {"company_name": "A", "pipeline_status": "failed", "stages": stages},
+                {"company_name": "A", "pipeline_status": "failed", "stages": stages, "trace": {}},
+                1.0,
+            )
+            fingerprint = execution_fingerprint(
+                input_record,
+                _run_configuration(args).digest,
+            )
+            stage_store = FilesystemCheckpointStore(args.checkpoint_dir)
+            for stage in PIPELINE_STAGES:
+                stage_store.save(
+                    fingerprint,
+                    StageExecution(StageResult(stage=stage, status="success")),
+                )
+
+            restored = _load_completed_companies([company], store, args)
+
+            self.assertEqual(restored, {})
+            self.assertEqual(args.batch_completion_resume_stats["retryable_resubmit"], 1)
+            self.assertEqual(
+                args.batch_completion_resume_decisions[1],
+                {
+                    "action": "retryable_resubmit",
+                    "reason": "retryable_stage_failure",
+                    "stage": "career_discovery",
+                    "reason_code": "NETWORK_TIMEOUT",
+                },
+            )
+            for stage in PIPELINE_STAGES[:3]:
+                self.assertIsNotNone(stage_store.load(fingerprint, stage))
+            for stage in PIPELINE_STAGES[3:]:
+                self.assertIsNone(stage_store.load(fingerprint, stage))
+
     def test_company_completions_are_persisted_and_rendered_in_input_order(self):
         companies = {
             1: CompanyInput(company_name="A", company_website_url="https://a.example"),
@@ -852,6 +927,68 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual([item["company_name"] for item in ordered_results], ["A", "B"])
         self.assertEqual([item["company_name"] for item in ordered_traces], ["A", "B"])
         self.assertEqual([item["company_name"] for item in disk_results], ["A", "B"])
+
+    def test_resubmitted_completion_persists_privacy_safe_resume_provenance(self):
+        company = CompanyInput(company_name="A", company_website_url="https://a.example")
+        result = DiscoveryResult(
+            company_name="A",
+            company_website_url="https://a.example",
+            status="success",
+            pipeline_status="success",
+        )
+        marker = {
+            "action": "retryable_resubmit",
+            "reason": "retryable_stage_failure",
+            "stage": "career_discovery",
+            "reason_code": "NETWORK_TIMEOUT",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = FilesystemBatchCompletionStore(root / "completed")
+            completed = {}
+            args = SimpleNamespace(
+                expectations=None,
+                batch_completion_resume_decisions={1: marker},
+                batch_completion_resume_stats={"retryable_resubmit": 1},
+            )
+
+            _record_company_completion(
+                1,
+                1,
+                company,
+                result,
+                0.1,
+                completed,
+                store,
+                root / "results.json",
+                root / "trace.json",
+                root / "summary.json",
+                args,
+                0.0,
+            )
+            saved = store.scan(
+                [
+                    {
+                        "linkedin_job_url": "",
+                        "external_apply_url": None,
+                        "company_name": "A",
+                        "company_website_url": "https://a.example",
+                        "hiring_entity_name": None,
+                        "career_root_url": None,
+                        "linkedin_html_path": None,
+                        "linkedin_company_url": None,
+                        "job_title": None,
+                        "job_location": None,
+                        "source": "input",
+                        "source_trace": {},
+                    }
+                ]
+            )
+            summary = json.loads((root / "summary.json").read_text(encoding="utf-8"))
+
+        completion = next(iter(saved.values()))
+        self.assertEqual(completion.trace["trace"]["batch_completion_resume"], marker)
+        self.assertEqual(summary["batch_completion_resume"], {"retryable_resubmit": 1})
 
     def test_failed_completion_publish_does_not_expose_derived_results(self):
         company = CompanyInput(
