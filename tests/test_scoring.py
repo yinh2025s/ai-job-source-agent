@@ -2,6 +2,7 @@ import unittest
 
 from job_source_agent.scoring import (
     is_ats_url,
+    is_explicit_job_list_command,
     is_likely_job_detail,
     is_likely_job_listing_page,
     score_career_link,
@@ -11,6 +12,32 @@ from job_source_agent.web import RawLink
 
 
 class ScoringTests(unittest.TestCase):
+    def test_job_list_command_taxonomy_is_shared_and_bounded(self):
+        for text in (
+            "Find jobs",
+            "Explore roles",
+            "View open jobs",
+            "Browse job opportunities",
+        ):
+            with self.subTest(text=text):
+                self.assertTrue(is_explicit_job_list_command(text))
+
+        for text in ("Meet our team", "Explore Bosch", "Job benefits"):
+            with self.subTest(text=text):
+                self.assertFalse(is_explicit_job_list_command(text))
+
+    def test_find_jobs_link_receives_explicit_listing_evidence(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://jobs.example.com/en/",
+                text="Find jobs",
+                source_url="https://www.example.com/careers/",
+            ),
+            career_page_url="https://www.example.com/careers/",
+        )
+
+        self.assertIn("explicit job-list command", candidate.reasons)
+
     def test_whitecarrot_hosts_are_known_ats_domains(self):
         self.assertTrue(is_ats_url("https://app.whitecarrot.io/careers/acme"))
         self.assertTrue(is_ats_url("https://acme.whitecarrot.ai/jobs"))

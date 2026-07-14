@@ -97,6 +97,25 @@ NEGATIVE_KEYWORDS = {
     "whitepaper": -80,
 }
 
+EXPLICIT_JOB_LIST_COMMANDS = (
+    "browse jobs",
+    "browse roles",
+    "explore jobs",
+    "explore roles",
+    "find jobs",
+    "find roles",
+    "job opportunities",
+    "job search",
+    "open positions",
+    "open roles",
+    "search jobs",
+    "search roles",
+    "staff careers",
+    "view jobs",
+    "view open jobs",
+    "view roles",
+)
+
 ATS_AUXILIARY_PATH_PARTS = {
     "introduceyourself",
     "login",
@@ -213,20 +232,7 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     haystack = f"{path} {text}"
     path_parts = [part for part in path.split("/") if part]
     leaf = path_parts[-1] if path_parts else ""
-    normalized_text = " ".join(text.split())
-    explicit_job_list_command = any(
-        phrase in normalized_text
-        for phrase in (
-            "browse jobs",
-            "browse roles",
-            "open positions",
-            "open roles",
-            "search jobs",
-            "search roles",
-            "view jobs",
-            "view roles",
-        )
-    )
+    explicit_job_list_command = is_explicit_job_list_command(text)
     score = 0
     reasons: list[str] = []
     same_page_detail_query = _looks_like_same_page_detail_query(
@@ -303,6 +309,11 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
         reasons.append("specific URL depth")
 
     return LinkCandidate(link.url, link.text, link.source_url, score, reasons, link.origin)
+
+
+def is_explicit_job_list_command(text: str) -> bool:
+    normalized_text = " ".join(text.casefold().split())
+    return any(phrase in normalized_text for phrase in EXPLICIT_JOB_LIST_COMMANDS)
 
 
 def is_likely_job_detail(candidate: LinkCandidate) -> bool:

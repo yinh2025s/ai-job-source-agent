@@ -66,6 +66,7 @@ from .reasons import (
 from .run_configuration import AgentConfig, DeterministicRunConfig
 from .scoring import (
     is_ats_url,
+    is_explicit_job_list_command,
     is_likely_job_detail,
     is_likely_job_listing_page,
     is_resource_url,
@@ -1814,17 +1815,7 @@ class JobSourceAgent:
         text = " ".join(candidate.text.casefold().split())
         return (
             any(marker in target_label for marker in ("jobs", "careers", "apply"))
-            and any(
-                phrase in text
-                for phrase in (
-                    "job opportunities",
-                    "job search",
-                    "open positions",
-                    "search jobs",
-                    "staff careers",
-                    "view jobs",
-                )
-            )
+            and is_explicit_job_list_command(text)
         )
 
     def _shared_path_prefix(self, target_url: str, source_url: str) -> int:

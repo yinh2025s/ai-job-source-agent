@@ -629,6 +629,22 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(trace["selected_page_source"], "first_party_portal_link")
         self.assertEqual(fetcher.requested, [career])
 
+    def test_accepts_same_brand_jobs_subdomain_with_find_jobs_command(self):
+        career = "https://www.example.com/careers/"
+        portal = "https://jobs.example.com/en/"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<a href="{portal}">Find jobs</a>',
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, portal)
+        self.assertEqual(trace["selected_page_source"], "first_party_portal_link")
+        self.assertEqual(fetcher.requested, [career])
+
     def test_probes_explicit_cross_site_roles_link_but_requires_provider_page_evidence(self):
         career = "https://jobs.example.com"
         board = "https://explore.jobs.example.net/careers"
