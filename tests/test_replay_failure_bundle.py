@@ -189,6 +189,42 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertNotIn("run_configuration", replay_input[0])
         self.assertNotIn("run_configuration_digest", replay_input[0])
 
+    def test_legacy_versioned_run_configuration_preserves_checkpoint_fingerprint(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+            current = DeterministicRunConfig.from_agent_config(
+                AgentConfig(enable_sitemap_discovery=False)
+            ).to_payload()
+            legacy_payload = {
+                "schema_version": "1.0",
+                "agent": {
+                    key: value
+                    for key, value in current["agent"].items()
+                    if key != "max_career_discovery_transport_calls"
+                },
+            }
+            legacy_config = DeterministicRunConfig.from_payload(legacy_payload)
+            results_path = root / "results.json"
+            results = json.loads(results_path.read_text(encoding="utf-8"))
+            results[0]["linkedin_job_title"] = "Missing Role"
+            results[0]["run_configuration"] = legacy_payload
+            results[0]["run_configuration_digest"] = legacy_config.digest
+            results_path.write_text(json.dumps(results), encoding="utf-8")
+
+            manifest = replay_failure_bundle(self._args(root, legacy_run_config=None))
+            replay_results = json.loads(
+                (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(manifest["run_configuration"], legacy_payload)
+        self.assertEqual(manifest["run_configuration_digest"], legacy_config.digest)
+        self.assertEqual(replay_results[0]["run_configuration"], legacy_payload)
+        self.assertEqual(
+            replay_results[0]["run_configuration_digest"],
+            legacy_config.digest,
+        )
+
     def test_legacy_source_requires_explicit_configuration_mode(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

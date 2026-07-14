@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .application_runner import ApplicationRunner
+from .career_transport_budget import CareerTransportBudgetFetcher
 from .company_identity import CompanyIdentityResolver
 from .contracts import FetchClient
 from .identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
@@ -77,6 +78,7 @@ def build_fetcher(config: FetcherConfig) -> FetchClient:
     else:
         raise ValueError(f"Unsupported render mode: {config.render_mode}")
 
+    fetcher = CareerTransportBudgetFetcher(fetcher)
     if config.retries > 0 or config.retry_deadline is not None:
         fetcher = RetryingFetcher(
             fetcher,
@@ -93,6 +95,8 @@ def build_agent(
     fetcher: FetchClient,
     config: AgentConfig | None = None,
     provider_registry: ProviderRegistry | None = None,
+    *,
+    run_configuration: DeterministicRunConfig | None = None,
 ) -> JobSourceAgent:
     settings = config or AgentConfig()
     registry = provider_registry or build_default_provider_registry()
@@ -102,11 +106,15 @@ def build_agent(
         max_candidates=settings.max_candidates,
         max_job_pages=settings.max_job_pages,
         max_career_candidate_fetches=settings.max_career_candidate_fetches,
+        max_career_discovery_transport_calls=(
+            settings.max_career_discovery_transport_calls
+        ),
         max_career_search_queries=settings.max_career_search_queries,
         max_ats_board_fetches=settings.max_ats_board_fetches,
         enable_sitemap_discovery=settings.enable_sitemap_discovery,
         enable_career_search=settings.enable_career_search,
         career_search_timeout=settings.career_search_timeout,
+        run_configuration=run_configuration,
     )
 
 
@@ -117,11 +125,28 @@ def build_application(
     checkpoint_dir: str | Path | None = None,
     website_overrides: str | Path | None = None,
     linkedin_evidence_cache_path: str | Path | None = None,
+    run_configuration: DeterministicRunConfig | None = None,
 ) -> ApplicationComponents:
     registry = provider_registry or build_default_provider_registry()
     fetcher = build_fetcher(fetcher_config)
-    settings = agent_config or AgentConfig()
-    agent = build_agent(fetcher, settings, registry)
+    settings = agent_config or (
+        run_configuration.to_agent_config()
+        if run_configuration is not None
+        else AgentConfig()
+    )
+    deterministic_settings = run_configuration or DeterministicRunConfig.from_agent_config(
+        settings
+    )
+    if deterministic_settings.to_agent_config() != DeterministicRunConfig.from_agent_config(
+        settings
+    ).to_agent_config():
+        raise ValueError("run_configuration does not match agent_config")
+    agent = build_agent(
+        fetcher,
+        settings,
+        registry,
+        run_configuration=deterministic_settings,
+    )
     evidence_cache_path = linkedin_evidence_cache_path
     if evidence_cache_path is None and checkpoint_dir is not None:
         evidence_cache_path = Path(checkpoint_dir) / LINKEDIN_EVIDENCE_CACHE_FILENAME
@@ -159,6 +184,6 @@ def build_application(
         agent=agent,
         pipeline=PipelineApplication(
             runner,
-            run_configuration=DeterministicRunConfig.from_agent_config(settings),
+            run_configuration=deterministic_settings,
         ),
     )

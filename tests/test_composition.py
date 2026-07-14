@@ -9,6 +9,7 @@ from job_source_agent.composition import (
     build_application,
     build_fetcher,
 )
+from job_source_agent.career_transport_budget import CareerTransportBudgetFetcher
 from job_source_agent.identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
 from job_source_agent.page_cache import PageCacheFetcher
 from job_source_agent.rendered_fetcher import SmartRenderedFetcher
@@ -22,7 +23,8 @@ class CompositionTests(unittest.TestCase):
         fetcher = build_fetcher(FetcherConfig(offline=True))
 
         self.assertIsInstance(fetcher, PageCacheFetcher)
-        self.assertIsInstance(fetcher.fetcher, Fetcher)
+        self.assertIsInstance(fetcher.fetcher, CareerTransportBudgetFetcher)
+        self.assertIsInstance(fetcher.fetcher.fetcher, Fetcher)
         self.assertTrue(fetcher.offline)
 
     def test_fetch_behaviors_are_composed_in_one_place(self):
@@ -38,7 +40,14 @@ class CompositionTests(unittest.TestCase):
         self.assertIsInstance(fetcher, PageCacheFetcher)
         self.assertIsInstance(fetcher.fetcher, SnapshottingFetcher)
         self.assertIsInstance(fetcher.fetcher.fetcher, RetryingFetcher)
-        self.assertIsInstance(fetcher.fetcher.fetcher.fetcher, SmartRenderedFetcher)
+        self.assertIsInstance(
+            fetcher.fetcher.fetcher.fetcher,
+            CareerTransportBudgetFetcher,
+        )
+        self.assertIsInstance(
+            fetcher.fetcher.fetcher.fetcher.fetcher,
+            SmartRenderedFetcher,
+        )
 
     def test_retry_deadline_is_injected_by_composition(self):
         fetcher = build_fetcher(
@@ -67,6 +76,14 @@ class CompositionTests(unittest.TestCase):
         self.assertIs(application.agent.fetcher, application.fetcher)
         self.assertIs(application.agent.provider_registry, application.provider_registry)
         self.assertFalse(application.agent.enable_career_search)
+
+    def test_application_wires_career_transport_limit_to_agent(self):
+        application = build_application(
+            FetcherConfig(offline=True),
+            AgentConfig(max_career_discovery_transport_calls=17),
+        )
+
+        self.assertEqual(application.agent.max_career_discovery_transport_calls, 17)
 
     def test_application_uses_explicit_linkedin_evidence_cache_path(self):
         with tempfile.TemporaryDirectory() as directory:

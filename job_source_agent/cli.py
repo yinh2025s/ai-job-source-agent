@@ -9,6 +9,7 @@ from .contracts import FetchClient
 from .linkedin import load_company_inputs
 from .linkedin_discovery import LinkedInJobsDiscoverer, linkedin_postings_to_company_inputs
 from .models import PIPELINE_STAGES, dataclass_to_dict
+from .run_configuration import AgentConfig
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -35,6 +36,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Capture a browser screenshot artifact for pages rendered with Playwright.",
     )
     parser.add_argument("--fetch-timeout", type=float, default=8, help="Per-page fetch timeout in seconds.")
+    parser.add_argument(
+        "--max-career-transport-calls",
+        type=int,
+        default=32,
+        help="Maximum underlying fetch dispatches during career discovery per company.",
+    )
     parser.add_argument("--limit", type=int, help="Optional limit for quick demo runs.")
     parser.add_argument(
         "--checkpoint-dir",
@@ -75,6 +82,9 @@ def main(argv: list[str] | None = None) -> None:
             render_mode="always" if args.render_js_always else "smart" if args.render_js else "none",
             render_budget=args.render_budget,
             capture_screenshot=args.render_screenshot,
+        ),
+        AgentConfig(
+            max_career_discovery_transport_calls=args.max_career_transport_calls,
         ),
         checkpoint_dir=args.checkpoint_dir,
         website_overrides=args.website_overrides,

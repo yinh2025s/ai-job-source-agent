@@ -142,6 +142,7 @@ class BatchRecoveryStressTests(unittest.TestCase):
                     max_candidates=6,
                     max_job_pages=3,
                     max_career_candidate_fetches=5,
+                    max_career_discovery_transport_calls=32,
                     max_career_search_queries=5,
                     max_ats_board_fetches=5,
                     career_search_timeout=6,

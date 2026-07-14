@@ -72,6 +72,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verify-limit", type=int, default=3)
     parser.add_argument("--max-career-candidates", type=int, default=6)
     parser.add_argument("--max-career-fetches", type=int, default=5)
+    parser.add_argument(
+        "--max-career-transport-calls",
+        type=int,
+        default=32,
+        help="Maximum underlying fetch dispatches during S4 career discovery.",
+    )
     parser.add_argument("--max-ats-board-fetches", type=int, default=5)
     parser.add_argument("--max-job-pages", type=int, default=3)
     parser.add_argument(
@@ -962,6 +968,11 @@ def _agent_config(args: argparse.Namespace) -> AgentConfig:
         max_candidates=int(getattr(args, "max_career_candidates", 6)),
         max_job_pages=int(getattr(args, "max_job_pages", 3)),
         max_career_candidate_fetches=int(getattr(args, "max_career_fetches", 5)),
+        max_career_discovery_transport_calls=(
+            None
+            if getattr(args, "max_career_transport_calls", None) is None
+            else int(getattr(args, "max_career_transport_calls"))
+        ),
         max_career_search_queries=int(getattr(args, "max_career_search_queries", 5)),
         max_ats_board_fetches=int(getattr(args, "max_ats_board_fetches", 5)),
         enable_sitemap_discovery=not bool(getattr(args, "skip_sitemap", False)),

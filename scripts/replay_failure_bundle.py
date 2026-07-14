@@ -171,8 +171,8 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
     )
     application = build_application(
         FetcherConfig(fixtures_dir=output_root / "offline" / "sites", offline=True),
-        run_configuration.to_agent_config(),
         checkpoint_dir=output_root / "checkpoints",
+        run_configuration=run_configuration,
     )
     discoveries = [
         application.pipeline.discover(company, start_at=resume_stage)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from contextlib import nullcontext
 from dataclasses import asdict
 from html.parser import HTMLParser
 from urllib.parse import parse_qsl, urljoin, urlparse
@@ -200,11 +201,13 @@ class JobSourceAgent:
         max_candidates: int = 12,
         max_job_pages: int = 8,
         max_career_candidate_fetches: int | None = None,
+        max_career_discovery_transport_calls: int | None = None,
         max_career_search_queries: int = 5,
         max_ats_board_fetches: int = 5,
         enable_sitemap_discovery: bool = True,
         enable_career_search: bool = True,
         career_search_timeout: float | None = None,
+        run_configuration: DeterministicRunConfig | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
@@ -213,22 +216,33 @@ class JobSourceAgent:
         self.max_career_candidate_fetches = (
             max_candidates if max_career_candidate_fetches is None else max(0, max_career_candidate_fetches)
         )
+        self.max_career_discovery_transport_calls = max_career_discovery_transport_calls
         self.max_career_search_queries = max(0, max_career_search_queries)
         self.max_ats_board_fetches = max(0, max_ats_board_fetches)
         self.enable_sitemap_discovery = enable_sitemap_discovery
         self.enable_career_search = enable_career_search
         self.career_search_timeout = career_search_timeout
-        self.run_configuration = DeterministicRunConfig.from_agent_config(
-            AgentConfig(
-                max_candidates=max_candidates,
-                max_job_pages=max_job_pages,
-                max_career_candidate_fetches=self.max_career_candidate_fetches,
-                max_career_search_queries=self.max_career_search_queries,
-                max_ats_board_fetches=self.max_ats_board_fetches,
-                enable_sitemap_discovery=enable_sitemap_discovery,
-                enable_career_search=enable_career_search,
-                career_search_timeout=career_search_timeout,
-            )
+        self._career_transport_scope_active = False
+        effective_agent_config = AgentConfig(
+            max_candidates=max_candidates,
+            max_job_pages=max_job_pages,
+            max_career_candidate_fetches=self.max_career_candidate_fetches,
+            max_career_discovery_transport_calls=(
+                self.max_career_discovery_transport_calls
+            ),
+            max_career_search_queries=self.max_career_search_queries,
+            max_ats_board_fetches=self.max_ats_board_fetches,
+            enable_sitemap_discovery=enable_sitemap_discovery,
+            enable_career_search=enable_career_search,
+            career_search_timeout=career_search_timeout,
+        )
+        if (
+            run_configuration is not None
+            and run_configuration.to_agent_config() != effective_agent_config
+        ):
+            raise ValueError("run_configuration does not match the agent settings")
+        self.run_configuration = run_configuration or DeterministicRunConfig.from_agent_config(
+            effective_agent_config
         )
 
     def discover(self, company: CompanyInput) -> DiscoveryResult:
@@ -426,12 +440,56 @@ class JobSourceAgent:
         target_title: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str, dict]:
+        scope = getattr(self.fetcher, "career_discovery_scope", None)
+        if not callable(scope):
+            return self._find_career_page(
+                company_website_url,
+                company_name=company_name,
+                preferred_url=preferred_url,
+                target_title=target_title,
+                target_location=target_location,
+            )
+
+        cache_hits_before = int(getattr(self.fetcher, "cache_hits", 0) or 0)
+        with scope(self.max_career_discovery_transport_calls) as budget:
+            self._career_transport_scope_active = True
+            try:
+                career_url, trace = self._find_career_page(
+                    company_website_url,
+                    company_name=company_name,
+                    preferred_url=preferred_url,
+                    target_title=target_title,
+                    target_location=target_location,
+                )
+            except DiscoveryError as exc:
+                exc.trace["transport_budget"] = self._career_transport_budget_trace(
+                    budget,
+                    cache_hits_before,
+                )
+                raise
+            finally:
+                self._career_transport_scope_active = False
+        trace["transport_budget"] = self._career_transport_budget_trace(
+            budget,
+            cache_hits_before,
+        )
+        return career_url, trace
+
+    def _find_career_page(
+        self,
+        company_website_url: str,
+        company_name: str | None = None,
+        preferred_url: str | None = None,
+        target_title: str | None = None,
+        target_location: str | None = None,
+    ) -> tuple[str, dict]:
         homepage_url = normalize_url(company_website_url)
         homepage: Page | None = None
         raw_candidates: list[RawLink] = []
         trace = {"homepage_url": homepage_url, "homepage_fetch_error": None, "candidates": [], "candidate_fetch_errors": []}
         try:
-            homepage = self.fetcher.fetch(company_website_url)
+            with self._career_transport_phase("homepage"):
+                homepage = self.fetcher.fetch(company_website_url)
             homepage_url = homepage.final_url or homepage.url
             raw_candidates = extract_links(homepage)
         except FetchError as exc:
@@ -482,10 +540,11 @@ class JobSourceAgent:
             return selected_url, trace
 
         if homepage is not None:
-            bundle_links, bundle_trace = discover_first_party_career_navigation(
-                self.fetcher,
-                homepage,
-            )
+            with self._career_transport_phase("bundle_navigation"):
+                bundle_links, bundle_trace = discover_first_party_career_navigation(
+                    self.fetcher,
+                    homepage,
+                )
             trace["bundle_navigation_discovery"] = bundle_trace
             bundle_candidates = self._dedupe_candidates(
                 sorted(
@@ -527,10 +586,11 @@ class JobSourceAgent:
 
         if self.enable_sitemap_discovery:
             target_region = location_region(target_location)
-            sitemap_links, sitemap_trace = self._sitemap_candidates(
-                homepage_url,
-                target_region=target_region,
-            )
+            with self._career_transport_phase("sitemap_discovery"):
+                sitemap_links, sitemap_trace = self._sitemap_candidates(
+                    homepage_url,
+                    target_region=target_region,
+                )
             trace["sitemap_discovery"] = sitemap_trace
             sitemap_scored = sorted(
                 [
@@ -567,7 +627,8 @@ class JobSourceAgent:
             trace["sitemap_discovery"] = {"skipped": True}
 
         if self.enable_career_search and company_name:
-            search_result = self._search_career_candidates(company_name, homepage_url)
+            with self._career_transport_phase("search_discovery"):
+                search_result = self._search_career_candidates(company_name, homepage_url)
             trace["search_discovery"] = search_result.trace
             selected_url = self._select_verified_career_candidate(
                 search_result.candidates,
@@ -1912,6 +1973,27 @@ class JobSourceAgent:
         company_name: str | None = None,
         homepage_url: str | None = None,
     ) -> str | None:
+        with self._career_transport_phase(f"{schedule_source}_candidates"):
+            return self._select_verified_career_candidate_in_phase(
+                candidates,
+                trace,
+                max_fetches=max_fetches,
+                target_title=target_title,
+                schedule_source=schedule_source,
+                company_name=company_name,
+                homepage_url=homepage_url,
+            )
+
+    def _select_verified_career_candidate_in_phase(
+        self,
+        candidates: list[LinkCandidate],
+        trace: dict,
+        max_fetches: int | None = None,
+        target_title: str | None = None,
+        schedule_source: str = "candidate_selection",
+        company_name: str | None = None,
+        homepage_url: str | None = None,
+    ) -> str | None:
         fetch_attempts = 0
         fetch_limit = self.max_career_candidate_fetches if max_fetches is None else max_fetches
         scheduled_fetch_limit = min(self.max_candidates, fetch_limit)
@@ -2101,6 +2183,27 @@ class JobSourceAgent:
                 "untried_evidence_backed_count": len(untried_evidence_backed),
             }
         return None
+
+    def _career_transport_phase(self, name: str):
+        phase = getattr(self.fetcher, "career_discovery_phase", None)
+        return (
+            phase(name)
+            if callable(phase) and self._career_transport_scope_active
+            else nullcontext()
+        )
+
+    def _career_transport_budget_trace(
+        self,
+        budget,
+        cache_hits_before: int,
+    ) -> dict:
+        snapshot = budget.snapshot()
+        cache_hits_after = int(getattr(self.fetcher, "cache_hits", 0) or 0)
+        return {
+            "policy": "stage_transport_dispatch_budget",
+            **snapshot,
+            "cache_hits": max(0, cache_hits_after - cache_hits_before),
+        }
 
     def _verify_generic_official_career_redirect(
         self,
@@ -2786,6 +2889,8 @@ def _legacy_step_name(stage: str) -> str:
 
 
 def _trace_has_fetch_budget_exhaustion(value: object, key: str = "") -> bool:
+    if key == "reason_code" and value == "FETCH_BUDGET_EXHAUSTED":
+        return True
     if key == "candidate_fetch_budget_exhausted":
         if not isinstance(value, dict):
             return False
