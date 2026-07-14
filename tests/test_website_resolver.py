@@ -1106,8 +1106,12 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertNotIn("homepage title confirms company identity", candidate.reasons)
         self.assertIsNone(resolver._select_verified_candidate([candidate]))
 
-    def test_search_snippet_can_confirm_an_ambiguous_company_name(self):
+    def test_search_snippet_cannot_replace_homepage_identity(self):
         class SearchEvidenceFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.homepage_calls = []
+
             def fetch(self, url, data=None, headers=None):
                 if "format=rss" in url:
                     return Page(
@@ -1122,15 +1126,198 @@ class WebsiteResolverTests(unittest.TestCase):
                 if "linkedin.com" in url:
                     raise FetchError("LinkedIn unavailable")
                 if url.rstrip("/") == "https://ada.com":
+                    self.homepage_calls.append(url)
                     return Page(url=url, final_url=url, html="<html><body>Build better software</body></html>")
                 raise FetchError("not this candidate")
 
-        resolver = CompanyWebsiteResolver(SearchEvidenceFetcher(offline=True), verify_limit=2)
+        fetcher = SearchEvidenceFetcher()
+        resolver = CompanyWebsiteResolver(fetcher, verify_limit=2)
 
         website_url, trace = resolver.resolve("Ada")
 
-        self.assertEqual(website_url, "https://ada.com")
-        self.assertIn("search result confirms company identity", trace["selected"]["reasons"])
+        self.assertIsNone(website_url)
+        candidate = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "ada.com"
+        )
+        self.assertIn("company token missing from homepage", candidate["reasons"])
+        self.assertGreaterEqual(len(fetcher.homepage_calls), 1)
+
+    def test_stale_linkedin_slug_dot_com_redirect_shell_is_not_verified(self):
+        linkedin_url = "https://www.linkedin.com/company/northstar"
+
+        class StaleShellFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    raise FetchError("LinkedIn unavailable")
+                if domain_of(url) == "northstar.com":
+                    return Page(
+                        url=url,
+                        final_url="https://northstar.com/",
+                        html=(
+                            "<html><head><title>Northstar</title></head><body>"
+                            "<script>window.location = 'https://other-company.example/'</script>"
+                            "</body></html>"
+                        ),
+                    )
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    return Page(url=url, final_url=url, html="<html></html>")
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            StaleShellFetcher(offline=True), verify_limit=3
+        ).resolve("Northstar", linkedin_url, preferred_url="https://northstar.com")
+
+        self.assertIsNone(website_url)
+        stale = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "northstar.com"
+        )
+        self.assertIn("cross-origin client redirect is migration hint only", stale["reasons"])
+        self.assertNotIn("homepage verified", stale["reasons"])
+
+    def test_same_origin_redirect_shell_follows_one_hop_and_revalidates(self):
+        class SameOriginRedirectFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url.rstrip("/") == "https://northstar.com":
+                    return Page(
+                        url=url,
+                        final_url="https://northstar.com/",
+                        html=(
+                            '<html><head><meta http-equiv="refresh" '
+                            'content="0; url=/company"></head><body></body></html>'
+                        ),
+                    )
+                if url == "https://northstar.com/company":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<html><head><title>Northstar</title></head>"
+                            "<body>Northstar builds navigation software.</body></html>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = SameOriginRedirectFetcher()
+        resolver = CompanyWebsiteResolver(fetcher)
+        candidate = resolver._score_candidate("https://northstar.com", "Northstar")
+
+        self.assertEqual(candidate.url, "https://northstar.com/company")
+        self.assertIn("same-origin client redirect followed", candidate.reasons)
+        self.assertIn("homepage body confirms company identity", candidate.reasons)
+        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
+    def test_cross_origin_redirect_shell_is_not_followed_or_trusted(self):
+        class CrossOriginRedirectFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=(
+                        "<html><head><title>Northstar</title>"
+                        '<meta http-equiv="refresh" content="1;url=https://northstar.io/">'
+                        "</head><body></body></html>"
+                    ),
+                )
+
+        fetcher = CrossOriginRedirectFetcher()
+        resolver = CompanyWebsiteResolver(fetcher)
+        candidate = resolver._score_candidate("https://northstar.com", "Northstar")
+
+        self.assertEqual(fetcher.calls, ["https://northstar.com"])
+        self.assertIn("cross-origin client redirect is migration hint only", candidate.reasons)
+        self.assertNotIn("homepage verified", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_search_migration_candidate_must_fetch_and_confirm_target_identity(self):
+        class SearchMigrationFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "old-acme-systems.com":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<html><body><script>"
+                            "window.location.href = 'https://acme-systems.io/'"
+                            "</script></body></html>"
+                        ),
+                    )
+                if "format=rss" in url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<rss><channel><item><title>Acme Systems</title>"
+                            "<description>Acme Systems official website</description>"
+                            "<link>https://acme-systems.io/</link></item></channel></rss>"
+                        ),
+                    )
+                if domain_of(url) == "acme-systems.io":
+                    return Page(
+                        url=url,
+                        final_url="https://acme-systems.io/",
+                        html=(
+                            '<html><script type="application/ld+json">'
+                            '{"@type":"Organization","legalName":"Acme Systems, Inc."}'
+                            "</script><body>Engineering reliable systems.</body></html>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            SearchMigrationFetcher(offline=True), verify_limit=3
+        ).resolve("Acme Systems", preferred_url="https://old-acme-systems.com")
+
+        self.assertEqual(website_url, "https://acme-systems.io/")
+        self.assertIn(
+            "homepage organization data confirms company identity",
+            trace["selected"]["reasons"],
+        )
+        self.assertIn("candidate source: search_evidence", trace["selected"]["reasons"])
+
+    def test_search_collision_with_mismatched_page_identity_is_rejected(self):
+        class SearchCollisionFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "format=rss" in url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<rss><channel><item><title>Acme Labs official website</title>"
+                            "<description>Visit Acme Labs online</description>"
+                            "<link>https://acme.com/</link></item></channel></rss>"
+                        ),
+                    )
+                if domain_of(url) == "acme.com":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<html><head><title>Acme Plumbing</title></head>"
+                            "<body>Acme Plumbing services</body></html>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            SearchCollisionFetcher(offline=True), verify_limit=3
+        ).resolve("Acme Labs")
+
+        self.assertIsNone(website_url)
+        collision = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "acme.com"
+        )
+        self.assertIn("search result confirms company identity", collision["reasons"])
+        self.assertNotIn("homepage body confirms company identity", collision["reasons"])
 
     def test_linkedin_slug_confirms_exact_short_name_domain(self):
         class GenericHomepageFetcher(Fetcher):
@@ -1155,7 +1342,7 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertIn("LinkedIn slug confirms domain", exact.reasons)
         self.assertNotIn("LinkedIn slug confirms domain", unrelated.reasons)
-        self.assertEqual(resolver._select_verified_candidate([exact, unrelated]), exact)
+        self.assertIsNone(resolver._select_verified_candidate([exact, unrelated]))
 
     def test_ambiguous_non_com_search_candidate_needs_homepage_identity(self):
         class CleraFetcher(Fetcher):

@@ -617,6 +617,8 @@ class CompanyWebsiteResolver:
                 candidate.reasons.append(
                     "LinkedIn official website accepted without homepage response"
                 )
+            if not linkedin_official and not _has_positive_page_identity(candidate):
+                continue
             if "single-token brand extension domain" in candidate.reasons and not any(
                 reason in candidate.reasons
                 for reason in (
@@ -737,6 +739,26 @@ class CompanyWebsiteResolver:
             return WebsiteCandidate(url, score, reasons)
 
         resolved_url = page.final_url or page.url
+        client_redirect_url = _redirect_only_shell_target(page.html, resolved_url)
+        if client_redirect_url:
+            if domain_of(client_redirect_url) != domain_of(resolved_url):
+                score -= 100
+                reasons.append("cross-origin client redirect is migration hint only")
+                reasons.append("redirect-only shell rejected")
+                return WebsiteCandidate(resolved_url, score, reasons)
+            try:
+                page = self.fetcher.fetch(client_redirect_url)
+            except FetchError:
+                score -= 100
+                reasons.append("same-origin client redirect target fetch failed")
+                reasons.append("redirect-only shell rejected")
+                return WebsiteCandidate(resolved_url, score, reasons)
+            resolved_url = page.final_url or page.url
+            reasons.append("same-origin client redirect followed")
+            if _redirect_only_shell_target(page.html, resolved_url):
+                score -= 100
+                reasons.append("redirect-only shell hop limit reached")
+                return WebsiteCandidate(resolved_url, score, reasons)
         if _is_hosted_non_company_destination(resolved_url):
             score -= 200
             reasons.append("hosted non-company destination rejected")
@@ -767,7 +789,15 @@ class CompanyWebsiteResolver:
 
         html_head = page.html[:5000]
         homepage_title = _html_title(html_head)
-        if _text_confirms_company_identity(homepage_title, company_tokens):
+        structured_identity = _structured_organization_confirms_identity(
+            page.html, company_tokens
+        )
+        title_identity = _text_confirms_company_identity(homepage_title, company_tokens)
+        body_identity = _body_confirms_company_identity(page.html, company_tokens)
+        if structured_identity:
+            score += 35
+            reasons.append("homepage organization data confirms company identity")
+        if title_identity:
             score += 25
             reasons.append("homepage title confirms company identity")
         abbreviation_confirms_identity = (
@@ -780,6 +810,10 @@ class CompanyWebsiteResolver:
         if abbreviation_confirms_identity:
             score += 25
             reasons.append("homepage title confirms company abbreviation")
+        if body_identity:
+            if not structured_identity and not title_identity and not abbreviation_confirms_identity:
+                score += 25
+            reasons.append("homepage body confirms company identity")
         token_in_homepage = abbreviation_confirms_identity
         evidenced_tokens: set[str] = set(company_tokens) if abbreviation_confirms_identity else set()
         for token in company_tokens:
@@ -1132,6 +1166,123 @@ def _html_title(html: str) -> str:
         return ""
     title = re.sub(r"<[^>]+>", " ", match.group(1))
     return " ".join(html_unescape(title).split())
+
+
+def _redirect_only_shell_target(html: str, base_url: str) -> str | None:
+    if not html:
+        return None
+    meta_target = ""
+    for tag in re.findall(r"<meta\b[^>]*>", html[:20000], flags=re.I | re.S):
+        if not re.search(r"http-equiv\s*=\s*([\"'])?refresh\1", tag, flags=re.I):
+            continue
+        content = re.search(
+            r"content\s*=\s*([\"'])(.*?)\1|content\s*=\s*([^\s>]+)",
+            tag,
+            flags=re.I | re.S,
+        )
+        value = (content.group(2) or content.group(3) or "") if content else ""
+        refresh = re.fullmatch(
+            r"\s*(\d+(?:\.\d+)?)\s*;\s*url\s*=\s*['\"]?([^'\"\s]+)['\"]?\s*",
+            html_unescape(value),
+            flags=re.I,
+        )
+        if refresh and float(refresh.group(1)) <= 5:
+            meta_target = refresh.group(2)
+            break
+
+    script_target = ""
+    for script in re.findall(r"<script\b[^>]*>(.*?)</script>", html[:20000], flags=re.I | re.S):
+        match = re.fullmatch(
+            r"\s*(?:window\.)?location(?:\.href)?\s*=\s*(['\"])([^'\"]+)\1\s*;?\s*"
+            r"|\s*(?:window\.)?location\.replace\(\s*(['\"])([^'\"]+)\3\s*\)\s*;?\s*",
+            script,
+            flags=re.I,
+        )
+        if match:
+            script_target = match.group(2) or match.group(4)
+            break
+
+    target = meta_target or script_target
+    if not target:
+        return None
+    visible_body = _visible_body_text(html)
+    if len(visible_body) > 200:
+        return None
+    try:
+        normalized = normalize_url(target, base_url)
+    except (TypeError, ValueError):
+        return None
+    if urlparse(normalized).scheme not in {"http", "https"} or not domain_of(normalized):
+        return None
+    return normalized
+
+
+def _visible_body_text(html: str) -> str:
+    body_match = re.search(r"<body\b[^>]*>(.*?)</body\s*>", html, flags=re.I | re.S)
+    body = body_match.group(1) if body_match else html
+    body = re.sub(
+        r"<(?:script|style|noscript|template)\b[^>]*>.*?</(?:script|style|noscript|template)\s*>",
+        " ",
+        body,
+        flags=re.I | re.S,
+    )
+    return " ".join(html_unescape(re.sub(r"<[^>]+>", " ", body)).split())
+
+
+def _body_confirms_company_identity(html: str, company_tokens: list[str]) -> bool:
+    visible = _visible_body_text(html[:100000])
+    if not visible or not company_tokens:
+        return False
+    if not all(_contains_identity_token(visible, token) for token in company_tokens):
+        return False
+    if not _is_ambiguous_company_name(company_tokens):
+        return True
+    token = re.escape(company_tokens[0])
+    return bool(
+        re.search(rf"^\s*{token}(?:\W|$)", visible, flags=re.I)
+        or re.search(
+            rf"\b(?:about|careers?|company|copyright|official|welcome to)\s+{token}(?:\W|$)",
+            visible,
+            flags=re.I,
+        )
+    )
+
+
+def _structured_organization_confirms_identity(
+    html: str,
+    company_tokens: list[str],
+) -> bool:
+    for attrs, body in re.findall(
+        r"<script\b([^>]*)>(.*?)</script>",
+        html[:200000],
+        flags=re.I | re.S,
+    ):
+        if "application/ld+json" not in attrs.casefold():
+            continue
+        try:
+            payload = json.loads(html_unescape(body.strip()))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        for organization in _walk_linkedin_organizations(payload):
+            for field in ("name", "legalName"):
+                if _text_confirms_company_identity(
+                    str(organization.get(field) or ""), company_tokens
+                ):
+                    return True
+    return False
+
+
+def _has_positive_page_identity(candidate: WebsiteCandidate) -> bool:
+    return any(
+        reason in candidate.reasons
+        for reason in (
+            "homepage organization data confirms company identity",
+            "homepage title confirms company identity",
+            "homepage title confirms company abbreviation",
+            "homepage canonical confirms company identity",
+            "homepage body confirms company identity",
+        )
+    )
 
 
 def _canonical_company_url(html: str, base_url: str, company_tokens: list[str]) -> str | None:
