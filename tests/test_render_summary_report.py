@@ -15,9 +15,11 @@ SUMMARY = {
     "with_opening": 1,
     "elapsed_sec": 12.3,
     "rates": {"website": 1.0, "job_list": 1.0, "opening": 0.5},
+    "terminal_outcome_counts": {"exact_opening": 1, "verified_no_match": 1},
     "regression": {
         "rates_delta": {"opening": 0.25, "job_list": 0.0},
         "pipeline_status_delta": {"success": 1, "partial": -1},
+        "terminal_outcome_delta": {"exact_opening": 1, "retryable_failure": -1},
         "stage_success_delta": {"opening_match": 1, "job_board_discovery": 0},
     },
     "stage_funnel": {
@@ -74,6 +76,7 @@ SUMMARY = {
             "inventory_disposition_counts": {
                 "verified_inventory_no_match": 2,
             },
+            "terminal_outcome_counts": {"verified_no_match": 2},
         }
     ],
     "reason_code_counts": {"OPENING_NOT_FOUND": 1},
@@ -118,8 +121,11 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("# Demo Report", report)
         self.assertIn("## Stage Funnel", report)
         self.assertIn("## Regression", report)
+        self.assertIn("## Terminal Outcomes", report)
+        self.assertIn("| exact_opening | 1 |", report)
         self.assertIn("| opening | +0.25 |", report)
         self.assertIn("| partial | -1 |", report)
+        self.assertIn("| retryable_failure | -1 |", report)
         self.assertIn("| S6 opening_match | +1 |", report)
         self.assertIn("## Stage Durations", report)
         self.assertIn("| S6 opening_match | 2 | 70 | 80 |", report)
@@ -132,7 +138,7 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertLess(report.index("| lever | FETCH_FAILED | 2 |"), report.index("| lever | OPENING_NOT_FOUND | 1 |"))
         self.assertIn("## Actionable Failure Clusters", report)
         self.assertIn(
-            "| 1 | opening_match | lever | OPENING_NOT_FOUND | 2 | 0 | verified_inventory_no_match:2 | B, C |",
+            "| 1 | opening_match | lever | OPENING_NOT_FOUND | 2 | 0 | verified_no_match:2 | verified_inventory_no_match:2 | B, C |",
             report,
         )
         self.assertIn("| B | lever | partial | OPENING_NOT_FOUND", report)
@@ -150,7 +156,7 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("## Provider Reason Codes", report)
         self.assertIn("| none | none | 0 |", report)
         self.assertIn("## Actionable Failure Clusters", report)
-        self.assertIn("| 0 | none | none | none | 0 | 0 | - | - |", report)
+        self.assertIn("| 0 | none | none | none | 0 | 0 | - | - | - |", report)
         self.assertIn("## Checkpoint Activity", report)
         self.assertEqual(report.count("| none | none | 0 |"), 3)
 

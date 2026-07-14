@@ -10,6 +10,51 @@ from .opening_matcher import detect_provider
 
 FAILURE_CLUSTER_COMPANY_LIMIT = 20
 _FAILURE_STATUSES = {"failed", "partial", "unsupported"}
+_VERIFIED_NO_MATCH_DISPOSITIONS = {
+    "verified_inventory_no_match",
+    "verified_inventory_empty",
+}
+_EXTERNAL_BLOCKED_REASONS = {
+    "BOT_PROTECTION",
+    "CAPTCHA_REQUIRED",
+    "HTTP_FORBIDDEN",
+    "LOGIN_REQUIRED",
+}
+_UNSUPPORTED_REASONS = {
+    "PROVIDER_UNKNOWN",
+    "PROVIDER_UNSUPPORTED",
+    "PROVIDER_VARIANT_UNSUPPORTED",
+}
+_REPLAY_INFRASTRUCTURE_REASONS = {
+    "OFFLINE_FIXTURE_MISSING",
+    "OFFLINE_TAPE_DIVERGENCE",
+}
+_DISCOVERY_UNRESOLVED_REASONS = {
+    "CAREER_PAGE_NOT_FOUND",
+    "EMPTY_PROVIDER_RESPONSE",
+    "JOB_BOARD_NOT_FOUND",
+    "LOCATION_MISMATCH",
+    "OPENING_NOT_FOUND",
+    "TITLE_MISMATCH",
+    "WEBSITE_NOT_RESOLVED",
+}
+_TERMINAL_OUTCOME_ORDER = (
+    "exact_opening",
+    "verified_no_match",
+    "no_public_openings",
+    "identity_ambiguous",
+    "retryable_failure",
+    "linkedin_native_only",
+    "external_blocked",
+    "replay_infrastructure_failure",
+    "unsupported_capability",
+    "discovery_unresolved",
+    "source_closed",
+    "other_non_success",
+)
+_TERMINAL_OUTCOME_RANK = {
+    outcome: index for index, outcome in enumerate(_TERMINAL_OUTCOME_ORDER)
+}
 
 
 def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> dict:
@@ -29,6 +74,8 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
     checkpoint_action_counts, checkpoint_stage_counts = _checkpoint_activity_counts(results)
     source_posting_disposition_counts = _source_posting_disposition_counts(results)
     availability_diagnostic_counts = _availability_diagnostic_counts(results)
+    terminal_outcomes = [_terminal_outcome(result) for result in results]
+    terminal_outcome_counts = Counter(terminal_outcomes)
     failure_clusters = _failure_clusters(results)
 
     summary = {
@@ -59,6 +106,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
         "checkpoint_stage_counts": checkpoint_stage_counts,
         "source_posting_disposition_counts": source_posting_disposition_counts,
         "availability_diagnostic_counts": availability_diagnostic_counts,
+        "terminal_outcome_counts": dict(terminal_outcome_counts),
         "failure_clusters": failure_clusters,
         "company_stage_matrix": _company_stage_matrix(results),
     }
@@ -82,6 +130,10 @@ def compare_summaries(current: dict, baseline: dict) -> dict:
         "pipeline_status_delta": _count_deltas(
             current.get("pipeline_status_counts", {}),
             baseline.get("pipeline_status_counts", {}),
+        ),
+        "terminal_outcome_delta": _count_deltas(
+            current.get("terminal_outcome_counts", {}),
+            baseline.get("terminal_outcome_counts", {}),
         ),
         "stage_success_delta": {
             stage: int(current.get("stage_funnel", {}).get(stage, {}).get("success", 0))
@@ -197,9 +249,14 @@ def _failure_clusters(results: list[dict]) -> list[dict]:
             companies = clusters.setdefault(key, {})
             company = companies.setdefault(
                 company_name,
-                {"retryable": False, "inventory_dispositions": set()},
+                {
+                    "retryable": False,
+                    "inventory_dispositions": set(),
+                    "terminal_outcomes": set(),
+                },
             )
             company["retryable"] = company["retryable"] or stage.get("retryable") is True
+            company["terminal_outcomes"].add(_terminal_outcome(result))
             if stage_name == "opening_match":
                 disposition = _opening_inventory_disposition(result, stage)
                 if disposition:
@@ -209,9 +266,18 @@ def _failure_clusters(results: list[dict]) -> list[dict]:
     ordered_clusters = []
     for (stage, provider, reason_code), companies in clusters.items():
         disposition_counts: Counter[str] = Counter()
+        terminal_outcome_counts: Counter[str] = Counter()
         for company in companies.values():
             for disposition in company["inventory_dispositions"]:
                 disposition_counts[disposition] += 1
+            terminal_outcome_counts[
+                min(
+                    company["terminal_outcomes"],
+                    key=lambda outcome: _TERMINAL_OUTCOME_RANK.get(
+                        outcome, len(_TERMINAL_OUTCOME_RANK)
+                    ),
+                )
+            ] += 1
         ordered_names = sorted(companies, key=lambda name: (name.casefold(), name))
         ordered_clusters.append(
             {
@@ -224,6 +290,7 @@ def _failure_clusters(results: list[dict]) -> list[dict]:
                 ),
                 "company_names": ordered_names[:FAILURE_CLUSTER_COMPANY_LIMIT],
                 "inventory_disposition_counts": dict(sorted(disposition_counts.items())),
+                "terminal_outcome_counts": dict(sorted(terminal_outcome_counts.items())),
             }
         )
     return sorted(
@@ -265,21 +332,55 @@ def _opening_inventory_disposition(result: dict, opening_stage: dict) -> str | N
             if isinstance(disposition, str) and disposition:
                 return disposition
 
-    trace = result.get("trace")
-    if not isinstance(trace, dict):
-        return None
-    stages = trace.get("stages")
-    opening_trace = stages.get("opening_match") if isinstance(stages, dict) else None
-    candidates = [opening_trace, trace]
-    for candidate in candidates:
-        if not isinstance(candidate, dict):
-            continue
-        diagnostic = candidate.get("availability_diagnostic")
-        if not isinstance(diagnostic, dict):
-            continue
-        disposition = diagnostic.get("disposition")
-        if isinstance(disposition, str) and disposition:
-            return disposition
+    return None
+
+
+def _terminal_outcome(result: dict) -> str:
+    if result.get("open_position_url"):
+        return "exact_opening"
+
+    stage_by_name = _stage_by_name(result)
+    opening_stage = stage_by_name.get("opening_match", {})
+    disposition = _opening_inventory_disposition(result, opening_stage)
+    if disposition in _VERIFIED_NO_MATCH_DISPOSITIONS:
+        return "verified_no_match"
+    if disposition == "source_posting_closed":
+        return "source_closed"
+
+    terminal_stage = _terminal_non_success_stage(stage_by_name)
+    if terminal_stage is None:
+        return "other_non_success"
+    reason_code = str(terminal_stage.get("reason_code") or "")
+    if reason_code == "NO_PUBLIC_OPENINGS":
+        return "no_public_openings"
+    if reason_code == "COMPANY_IDENTITY_AMBIGUOUS":
+        return "identity_ambiguous"
+    if terminal_stage.get("retryable") is True:
+        return "retryable_failure"
+    if reason_code == "LINKEDIN_NATIVE_ONLY":
+        return "linkedin_native_only"
+    if reason_code in _EXTERNAL_BLOCKED_REASONS:
+        return "external_blocked"
+    if reason_code in _REPLAY_INFRASTRUCTURE_REASONS:
+        return "replay_infrastructure_failure"
+    if terminal_stage.get("status") == "unsupported" or reason_code in _UNSUPPORTED_REASONS:
+        return "unsupported_capability"
+    if reason_code in _DISCOVERY_UNRESOLVED_REASONS:
+        return "discovery_unresolved"
+    if reason_code == "OPENING_CLOSED":
+        return "source_closed"
+    return "other_non_success"
+
+
+def _terminal_non_success_stage(stage_by_name: dict[str, dict]) -> dict | None:
+    for stage_name in PIPELINE_STAGES:
+        stage = stage_by_name.get(stage_name)
+        if isinstance(stage, dict) and stage.get("reason_code") == "LINKEDIN_NATIVE_ONLY":
+            return stage
+    for stage_name in reversed(PIPELINE_STAGES):
+        stage = stage_by_name.get(stage_name)
+        if isinstance(stage, dict) and stage.get("status") in _FAILURE_STATUSES:
+            return stage
     return None
 
 

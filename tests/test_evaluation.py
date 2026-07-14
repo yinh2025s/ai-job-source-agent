@@ -41,6 +41,10 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(summary["rates"]["opening"], 0.5)
         self.assertEqual(summary["provider_counts"]["ashby"], 1)
         self.assertEqual(summary["failure_stage_counts"]["career_page"], 1)
+        self.assertEqual(
+            summary["terminal_outcome_counts"],
+            {"exact_opening": 1, "other_non_success": 1},
+        )
         self.assertEqual(summary["stage_funnel"]["career_discovery"]["not_recorded"], 2)
         self.assertEqual(summary["stage_duration_ms"]["career_discovery"]["count"], 0)
 
@@ -98,6 +102,95 @@ class EvaluationTests(unittest.TestCase):
         self.assertEqual(comparison["rates_delta"]["opening"], 0.3)
         self.assertEqual(comparison["pipeline_status_delta"]["success"], 3)
         self.assertEqual(comparison["stage_success_delta"]["opening_match"], 3)
+
+    def test_terminal_outcomes_use_durable_final_stage_semantics(self):
+        def stage(name, status, reason_code=None, retryable=False, evidence=None):
+            return {
+                "stage": name,
+                "status": status,
+                "reason_code": reason_code,
+                "retryable": retryable,
+                "evidence": evidence or [],
+            }
+
+        verified = [{
+            "type": "availability_diagnostic",
+            "disposition": "verified_inventory_no_match",
+        }]
+        results = [
+            {"open_position_url": "https://jobs.example/role"},
+            {"stages": [stage("opening_match", "partial", "OPENING_NOT_FOUND", evidence=verified)]},
+            {"stages": [stage("opening_match", "partial", "NO_PUBLIC_OPENINGS")]},
+            {"stages": [stage("hiring_identity_resolution", "failed", "COMPANY_IDENTITY_AMBIGUOUS")]},
+            {"stages": [stage("career_discovery", "failed", "NETWORK_TIMEOUT", retryable=True)]},
+            {"stages": [stage("job_board_discovery", "partial", "LINKEDIN_NATIVE_ONLY")]},
+            {"stages": [stage("career_discovery", "failed", "BOT_PROTECTION")]},
+            {"stages": [stage("career_discovery", "failed", "OFFLINE_FIXTURE_MISSING")]},
+            {"stages": [stage("job_board_discovery", "unsupported", "PROVIDER_VARIANT_UNSUPPORTED")]},
+            {"stages": [stage("website_resolution", "failed", "WEBSITE_NOT_RESOLVED")]},
+            {"stages": [stage(
+                "opening_match",
+                "partial",
+                "OPENING_NOT_FOUND",
+                evidence=[{
+                    "type": "availability_diagnostic",
+                    "disposition": "source_posting_closed",
+                }],
+            )]},
+            {},
+        ]
+
+        expected = {
+            "exact_opening": 1,
+            "verified_no_match": 1,
+            "no_public_openings": 1,
+            "identity_ambiguous": 1,
+            "retryable_failure": 1,
+            "linkedin_native_only": 1,
+            "external_blocked": 1,
+            "replay_infrastructure_failure": 1,
+            "unsupported_capability": 1,
+            "discovery_unresolved": 1,
+            "source_closed": 1,
+            "other_non_success": 1,
+        }
+        self.assertEqual(summarize_results(results)["terminal_outcome_counts"], expected)
+        self.assertEqual(
+            summarize_results(list(reversed(results)))["terminal_outcome_counts"],
+            expected,
+        )
+
+    def test_verified_no_match_beats_intermediate_trace_server_error(self):
+        result = {
+            "trace": {"provider_api": {"errors": [{"reason_code": "SERVER_ERROR"}]}},
+            "stages": [{
+                "stage": "opening_match",
+                "status": "partial",
+                "reason_code": "OPENING_NOT_FOUND",
+                "retryable": False,
+                "evidence": [{
+                    "type": "availability_diagnostic",
+                    "disposition": "verified_inventory_empty",
+                }],
+            }],
+        }
+
+        self.assertEqual(
+            summarize_results([result])["terminal_outcome_counts"],
+            {"verified_no_match": 1},
+        )
+
+    def test_summary_comparison_reports_terminal_outcome_deltas_with_old_inputs(self):
+        comparison = compare_summaries(
+            {"terminal_outcome_counts": {"exact_opening": 3, "retryable_failure": 1}},
+            {"terminal_outcome_counts": {"exact_opening": 1, "verified_no_match": 2}},
+        )
+
+        self.assertEqual(
+            comparison["terminal_outcome_delta"],
+            {"exact_opening": 2, "retryable_failure": 1, "verified_no_match": -2},
+        )
+        self.assertEqual(compare_summaries({}, {})["terminal_outcome_delta"], {})
 
     def test_summary_tracks_checkpoint_activity_from_result_trace(self):
         results = [
@@ -229,6 +322,10 @@ class EvaluationTests(unittest.TestCase):
             summary["company_stage_matrix"][0]["reason_code"],
             "LINKEDIN_NATIVE_ONLY",
         )
+        self.assertEqual(
+            summary["terminal_outcome_counts"],
+            {"linkedin_native_only": 1},
+        )
 
     def test_stage_provider_takes_precedence_over_external_apply_url_host(self):
         result = {
@@ -318,6 +415,7 @@ class EvaluationTests(unittest.TestCase):
                 "retryable_count": 0,
                 "company_names": ["No Context Co"],
                 "inventory_disposition_counts": {},
+                "terminal_outcome_counts": {"unsupported_capability": 1},
             },
             {
                 "stage": "opening_match",
@@ -326,7 +424,8 @@ class EvaluationTests(unittest.TestCase):
                 "company_count": 1,
                 "retryable_count": 1,
                 "company_names": ["alpha Co"],
-                "inventory_disposition_counts": {"discovery_incomplete": 1},
+                "inventory_disposition_counts": {},
+                "terminal_outcome_counts": {"retryable_failure": 1},
             },
             {
                 "stage": "opening_match",
@@ -336,6 +435,7 @@ class EvaluationTests(unittest.TestCase):
                 "retryable_count": 0,
                 "company_names": ["Zulu Co"],
                 "inventory_disposition_counts": {"verified_inventory_no_match": 1},
+                "terminal_outcome_counts": {"verified_no_match": 1},
             },
         ]
 
@@ -368,6 +468,7 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertEqual(cluster["company_count"], 25)
         self.assertEqual(cluster["retryable_count"], 13)
+        self.assertEqual(cluster["terminal_outcome_counts"], {"retryable_failure": 13, "other_non_success": 12})
         self.assertEqual(len(cluster["company_names"]), 20)
         self.assertEqual(
             cluster["company_names"],

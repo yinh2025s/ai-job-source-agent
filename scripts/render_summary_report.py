@@ -54,6 +54,13 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines = [f"# {title}", ""]
     lines.extend(_overview(summary))
     lines.extend(_rates(summary))
+    lines.extend(
+        _simple_count_table(
+            "Terminal Outcomes",
+            summary.get("terminal_outcome_counts", {}),
+            "Outcome",
+        )
+    )
     lines.extend(_regression(summary))
     lines.extend(_stage_funnel(summary))
     lines.extend(_stage_durations(summary))
@@ -115,6 +122,12 @@ def _regression(summary: dict) -> list[str]:
     if pipeline_delta:
         lines.extend(["| Pipeline status | Delta |", "| --- | ---: |"])
         for key, value in sorted(pipeline_delta.items()):
+            lines.append(f"| {key} | {_signed_number(value)} |")
+        lines.append("")
+    terminal_outcome_delta = regression.get("terminal_outcome_delta") or {}
+    if terminal_outcome_delta:
+        lines.extend(["| Terminal outcome | Delta |", "| --- | ---: |"])
+        for key, value in sorted(terminal_outcome_delta.items()):
             lines.append(f"| {key} | {_signed_number(value)} |")
         lines.append("")
     stage_delta = regression.get("stage_success_delta") or {}
@@ -228,8 +241,8 @@ def _failure_clusters(summary: dict) -> list[str]:
     lines = [
         "## Actionable Failure Clusters",
         "",
-        "| Rank | Stage | Provider | Reason | Companies | Retryable | Dispositions | Examples |",
-        "| ---: | --- | --- | --- | ---: | ---: | --- | --- |",
+        "| Rank | Stage | Provider | Reason | Companies | Retryable | Outcomes | Dispositions | Examples |",
+        "| ---: | --- | --- | --- | ---: | ---: | --- | --- | --- |",
     ]
     for rank, cluster in enumerate(clusters, start=1):
         dispositions = ", ".join(
@@ -239,20 +252,25 @@ def _failure_clusters(summary: dict) -> list[str]:
             )
         ) or "-"
         examples = ", ".join(str(name) for name in cluster.get("company_names") or []) or "-"
+        outcomes = ", ".join(
+            f"{name}:{count}"
+            for name, count in sorted((cluster.get("terminal_outcome_counts") or {}).items())
+        ) or "-"
         lines.append(
-            "| {rank} | {stage} | {provider} | {reason} | {companies} | {retryable} | {dispositions} | {examples} |".format(
+            "| {rank} | {stage} | {provider} | {reason} | {companies} | {retryable} | {outcomes} | {dispositions} | {examples} |".format(
                 rank=rank,
                 stage=_escape(cluster.get("stage") or "unknown"),
                 provider=_escape(cluster.get("provider") or "unknown"),
                 reason=_escape(cluster.get("reason_code") or "unknown"),
                 companies=cluster.get("company_count", 0),
                 retryable=cluster.get("retryable_count", 0),
+                outcomes=_escape(outcomes),
                 dispositions=_escape(dispositions),
                 examples=_escape(examples),
             )
         )
     if not clusters:
-        lines.append("| 0 | none | none | none | 0 | 0 | - | - |")
+        lines.append("| 0 | none | none | none | 0 | 0 | - | - | - |")
     lines.append("")
     return lines
 
