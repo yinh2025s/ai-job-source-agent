@@ -124,6 +124,17 @@ class RecordingFetcher:
         return response
 
 
+class BudgetAwareFetcher(RecordingFetcher):
+    timeout = 5.0
+
+    def __init__(self, responses=(), *, remaining=0.0, error=None):
+        super().__init__(responses, error=error)
+        self.remaining = remaining
+
+    def remaining_fetch_seconds(self):
+        return self.remaining
+
+
 def response(payload, *, url=API_URL, final_url=None):
     html = payload if isinstance(payload, str) else json.dumps(payload)
     return Page(url=url, final_url=final_url, html=html, source="synthetic-sitecore-api")
@@ -317,6 +328,57 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
         self.assertFalse(result.inventory_complete)
         self.assertTrue(result.trace["stopped_on_exact_title"])
 
+    def test_soft_deadline_reserve_retains_partial_page_without_fetching_next(self):
+        fetcher = BudgetAwareFetcher(
+            [response(inventory([job(title="Data Engineer")], total=2, next_range=10))],
+            remaining=6.0,
+        )
+
+        result = self.adapter.list_jobs(fetcher, self.board, JobQuery())
+
+        self.assertEqual(len(fetcher.requests), 1)
+        self.assertEqual(
+            [candidate.title for candidate in result.candidates],
+            ["Data Engineer"],
+        )
+        self.assertEqual(result.reason_code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertTrue(result.retryable)
+        self.assertFalse(result.inventory_complete)
+        self.assertEqual(result.trace["ranges"], [0])
+        self.assertEqual(result.trace["stop_reason"], "soft_deadline_reserve")
+        self.assertNotIn("remaining", repr(result.trace).lower())
+
+    def test_exact_title_wins_before_soft_deadline_reserve(self):
+        fetcher = BudgetAwareFetcher(
+            [response(inventory([job(title="AI Engineer")], total=2, next_range=10))],
+            remaining=0.0,
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="AI Engineer"),
+        )
+
+        self.assertEqual(len(fetcher.requests), 1)
+        self.assertEqual(result.reason_code, None)
+        self.assertFalse(result.inventory_complete)
+        self.assertTrue(result.trace["stopped_on_exact_title"])
+        self.assertIsNone(result.trace["stop_reason"])
+
+    def test_completed_inventory_wins_before_soft_deadline_reserve(self):
+        fetcher = BudgetAwareFetcher(
+            [response(inventory([job()], total=1, next_range=10))],
+            remaining=0.0,
+        )
+
+        result = self.adapter.list_jobs(fetcher, self.board, JobQuery())
+
+        self.assertEqual(len(fetcher.requests), 1)
+        self.assertEqual(result.reason_code, None)
+        self.assertTrue(result.inventory_complete)
+        self.assertIsNone(result.trace["stop_reason"])
+
     def test_rejects_board_identity_tampering(self):
         identity = json.loads(self.board.identifier)
         identity["origin"] = "https://other.example.com"
@@ -408,6 +470,22 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
                 self.assertFalse(result.inventory_complete)
                 self.assertEqual(result.reason_code, reason)
                 self.assertEqual(result.retryable, retryable)
+
+    def test_preserves_typed_fetch_error_reason_code(self):
+        result = self.adapter.list_jobs(
+            RecordingFetcher(
+                error=FetchError(
+                    "opaque transport failure",
+                    reason_code="RATE_LIMITED",
+                )
+            ),
+            self.board,
+            JobQuery(),
+        )
+
+        self.assertEqual(result.reason_code, "RATE_LIMITED")
+        self.assertTrue(result.retryable)
+        self.assertFalse(result.inventory_complete)
 
     def test_contradictory_total_is_incomplete(self):
         result = self.adapter.list_jobs(

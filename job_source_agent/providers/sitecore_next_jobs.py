@@ -7,7 +7,14 @@ from urllib.parse import quote, urlparse, urlunparse
 
 from ..reasons import classify_fetch_error, reason_spec
 from ..web import FetchError, Page
-from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
+from .base import (
+    AdapterResult,
+    JobBoard,
+    JobCandidate,
+    JobQuery,
+    has_fetch_reserve,
+    pagination_fetch_reserve_seconds,
+)
 
 
 _API_PATH = "/api/data/jobs/summarized"
@@ -70,8 +77,21 @@ class SitecoreNextJobsAdapter:
         failure_reason: str | None = None
         failure_retryable = False
         stopped_on_exact_title = False
+        stop_reason: str | None = None
 
-        for _page_number in range(_MAX_PAGES):
+        for page_number in range(_MAX_PAGES):
+            if page_number > 0 and not has_fetch_reserve(
+                fetcher,
+                pagination_fetch_reserve_seconds(
+                    fetcher,
+                    publication_reserve_seconds=1.0,
+                ),
+            ):
+                failure_reason = "FETCH_BUDGET_EXHAUSTED"
+                failure_retryable = True
+                stop_reason = "soft_deadline_reserve"
+                errors.append({"range": current_range, "error": stop_reason})
+                break
             if current_range in ranges:
                 failure_reason = "INVALID_STRUCTURED_DATA"
                 errors.append({"range": current_range, "error": "repeated pagination range"})
@@ -91,9 +111,7 @@ class SitecoreNextJobsAdapter:
                 )
             except (FetchError, OSError, TimeoutError) as error:
                 detail = str(error)
-                failure_reason = classify_fetch_error(detail)
-                if failure_reason == "FETCH_FAILED":
-                    failure_reason = "PROVIDER_FETCH_FAILED"
+                failure_reason = _fetch_reason(error)
                 failure_retryable = reason_spec(failure_reason).retryable
                 errors.append({"range": current_range, "error": detail})
                 break
@@ -207,11 +225,20 @@ class SitecoreNextJobsAdapter:
                 "total": expected_total,
                 "candidate_count": len(candidates),
                 "stopped_on_exact_title": stopped_on_exact_title,
+                "stop_reason": stop_reason,
                 "errors": errors,
                 "inventory_scope": inventory_scope,
                 "inventory_complete": inventory_complete,
             },
         )
+
+
+def _fetch_reason(error: Exception) -> str:
+    typed = getattr(error, "reason_code", None)
+    if isinstance(typed, str) and typed:
+        return typed
+    reason_code = classify_fetch_error(str(error))
+    return "PROVIDER_FETCH_FAILED" if reason_code == "FETCH_FAILED" else reason_code
 
 
 class _NextDataParser(HTMLParser):
