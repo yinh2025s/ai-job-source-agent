@@ -188,6 +188,18 @@ class EvaluationHistoryTests(unittest.TestCase):
                     cohort_identities_compatible(corrupt_identity, corrupt_identity.copy())
                 )
 
+    def test_total_without_primary_cohort_identity_fails_closed(self):
+        identity = derive_cohort_identity(_summary(0.8, 8))
+
+        self.assertIsNone(identity)
+        total_only_identity = {"observed_result_total": "10"}
+        self.assertFalse(
+            cohort_identities_compatible(
+                total_only_identity,
+                total_only_identity.copy(),
+            )
+        )
+
     def test_different_cohort_has_explicit_no_compatible_baseline(self):
         with tempfile.TemporaryDirectory() as directory:
             history = EvaluationHistory(directory)
@@ -375,7 +387,7 @@ class EvaluationHistoryTests(unittest.TestCase):
             self.assertEqual(output["metadata"]["commit_sha"], "deadbeef")
             self.assertEqual(output["metadata"]["adapter_version"], __import__("job_source_agent.checkpoint", fromlist=["ADAPTER_VERSION"]).ADAPTER_VERSION)
             self.assertIn("live_batch_eval.py", output["metadata"]["benchmark_command"])
-            self.assertEqual(output["cohort_identity"], {"observed_result_total": "10"})
+            self.assertIsNone(output["cohort_identity"])
 
     def test_cli_derives_identity_from_canonical_input_and_expectations(self):
         with tempfile.TemporaryDirectory() as directory:

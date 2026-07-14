@@ -321,7 +321,8 @@ def derive_cohort_identity(
         identity["batch_execution_configuration_digest"] = batch_execution_digest
     observed_result_total = summary.get("total")
     if (
-        isinstance(observed_result_total, int)
+        identity
+        and isinstance(observed_result_total, int)
         and not isinstance(observed_result_total, bool)
         and observed_result_total >= 0
     ):
@@ -377,7 +378,7 @@ def cohort_identities_compatible(
     right: dict[str, str] | None,
 ) -> bool:
     if left is None or right is None:
-        return False
+        return left is right
     left_total = left.get("observed_result_total")
     right_total = right.get("observed_result_total")
     if (
@@ -388,7 +389,7 @@ def cohort_identities_compatible(
     left_primary = left.get("companies_sha256") or left.get("input_identity")
     right_primary = right.get("companies_sha256") or right.get("input_identity")
     if left_primary is None or right_primary is None:
-        return left_primary is right_primary and left == right
+        return False
     return (
         left_primary == right_primary
         and left.get("expectations_identity") == right.get("expectations_identity")
