@@ -74,3 +74,15 @@ contract instead of creating provider-specific deadline APIs.
   or checkpoint identity.
 - Full live benchmarks remain serialized. Offline contract and provider tests
   verify reserve behavior without wall-clock sleeps.
+
+## Implementation Note: Iteration .69
+
+The frozen-cohort follow-up showed that a first native inventory request can
+also consume the publication reserve, and that an interrupted native result
+must not start generic fallback work. Sitecore therefore applies the same
+request-timeout-plus-publication-reserve guard before every page, including the
+first. The opening matcher treats a native `FETCH_BUDGET_EXHAUSTED` result as a
+cooperative terminal for the current attempt: positive candidates remain
+usable, but a miss stays retryable and no generic fanout is started. Career
+search uses the optional capability only to stop new source requests; it does
+not persist remaining time or alter deterministic run identity.
