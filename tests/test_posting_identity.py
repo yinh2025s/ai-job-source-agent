@@ -157,6 +157,7 @@ class LinkedInPostingIdentityProbeTests(unittest.TestCase):
         fetcher = _MappingFetcher(
             pages={
                 self.WEBSITE_URL: (
+                    '<meta charset="utf-8">'
                     '<meta name="keywords" content="staffing agency firm">'
                     '<script>const description = "executive search firm";</script>'
                     "<main>We build payment software.</main>"

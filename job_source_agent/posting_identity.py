@@ -324,7 +324,7 @@ class _TextParser(HTMLParser):
             str(name).casefold(): value or ""
             for name, value in attrs
         }
-        field = (values.get("name") or values.get("property")).casefold()
+        field = (values.get("name") or values.get("property") or "").casefold()
         content = values.get("content", "").strip()
         if field in self._PUBLIC_METADATA_FIELDS and content:
             self.parts.append(content)
