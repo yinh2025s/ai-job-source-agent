@@ -60,6 +60,44 @@
 - 25/25 provider fixture benchmark 主要证明 adapter 回归稳定，不证明陌生公司的 website/career/tenant discovery 泛化能力。
 - `pipeline.py` 仍集中承担 S4-S6 多项职责，legacy `JobSourceAgent.discover()` 与 production `PipelineApplication` 尚未完全收口；本轮只做必要的 contract extraction，不全面重写。
 
+### 稳定化执行状态
+
+本轮 contract implementation 已完成，相关集成提交包括 `b810282`、`81bd207`、`76f2de8`、`a99181d` 和 `1679779`。当前状态不是继续扩展 provider，而是完成 replay release blocker、重新执行离线门禁并封板：
+
+| 范围 | 状态 | 已验证事实 / 剩余动作 |
+| --- | --- | --- |
+| Opening identity continuity | 已实现 | S3-S6 传递 typed hiring/provider/opening identity；S7 独立 fail-closed，并抑制被拒绝的 exact URL |
+| Availability 与 typed error | 已实现 | complete/incomplete/retryable 语义收口；fetch reason、retryability、status 与 request provenance 不再降级为普通 not-found |
+| Evaluation contract | 已实现 | 六类 disposition 与显式 eligibility 已落地；缺少独立标注时指标显示 unavailable/not reportable，不填 0、不推断 |
+| Replay identity outcome gate | 已实现，发布闭环中 | 已比较 terminal semantic、identity verdict、failure code 和规范化 identity chain；同 stage rerun 的 duplicate ordinal 正按 lineage sequence bounds 修复 |
+| 离线门禁 | 修复前已通过 | 1387 tests、provider 25/25、resolver 6/6、architecture 26 adapters / 0 issues；replay 修复合入后必须由主线统一重跑 |
+| 冻结 live gate | 已执行一次 | observed 30-company cohort 已完成；不重跑、不调参后包装为同一轮结果，现有 artifact 用于离线 replay 闭环 |
+
+本轮没有新增 provider，也没有加入公司特例。历史 `.89` 入口改动已在 identity gate 下集成，不再属于“待提交能力”；但在 replay 修复、最终离线门禁和文档提交完成前，整个稳定化阶段仍未发布封板。
+
+### 冻结 Observed Cohort 结果
+
+本次只运行了一次冻结的、开发者已观察过的 30-company cohort，因此只能标记为 `frozen_observed`，不能称为 blind、unfamiliar holdout 或独立精度验收。
+
+| 指标 | 结果 | 可报告性 |
+| --- | --- | --- |
+| Exact URL / raw exact rate | 19/30 | 可报告，但必须与失败分布同时出现 |
+| Pipeline status | 19 success / 5 partial / 6 failed | 可报告 |
+| Identity verdict | 19 verified / 6 not_applicable / 5 rejected | 可报告；这是 runtime gate 结果，不等于人工 URL precision |
+| Exact precision | unavailable / not reportable | 缺少独立 URL review，不能由 `verified` verdict 自证 |
+| Conditional exact recall | unavailable / not reportable | 缺少逐样本 public-opening eligibility annotation |
+| System defect rate | unavailable / not reportable | 六类 disposition 尚未完成独立审阅 |
+
+当前 failure clusters：
+
+- Provider relationship unverified（4）：Dematic / KION Workday、Quest Global / Phenom、ReturnPro / Paycom、Adobe / Phenom。
+- Opening identity missing（1）：Awesome Motive 的 generic first-party 到 Workable handoff。
+- Opening not found（3）：Viking、GPTZero、Percepta；在 inventory/eligibility 外部复核前不自动视为系统缺陷。
+- Ambiguous hiring identity（1）：Aventis；不得猜测未披露招聘客户。
+- Retryable network timeout（2）：Deloitte、Akkodis；保留 retryable 语义，不转成 not-found。
+
+自动 replay 在读取完整 live artifact 时发现 same-stage rerun 产生重复 ordinal。主线只用最终 lineage 的 sequence bounds 排除同 scope 的 orphan record，然后从既有 trace/snapshot 离线重建 bundle；不得为修复该 replay 基础设施问题重新运行 live cohort。
+
 ### 阶段入口工作区
 
 进入本阶段时的未提交 `.89` 工作必须完整保留并逐项审查，不得 reset、checkout 或用格式化覆盖：
@@ -72,7 +110,7 @@
 | deadline publication reserve | `live_batch_eval.py` 及测试 | 保留为 runner reliability 变更，独立验证，不参与 exact identity 判定 |
 | `.89` adapter version | `checkpoint.py` | 最终 contract 确定后统一失效；当前不是发布完成标志 |
 
-所有上述变化在 P0 contract test 和全量门禁完成前均属于 pending integration，不计入已发布能力。
+上述入口变化已经过 P0 identity contract 集成；最终发布状态仍取决于 replay sequence-bound 修复和修复后的统一离线门禁，而不是 live exact 数量。
 
 ### P0-A：Opening Identity Continuity Contract
 
@@ -190,7 +228,15 @@ P0-A 必须先写以下通用 contract tests：
 
 ### Provider 扩展暂停条件
 
-只有本轮全部验收标准满足、Fresh→Notion 回归长期为绿、冻结 cohort 的 cross-company exact 为 0，且用户明确进入下一开发轮后，才重新按 failure cluster 评估 provider/heuristic 工作。历史 Phase 3 provider backlog 保留为参考，但当前不执行。
+Provider/heuristic churn 继续暂停。只有 replay release blocker 闭环、修复后统一离线门禁全绿、30 条记录完成独立 disposition/eligibility 审阅，且用户明确进入下一开发轮后，才重新按 failure cluster 评估通用能力。历史 Phase 3 provider backlog 保留为参考，但当前不执行；单个 observed cohort 的 runtime identity verdict 不能替代独立 precision review。
+
+### 下一轮候选（最多三项）
+
+候选按“覆盖样本数 × 正确性风险 × 预计收益”排序；它们是稳定化候选，不授权新增 provider 或公司规则。
+
+1. **Replay sequence-bound closure**：完成 duplicate ordinal 回归、从现有 artifact 离线重建 failure/full replay bundle，并统一重跑 1387+ 全量测试、25/25 provider、6/6 resolver 和 architecture gate。覆盖样本只有当前暴露记录，但属于发布级确定性风险，优先级最高。
+2. **Opaque provider relationship contract**：对 Dematic、Quest Global、ReturnPro、Adobe 共 4 个 `provider relationship unverified` 结果做只读证据审计，先冻结可泛化的 hiring-entity ↔ tenant 授权契约与负例，再决定是否实现；不得直接加入 KION、Phenom 或 Paycom tenant/company 特例。
+3. **Independent disposition and eligibility review**：逐条核验 19 个 exact URL，并为 11 个 non-exact 标注六类 disposition、public-opening eligibility 和证据来源，随后才发布 exact precision、conditional recall 与 system defect rate。该项同时区分 3 个 opening not found、1 个 ambiguous identity、1 个 opening identity missing 和 2 个 retryable timeout，避免把外部状态误当代码缺陷。
 
 ## 标准七关 Pipeline
 
@@ -1309,4 +1355,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。S1-S7 均有独立 stage class，26 个 provider module 自动发现；其中 25 个提供 native inventory 或受约束 positive evidence，仅 Talemetry 保持 detection-only。ADR-0005 至 ADR-0022 已冻结 typed board/portfolio、request-aware snapshot、deterministic execution、durable publication、runtime credential、acquired-brand handoff、TalentBrew inventory 和 replay 边界。`.86` 的冻结陌生 15-company 基线仍为 13 website、12 career、11 verified job list、7 current opening、7 pre-frozen exact，完整 capture 15/15 reproduced；`.87` focused live 进一步让 Bosch 达到 exact，并让 CyberArk 到达可信 parent job list 后正确输出 verified no-match。最终门禁为 1318 tests、25/25 provider、6/6 resolver、26 adapters / 0 issues。下一轮按冻结陌生样本的最大 failure cluster 推进。Unpacked extension 已安装，真实登录态 LinkedIn Scan/Run 作为独立手工 gate，由用户按清单操作，不阻塞后端主线。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。当前 correctness stabilization 已实现 S3-S7 typed opening identity continuity、S7 fail-closed validation、typed fetch failure fidelity、六类 evaluation disposition 和 identity-aware replay outcome gate，没有新增 provider 或公司特例。Replay sequence-bound 修复前的统一离线门禁为 1387 tests、25/25 provider、6/6 resolver、26 adapters / 0 issues；修复合入后仍需主线重跑这些 gate。一次冻结但已观察的 30-company live 为 19 exact、19 success / 5 partial / 6 failed，identity verdict 为 19 verified / 6 not_applicable / 5 rejected；这只能报告为 raw 19/30，不能称为 blind，exact precision、conditional recall 和 system defect rate 在独立审阅前均不可报告。当前先完成 replay release blocker 和外部 disposition/eligibility 标注，provider/heuristic 扩张继续暂停。
