@@ -33,6 +33,11 @@ _AGENCY_TEXT_MARKERS = (
 
 _INTERMEDIARY_WEBSITE_MARKERS = (
     (
+        "staffing solutions and executive search",
+        r"(?:\bstaffing\s+solutions?\b.{0,120}\bexecutive\s+search\b"
+        r"|\bexecutive\s+search\b.{0,120}\bstaffing\s+solutions?\b)",
+    ),
+    (
         "staffing agency or firm",
         r"\bstaffing(?:\s+(?:and|&)\s+recruit(?:ment|ing))?\s+(?:agency|firm)\b",
     ),
@@ -185,7 +190,7 @@ class LinkedInPostingIdentityProbe:
 
 
 def _strong_intermediary_website_markers(html: str) -> tuple[str, ...]:
-    text = _plain_text(html).casefold()
+    text = _plain_text(html, include_public_metadata=True).casefold()
     return tuple(
         label
         for label, pattern in _INTERMEDIARY_WEBSITE_MARKERS
@@ -286,22 +291,43 @@ def _identity_key(value: str) -> str:
     return "".join(re.findall(r"[a-z0-9]+", value.casefold()))
 
 
-def _plain_text(value: str) -> str:
-    parser = _TextParser()
+def _plain_text(value: str, *, include_public_metadata: bool = False) -> str:
+    parser = _TextParser(include_public_metadata=include_public_metadata)
     parser.feed(value)
     parser.close()
     return " ".join(" ".join(parser.parts).split())
 
 
 class _TextParser(HTMLParser):
-    def __init__(self) -> None:
+    _PUBLIC_METADATA_FIELDS = {
+        "description",
+        "og:description",
+        "og:title",
+        "twitter:description",
+        "twitter:title",
+    }
+
+    def __init__(self, *, include_public_metadata: bool = False) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
         self._hidden_depth = 0
+        self._include_public_metadata = include_public_metadata
 
     def handle_starttag(self, tag: str, attrs) -> None:
-        if tag.casefold() in {"script", "style"}:
+        normalized_tag = tag.casefold()
+        if normalized_tag in {"script", "style"}:
             self._hidden_depth += 1
+            return
+        if normalized_tag != "meta" or not self._include_public_metadata:
+            return
+        values = {
+            str(name).casefold(): value or ""
+            for name, value in attrs
+        }
+        field = (values.get("name") or values.get("property")).casefold()
+        content = values.get("content", "").strip()
+        if field in self._PUBLIC_METADATA_FIELDS and content:
+            self.parts.append(content)
 
     def handle_endtag(self, tag: str) -> None:
         if tag.casefold() in {"script", "style"} and self._hidden_depth:

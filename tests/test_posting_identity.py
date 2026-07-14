@@ -128,6 +128,51 @@ class LinkedInPostingIdentityProbeTests(unittest.TestCase):
         )
         self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
 
+    def test_public_website_metadata_can_trigger_job_detail_probe(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: (
+                    "<head>"
+                    "<title>Staffing Solutions &amp; Executive Search</title>"
+                    '<meta name="description" content="A provider of staffing solutions">'
+                    "</head><body><div id=\"app\"></div></body>"
+                ),
+                self.JOB_URL: _job_page(
+                    "We are recruiting for our client, a healthcare company.",
+                    "Acme Search",
+                ),
+            }
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme Search",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "agency_unresolved")
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
+    def test_untrusted_metadata_and_scripts_do_not_trigger_probe(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: (
+                    '<meta name="keywords" content="staffing agency firm">'
+                    '<script>const description = "executive search firm";</script>'
+                    "<main>We build payment software.</main>"
+                )
+            }
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "not_applicable")
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL])
+
     def test_ordinary_verified_website_does_not_fetch_job_detail(self):
         fetcher = _MappingFetcher(
             pages={
