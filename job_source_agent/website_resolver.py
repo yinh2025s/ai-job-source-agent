@@ -12,8 +12,9 @@ from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from xml.etree import ElementTree as ET
 
 from .contracts import FetchClient
+from .homepage_navigation import HomepageNavigationEvidence, evidence_from_verified_homepage
 from .identity_evidence import LinkedInWebsiteEvidenceStore
-from .web import FetchError, domain_of, normalize_url
+from .web import FetchError, Page, domain_of, normalize_url
 
 
 SEARCH_ENDPOINT = "https://www.bing.com/search"
@@ -99,6 +100,7 @@ class WebsiteCandidate:
     url: str
     score: int
     reasons: list[str] = field(default_factory=list)
+    verified_page: Page | None = None
 
 
 @dataclass(frozen=True)
@@ -135,6 +137,21 @@ class CompanyWebsiteResolver:
         job_location: str | None = None,
         preferred_url: str | None = None,
     ) -> tuple[str | None, dict]:
+        website_url, trace, _navigation_evidence = self.resolve_with_navigation_evidence(
+            company_name,
+            linkedin_company_url,
+            job_location,
+            preferred_url,
+        )
+        return website_url, trace
+
+    def resolve_with_navigation_evidence(
+        self,
+        company_name: str,
+        linkedin_company_url: str | None = None,
+        job_location: str | None = None,
+        preferred_url: str | None = None,
+    ) -> tuple[str | None, dict, HomepageNavigationEvidence | None]:
         normalized_name = normalize_company_key(company_name)
         trace = {
             "company_name": company_name,
@@ -148,7 +165,7 @@ class CompanyWebsiteResolver:
         if normalized_name in self.overrides:
             url = normalize_url(self.overrides[normalized_name])
             trace["selected"] = {"url": url, "reason": "override"}
-            return url, trace
+            return url, trace, None
 
         guessed_candidates = self._guess_domain_candidates(company_name)
 
@@ -234,7 +251,11 @@ class CompanyWebsiteResolver:
                 "score": fast_selected.score,
                 "reasons": fast_selected.reasons + ["fast verified domain"],
             }
-            return fast_selected.url, trace
+            return (
+                fast_selected.url,
+                trace,
+                self._navigation_evidence_for_selected(fast_selected),
+            )
 
         regional_candidates = (
             []
@@ -261,7 +282,11 @@ class CompanyWebsiteResolver:
                     "score": regional_selected.score,
                     "reasons": regional_selected.reasons + ["verified regional root recovery"],
                 }
-                return regional_selected.url, trace
+                return (
+                    regional_selected.url,
+                    trace,
+                    self._navigation_evidence_for_selected(regional_selected),
+                )
 
         loaded_linkedin_evidence_after_fast_path = False
         if not linkedin_evidence_loaded:
@@ -304,7 +329,12 @@ class CompanyWebsiteResolver:
                 )
                 recovered.append(
                     _append_candidate_sources(
-                        WebsiteCandidate(recovered_url, prior.score, list(prior.reasons)),
+                        WebsiteCandidate(
+                            recovered_url,
+                            prior.score,
+                            list(prior.reasons),
+                            prior.verified_page,
+                        ),
                         official_sources.get(official_domain, set()),
                     )
                 )
@@ -327,7 +357,11 @@ class CompanyWebsiteResolver:
                     "score": official_selected.score,
                     "reasons": official_selected.reasons,
                 }
-                return official_selected.url, trace
+                return (
+                    official_selected.url,
+                    trace,
+                    self._navigation_evidence_for_selected(official_selected),
+                )
         if fast_selection_deferred and fast_selected:
             trace["selected"] = {
                 "url": fast_selected.url,
@@ -335,7 +369,11 @@ class CompanyWebsiteResolver:
                 "reasons": fast_selected.reasons
                 + ["fast verified domain", "LinkedIn official evidence unavailable"],
             }
-            return fast_selected.url, trace
+            return (
+                fast_selected.url,
+                trace,
+                self._navigation_evidence_for_selected(fast_selected),
+            )
         search_evidence = self._search_candidates_with_evidence(company_name, job_location)
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
@@ -379,9 +417,20 @@ class CompanyWebsiteResolver:
                 "score": selected.score,
                 "reasons": selected.reasons,
             }
-            return selected.url, trace
+            return selected.url, trace, self._navigation_evidence_for_selected(selected)
 
-        return None, trace
+        return None, trace, None
+
+    @staticmethod
+    def _navigation_evidence_for_selected(
+        selected: WebsiteCandidate,
+    ) -> HomepageNavigationEvidence | None:
+        if "homepage verified" not in selected.reasons or selected.verified_page is None:
+            return None
+        return evidence_from_verified_homepage(
+            selected.verified_page,
+            homepage_url=selected.url,
+        )
 
     def _rank_and_verify_candidates(
         self,
@@ -835,7 +884,7 @@ class CompanyWebsiteResolver:
             score -= 45
             reasons.append("incomplete company identity")
 
-        return WebsiteCandidate(resolved_url, score, reasons)
+        return WebsiteCandidate(resolved_url, score, reasons, page)
 
     def _score_linkedin_slug_tld_hint(
         self,

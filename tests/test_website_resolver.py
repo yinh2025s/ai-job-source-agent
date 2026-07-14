@@ -12,6 +12,55 @@ from job_source_agent.website_resolver import (
 
 
 class WebsiteResolverTests(unittest.TestCase):
+    def test_navigation_evidence_comes_only_from_the_selected_verified_homepage(self):
+        class CandidateFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls: list[str] = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if domain_of(url) == "acme.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.acme.com/",
+                        html=(
+                            "<html><head><title>Acme</title></head><body>Acme"
+                            '<a href="/careers">Internal recruiting notes</a>'
+                            "</body></html>"
+                        ),
+                    )
+                if domain_of(url) == "acme.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.ai/",
+                        html=(
+                            "<html><head><title>Acme</title></head><body>Acme"
+                            '<a href="/careers">Unselected careers</a>'
+                            "</body></html>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = CandidateFetcher()
+        resolver = CompanyWebsiteResolver(fetcher, verify_limit=3)
+
+        website_url, _trace, navigation_evidence = (
+            resolver.resolve_with_navigation_evidence("Acme")
+        )
+
+        self.assertEqual(website_url, "https://www.acme.com/")
+        self.assertIsNotNone(navigation_evidence)
+        assert navigation_evidence is not None
+        self.assertEqual(navigation_evidence.homepage_url, website_url)
+        self.assertEqual(
+            navigation_evidence.candidate_urls,
+            ("https://www.acme.com/careers",),
+        )
+        self.assertNotIn("https://acme.ai/careers", navigation_evidence.candidate_urls)
+        self.assertFalse(hasattr(navigation_evidence, "text"))
+        self.assertNotIn("https://www.acme.com/", fetcher.calls)
+
     def test_preferred_parked_domain_falls_back_to_verified_official_site(self):
         class MigratedDomainFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):

@@ -2,6 +2,7 @@ import unittest
 from dataclasses import dataclass
 
 from job_source_agent.contracts import PipelineContext
+from job_source_agent.homepage_navigation import HomepageNavigationEvidence
 from job_source_agent.models import CompanyInput
 from job_source_agent.stages import (
     HiringIdentityResolutionStage,
@@ -24,6 +25,25 @@ class FakeWebsiteResolver:
     ):
         self.calls.append((company_name, linkedin_company_url, preferred_url))
         return self.result, {"method": "fake-website"}
+
+
+class EvidenceWebsiteResolver(FakeWebsiteResolver):
+    def resolve_with_navigation_evidence(
+        self,
+        company_name,
+        linkedin_company_url=None,
+        job_location=None,
+        preferred_url=None,
+    ):
+        self.calls.append((company_name, linkedin_company_url, preferred_url))
+        return (
+            self.result,
+            {"method": "fake-website-with-evidence"},
+            HomepageNavigationEvidence(
+                homepage_url=self.result,
+                candidate_urls=(f"{self.result}/careers",),
+            ),
+        )
 
 
 @dataclass
@@ -108,6 +128,23 @@ class UpstreamStageTests(unittest.TestCase):
 
         self.assertEqual(context.company_website_url, "https://acme.example")
         self.assertEqual(context.stage_results[0].status, "success")
+        self.assertIsNone(context.homepage_navigation_evidence)
+
+    def test_s2_emits_typed_navigation_evidence_from_evidence_capable_service(self):
+        resolver = EvidenceWebsiteResolver()
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+
+        execution = WebsiteResolutionStage(resolver).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.updates["homepage_navigation_evidence"].homepage_url,
+            "https://acme.example",
+        )
+        self.assertEqual(
+            execution.updates["homepage_navigation_evidence"].candidate_urls,
+            ("https://acme.example/careers",),
+        )
 
     def test_s2_missing_result_has_existing_failure_semantics(self):
         context = PipelineContext.from_company(CompanyInput(company_name="Missing"))

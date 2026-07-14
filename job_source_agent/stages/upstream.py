@@ -5,6 +5,7 @@ from typing import Protocol
 
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
+from ..homepage_navigation import HomepageNavigationEvidence
 from ..models import (
     STAGE_HIRING_IDENTITY_RESOLUTION,
     STAGE_LINKEDIN_DISCOVERY,
@@ -91,12 +92,24 @@ class WebsiteResolutionStage:
             provided_website = (
                 context.company_website_url or context.company.company_website_url
             )
-            website_url, trace = self.service.resolve(
-                context.company.company_name,
-                context.company.linkedin_company_url,
-                context.company.job_location,
-                preferred_url=provided_website,
+            resolve_with_evidence = getattr(
+                self.service, "resolve_with_navigation_evidence", None
             )
+            if callable(resolve_with_evidence):
+                website_url, trace, navigation_evidence = resolve_with_evidence(
+                    context.company.company_name,
+                    context.company.linkedin_company_url,
+                    context.company.job_location,
+                    preferred_url=provided_website,
+                )
+            else:
+                website_url, trace = self.service.resolve(
+                    context.company.company_name,
+                    context.company.linkedin_company_url,
+                    context.company.job_location,
+                    preferred_url=provided_website,
+                )
+                navigation_evidence = None
             website_url = normalize_url(website_url) if website_url else None
             detail = (
                 "Provided website was revalidated before use."
@@ -133,7 +146,14 @@ class WebsiteResolutionStage:
                 evidence=[{"field": "company_website_url", "url": website_url}],
                 detail=detail,
             ),
-            updates={"company_website_url": website_url},
+            updates={
+                "company_website_url": website_url,
+                **(
+                    {"homepage_navigation_evidence": navigation_evidence}
+                    if isinstance(navigation_evidence, HomepageNavigationEvidence)
+                    else {}
+                ),
+            },
             trace=trace,
         )
 
