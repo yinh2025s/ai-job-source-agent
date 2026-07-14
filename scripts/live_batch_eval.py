@@ -1016,6 +1016,13 @@ def _recover_checkpoint_prefix(
         except (TypeError, ValueError):
             break
         context = candidate_context
+        context.trace.setdefault("checkpoint_events", []).append(
+            {
+                "action": "parent_timeout_restore",
+                "stage": stage,
+                "execution_fingerprint": fingerprint,
+            }
+        )
     if not context.stage_results:
         return None
     return discovery_result_from_context(

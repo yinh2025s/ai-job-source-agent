@@ -9,6 +9,7 @@ from unittest.mock import patch
 
 from job_source_agent.checkpoint import execution_fingerprint
 from job_source_agent.contracts import StageExecution
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
 from job_source_agent.models import (
     PIPELINE_STAGES,
     CompanyInput,
@@ -16,6 +17,7 @@ from job_source_agent.models import (
     StageResult,
 )
 from job_source_agent.pipeline_status import derive_pipeline_status
+from job_source_agent.pipeline_application import discovery_result_from_context
 from job_source_agent.process_budget import RemoteProcessError
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
@@ -109,6 +111,16 @@ class LiveBatchEvalTests(unittest.TestCase):
         )
         fingerprint = execution_fingerprint(company.__dict__, settings.digest)
         store = FilesystemCheckpointStore(args.checkpoint_dir)
+        discovered_board = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://boards.greenhouse.io/checkpoint",
+                provider="greenhouse",
+                identifier="custom:boards.greenhouse.io",
+                replay_safe=True,
+            ),
+            detection_method="page_evidence",
+            evidence_url="https://boards.greenhouse.io/checkpoint",
+        )
         executions = {
             "linkedin_discovery": StageExecution(
                 StageResult(stage="linkedin_discovery", status="success"),
@@ -139,13 +151,14 @@ class LiveBatchEvalTests(unittest.TestCase):
                 updates={
                     "job_list_page_url": "https://boards.greenhouse.io/checkpoint",
                     "provider": "greenhouse",
+                    "discovered_job_board": discovered_board,
                 },
             ),
             "opening_match": StageExecution(
                 StageResult(stage="opening_match", status="success"),
                 updates={
                     "open_position_url": (
-                        "https://boards.greenhouse.io/checkpoint/jobs/should-not-leak"
+                        "https://boards.greenhouse.io/checkpoint/jobs/exact-opening"
                     )
                 },
             ),
@@ -158,7 +171,7 @@ class LiveBatchEvalTests(unittest.TestCase):
             store.save(fingerprint, executions[stage])
         return store, fingerprint
 
-    def test_hard_timeout_recovers_durable_s1_to_s5_checkpoint_prefix(self):
+    def test_hard_timeout_recovers_durable_s1_to_s6_with_auditable_events(self):
         company = CompanyInput(
             company_name="Checkpoint Labs",
             linkedin_company_url="https://www.linkedin.com/company/checkpoint-labs",
@@ -166,19 +179,32 @@ class LiveBatchEvalTests(unittest.TestCase):
         )
         with tempfile.TemporaryDirectory() as directory:
             args = self.pipeline_args(directory)
-            self.save_checkpoint_chain(company, args)
+            _, fingerprint = self.save_checkpoint_chain(
+                company,
+                args,
+                stages=PIPELINE_STAGES[:6],
+            )
+            recovered_contexts = []
 
-            recovered = _recover_checkpoint_prefix(company, args)
+            def capture_recovered_context(context, **kwargs):
+                recovered_contexts.append(context)
+                return discovery_result_from_context(context, **kwargs)
+
+            with patch(
+                "scripts.live_batch_eval.discovery_result_from_context",
+                side_effect=capture_recovered_context,
+            ):
+                recovered = _recover_checkpoint_prefix(company, args)
             result = failure_result(
                 company,
                 error="company_time_budget_exhausted",
-                detail="Opening match exceeded the company budget.",
+                detail="Validation exceeded the company budget.",
                 completed_result=recovered,
             )
 
         self.assertEqual(
             [stage.status for stage in result.stage_results],
-            ["success", "success", "success", "success", "success", "failed", "success"],
+            ["success", "success", "success", "success", "success", "success", "failed"],
         )
         self.assertEqual(result.company_website_url, "https://checkpoint.example")
         self.assertEqual(result.hiring_entity_name, "Checkpoint Labs")
@@ -189,10 +215,40 @@ class LiveBatchEvalTests(unittest.TestCase):
             "https://boards.greenhouse.io/checkpoint",
         )
         self.assertEqual(result.stage_results[4].provider, "greenhouse")
-        self.assertIsNone(result.open_position_url)
-        self.assertEqual(result.stage_results[5].reason_code, "COMPANY_TIME_BUDGET_EXHAUSTED")
+        self.assertEqual(
+            result.open_position_url,
+            "https://boards.greenhouse.io/checkpoint/jobs/exact-opening",
+        )
+        self.assertEqual(result.stage_results[6].reason_code, "COMPANY_TIME_BUDGET_EXHAUSTED")
         self.assertEqual(result.error_code, "COMPANY_TIME_BUDGET_EXHAUSTED")
         self.assertEqual(result.pipeline_status, "failed")
+        self.assertEqual(len(recovered_contexts), 1)
+        self.assertIsInstance(
+            recovered_contexts[0].discovered_job_board,
+            DiscoveredJobBoard,
+        )
+        self.assertEqual(
+            recovered_contexts[0].discovered_job_board.board.url,
+            result.job_list_page_url,
+        )
+        self.assertEqual(recovered_contexts[0].provider, "greenhouse")
+        events = result.trace["checkpoint_events"]
+        self.assertEqual(
+            [event["stage"] for event in events],
+            list(PIPELINE_STAGES[:6]),
+        )
+        self.assertTrue(
+            all(event["action"] == "parent_timeout_restore" for event in events)
+        )
+        self.assertTrue(
+            all(event["execution_fingerprint"] == fingerprint for event in events)
+        )
+        self.assertTrue(
+            all(
+                set(event) == {"action", "stage", "execution_fingerprint"}
+                for event in events
+            )
+        )
 
     def test_checkpoint_recovery_stops_at_corrupt_incompatible_or_missing_gap(self):
         cases = ("corrupt", "incompatible", "missing", "semantic")
@@ -254,7 +310,7 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual(recovered.pipeline_status, "success")
         self.assertEqual(
             recovered.open_position_url,
-            "https://boards.greenhouse.io/checkpoint/jobs/should-not-leak",
+            "https://boards.greenhouse.io/checkpoint/jobs/exact-opening",
         )
 
     def test_result_validation_timeout_is_consistently_failed(self):
