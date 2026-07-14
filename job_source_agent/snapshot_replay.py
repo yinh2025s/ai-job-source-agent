@@ -71,8 +71,9 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
 
     records, skipped_corrupt_tail = _read_records(index_path) if index_path.exists() else ([], 0)
     failure_records, skipped_failure_tail = _read_optional_records(failure_index_path)
-    selected_by_path: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
-    selected_by_request_path: dict[str, dict[str, Any]] = {}
+    page_records: list[tuple[dict[str, Any], list[dict[str, Any]]]] = []
+    observed_by_path: dict[str, dict[str, Any]] = {}
+    latest_sequence_by_request: dict[str, int] = {}
     duplicate_count = 0
     superseded_count = 0
     seen_sequences: set[int] = set()
@@ -81,25 +82,20 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         entry = _validate_record(source_root, record, line_number)
         _validate_unique_sequence(entry.get("sequence"), seen_sequences, "snapshot", line_number)
         artifacts = _validate_artifacts(source_root, record, line_number)
-        request_fixture_path = snapshot_path_for_url(
-            Path("sites"),
-            entry["request_urls"][0],
-            request_identity=entry.get("request_identity"),
-        ).as_posix()
-        if request_fixture_path != entry["fixture_path"]:
-            selected_by_request_path[request_fixture_path] = {
-                **entry,
-                "fixture_path": request_fixture_path,
-                "alias_of": entry["fixture_path"],
-            }
-        selected = selected_by_path.get(entry["fixture_path"])
-        if selected:
-            existing = selected[0]
+        existing = observed_by_path.get(entry["fixture_path"])
+        if existing:
             if existing["sha256"] != entry["sha256"]:
                 superseded_count += 1
             else:
                 duplicate_count += 1
-        selected_by_path[entry["fixture_path"]] = (entry, artifacts)
+        observed_by_path[entry["fixture_path"]] = entry
+        page_records.append((entry, artifacts))
+        if entry["sequence"] is not None:
+            identity_key = _request_identity_key(entry["request"])
+            latest_sequence_by_request[identity_key] = max(
+                entry["sequence"],
+                latest_sequence_by_request.get(identity_key, 0),
+            )
 
     failures = []
     privacy_exclusions = 0
@@ -111,11 +107,45 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
             "fetch failure",
             line_number,
         )
+        identity_key = _request_identity_key(failure_entry["request"])
+        latest_sequence_by_request[identity_key] = max(
+            failure_entry["sequence"],
+            latest_sequence_by_request.get(identity_key, 0),
+        )
         if not failure_entry["request"]["replayable"]:
             privacy_exclusions += 1
             continue
         failures.append(failure_entry)
+    page_records = [
+        (entry, artifacts)
+        for entry, artifacts in page_records
+        if entry["sequence"] is None
+        or entry["sequence"]
+        == latest_sequence_by_request[_request_identity_key(entry["request"])]
+    ]
+    failures = [
+        entry
+        for entry in failures
+        if entry["sequence"]
+        == latest_sequence_by_request[_request_identity_key(entry["request"])]
+    ]
     failures.sort(key=lambda item: item["sequence"])
+
+    selected_by_path: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
+    selected_by_request_path: dict[str, dict[str, Any]] = {}
+    for entry, artifacts in page_records:
+        request_fixture_path = snapshot_path_for_url(
+            Path("sites"),
+            entry["request_urls"][0],
+            request_identity=entry.get("request_identity"),
+        ).as_posix()
+        if request_fixture_path != entry["fixture_path"]:
+            selected_by_request_path[request_fixture_path] = {
+                **entry,
+                "fixture_path": request_fixture_path,
+                "alias_of": entry["fixture_path"],
+            }
+        selected_by_path[entry["fixture_path"]] = (entry, artifacts)
 
     selected_fixture_entries: dict[str, dict[str, Any]] = {}
     for entry in [selected[0] for selected in selected_by_path.values()] + list(
@@ -408,6 +438,10 @@ def _validate_unique_sequence(
     if sequence in seen:
         raise SnapshotReplayError(f"{label.title()} line {line_number}: duplicate sequence")
     seen.add(sequence)
+
+
+def _request_identity_key(request: dict[str, Any]) -> str:
+    return json.dumps(request, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
 
 
 def _validate_artifacts(

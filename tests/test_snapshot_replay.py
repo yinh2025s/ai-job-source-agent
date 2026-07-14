@@ -477,8 +477,51 @@ class SnapshotReplayTests(unittest.TestCase):
             root = Path(directory)
             snapshots = root / "snapshots"
             store = SnapshotStore(snapshots)
+            request_url = "https://company.example.com/careers"
+            final_url = "https://jobs.example.com/"
+            store.write_page(
+                Page(
+                    url=request_url,
+                    final_url=final_url,
+                    html="earlier success",
+                    source="live",
+                ),
+                request_url=request_url,
+            )
+            store.write_failure(
+                FetchError(
+                    "HTTP Error 403: Forbidden",
+                    status=403,
+                    reason_code="HTTP_FORBIDDEN",
+                    retryable=False,
+                ),
+                request_url,
+            )
+
+            result = replay_snapshots(snapshots, root / "replay")
+            fetcher = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True)
+
+            with self.assertRaises(FetchError) as raised:
+                fetcher.fetch(request_url)
+            with self.assertRaises(FetchError) as final_url_raised:
+                fetcher.fetch(final_url)
+            materialized_pages = list((root / "replay" / "sites").rglob("*.html"))
+
+        self.assertEqual(raised.exception.status, 403)
+        self.assertEqual(raised.exception.reason_code, "HTTP_FORBIDDEN")
+        self.assertFalse(raised.exception.retryable)
+        self.assertEqual(final_url_raised.exception.reason_code, "OFFLINE_FIXTURE_MISSING")
+        self.assertEqual(result.manifest["entries"], [])
+        self.assertEqual(result.summary["fixture_count"], 0)
+        self.assertEqual(result.summary["replayable_failures"], 1)
+        self.assertEqual(materialized_pages, [])
+
+    def test_later_page_replays_over_earlier_failure_for_same_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            store = SnapshotStore(snapshots)
             url = "https://jobs.example.com/"
-            store.write_page(Page(url=url, html="earlier success", source="live"))
             store.write_failure(
                 FetchError(
                     "HTTP Error 403: Forbidden",
@@ -488,16 +531,55 @@ class SnapshotReplayTests(unittest.TestCase):
                 ),
                 url,
             )
+            store.write_page(Page(url=url, html="later success", source="live"))
+
+            result = replay_snapshots(snapshots, root / "replay")
+            page = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True).fetch(url)
+
+        self.assertEqual(page.html, "later success")
+        self.assertEqual(result.manifest["failure_entries"], [])
+        self.assertEqual(result.summary["replayable_failures"], 0)
+
+    def test_terminal_outcomes_are_isolated_by_exact_request_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            store = SnapshotStore(snapshots)
+            url = "https://jobs.example.com/api"
+            headers = {"Content-Type": "application/json"}
+            successful_data = b'{"page": 1}'
+            failed_data = b'{"page": 2}'
+            store.write_page(
+                Page(url=url, html="identity one", source="live"),
+                data=successful_data,
+                headers=headers,
+            )
+            store.write_page(
+                Page(url=url, html="stale identity two", source="live"),
+                data=failed_data,
+                headers=headers,
+            )
+            store.write_failure(
+                FetchError(
+                    "HTTP Error 403: Forbidden",
+                    status=403,
+                    reason_code="HTTP_FORBIDDEN",
+                    retryable=False,
+                ),
+                url,
+                data=failed_data,
+                headers=headers,
+            )
 
             result = replay_snapshots(snapshots, root / "replay")
             fetcher = Fetcher(fixtures_dir=root / "replay" / "sites", offline=True)
-
+            page = fetcher.fetch(url, data=successful_data, headers=headers)
             with self.assertRaises(FetchError) as raised:
-                fetcher.fetch(url)
+                fetcher.fetch(url, data=failed_data, headers=headers)
 
-        self.assertEqual(raised.exception.status, 403)
+        self.assertEqual(page.html, "identity one")
         self.assertEqual(raised.exception.reason_code, "HTTP_FORBIDDEN")
-        self.assertFalse(raised.exception.retryable)
+        self.assertEqual(result.summary["fixture_count"], 1)
         self.assertEqual(result.summary["replayable_failures"], 1)
 
     def test_failure_only_snapshot_root_replays_without_page_index(self):
