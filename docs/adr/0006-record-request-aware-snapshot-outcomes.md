@@ -76,9 +76,12 @@ failure selection must be frozen before parallel implementation.
 3. `FetchError(message)` remains source-compatible and gains optional structured
    status, reason, retryability, and request identity. Retry logic consumes those
    fields when present and falls back to legacy message classification otherwise.
-4. Failure-focused replay selects the terminal failure for the requested live
-   outcome even when the same identity has an earlier success. Ordinary success
-   replay remains deterministic and does not silently substitute a failure.
+4. Schema-v2 page and failure records share one global sequence. Materialization
+   compares both outcome kinds by the complete request identity and publishes only
+   the highest-sequence terminal outcome: a later page supersedes an earlier
+   failure, and a later failure supersedes an earlier page, redirect alias, and
+   artifact. Legacy success records without sequence retain their compatibility
+   behavior and are never assigned a guessed order.
 5. Missing request signatures in legacy captures that contain conflicting bodies
    for one URL are reported as `unreplayable_request_signature`, not guessed from
    an arbitrary response. Privacy exclusions are likewise distinct from ordinary

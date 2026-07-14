@@ -24,3 +24,4 @@ NNNN-short-decision-title.md
 - [ADR-0010: Expose Cooperative Fetch Budget To Paginated Providers](0010-expose-cooperative-fetch-budget.md)
 - [ADR-0011: Bound Career Discovery Transport Calls](0011-bound-career-discovery-transport.md)
 - [ADR-0012: Checkpoint Verified Homepage Navigation Evidence](0012-checkpoint-homepage-navigation-evidence.md)
+- [ADR-0013: Retry Typed Batch Completions](0013-retry-typed-batch-completions.md)

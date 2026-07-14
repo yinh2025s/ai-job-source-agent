@@ -10,7 +10,7 @@ from .source_posting import source_posting_fingerprint_payload
 
 
 CHECKPOINT_SCHEMA_VERSION = "1.4"
-ADAPTER_VERSION = "2026-07-14.76"
+ADAPTER_VERSION = "2026-07-14.77"
 
 FINGERPRINT_FIELDS = (
     "company_name",
