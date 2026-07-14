@@ -24,6 +24,7 @@ class OpeningDiscoveryIncompleteTests(unittest.TestCase):
                 "provider_api": {
                     "inventory": {
                         "status": "verified",
+                        "complete": True,
                         "candidate_count": 7,
                         "strongest_title_score": 20,
                     }
@@ -40,6 +41,7 @@ class OpeningDiscoveryIncompleteTests(unittest.TestCase):
                 "provider_api": {
                     "inventory": {
                         "status": "verified_empty",
+                        "complete": True,
                         "candidate_count": 0,
                     }
                 }
@@ -79,6 +81,7 @@ class OpeningDiscoveryIncompleteTests(unittest.TestCase):
                         "provider_api": {
                             "inventory": {
                                 "status": "verified",
+                                "complete": True,
                                 "candidate_count": 4,
                             }
                         }

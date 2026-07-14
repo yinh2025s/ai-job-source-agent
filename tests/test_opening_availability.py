@@ -11,6 +11,7 @@ class OpeningAvailabilityTests(unittest.TestCase):
                     "inventory": {
                         "source": "native_adapter",
                         "status": "verified",
+                        "complete": True,
                         "candidate_count": 12,
                         "strongest_title_score": 30,
                     }
@@ -29,6 +30,7 @@ class OpeningAvailabilityTests(unittest.TestCase):
                     "inventory": {
                         "source": "provider_api",
                         "status": "verified_empty",
+                        "complete": True,
                         "candidate_count": 0,
                     }
                 }
@@ -46,6 +48,7 @@ class OpeningAvailabilityTests(unittest.TestCase):
                         "source": "native_adapter",
                         "status": "verified_filtered_empty",
                         "scope": "title_filtered",
+                        "complete": True,
                         "candidate_count": 0,
                         "strongest_title_score": 0,
                     }
@@ -56,6 +59,53 @@ class OpeningAvailabilityTests(unittest.TestCase):
         self.assertEqual(diagnostic.disposition, "verified_inventory_no_match")
         self.assertEqual(diagnostic.reason_code, "OPENING_NOT_FOUND")
         self.assertEqual(diagnostic.evidence["inventory_scope"], "title_filtered")
+
+    def test_verified_status_without_complete_inventory_remains_inconclusive(self):
+        inventory_cases = (
+            ("verified", 12),
+            ("verified_filtered_empty", 0),
+            ("verified_empty", 0),
+        )
+
+        for status, candidate_count in inventory_cases:
+            for complete in (None, False, 1):
+                with self.subTest(status=status, complete=complete):
+                    inventory = {
+                        "source": "native_adapter",
+                        "status": status,
+                        "candidate_count": candidate_count,
+                    }
+                    if complete is not None:
+                        inventory["complete"] = complete
+
+                    diagnostic = diagnose_opening_availability(
+                        {"provider_api": {"inventory": inventory}}
+                    )
+
+                    self.assertEqual(diagnostic.disposition, "discovery_incomplete")
+                    self.assertEqual(
+                        diagnostic.reason_code,
+                        "OPENING_DISCOVERY_INCOMPLETE",
+                    )
+                    self.assertEqual(diagnostic.confidence, "low")
+
+    def test_incomplete_verified_inventory_preserves_typed_provider_reason(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "inventory": {
+                        "source": "native_adapter",
+                        "status": "verified_empty",
+                        "complete": False,
+                        "candidate_count": 0,
+                        "reason_code": "FETCH_BUDGET_EXHAUSTED",
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "discovery_incomplete")
+        self.assertEqual(diagnostic.reason_code, "FETCH_BUDGET_EXHAUSTED")
 
     def test_provider_failure_remains_inconclusive(self):
         diagnostic = diagnose_opening_availability(
@@ -214,6 +264,7 @@ class OpeningAvailabilityTests(unittest.TestCase):
                     "inventory": {
                         "source": "provider_api",
                         "status": "verified",
+                        "complete": True,
                         "candidate_count": 20,
                         "strongest_title_score": 30,
                     },

@@ -75,6 +75,7 @@ def diagnose_opening_availability(
     inventory = provider_api.get("inventory") if isinstance(provider_api, dict) else None
     if (
         isinstance(inventory, dict)
+        and inventory.get("complete") is True
         and (
             (
                 inventory.get("status") == "verified"
@@ -98,7 +99,11 @@ def diagnose_opening_availability(
             },
         )
 
-    if isinstance(inventory, dict) and inventory.get("status") == "verified_empty":
+    if (
+        isinstance(inventory, dict)
+        and inventory.get("complete") is True
+        and inventory.get("status") == "verified_empty"
+    ):
         return OpeningAvailabilityDiagnostic(
             disposition="verified_inventory_empty",
             confidence="medium",
