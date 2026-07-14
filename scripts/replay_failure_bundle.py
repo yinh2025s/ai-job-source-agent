@@ -1082,32 +1082,59 @@ def _build_outcome_gate(
             failure_stage=None,
             include_identity=True,
         )
+        original_identity = _identity_comparison(source_record)
+        replay_identity = _identity_comparison(replay_result, replay_trace)
+        identity_comparison = (
+            "available"
+            if original_identity is not None and replay_identity is not None
+            else "unavailable"
+        )
+        identity_matches = (
+            identity_comparison == "unavailable"
+            or original_identity == replay_identity
+        )
+        identity_system_gap = _is_identity_system_gap(
+            original,
+            original_identity,
+        )
+        expected_transition_valid = _expected_transition_contract_matches(
+            expected_transition,
+            original,
+            replayed_expected,
+            original_identity,
+            replay_identity,
+            identity_comparison,
+        )
         source_identity_prefix = _successful_identity_prefix(source_record)
         successful_outcome_reproduced = bool(
             source_record is not None
             and original is not None
             and original.get("pipeline_status") == "success"
-            and original == replayed_original
+            and _outcomes_match(original, replayed_original)
         )
         if expected_record_id is not None and actual_record_id != expected_record_id:
             classification = "mismatch"
             reason = "record_identity_changed"
+        elif identity_system_gap and _has_reason_code(replay_result, "OPENING_NOT_FOUND"):
+            classification = "mismatch"
+            reason = "identity_system_gap_degraded"
         elif successful_outcome_reproduced:
-            classification = "reproduced"
-            reason = "outcome_equal"
+            classification = "reproduced" if identity_matches else "mismatch"
+            reason = "outcome_equal" if identity_matches else "identity_outcome_changed"
         elif _contains_reason_code(
             (replay_result, replay_trace),
             "OFFLINE_FIXTURE_MISSING",
         ):
             classification = "fixture_gap"
             reason = "offline_fixture_missing"
-        elif original == replayed_original and original is not None:
-            classification = "reproduced"
-            reason = "outcome_equal"
+        elif _outcomes_match(original, replayed_original):
+            classification = "reproduced" if identity_matches else "mismatch"
+            reason = "outcome_equal" if identity_matches else "identity_outcome_changed"
         elif (
             expected_transition is not None
-            and expected_transition == replayed_expected
+            and _outcomes_match(_transition_outcome(expected_transition), replayed_expected)
             and _identity_prefix_matches(source_record, replay_result)
+            and expected_transition_valid
         ):
             classification = "expected_transition"
             reason = "declared_transition_equal"
@@ -1150,6 +1177,9 @@ def _build_outcome_gate(
                     else replayed_original
                 ),
                 "source_identity_prefix": source_identity_prefix,
+                "identity_comparison": identity_comparison,
+                "original_identity": original_identity,
+                "replay_identity": replay_identity,
             }
         )
 
@@ -1206,10 +1236,14 @@ def _expected_transition(record: dict | None) -> dict | None:
     )
     if not isinstance(transition, dict):
         return None
-    return {
+    outcome = {
         "pipeline_status": _optional_string(transition.get("pipeline_status")),
         "failure_stage": _stage_outcome(transition.get("failure_stage")),
     }
+    for field in ("old_disposition", "new_disposition", "identity_expectation"):
+        if field in transition:
+            outcome[field] = _normalize_terminal_value(transition.get(field))
+    return outcome
 
 
 def _outcome_stage_name(outcome: dict | None) -> str | None:
@@ -1217,6 +1251,28 @@ def _outcome_stage_name(outcome: dict | None) -> str | None:
     if not isinstance(failure_stage, dict):
         return None
     return _optional_string(failure_stage.get("stage"))
+
+
+def _transition_outcome(transition: dict) -> dict:
+    return {
+        "pipeline_status": transition.get("pipeline_status"),
+        "failure_stage": transition.get("failure_stage"),
+    }
+
+
+def _outcomes_match(expected: dict | None, actual: dict | None) -> bool:
+    if not isinstance(expected, dict) or not isinstance(actual, dict):
+        return False
+    if (
+        expected.get("pipeline_status") != actual.get("pipeline_status")
+        or expected.get("failure_stage") != actual.get("failure_stage")
+    ):
+        return False
+    return all(
+        actual.get(field) == expected[field]
+        for field in ("terminal_semantic", "terminal_disposition", "result_identity")
+        if field in expected
+    )
 
 
 def _source_outcome(
@@ -1232,6 +1288,7 @@ def _source_outcome(
     }
     if include_identity:
         outcome["result_identity"] = _result_identity(record)
+    outcome.update(_terminal_outcome_fields(record))
     return outcome
 
 
@@ -1267,7 +1324,186 @@ def _result_outcome(
     }
     if include_identity:
         outcome["result_identity"] = _result_identity(record)
+    outcome.update(_terminal_outcome_fields(record))
     return outcome
+
+
+def _terminal_outcome_fields(record: dict) -> dict:
+    fields: dict[str, object] = {}
+    trace = record.get("trace")
+    trace = trace if isinstance(trace, dict) else {}
+    terminal = trace.get("terminal")
+    terminal = terminal if isinstance(terminal, dict) else {}
+    for target, names in (
+        ("terminal_semantic", ("terminal_semantic", "semantic")),
+        ("terminal_disposition", ("terminal_disposition", "disposition")),
+    ):
+        value = next(
+            (
+                candidate
+                for candidate in (
+                    _first_present_value(record, names),
+                    _first_present_value(trace, names),
+                    _first_present_value(terminal, names),
+                )
+                if candidate is not None
+            ),
+            None,
+        )
+        if value is not None:
+            fields[target] = _normalize_terminal_value(value)
+    return fields
+
+
+def _expected_transition_contract_matches(
+    expected: dict | None,
+    original: dict | None,
+    replayed: dict | None,
+    original_identity: dict | None,
+    replay_identity: dict | None,
+    identity_comparison: str,
+) -> bool:
+    if expected is None:
+        return False
+    if identity_comparison == "unavailable":
+        return True
+    required = {"old_disposition", "new_disposition", "identity_expectation"}
+    if not required.issubset(expected):
+        return False
+    if _terminal_disposition(original) != expected["old_disposition"]:
+        return False
+    if _terminal_disposition(replayed) != expected["new_disposition"]:
+        return False
+    expectation = expected["identity_expectation"]
+    if expectation in {"same", "reproduce"}:
+        return original_identity == replay_identity
+    if isinstance(expectation, dict):
+        return replay_identity == _normalize_identity_contract(expectation)
+    return False
+
+
+def _terminal_disposition(outcome: dict | None) -> object:
+    if not isinstance(outcome, dict):
+        return None
+    return outcome.get("terminal_disposition", outcome.get("terminal_semantic"))
+
+
+def _identity_comparison(*records: dict | None) -> dict | None:
+    for record in records:
+        for candidate in _identity_candidates(record):
+            normalized = _normalize_identity_contract(candidate)
+            if normalized is not None:
+                return normalized
+    return None
+
+
+def _identity_candidates(record: dict | None) -> list[dict]:
+    if not isinstance(record, dict):
+        return []
+    trace = record.get("trace")
+    trace = trace if isinstance(trace, dict) else {}
+    stages = trace.get("stages")
+    validation = stages.get("result_validation") if isinstance(stages, dict) else None
+    candidates = [
+        record,
+        record.get("identity"),
+        trace,
+        trace.get("identity"),
+        validation,
+    ]
+    return [candidate for candidate in candidates if isinstance(candidate, dict)]
+
+
+def _normalize_identity_contract(value: object) -> dict | None:
+    if not isinstance(value, dict):
+        return None
+    verdict = _first_present_value(value, ("identity_verdict", "verdict"))
+    failure_codes = _first_present_value(
+        value,
+        ("identity_failure_codes", "failure_codes", "identity_failures"),
+    )
+    chain = _first_present_value(
+        value,
+        (
+            "normalized_identity_chain",
+            "identity_chain",
+            "normalized_chain",
+            "chain",
+        ),
+    )
+    conflicts = _first_present_value(
+        value,
+        ("conflicting_fields", "identity_conflicting_fields"),
+    )
+    if verdict is None and failure_codes is None and chain is None and conflicts is None:
+        return None
+    return {
+        "verdict": _normalize_terminal_value(verdict),
+        "failure_codes": _normalized_failure_codes(failure_codes),
+        "conflicting_fields": _normalized_conflicting_fields(conflicts),
+        "normalized_chain": _normalize_identity_value(chain),
+    }
+
+
+def _is_identity_system_gap(outcome: dict | None, identity: dict | None) -> bool:
+    if not isinstance(identity, dict):
+        return False
+    disposition = _terminal_disposition(outcome)
+    return (
+        disposition == "system_gap"
+        or identity.get("verdict") == "system_gap"
+        or "RESULT_IDENTITY_MISMATCH" in identity.get("failure_codes", [])
+    )
+
+
+def _first_present_value(value: dict, names: tuple[str, ...]) -> object:
+    for name in names:
+        if name in value and value[name] is not None:
+            return value[name]
+    return None
+
+
+def _normalized_failure_codes(value: object) -> list[str]:
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    return sorted(
+        {
+            item.strip().upper()
+            for item in values
+            if isinstance(item, str) and item.strip()
+        }
+    )
+
+
+def _normalized_conflicting_fields(value: object) -> list[str]:
+    values = value if isinstance(value, (list, tuple, set)) else [value]
+    return sorted(
+        {
+            " ".join(item.split()).casefold()
+            for item in values
+            if isinstance(item, str) and item.strip()
+        }
+    )
+
+
+def _normalize_identity_value(value: object, *, key: str | None = None) -> object:
+    if isinstance(value, dict):
+        return {
+            str(name): _normalize_identity_value(item, key=str(name))
+            for name, item in sorted(value.items())
+        }
+    if isinstance(value, (list, tuple)):
+        return [_normalize_identity_value(item, key=key) for item in value]
+    if isinstance(value, str):
+        if key and "url" in key.casefold():
+            return _canonical_public_url(value) or " ".join(value.split())
+        return " ".join(value.split()).casefold()
+    return value
+
+
+def _normalize_terminal_value(value: object) -> object:
+    if isinstance(value, str):
+        return " ".join(value.split()).casefold()
+    return _normalize_identity_value(value)
 
 
 def _first_non_success_result_stage(record: dict) -> dict | None:
