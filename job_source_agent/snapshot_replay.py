@@ -57,15 +57,20 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
         raise SnapshotReplayError("Replay output must not be a symbolic link")
     destination_root = destination_path.resolve()
     index_path = source_root / "snapshots.jsonl"
-    if not index_path.is_file() or index_path.is_symlink():
+    failure_index_path = source_root / "fetch-failures.jsonl"
+    if index_path.is_symlink() or (index_path.exists() and not index_path.is_file()):
         raise SnapshotReplayError(f"Snapshot index is missing or unsafe: {index_path}")
+    if failure_index_path.is_symlink() or (
+        failure_index_path.exists() and not failure_index_path.is_file()
+    ):
+        raise SnapshotReplayError(f"Snapshot failure index is unsafe: {failure_index_path}")
+    if not index_path.exists() and not failure_index_path.exists():
+        raise SnapshotReplayError("Snapshot page and failure indexes are both missing")
     if destination_root == source_root or _is_within(destination_root, source_root):
         raise SnapshotReplayError("Replay output must not be the snapshot directory or one of its children")
 
-    records, skipped_corrupt_tail = _read_records(index_path)
-    failure_records, skipped_failure_tail = _read_optional_records(
-        source_root / "fetch-failures.jsonl"
-    )
+    records, skipped_corrupt_tail = _read_records(index_path) if index_path.exists() else ([], 0)
+    failure_records, skipped_failure_tail = _read_optional_records(failure_index_path)
     selected_by_path: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     selected_by_request_path: dict[str, dict[str, Any]] = {}
     duplicate_count = 0
@@ -94,8 +99,6 @@ def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> Replay
                 superseded_count += 1
             else:
                 duplicate_count += 1
-            entry["request_urls"] = sorted(set(existing["request_urls"] + entry["request_urls"]))
-            entry["page_urls"] = sorted(set(existing["page_urls"] + entry["page_urls"]))
         selected_by_path[entry["fixture_path"]] = (entry, artifacts)
 
     failures = []
@@ -504,6 +507,7 @@ def _materialize(
     artifacts: list[dict[str, Any]],
 ) -> None:
     destination_root.mkdir(parents=True, exist_ok=True)
+    (destination_root / "sites").mkdir()
     for entry in entries:
         source = entry["source_path"]
         destination = destination_root / entry["fixture_path"]

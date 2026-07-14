@@ -7,7 +7,7 @@ from pathlib import Path
 
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
-from job_source_agent.web import FetchError, Fetcher, Page
+from job_source_agent.web import FetchError, Fetcher, Page, fixture_path_candidates
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -70,8 +70,95 @@ class SnapshotReplayTests(unittest.TestCase):
             )
 
         self.assertEqual(request_page.html, '<input id="token" value="[REDACTED]">')
+        self.assertEqual(request_page.url, "https://jobs.example.com/careers")
+        self.assertEqual(
+            request_page.final_url,
+            "https://jobs.example.com/candidate/?token=%5BREDACTED%5D",
+        )
         self.assertEqual(final_page.html, request_page.html)
         self.assertEqual(result.summary["fixture_count"], 2)
+
+    def test_cross_host_redirect_preserves_verified_response_identity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            request_url = "https://www.airbnb.example/careers"
+            final_url = "https://careers.airbnb.example/"
+            SnapshotStore(snapshots).write_page(
+                Page(
+                    url=request_url,
+                    final_url=final_url,
+                    html="<html>Airbnb careers</html>",
+                    source="live",
+                ),
+                request_url=request_url,
+            )
+
+            replay_snapshots(snapshots, output)
+            page = Fetcher(fixtures_dir=output / "sites", offline=True).fetch(request_url)
+
+        self.assertEqual(page.url, request_url)
+        self.assertEqual(page.final_url, final_url)
+        self.assertEqual(page.html, "<html>Airbnb careers</html>")
+
+    def test_legacy_get_and_post_fixtures_remain_compatible_without_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fixtures = Path(directory) / "sites"
+            url = "https://jobs.example.com/api"
+            legacy_path = fixture_path_candidates(fixtures, url)[-1]
+            legacy_path.parent.mkdir(parents=True)
+            legacy_path.write_text("legacy response", encoding="utf-8")
+            fetcher = Fetcher(fixtures_dir=fixtures, offline=True)
+
+            get_page = fetcher.fetch(url)
+            post_page = fetcher.fetch(
+                url,
+                data=b'{"page": 2}',
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(get_page.html, "legacy response")
+        self.assertEqual(post_page.html, "legacy response")
+        self.assertEqual(post_page.final_url, url)
+
+    def test_fixture_fetcher_rejects_unsafe_replay_response_metadata(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            self._write_snapshot(snapshots)
+            replay_snapshots(snapshots, output)
+            manifest_path = output / "replay-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            manifest["entries"][0]["final_url"] = "file:///private/secret"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaises(FetchError) as raised:
+                Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                    "https://jobs.example.com/search"
+                )
+
+        self.assertEqual(raised.exception.reason_code, "OFFLINE_FIXTURE_MISSING")
+        self.assertIn("Invalid offline replay manifest", str(raised.exception))
+
+    def test_fixture_fetcher_rejects_manifest_body_metadata_mismatch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            self._write_snapshot(snapshots)
+            replay_snapshots(snapshots, output)
+            manifest_path = output / "replay-manifest.json"
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            for entry in manifest["entries"]:
+                entry["byte_count"] += 1
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+
+            with self.assertRaises(FetchError):
+                Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                    "https://jobs.example.com/search?token=secret"
+                )
 
     def test_redirect_alias_keeps_its_blob_when_final_url_is_recaptured(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -245,6 +332,47 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(raised.exception.reason_code, "HTTP_FORBIDDEN")
         self.assertFalse(raised.exception.retryable)
         self.assertEqual(result.summary["replayable_failures"], 1)
+
+    def test_failure_only_snapshot_root_replays_without_page_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            url = "https://jobs.example.com/api"
+            SnapshotStore(snapshots).write_failure(
+                FetchError(
+                    "HTTP Error 403: Forbidden",
+                    status=403,
+                    reason_code="HTTP_FORBIDDEN",
+                    retryable=False,
+                ),
+                url,
+            )
+            self.assertFalse((snapshots / "snapshots.jsonl").exists())
+
+            result = replay_snapshots(snapshots, output)
+            fetcher = Fetcher(fixtures_dir=output / "sites", offline=True)
+
+            with self.assertRaises(FetchError) as raised:
+                fetcher.fetch(url)
+            sites_materialized = (output / "sites").is_dir()
+
+        self.assertEqual(result.summary["snapshot_records"], 0)
+        self.assertEqual(result.summary["fixture_count"], 0)
+        self.assertEqual(result.summary["replayable_failures"], 1)
+        self.assertEqual(result.manifest["entries"], [])
+        self.assertTrue(sites_materialized)
+        self.assertEqual(raised.exception.status, 403)
+        self.assertEqual(raised.exception.reason_code, "HTTP_FORBIDDEN")
+
+    def test_replay_rejects_root_without_page_or_failure_index(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            snapshots.mkdir()
+
+            with self.assertRaisesRegex(SnapshotReplayError, "both missing"):
+                replay_snapshots(snapshots, root / "replay")
 
     def test_rejects_unknown_snapshot_schema_version(self):
         with tempfile.TemporaryDirectory() as directory:

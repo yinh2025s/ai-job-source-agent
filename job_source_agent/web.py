@@ -345,10 +345,16 @@ class Fetcher:
             )
         fixture_path = self._fixture_path_for(normalized, identity=identity)
         if fixture_path and fixture_path.exists():
+            response_identity = self._fixture_response_identity(fixture_path, identity)
+            if response_identity is not None:
+                page_url, final_url = response_identity
+            else:
+                page_url = normalized
+                final_url = normalized
             return Page(
-                url=normalized,
+                url=page_url,
                 html=fixture_path.read_text(encoding="utf-8"),
-                final_url=normalized,
+                final_url=final_url,
                 source=str(fixture_path),
             )
         if self.offline:
@@ -445,6 +451,66 @@ class Fetcher:
             if alternate.exists():
                 return alternate
         return candidates[0]
+
+    def _fixture_response_identity(
+        self,
+        fixture_path: Path,
+        identity: RequestIdentity,
+    ) -> tuple[str, str] | None:
+        if not self.fixtures_dir:
+            return None
+        manifest_path = self.fixtures_dir.parent / "replay-manifest.json"
+        if manifest_path.is_symlink():
+            raise _invalid_replay_manifest()
+        if not manifest_path.exists():
+            return None
+        if not manifest_path.is_file():
+            raise _invalid_replay_manifest()
+        try:
+            payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            raise _invalid_replay_manifest()
+        if (
+            not isinstance(payload, dict)
+            or payload.get("schema_version") != 2
+            or payload.get("fixtures_dir") != "sites"
+        ):
+            raise _invalid_replay_manifest()
+        entries = payload.get("entries")
+        if not isinstance(entries, list):
+            raise _invalid_replay_manifest()
+
+        selected_relative_path = _relative_replay_fixture_path(
+            fixture_path,
+            self.fixtures_dir.parent,
+        )
+        expected_request = identity.as_dict()
+        matching_entries = []
+        for entry in entries:
+            request = _validated_replay_manifest_entry(entry)
+            if entry["fixture_path"] != selected_relative_path:
+                continue
+            if request == expected_request:
+                matching_entries.append(entry)
+
+        if len(matching_entries) > 1:
+            raise _invalid_replay_manifest()
+        if not matching_entries:
+            return None
+
+        entry = matching_entries[0]
+        page_urls = entry["page_urls"]
+        if len(page_urls) != 1 or identity.sanitized_url not in entry["request_urls"]:
+            raise _invalid_replay_manifest()
+        if fixture_path.is_symlink() or not fixture_path.is_file():
+            raise _invalid_replay_manifest()
+        try:
+            body = fixture_path.read_bytes()
+        except OSError:
+            raise _invalid_replay_manifest()
+        if len(body) != entry["byte_count"] or hashlib.sha256(body).hexdigest() != entry["sha256"]:
+            raise _invalid_replay_manifest()
+        return page_urls[0], entry["final_url"]
 
     def _failure_for(self, identity: RequestIdentity) -> dict | None:
         if not self.fixtures_dir:
@@ -554,6 +620,108 @@ def _invalid_failure_fixture() -> FetchError:
         "Invalid offline fetch failure manifest",
         reason_code="OFFLINE_FIXTURE_MISSING",
         retryable=False,
+    )
+
+
+def _invalid_replay_manifest() -> FetchError:
+    return FetchError(
+        "Invalid offline replay manifest",
+        reason_code="OFFLINE_FIXTURE_MISSING",
+        retryable=False,
+    )
+
+
+def _relative_replay_fixture_path(fixture_path: Path, replay_root: Path) -> str:
+    try:
+        relative = fixture_path.resolve().relative_to(replay_root.resolve())
+    except ValueError:
+        raise _invalid_replay_manifest()
+    if not relative.parts or relative.parts[0] != "sites":
+        raise _invalid_replay_manifest()
+    return relative.as_posix()
+
+
+def _validated_replay_manifest_entry(entry: object) -> dict | None:
+    if not isinstance(entry, dict):
+        raise _invalid_replay_manifest()
+    fixture_path = entry.get("fixture_path")
+    path = Path(fixture_path) if isinstance(fixture_path, str) else None
+    if (
+        path is None
+        or path.is_absolute()
+        or not path.parts
+        or path.parts[0] != "sites"
+        or ".." in path.parts
+    ):
+        raise _invalid_replay_manifest()
+    alias_of = entry.get("alias_of")
+    if alias_of is not None:
+        alias_path = Path(alias_of) if isinstance(alias_of, str) else None
+        if (
+            alias_path is None
+            or alias_path.is_absolute()
+            or not alias_path.parts
+            or alias_path.parts[0] != "sites"
+            or ".." in alias_path.parts
+        ):
+            raise _invalid_replay_manifest()
+
+    request_urls = _validated_replay_urls(entry.get("request_urls"))
+    _validated_replay_urls(entry.get("page_urls"))
+    final_url = entry.get("final_url")
+    if not _is_safe_replay_url(final_url):
+        raise _invalid_replay_manifest()
+    digest = entry.get("sha256")
+    byte_count = entry.get("byte_count")
+    if not isinstance(digest, str) or not re.fullmatch(r"[0-9a-f]{64}", digest):
+        raise _invalid_replay_manifest()
+    if type(byte_count) is not int or byte_count < 0:
+        raise _invalid_replay_manifest()
+
+    request_payload = entry.get("request")
+    if request_payload is None:
+        if entry.get("sequence") is not None:
+            raise _invalid_replay_manifest()
+        return None
+    try:
+        request = request_identity_from_dict(request_payload)
+    except ValueError:
+        raise _invalid_replay_manifest()
+    if (
+        not request.replayable
+        or request.sanitized_url not in request_urls
+        or type(entry.get("sequence")) is not int
+        or entry["sequence"] <= 0
+    ):
+        raise _invalid_replay_manifest()
+    return request.as_dict()
+
+
+def _validated_replay_urls(value: object) -> list[str]:
+    if (
+        not isinstance(value, list)
+        or not value
+        or any(not _is_safe_replay_url(url) for url in value)
+        or len(set(value)) != len(value)
+    ):
+        raise _invalid_replay_manifest()
+    return value
+
+
+def _is_safe_replay_url(value: object) -> bool:
+    if not isinstance(value, str) or not value or sanitize_request_url(value) != value:
+        return False
+    try:
+        parsed = urlparse(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (
+        parsed.scheme in {"http", "https"}
+        and bool(parsed.netloc)
+        and parsed.username is None
+        and parsed.password is None
+        and (port is None or 1 <= port <= 65535)
     )
 
 
