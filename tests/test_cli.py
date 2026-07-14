@@ -38,7 +38,11 @@ class CliTests(unittest.TestCase):
             traces = json.loads(trace.read_text(encoding="utf-8"))
 
         self.assertEqual(len(results), 2)
-        self.assertTrue(all(result["status"] == "success" for result in results))
+        self.assertEqual(
+            [result["status"] for result in results],
+            ["success", "partial"],
+        )
+        self.assertEqual(results[1]["identity_assertion"]["verdict"], "rejected")
         self.assertTrue(all(len(result["stages"]) == 7 for result in results))
         self.assertTrue(all("stages" in record["trace"] for record in traces))
 

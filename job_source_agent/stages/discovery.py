@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+import re
 from typing import Protocol
 from urllib.parse import urlsplit
 
@@ -17,10 +18,11 @@ from ..models import (
 )
 from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
-from ..reasons import canonical_reason_code, classify_fetch_error, make_stage_result
+from ..reasons import canonical_reason_code, make_stage_result
 from ..result_identity import canonicalize_identity_url, tenant_locator
 from ..source_posting import trusted_linkedin_native_posting
 from ..web import FetchError, normalize_url
+from ..fetch_failure import project_fetch_error
 
 
 class CareerDiscoveryService(Protocol):
@@ -151,7 +153,14 @@ class CareerDiscoveryStage:
                     else None
                 )
         except FetchError as exc:
-            return _failed_execution(self.name, classify_fetch_error(str(exc)), started, str(exc))
+            failure = project_fetch_error(exc)
+            return _failed_execution(
+                self.name,
+                failure["reason_code"],
+                started,
+                str(exc),
+                trace={"fetch_failure": failure},
+            )
         except DiscoveryError as exc:
             return _failed_execution(
                 self.name,
@@ -240,12 +249,22 @@ class JobBoardDiscoveryStage:
                 )
                 discovered_board = None
         except FetchError as exc:
+            failure = project_fetch_error(exc)
             if context.company.external_apply_url:
                 return self._from_external_apply(
                     context,
-                    fallback_trace={"career_job_board_error": str(exc)},
+                    fallback_trace={
+                        "career_job_board_error": str(exc),
+                        "career_job_board_failure": failure,
+                    },
                 )
-            return _failed_execution(self.name, classify_fetch_error(str(exc)), started, str(exc))
+            return _failed_execution(
+                self.name,
+                failure["reason_code"],
+                started,
+                str(exc),
+                trace={"fetch_failure": failure},
+            )
         except DiscoveryError as exc:
             if context.company.external_apply_url:
                 return self._from_external_apply(
@@ -493,7 +512,14 @@ class OpeningMatchStage:
                     context.company.job_location,
                 )
         except FetchError as exc:
-            return _failed_execution(self.name, classify_fetch_error(str(exc)), started, str(exc))
+            failure = project_fetch_error(exc)
+            return _failed_execution(
+                self.name,
+                failure["reason_code"],
+                started,
+                str(exc),
+                trace={"fetch_failure": failure},
+            )
         except DiscoveryError as exc:
             return _failed_execution(
                 self.name,
@@ -599,7 +625,8 @@ class OpeningMatchStage:
                         context.company.job_location,
                     )
             except FetchError as exc:
-                reason_code = classify_fetch_error(str(exc))
+                failure = project_fetch_error(exc)
+                reason_code = failure["reason_code"]
                 attempts.append(
                     {
                         "position": position,
@@ -607,6 +634,7 @@ class OpeningMatchStage:
                         "board_url": board.url,
                         "status": "incomplete",
                         "reason_code": reason_code,
+                        "fetch_failure": failure,
                     }
                 )
                 diagnostics.append((reason_code, None))
@@ -908,10 +936,9 @@ def _authorize_provider_board(
         return False, "linked_url_only"
     if context.career_root_url and _same_url(context.career_root_url, canonical_board):
         return True, "identity_career_root"
-    entity_key = _identity_key(hiring.hiring_entity_name)
-    if entity_key and entity_key in _identity_key(tenant):
+    if _identity_aliases(hiring.hiring_entity_name) & _identity_aliases(tenant):
         return True, "tenant_name_match"
-    if provider == "generic" and context.career_page_url and _same_host(
+    if provider == "generic" and context.career_page_url and _same_site(
         context.career_page_url, canonical_board
     ):
         return True, "first_party_same_site"
@@ -928,7 +955,7 @@ def _opening_identity(
         return None
     canonical_opening = canonicalize_identity_url(opening_url)
     if provider_identity.provider == "generic":
-        if not _same_host(provider_identity.canonical_board_url, canonical_opening):
+        if not _same_site(provider_identity.canonical_board_url, canonical_opening):
             return None
         return OpeningIdentity(
             hiring_entity_name=provider_identity.hiring_entity_name,
@@ -939,20 +966,25 @@ def _opening_identity(
         )
     adapter = registry.adapter_named(provider_identity.provider)
     board = adapter.identify_board(opening_url) if adapter is not None else None
-    if board is None or board.provider != provider_identity.provider:
-        return None
-    canonical_board = canonicalize_identity_url(board.url)
-    tenant = board.identifier or tenant_locator(canonical_board)
-    if (
-        tenant != provider_identity.tenant
-        or canonical_board != provider_identity.canonical_board_url
-    ):
-        return None
+    if board is None:
+        if not _same_site(provider_identity.canonical_board_url, canonical_opening):
+            return None
+        tenant = provider_identity.tenant
+    else:
+        if board.provider != provider_identity.provider:
+            return None
+        canonical_board = canonicalize_identity_url(board.url)
+        tenant = board.identifier or tenant_locator(canonical_board)
+        if tenant != provider_identity.tenant and not (
+            _identity_aliases(tenant) & _identity_aliases(provider_identity.tenant)
+        ):
+            return None
+        tenant = provider_identity.tenant
     return OpeningIdentity(
         hiring_entity_name=provider_identity.hiring_entity_name,
-        provider=board.provider,
+        provider=provider_identity.provider,
         tenant=tenant,
-        canonical_board_url=canonical_board,
+        canonical_board_url=provider_identity.canonical_board_url,
         canonical_opening_url=canonical_opening,
     )
 
@@ -973,14 +1005,49 @@ def _same_url(left: str, right: str) -> bool:
         return False
 
 
-def _same_host(left: str, right: str) -> bool:
+def _same_site(left: str, right: str) -> bool:
     try:
-        return urlsplit(canonicalize_identity_url(left)).hostname == urlsplit(
-            canonicalize_identity_url(right)
-        ).hostname
+        left_host = urlsplit(canonicalize_identity_url(left)).hostname or ""
+        right_host = urlsplit(canonicalize_identity_url(right)).hostname or ""
+        return _site_key(left_host) == _site_key(right_host)
     except ValueError:
         return False
 
 
-def _identity_key(value: str) -> str:
-    return "".join(character.casefold() for character in value if character.isalnum())
+def _identity_aliases(value: str) -> set[str]:
+    ignored = {
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "group",
+        "holdings",
+        "inc",
+        "incorporated",
+        "limited",
+        "llc",
+        "ltd",
+        "plc",
+        "the",
+    }
+    raw_tokens = re.findall(r"[a-z0-9]+", value.casefold())
+    tokens = [
+        token
+        for token in raw_tokens
+        if token not in ignored and len(token) >= 3
+    ]
+    aliases = {token for token in tokens if len(token) >= 4}
+    if tokens:
+        aliases.add("".join(tokens))
+    if raw_tokens:
+        aliases.add("".join(raw_tokens))
+    return aliases
+
+
+def _site_key(host: str) -> str:
+    labels = [label for label in host.casefold().rstrip(".").split(".") if label]
+    if len(labels) <= 2:
+        return ".".join(labels)
+    country_second_levels = {"ac", "co", "com", "gov", "net", "org"}
+    width = 3 if len(labels[-1]) == 2 and labels[-2] in country_second_levels else 2
+    return ".".join(labels[-width:])

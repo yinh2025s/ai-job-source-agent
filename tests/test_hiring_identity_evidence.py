@@ -69,6 +69,22 @@ class HiringIdentityEvidenceTests(unittest.TestCase):
         self.assertTrue(evidence.verified)
         self.assertEqual(evidence.hiring_entity_name, "Parent Corp")
 
+    def test_unverified_input_hiring_entity_is_not_promoted_to_same_entity(self):
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Published Brand",
+                hiring_entity_name="Claimed Parent",
+                company_website_url="https://brand.example",
+            )
+        )
+
+        execution = HiringIdentityResolutionStage(_Resolver(None)).run(context)
+
+        evidence = execution.updates["hiring_identity_evidence"]
+        self.assertEqual(evidence.relationship_type, "input_asserted")
+        self.assertEqual(evidence.hiring_entity_name, "Claimed Parent")
+        self.assertFalse(evidence.verified)
+
 
 if __name__ == "__main__":
     unittest.main()

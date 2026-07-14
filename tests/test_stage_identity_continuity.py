@@ -98,6 +98,20 @@ class StageIdentityContinuityTests(unittest.TestCase):
         self.assertTrue(execution.updates["provider_identity"].relationship_verified)
         self.assertEqual(execution.updates["provider_identity"].verification_method, "tenant_name_match")
 
+    def test_s5_does_not_authorize_a_tenant_by_substring(self):
+        board = DiscoveredJobBoard(
+            JobBoard("https://jobs.example/notacmeportfolio", "example", "notacmeportfolio"),
+            "linked_url_evidence",
+            "https://jobs.example/notacmeportfolio",
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = "https://acme.example/careers"
+        context.hiring_identity_evidence = _hiring("Acme")
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+
     def test_external_apply_preserves_typed_discovered_board(self):
         context = PipelineContext.from_company(
             CompanyInput(

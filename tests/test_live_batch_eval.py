@@ -10,6 +10,11 @@ from unittest.mock import patch
 from job_source_agent.checkpoint import execution_fingerprint
 from job_source_agent.contracts import StageExecution
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
+from job_source_agent.identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    ProviderIdentity,
+)
 from job_source_agent.models import (
     PIPELINE_STAGES,
     CompanyInput,
@@ -170,6 +175,14 @@ class LiveBatchEvalTests(unittest.TestCase):
                 updates={
                     "hiring_entity_name": "Checkpoint Labs",
                     "career_root_url": "https://checkpoint.example/careers",
+                    "hiring_identity_evidence": HiringIdentityEvidence(
+                        source_company_name="Checkpoint Labs",
+                        hiring_entity_name="Checkpoint Labs",
+                        relationship_type="same_entity",
+                        verification_method="same_entity",
+                        verified=True,
+                        evidence_url="https://checkpoint.example/careers",
+                    ),
                 },
             ),
             "career_discovery": StageExecution(
@@ -186,6 +199,15 @@ class LiveBatchEvalTests(unittest.TestCase):
                     "job_list_page_url": "https://boards.greenhouse.io/checkpoint",
                     "provider": "greenhouse",
                     "discovered_job_board": discovered_board,
+                    "provider_identity": ProviderIdentity(
+                        hiring_entity_name="Checkpoint Labs",
+                        provider="greenhouse",
+                        tenant="custom:boards.greenhouse.io",
+                        canonical_board_url="https://boards.greenhouse.io/checkpoint",
+                        evidence_url="https://boards.greenhouse.io/checkpoint",
+                        verification_method="tenant_name_match",
+                        relationship_verified=True,
+                    ),
                 },
             ),
             "opening_match": StageExecution(
@@ -193,7 +215,16 @@ class LiveBatchEvalTests(unittest.TestCase):
                 updates={
                     "open_position_url": (
                         "https://boards.greenhouse.io/checkpoint/jobs/exact-opening"
-                    )
+                    ),
+                    "opening_identity": OpeningIdentity(
+                        hiring_entity_name="Checkpoint Labs",
+                        provider="greenhouse",
+                        tenant="custom:boards.greenhouse.io",
+                        canonical_board_url="https://boards.greenhouse.io/checkpoint",
+                        canonical_opening_url=(
+                            "https://boards.greenhouse.io/checkpoint/jobs/exact-opening"
+                        ),
+                    ),
                 },
             ),
             "result_validation": StageExecution(
@@ -1506,7 +1537,7 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertFalse(resume["used_replay_upstream"])
         self.assertEqual(resume["skipped_stages"], [])
 
-    def test_external_apply_bypasses_missing_website_in_two_phase_runner(self):
+    def test_external_apply_without_identity_fails_closed_in_two_phase_runner(self):
         company = CompanyInput(
             company_name="Missing Marketing Site",
             external_apply_url=(
@@ -1532,8 +1563,9 @@ class LiveBatchEvalTests(unittest.TestCase):
             result.job_list_page_url,
             "https://company.wd5.myworkdayjobs.com/en-US/acme",
         )
-        self.assertIn("Data-Analyst_R123", result.open_position_url)
-        self.assertEqual(result.pipeline_status, "success")
+        self.assertIsNone(result.open_position_url)
+        self.assertEqual(result.pipeline_status, "failed")
+        self.assertEqual(result.identity_assertion["verdict"], "rejected")
         self.assertIsNone(result.error_code)
 
     def test_external_apply_allows_resume_fallback_without_website(self):

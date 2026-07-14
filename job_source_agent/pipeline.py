@@ -79,6 +79,7 @@ from .scoring import (
 )
 from .stages import CareerDiscoveryStage, JobBoardDiscoveryStage, OpeningMatchStage, PipelineStageRunner
 from .web import FetchError, Page, RawLink, domain_of, extract_links, normalize_url
+from .fetch_failure import project_fetch_error
 from .website_resolver import location_region, url_region
 
 
@@ -3758,20 +3759,7 @@ def _trace_has_fetch_budget_exhaustion(value: object, key: str = "") -> bool:
 
 
 def _fetch_failure_trace(error: FetchError) -> dict:
-    reason_code = error.reason_code or classify_fetch_error(str(error))
-    retryable = (
-        error.retryable
-        if error.retryable is not None
-        else reason_spec(reason_code).retryable
-    )
-    return {
-        "error": str(error),
-        "reason_code": reason_code,
-        "reason_code_source": (
-            "exception" if error.reason_code is not None else "classified_message"
-        ),
-        "retryable": retryable,
-    }
+    return project_fetch_error(error)
 
 
 def _offline_fixture_failure(value: object) -> dict | None:

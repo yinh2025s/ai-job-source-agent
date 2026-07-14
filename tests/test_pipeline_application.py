@@ -49,7 +49,7 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertEqual(result.career_page_url, "https://jobs.lever.co/aurora-data")
         self.assertIn("d9d64766", result.open_position_url)
         self.assertEqual(result.result_record()["output_validation_status"], "success")
-        self.assertEqual(result.result_schema_version, "2.1")
+        self.assertEqual(result.result_schema_version, "2.2")
         self.assertEqual(result.run_configuration["schema_version"], "1.2")
         self.assertEqual(
             result.run_configuration["agent"]["max_job_board_attempts"],
@@ -165,7 +165,7 @@ class PipelineApplicationTests(unittest.TestCase):
         ))
         self.assertIsNone(result.career_page_url)
 
-    def test_external_apply_recovers_when_website_resolution_fails(self):
+    def test_external_apply_without_company_identity_fails_closed(self):
         external = (
             "https://company.wd5.myworkdayjobs.com/en-US/acme/job/New-York-NY/"
             "Data-Analyst_R123"
@@ -184,8 +184,13 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertEqual(statuses[STAGE_WEBSITE_RESOLUTION], "failed")
         self.assertEqual(statuses[STAGE_CAREER_DISCOVERY], "not_run")
         self.assertEqual(result.job_list_page_url, "https://company.wd5.myworkdayjobs.com/en-US/acme")
-        self.assertIn("Data-Analyst_R123", result.open_position_url)
-        self.assertEqual(result.pipeline_status, "success")
+        self.assertIsNone(result.open_position_url)
+        self.assertEqual(result.pipeline_status, "failed")
+        self.assertEqual(result.identity_assertion["verdict"], "rejected")
+        self.assertIn(
+            "HIRING_IDENTITY_MISSING",
+            result.identity_assertion["failure_codes"],
+        )
         self.assertIsNone(result.error_code)
 
     def test_resume_hydrates_upstream_updates_from_stage_checkpoints(self):

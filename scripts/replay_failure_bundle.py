@@ -24,6 +24,11 @@ from job_source_agent.composition import (
     build_application_from_fetcher,
 )
 from job_source_agent.contracts import StageExecution
+from job_source_agent.identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    ProviderIdentity,
+)
 from job_source_agent.evaluation import result_provider, summarize_results
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import (
@@ -51,6 +56,7 @@ from job_source_agent.snapshot_replay import (
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.run_configuration import DeterministicRunConfig
 from job_source_agent.web import FetchError, normalize_url
+from job_source_agent.result_identity import canonicalize_identity_url, tenant_locator
 from scripts.export_replay_input import _matches_filters, export_replay_records
 
 
@@ -1016,7 +1022,126 @@ def _authoritative_stage_updates(stage: str, source_record: dict) -> dict:
         )
         if result.get("provider"):
             updates["provider"] = result["provider"]
+    updates.update(_legacy_identity_checkpoint_updates(stage, source_record, updates))
     return updates
+
+
+def _legacy_identity_checkpoint_updates(
+    stage: str,
+    source_record: dict,
+    updates: dict,
+) -> dict:
+    """Hydrate typed but unverified identity for pre-2.2 partial replay records."""
+
+    assertion = source_record.get("identity_assertion")
+    if isinstance(assertion, dict):
+        field_contract = {
+            "hiring_identity_resolution": (
+                "hiring",
+                "hiring_identity_evidence",
+                HiringIdentityEvidence,
+            ),
+            "job_board_discovery": (
+                "provider",
+                "provider_identity",
+                ProviderIdentity,
+            ),
+            "opening_match": (
+                "opening",
+                "opening_identity",
+                OpeningIdentity,
+            ),
+        }.get(stage)
+        if field_contract is None:
+            return {}
+        assertion_field, update_field, contract_type = field_contract
+        payload = assertion.get(assertion_field)
+        if not isinstance(payload, dict):
+            return {}
+        try:
+            return {
+                update_field: contract_type.from_checkpoint_payload(payload)
+            }
+        except (TypeError, ValueError):
+            return {}
+    source_name = str(source_record.get("company_name") or "").strip()
+    hiring_name = str(
+        source_record.get("hiring_entity_name") or source_name
+    ).strip()
+    if stage == "hiring_identity_resolution" and source_name and hiring_name:
+        same_entity = _normalized_identity_text(source_name) == _normalized_identity_text(
+            hiring_name
+        )
+        evidence_url = _canonical_public_url(
+            source_record.get("career_root_url")
+            or source_record.get("company_website_url")
+        )
+        return {
+            "hiring_identity_evidence": HiringIdentityEvidence(
+                source_company_name=source_name,
+                hiring_entity_name=hiring_name,
+                relationship_type="same_entity" if same_entity else "input_asserted",
+                verification_method=(
+                    "legacy_same_entity_replay"
+                    if same_entity
+                    else "legacy_input_replay"
+                ),
+                verified=same_entity,
+                evidence_url=evidence_url,
+            )
+        }
+    if stage == "job_board_discovery" and hiring_name:
+        board_url = _canonical_public_url(source_record.get("job_list_page_url"))
+        if board_url is None:
+            return {}
+        provider = str(updates.get("provider") or "generic")
+        adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(provider)
+        board = adapter.identify_board(board_url) if adapter is not None else None
+        canonical_board = (
+            canonicalize_identity_url(board.url) if board is not None else board_url
+        )
+        tenant = (
+            board.identifier
+            if board is not None and board.identifier
+            else tenant_locator(canonical_board)
+        )
+        return {
+            "provider_identity": ProviderIdentity(
+                hiring_entity_name=hiring_name,
+                provider=provider,
+                tenant=tenant,
+                canonical_board_url=canonical_board,
+                evidence_url=board_url,
+                verification_method="legacy_replay_input",
+                relationship_verified=False,
+            )
+        }
+    if stage == "opening_match" and hiring_name:
+        board_url = _canonical_public_url(source_record.get("job_list_page_url"))
+        opening_url = _canonical_public_url(source_record.get("open_position_url"))
+        if board_url is None or opening_url is None:
+            return {}
+        provider = str(updates.get("provider") or result_provider(source_record) or "generic")
+        adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(provider)
+        board = adapter.identify_board(board_url) if adapter is not None else None
+        canonical_board = (
+            canonicalize_identity_url(board.url) if board is not None else board_url
+        )
+        tenant = (
+            board.identifier
+            if board is not None and board.identifier
+            else tenant_locator(canonical_board)
+        )
+        return {
+            "opening_identity": OpeningIdentity(
+                hiring_entity_name=hiring_name,
+                provider=provider,
+                tenant=tenant,
+                canonical_board_url=canonical_board,
+                canonical_opening_url=opening_url,
+            )
+        }
+    return {}
 
 
 def _build_outcome_gate(
@@ -1507,6 +1632,7 @@ def _normalize_identity_value(value: object, *, key: str | None = None) -> objec
         return {
             str(name): _normalize_identity_value(item, key=str(name))
             for name, item in sorted(value.items())
+            if str(name) not in {"schema_version", "verification_method"}
         }
     if isinstance(value, (list, tuple)):
         return [_normalize_identity_value(item, key=key) for item in value]

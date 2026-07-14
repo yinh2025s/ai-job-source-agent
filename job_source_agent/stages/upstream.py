@@ -13,8 +13,9 @@ from ..models import (
     STAGE_LINKEDIN_DISCOVERY,
     STAGE_WEBSITE_RESOLUTION,
 )
-from ..reasons import canonical_reason_code, classify_fetch_error, make_stage_result
+from ..reasons import canonical_reason_code, make_stage_result
 from ..web import FetchError, normalize_url
+from ..fetch_failure import project_fetch_error
 
 
 class WebsiteResolutionService(Protocol):
@@ -122,10 +123,12 @@ class WebsiteResolutionStage:
                 else None
             )
         except FetchError as exc:
+            failure = project_fetch_error(exc)
             return _failed_execution(
-                classify_fetch_error(str(exc)),
+                failure["reason_code"],
                 started,
                 str(exc),
+                trace={"fetch_failure": failure},
                 clear_unverified_website=clear_unverified_website,
             )
         except DiscoveryError as exc:
@@ -201,8 +204,12 @@ class HiringIdentityResolutionStage:
                 context.company.job_location,
             )
         except FetchError as exc:
+            failure = project_fetch_error(exc)
             return _identity_failed_execution(
-                classify_fetch_error(str(exc)), started, str(exc)
+                failure["reason_code"],
+                started,
+                str(exc),
+                trace={"fetch_failure": failure},
             )
         except DiscoveryError as exc:
             return _identity_failed_execution(
@@ -278,7 +285,9 @@ class HiringIdentityResolutionStage:
                         }
                     )
             hiring_entity_name = (
-                updates.get("hiring_entity_name") or context.company.company_name
+                updates.get("hiring_entity_name")
+                or context.company.hiring_entity_name
+                or context.company.company_name
             )
             relationship_type = (
                 getattr(identity, "relationship_type", None) if identity else None
@@ -292,10 +301,14 @@ class HiringIdentityResolutionStage:
             relationship_evidence_url = (
                 getattr(identity, "evidence_url", None) if identity else None
             )
-            if not identity or _same_entity(context.company.company_name, str(hiring_entity_name)):
+            if _same_entity(context.company.company_name, str(hiring_entity_name)):
                 relationship_type = "same_entity"
                 relationship_verified = True
                 verification_method = "same_entity"
+            elif not identity:
+                relationship_type = "input_asserted"
+                relationship_verified = False
+                verification_method = "input_asserted"
             if relationship_type not in {
                 "same_entity",
                 "brand_parent",
