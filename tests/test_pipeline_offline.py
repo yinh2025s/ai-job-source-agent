@@ -654,7 +654,13 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(career_url, "https://jobs.lever.co/atsprobe")
         self.assertEqual(trace["selected_from"], "ats_board_discovery")
         self.assertIn("derived Lever board candidate", trace["selected"]["reasons"])
-        self.assertEqual(trace["ats_board_discovery"]["provider_board_verification"][0]["method"], "page_job_links")
+        self.assertIn(
+            "page_job_links",
+            [
+                item["method"]
+                for item in trace["ats_board_discovery"]["provider_board_verification"]
+            ],
+        )
 
     def test_unverified_derived_ats_board_is_rejected(self):
         class EmptyAshbyFetcher(Fetcher):

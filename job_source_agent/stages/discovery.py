@@ -536,6 +536,7 @@ class OpeningMatchStage:
                 context,
                 opening_url,
                 self.provider_registry,
+                trace,
             )
             if opening_identity is not None:
                 updates["opening_identity"] = opening_identity
@@ -684,6 +685,7 @@ class OpeningMatchStage:
                             context,
                             opening_url,
                             self.provider_registry,
+                            trace,
                         ),
                     },
                     trace=portfolio_trace,
@@ -949,6 +951,7 @@ def _opening_identity(
     context: PipelineContext,
     opening_url: str,
     registry: ProviderRegistry,
+    match_trace: dict | None = None,
 ) -> OpeningIdentity | None:
     provider_identity = context.provider_identity
     if provider_identity is None:
@@ -979,7 +982,15 @@ def _opening_identity(
             _identity_aliases(tenant) & _identity_aliases(provider_identity.tenant)
         ):
             return None
-        if canonical_board != provider_identity.canonical_board_url:
+        if (
+            canonical_board != provider_identity.canonical_board_url
+            and not _trace_binds_opening_to_provider_board(
+                match_trace,
+                opening_url,
+                provider_identity,
+                context.discovered_job_board,
+            )
+        ):
             return None
         tenant = provider_identity.tenant
     return OpeningIdentity(
@@ -995,8 +1006,9 @@ def _opening_identity_update(
     context: PipelineContext,
     opening_url: str,
     registry: ProviderRegistry,
+    match_trace: dict | None = None,
 ) -> dict[str, OpeningIdentity]:
-    identity = _opening_identity(context, opening_url, registry)
+    identity = _opening_identity(context, opening_url, registry, match_trace)
     return {"opening_identity": identity} if identity is not None else {}
 
 
@@ -1014,6 +1026,46 @@ def _same_site(left: str, right: str) -> bool:
         return _site_key(left_host) == _site_key(right_host)
     except ValueError:
         return False
+
+
+def _trace_binds_opening_to_provider_board(
+    trace: dict | None,
+    opening_url: str,
+    provider_identity: ProviderIdentity,
+    discovered_board: DiscoveredJobBoard | None,
+) -> bool:
+    if not isinstance(trace, dict):
+        return False
+    provider_api = trace.get("provider_api")
+    provider_api = provider_api if isinstance(provider_api, dict) else {}
+    selected = trace.get("selected")
+    detection = provider_api.get("provider_detection") or trace.get(
+        "provider_detection"
+    )
+    if not isinstance(selected, dict):
+        return False
+    selected_url = selected.get("url")
+    detected_url = detection.get("url") if isinstance(detection, dict) else None
+    if not isinstance(selected_url, str):
+        return False
+    if not _same_url(selected_url, opening_url):
+        return False
+    detected_provider = provider_api.get("provider") or trace.get("provider")
+    if detected_provider != provider_identity.provider:
+        return False
+    if isinstance(detected_url, str):
+        return _same_url(detected_url, provider_identity.canonical_board_url)
+    traced_board_url = trace.get("job_list_url")
+    if isinstance(traced_board_url, str):
+        return _same_url(traced_board_url, provider_identity.canonical_board_url)
+    return bool(
+        discovered_board is not None
+        and discovered_board.board.provider == provider_identity.provider
+        and _same_url(
+            discovered_board.board.url,
+            provider_identity.canonical_board_url,
+        )
+    )
 
 
 def _identity_aliases(value: str) -> set[str]:

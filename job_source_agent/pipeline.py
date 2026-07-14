@@ -2791,11 +2791,13 @@ class JobSourceAgent:
                                 "provider": verification["provider"],
                             }
                         )
+                        # Preserve the adapter failure, then retain the existing
+                        # page-evidence fallback for this candidate.
+                    else:
+                        trace["candidate_fetch_errors"].append(
+                            {"url": candidate.url, "error": "derived provider adapter rejected tenant or title"}
+                        )
                         continue
-                    trace["candidate_fetch_errors"].append(
-                        {"url": candidate.url, "error": "derived provider adapter rejected tenant or title"}
-                    )
-                    continue
             try:
                 page = self.fetcher.fetch(candidate.url)
             except FetchError as exc:

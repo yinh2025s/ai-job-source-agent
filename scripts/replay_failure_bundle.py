@@ -1246,9 +1246,15 @@ def _build_outcome_gate(
         elif successful_outcome_reproduced:
             classification = "reproduced" if identity_matches else "mismatch"
             reason = "outcome_equal" if identity_matches else "identity_outcome_changed"
-        elif _contains_reason_code(
-            (replay_result, replay_trace),
-            "OFFLINE_FIXTURE_MISSING",
+        elif (
+            _contains_reason_code(
+                (replay_result, replay_trace),
+                "OFFLINE_FIXTURE_MISSING",
+            )
+            and not _contains_reason_code(
+                (source_record,),
+                "OFFLINE_FIXTURE_MISSING",
+            )
         ):
             classification = "fixture_gap"
             reason = "offline_fixture_missing"

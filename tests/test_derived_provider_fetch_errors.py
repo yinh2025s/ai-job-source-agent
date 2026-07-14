@@ -120,8 +120,12 @@ class DerivedProviderFetchErrorTests(unittest.TestCase):
         )
 
         self.assertEqual(selected, "https://derived.example/HealthyTenant")
-        self.assertEqual(len(trace["candidate_fetch_errors"]), 1)
-        failure = trace["candidate_fetch_errors"][0]
+        self.assertEqual(len(trace["candidate_fetch_errors"]), 2)
+        failure = next(
+            item
+            for item in trace["candidate_fetch_errors"]
+            if item.get("provider") == "derived_test"
+        )
         self.assertEqual(failure["reason_code"], "NETWORK_TIMEOUT")
         self.assertTrue(failure["retryable"])
         self.assertEqual(failure["provider"], "derived_test")

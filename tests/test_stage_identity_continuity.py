@@ -5,6 +5,7 @@ from job_source_agent.identity_continuity import HiringIdentityEvidence, Provide
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
 from job_source_agent.models import CompanyInput
 from job_source_agent.providers import ProviderRegistry
+from job_source_agent.providers import DEFAULT_PROVIDER_REGISTRY
 from job_source_agent.stages.discovery import (
     CareerDiscoveryStage,
     JobBoardDiscoveryStage,
@@ -33,9 +34,10 @@ class _SameTenantDifferentBoardAdapter(_Adapter):
 
 
 class _Service:
-    def __init__(self, board, opening=None):
+    def __init__(self, board, opening=None, trace=None):
         self.board = board
         self.opening = opening
+        self.trace = trace or {}
         self.company_name = None
 
     def find_career_page(self, website, company_name=None, **kwargs):
@@ -47,7 +49,7 @@ class _Service:
         return self.board.board.url, {}, self.board
 
     def match_discovered_board(self, board, *args):
-        return self.opening, board.board.url, {}
+        return self.opening, board.board.url, self.trace
 
 
 def _hiring(source, entity=None, verified=True):
@@ -189,6 +191,103 @@ class StageIdentityContinuityTests(unittest.TestCase):
             "https://jobs.example/alternate/jobs/123",
         )
         self.assertNotIn("opening_identity", execution.updates)
+
+    def test_s6_accepts_native_detail_urls_below_canonical_board(self):
+        cases = (
+            (
+                "greenhouse",
+                "taxbit",
+                "https://job-boards.greenhouse.io/taxbit",
+                "https://job-boards.greenhouse.io/taxbit/jobs/6111141004",
+            ),
+            (
+                "lever",
+                "kobie",
+                "https://jobs.lever.co/kobie",
+                "https://jobs.lever.co/kobie/d14582bd-64a2-439e-a7e3-a50ce7270a3d",
+            ),
+        )
+        for provider, tenant, board_url, opening_url in cases:
+            with self.subTest(provider=provider):
+                board = DiscoveredJobBoard(
+                    JobBoard(board_url, provider, tenant),
+                    "url_evidence",
+                    board_url,
+                )
+                context = PipelineContext.from_company(
+                    CompanyInput(company_name=tenant, job_title="Engineer")
+                )
+                context.discovered_job_board = board
+                context.job_list_page_url = board_url
+                context.provider_identity = ProviderIdentity(
+                    hiring_entity_name=tenant,
+                    provider=provider,
+                    tenant=tenant,
+                    canonical_board_url=board_url,
+                    evidence_url=board_url,
+                    verification_method="tenant_name_match",
+                    relationship_verified=True,
+                )
+
+                execution = OpeningMatchStage(
+                    _Service(
+                        board,
+                        opening_url,
+                        {
+                            "selected": {"url": opening_url},
+                            "provider_api": {
+                                "provider": provider,
+                                "provider_detection": {"url": board_url},
+                            }
+                        },
+                    ),
+                    DEFAULT_PROVIDER_REGISTRY,
+                ).run(context)
+
+                self.assertIn("opening_identity", execution.updates)
+
+    def test_s6_accepts_adapter_verified_cross_host_tenant_alias(self):
+        board_url = "https://app.whitecarrot.io/careers/smart-bricks"
+        opening_url = (
+            "https://smart-bricks.whitecarrot.ai/jobs/"
+            "a34cdab0-b26f-4337-a7ed-8788c64760b0"
+        )
+        board = DiscoveredJobBoard(
+            JobBoard(board_url, "whitecarrot", "smart-bricks"),
+            "url_evidence",
+            board_url,
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Smart Bricks", job_title="AI Engineer")
+        )
+        context.discovered_job_board = board
+        context.job_list_page_url = board_url
+        context.provider_identity = ProviderIdentity(
+            hiring_entity_name="Smart Bricks",
+            provider="whitecarrot",
+            tenant="smart-bricks",
+            canonical_board_url=board_url,
+            evidence_url=board_url,
+            verification_method="tenant_name_match",
+            relationship_verified=True,
+        )
+
+        execution = OpeningMatchStage(
+            _Service(
+                board,
+                opening_url,
+                {
+                    "selected": {"url": opening_url},
+                    "provider_api": {
+                        "provider": "whitecarrot",
+                        "provider_detection": {"url": board_url},
+                    }
+                },
+            ),
+            DEFAULT_PROVIDER_REGISTRY,
+        ).run(context)
+
+        self.assertIn("opening_identity", execution.updates)
 
 
 if __name__ == "__main__":

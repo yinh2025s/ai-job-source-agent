@@ -157,11 +157,28 @@ class FailureReplayBundleTests(unittest.TestCase):
             Page(
                 url=homepage_url,
                 final_url=homepage_url,
-                html=f'<html><a href="{board_url}">Careers</a></html>',
+                html=(
+                    f'<html><title>Example Data</title>'
+                    f'<a href="{board_url}">Careers</a></html>'
+                ),
                 source="live",
             ),
             request_url=homepage_url,
         )
+        for search_url in (
+            "https://www.bing.com/search?q=Example+Data+official+website&format=rss&setlang=en-us&cc=us",
+            "https://www.bing.com/search?q=Example+Data+official+website&setlang=en-us&cc=us",
+            "https://html.duckduckgo.com/html/?q=Example+Data+official+website&setlang=en-us&cc=us",
+        ):
+            SnapshotStore(root / "snapshots").write_page(
+                Page(
+                    url=search_url,
+                    final_url=search_url,
+                    html="<html><body>No results</body></html>",
+                    source="live",
+                ),
+                request_url=search_url,
+            )
         SnapshotStore(root / "snapshots").write_page(
             Page(
                 url=board_url,

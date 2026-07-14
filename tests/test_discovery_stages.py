@@ -493,6 +493,7 @@ class DiscoveryStageTests(unittest.TestCase):
                         "inventory": {
                             "status": "verified_filtered_empty",
                             "scope": "title_filtered",
+                            "complete": True,
                             "candidate_count": 0,
                         }
                     }
@@ -539,6 +540,7 @@ class DiscoveryStageTests(unittest.TestCase):
                         "inventory": {
                             "status": "verified_filtered_empty",
                             "scope": "title_filtered",
+                            "complete": True,
                             "candidate_count": 0,
                         }
                     }
