@@ -130,9 +130,13 @@ class BudgetAwareFetcher(RecordingFetcher):
     def __init__(self, responses=(), *, remaining=0.0, error=None):
         super().__init__(responses, error=error)
         self.remaining = remaining
+        self.recorded_failures = []
 
     def remaining_fetch_seconds(self):
         return self.remaining
+
+    def record_fetch_failure(self, error, url, data=None, headers=None):
+        self.recorded_failures.append((error, url, data, headers))
 
 
 def response(payload, *, url=API_URL, final_url=None):
@@ -347,6 +351,12 @@ class SitecoreNextJobsAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["ranges"], [0])
         self.assertEqual(result.trace["stop_reason"], "soft_deadline_reserve")
         self.assertNotIn("remaining", repr(result.trace).lower())
+        self.assertEqual(len(fetcher.recorded_failures), 1)
+        error, url, data, headers = fetcher.recorded_failures[0]
+        self.assertEqual(error.reason_code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertEqual(url, API_URL)
+        self.assertEqual(json.loads(data)["range"], 10)
+        self.assertEqual(headers["Content-Type"], "text/plain;charset=UTF-8")
 
     def test_exact_title_wins_before_soft_deadline_reserve(self):
         fetcher = BudgetAwareFetcher(

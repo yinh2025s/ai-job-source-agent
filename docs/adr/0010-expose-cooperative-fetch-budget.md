@@ -29,10 +29,11 @@ runtime-checkable `FetchBudget` capability exposes only
 - Bounded clients return a non-negative duration.
 - Absolute monotonic deadlines and clock domains are not exposed.
 
-`RetryingFetcher` implements the capability. Existing cache and snapshot
-wrappers already delegate optional attributes, so the capability remains
-visible through the production fetch stack without expanding every fixture or
-browser client.
+`RetryingFetcher` implements the capability. Cache and snapshot wrappers define
+explicit forwarding methods because Python 3.12 runtime protocol checks use
+static attribute lookup and do not discover capability methods through
+`__getattr__`. The capability therefore remains visible through the production
+fetch stack without expanding every fixture or browser client.
 
 Provider infrastructure supplies shared reserve helpers. Before starting a
 subsequent pagination request, an adapter may require the current request
@@ -44,6 +45,13 @@ sufficient, it must stop cooperatively and return:
 - all already verified candidates
 - `inventory_complete=false`
 - a stable stop cause in trace
+
+When request-aware snapshots are active, the shared reserve guard records the
+rejected request as a terminal `FETCH_BUDGET_EXHAUSTED` outcome before returning
+the partial result. The request is not sent. Its sanitized URL, method, body
+digest and allowlisted semantic headers use the same ADR-0006 identity contract
+as real fetch failures. This lets offline replay reproduce the budget boundary
+without persisting remaining wall-clock time or rebuilding a request from trace.
 
 The adapter may still use positive candidates from an incomplete inventory. It
 must not use an interrupted inventory to assert an authoritative empty result,

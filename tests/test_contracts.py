@@ -13,9 +13,10 @@ from job_source_agent.providers import AdapterResult, JobBoard, JobCandidate, Jo
 from job_source_agent.providers.base import (
     has_fetch_reserve,
     pagination_fetch_reserve_seconds,
+    require_fetch_reserve,
 )
 from job_source_agent.retrying_fetcher import RetryingFetcher
-from job_source_agent.web import Fetcher
+from job_source_agent.web import FetchError, Fetcher
 
 
 class ContractTests(unittest.TestCase):
@@ -77,6 +78,36 @@ class ContractTests(unittest.TestCase):
         )
         self.assertFalse(has_fetch_reserve(bounded, float("inf")))
         self.assertFalse(has_fetch_reserve(bounded, float("nan")))
+
+    def test_reserve_guard_records_rejected_request_without_fetching(self):
+        class GuardedFetcher:
+            timeout = 1.0
+
+            def __init__(self):
+                self.recorded = []
+
+            def remaining_fetch_seconds(self):
+                return 0.5
+
+            def record_fetch_failure(self, error, url, data=None, headers=None):
+                self.recorded.append((error, url, data, headers))
+
+            def fetch(self, url, data=None, headers=None):
+                raise AssertionError("guarded request must not be fetched")
+
+        fetcher = GuardedFetcher()
+        with self.assertRaisesRegex(FetchError, "cooperative reserve") as raised:
+            require_fetch_reserve(
+                fetcher,
+                2.0,
+                url="https://jobs.example/api",
+                data=b'{"range":10}',
+                headers={"Content-Type": "application/json"},
+            )
+
+        self.assertEqual(raised.exception.reason_code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertTrue(raised.exception.retryable)
+        self.assertEqual(len(fetcher.recorded), 1)
 
     def test_pipeline_context_applies_only_declared_stage_outputs(self):
         context = PipelineContext.from_company(

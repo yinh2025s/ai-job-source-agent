@@ -6,7 +6,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from ..contracts import FetchBudget, FetchClient
 from ..job_board import JobBoard
-from ..web import Page
+from ..web import FetchError, Page
 
 
 @dataclass(frozen=True)
@@ -112,3 +112,24 @@ def has_fetch_reserve(fetcher: FetchClient, reserve_seconds: float) -> bool:
     ):
         return False
     return max(0.0, float(remaining)) > max(0.0, reserve)
+
+
+def require_fetch_reserve(
+    fetcher: FetchClient,
+    reserve_seconds: float,
+    *,
+    url: str,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+) -> None:
+    if has_fetch_reserve(fetcher, reserve_seconds):
+        return
+    error = FetchError(
+        "fetch skipped because the cooperative reserve was exhausted",
+        reason_code="FETCH_BUDGET_EXHAUSTED",
+        retryable=True,
+    )
+    recorder = getattr(fetcher, "record_fetch_failure", None)
+    if callable(recorder):
+        recorder(error, url, data=data, headers=headers)
+    raise error

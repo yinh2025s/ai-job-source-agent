@@ -236,6 +236,20 @@ class SnapshottingFetcher:
         remaining = getattr(self.fetcher, "remaining_fetch_seconds", None)
         return remaining() if callable(remaining) else None
 
+    def record_fetch_failure(
+        self,
+        error: FetchError,
+        url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> FetchFailureRecord:
+        return self.snapshot_store.write_failure(
+            error,
+            url,
+            data=data,
+            headers=headers,
+        )
+
     def __getattr__(self, name: str):
         return getattr(self.fetcher, name)
 

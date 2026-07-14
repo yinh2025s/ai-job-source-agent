@@ -12,8 +12,8 @@ from .base import (
     JobBoard,
     JobCandidate,
     JobQuery,
-    has_fetch_reserve,
     pagination_fetch_reserve_seconds,
+    require_fetch_reserve,
 )
 
 
@@ -80,39 +80,44 @@ class SitecoreNextJobsAdapter:
         stop_reason: str | None = None
 
         for page_number in range(_MAX_PAGES):
-            if page_number > 0 and not has_fetch_reserve(
-                fetcher,
-                pagination_fetch_reserve_seconds(
-                    fetcher,
-                    publication_reserve_seconds=1.0,
-                ),
-            ):
-                failure_reason = "FETCH_BUDGET_EXHAUSTED"
-                failure_retryable = True
-                stop_reason = "soft_deadline_reserve"
-                errors.append({"range": current_range, "error": stop_reason})
-                break
             if current_range in ranges:
                 failure_reason = "INVALID_STRUCTURED_DATA"
                 errors.append({"range": current_range, "error": "repeated pagination range"})
                 break
-            ranges.append(current_range)
             body = _request_body(identity, query, current_range)
+            request_data = json.dumps(
+                body,
+                ensure_ascii=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+            request_headers = {
+                "Accept": "application/json",
+                "Content-Type": "text/plain;charset=UTF-8",
+            }
             try:
+                if page_number > 0:
+                    require_fetch_reserve(
+                        fetcher,
+                        pagination_fetch_reserve_seconds(
+                            fetcher,
+                            publication_reserve_seconds=1.0,
+                        ),
+                        url=api_url,
+                        data=request_data,
+                        headers=request_headers,
+                    )
+                ranges.append(current_range)
                 response = fetcher.fetch(
                     api_url,
-                    data=json.dumps(body, ensure_ascii=True, separators=(",", ":")).encode(
-                        "utf-8"
-                    ),
-                    headers={
-                        "Accept": "application/json",
-                        "Content-Type": "text/plain;charset=UTF-8",
-                    },
+                    data=request_data,
+                    headers=request_headers,
                 )
             except (FetchError, OSError, TimeoutError) as error:
                 detail = str(error)
                 failure_reason = _fetch_reason(error)
                 failure_retryable = reason_spec(failure_reason).retryable
+                if failure_reason == "FETCH_BUDGET_EXHAUSTED":
+                    stop_reason = "soft_deadline_reserve"
                 errors.append({"range": current_range, "error": detail})
                 break
 

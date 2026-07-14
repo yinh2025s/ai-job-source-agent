@@ -328,6 +328,34 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn('"status": 403', failure_text)
         self.assertNotIn("private", failure_text)
 
+    def test_explicit_budget_guard_failure_uses_request_aware_snapshot_identity(self):
+        class MustNotFetch:
+            timeout = 1
+
+            def fetch(self, url, data=None, headers=None):
+                raise AssertionError("guarded request must not reach the network")
+
+        with tempfile.TemporaryDirectory() as directory:
+            fetcher = SnapshottingFetcher(MustNotFetch(), directory)
+            fetcher.record_fetch_failure(
+                FetchError(
+                    "cooperative reserve exhausted",
+                    reason_code="FETCH_BUDGET_EXHAUSTED",
+                    retryable=True,
+                ),
+                "https://jobs.example.com/api",
+                data=b'{"range":50}',
+                headers={"Content-Type": "application/json"},
+            )
+            record = json.loads(
+                (Path(directory) / "fetch-failures.jsonl").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(record["failure"]["reason_code"], "FETCH_BUDGET_EXHAUSTED")
+        self.assertTrue(record["failure"]["retryable"])
+        self.assertEqual(record["request"]["method"], "POST")
+        self.assertIsNotNone(record["request"]["body_fingerprint"])
+
     def test_sensitive_query_snapshot_fingerprint_uses_redacted_value(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SnapshotStore(directory)
