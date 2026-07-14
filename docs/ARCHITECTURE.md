@@ -190,6 +190,8 @@ ADR-0011 为 S4 `find_career_page` 定义独立的 transport-call budget。`Agen
 
 ADR-0012 将该跨进程优化限制为 execution-checkpoint 内的 typed URL evidence，而不是 durable page cache。S2 只有在最终选中的公司首页已经完成身份验证时，才可发布 exact homepage URL 和最多 8 个 URL 本身具有 career/registered-ATS 语义的 query-free public HTTPS candidates。Payload 不保存 HTML、link text、title、timestamp、request identity、headers、cookies、tokens、browser state 或 trace；credentials、query、fragment、local/private host、secret/HTML-shaped content、重复、越界和 unknown fields 均 fail closed。S4 只在 homepage exact match 时把这些 candidates 作为 first-party scheduling input，每个 URL 仍须真实 fetch 和验证；typed candidates 不能成功时恢复原 homepage fetch/extract/bundle/search 路径。Context contract `1.2` 与 stage checkpoint `1.4` 让旧/损坏记录安全失效，不做隐式迁移。
 
+`.76` frozen-30 验证中，23 个 S2 checkpoint 发布该值，21/27 个实际执行 S4 的公司消费成功；20 个 S4 只需一次 dispatch，总 transport 从 107 降至 70，平均从 3.96 降至 2.59。Replay 只把 HTTP(S) 根 URL 的空 path 与 `/` 视为等价，其他 path、query 和 request identity 仍严格；最终 full replay 为 30/30 reproduced、0 gap、0 mismatch。可见 provider URL 若由 adapter 规范化为同 scheme/host/path 的 query-free board，可忽略候选上的 presentation query，但 detail path 仍不能提升为 board；该规则由 adapter identity 约束，不包含 provider/company 分支。
+
 Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、owner `replay` 的基础设施结果；Fetcher 在 exception 边界直接携带 typed reason 和脱敏 request identity，S4/S5 aggregation 与 availability diagnostics 必须保留它，不能改写为网络失败、官网不存在或岗位不存在。Replay manifest 将 request identity 与 `Page.url`、跨域 `final_url`、body hash/length 绑定；现代 manifest 缺项、歧义或损坏 fail closed，legacy GET 和 failure-only capture 保持兼容。Embedded URL 与 provider-config 扫描在 escape decoding 前剥离 HTML comments，避免 retired integration 进入活动证据集。
 
 ## SOLID Rules
