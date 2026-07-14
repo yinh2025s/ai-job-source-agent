@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 
+from .checkpoint_prefix import CheckpointPrefixError
 from .composition import FetcherConfig, build_application
 from .contracts import FetchClient
 from .linkedin import load_company_inputs
@@ -95,15 +96,27 @@ def main(argv: list[str] | None = None) -> None:
     if args.limit:
         companies = companies[: args.limit]
 
-    results = [
-        application.pipeline.discover(
-            company,
-            start_at=args.resume_from_stage,
-            stop_after=args.stop_after_stage,
-            rerun_from=args.rerun_stage,
+    try:
+        results = [
+            application.pipeline.discover(
+                company,
+                start_at=args.resume_from_stage,
+                stop_after=args.stop_after_stage,
+                rerun_from=args.rerun_stage,
+            )
+            for company in companies
+        ]
+    except CheckpointPrefixError as error:
+        inspection = error.inspection
+        defect_summary = ", ".join(
+            f"{defect.stage}:{defect.defect_class}"
+            for defect in inspection.defects
         )
-        for company in companies
-    ]
+        raise SystemExit(
+            f"Cannot rerun from {inspection.requested_start}: checkpoint prefix is "
+            f"not reusable ({defect_summary}). Resume from "
+            f"{inspection.effective_start} or rebuild the missing checkpoints."
+        ) from None
 
     Path(args.output).write_text(
         json.dumps([result.result_record() for result in results], indent=2),

@@ -34,6 +34,7 @@ _URL_UPDATE_FIELDS = {
 }
 _PUBLIC_HOST_LABEL = re.compile(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", re.IGNORECASE)
 _ENCODED_CONTROL = re.compile(r"%(?:0[0-9a-f]|1[0-9a-f]|7f)", re.IGNORECASE)
+END_OF_PIPELINE_CHECKPOINT_BOUNDARY = "end_of_pipeline"
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,11 @@ class CheckpointPrefixInspection:
 
     def trace_record(self, *, mode: str) -> dict:
         first_defect = self.defects[0] if self.defects else None
-        effective_index = PIPELINE_STAGES.index(self.effective_start)
+        effective_index = (
+            len(PIPELINE_STAGES)
+            if self.effective_start == END_OF_PIPELINE_CHECKPOINT_BOUNDARY
+            else PIPELINE_STAGES.index(self.effective_start)
+        )
         return {
             "mode": mode,
             "requested_start": self.requested_start,
@@ -96,6 +101,39 @@ def inspect_checkpoint_prefix(
     """Inspect and simulate the complete checkpoint chain before a start boundary."""
 
     requested_index = PIPELINE_STAGES.index(requested_start)
+    return _inspect_checkpoint_prefix(
+        store,
+        input_fingerprint,
+        context,
+        requested_start=requested_start,
+        requested_index=requested_index,
+    )
+
+
+def inspect_complete_checkpoint_prefix(
+    store: CheckpointStore,
+    input_fingerprint: str,
+    context: PipelineContext,
+) -> CheckpointPrefixInspection:
+    """Inspect the authoritative contiguous prefix across all pipeline stages."""
+
+    return _inspect_checkpoint_prefix(
+        store,
+        input_fingerprint,
+        context,
+        requested_start=END_OF_PIPELINE_CHECKPOINT_BOUNDARY,
+        requested_index=len(PIPELINE_STAGES),
+    )
+
+
+def _inspect_checkpoint_prefix(
+    store: CheckpointStore,
+    input_fingerprint: str,
+    context: PipelineContext,
+    *,
+    requested_start: str,
+    requested_index: int,
+) -> CheckpointPrefixInspection:
     simulation = PipelineContext.from_company(context.company)
     executions: list[StageExecution] = []
     defects: list[CheckpointPrefixDefect] = []

@@ -17,12 +17,17 @@ from job_source_agent.company_identity import CompanyIdentityResolver
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.batch_discovery import LinkedInDiscoveryManifestStore
 from job_source_agent.checkpoint import execution_fingerprint
+from job_source_agent.checkpoint_prefix import (
+    CheckpointPrefixInspection,
+    inspect_checkpoint_prefix,
+    inspect_complete_checkpoint_prefix,
+)
 from job_source_agent.completion_resume import (
     classify_completion_resume,
     completion_resume_marker,
 )
 from job_source_agent.composition import AgentConfig, FetcherConfig, build_application, build_fetcher
-from job_source_agent.contracts import FetchClient, PipelineContext, StageExecution
+from job_source_agent.contracts import FetchClient, PipelineContext
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
 from job_source_agent.evaluation_history import cohort_identities_compatible, derive_cohort_identity
 from job_source_agent.evidence_scope import new_capture_attempt_id
@@ -656,13 +661,18 @@ def _atomic_write_json(path: Path, payload) -> None:
 
 
 def run_company(company: CompanyInput, args: argparse.Namespace):
+    rerun_failure = _explicit_rerun_preflight(company, args)
+    if rerun_failure is not None:
+        return rerun_failure
+
     started = time.monotonic()
     upstream_result: DiscoveryResult | None = None
     capture_attempt_id = new_capture_attempt_id()
     automatic_retry_start = _automatic_retry_start_stage(company, args)
-    if resume_uses_replay_upstream(args):
-        prepare_replay_company_for_resume(company, args)
-    elif automatic_retry_start not in {
+    explicit_resume_start = _explicit_resume_start_stage(company, args)
+    explicit_rerun_start = getattr(args, "rerun_stage", None)
+    selected_start = automatic_retry_start or explicit_resume_start or explicit_rerun_start
+    if selected_start not in {
         STAGE_CAREER_DISCOVERY,
         STAGE_JOB_BOARD_DISCOVERY,
         STAGE_OPENING_MATCH,
@@ -671,8 +681,8 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         upstream_budget = min(args.website_time_budget, args.company_time_budget)
         upstream_deadline = time.monotonic() + _inner_deadline_budget(upstream_budget)
         upstream_start = (
-            automatic_retry_start
-            if automatic_retry_start in {
+            selected_start
+            if selected_start in {
                 STAGE_LINKEDIN_DISCOVERY,
                 STAGE_WEBSITE_RESOLUTION,
                 STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -716,26 +726,15 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         if not upstream_result.company_website_url and not company.external_apply_url:
             return upstream_result
 
-    if automatic_retry_start in {
+    if selected_start in {
         STAGE_CAREER_DISCOVERY,
         STAGE_JOB_BOARD_DISCOVERY,
         STAGE_OPENING_MATCH,
         STAGE_RESULT_VALIDATION,
     }:
-        downstream_start, resume_fallback = automatic_retry_start, None
+        downstream_start = selected_start
     else:
-        downstream_start, resume_fallback = _downstream_start_stage(company, args)
-    if resume_fallback == "missing_resume_evidence":
-        return failure_result(
-            company,
-            error="website_not_resolved",
-            detail=(
-                f"--resume-from-stage {args.resume_from_stage} requires a complete, "
-                "compatible upstream checkpoint chain, replay company_website_url, or "
-                "a supported external_apply_url."
-            ),
-            run_configuration=_run_configuration(args),
-        )
+        downstream_start, _ = _downstream_start_stage(company, args)
 
     remaining = args.company_time_budget - (time.monotonic() - started)
     if remaining <= 0:
@@ -798,23 +797,59 @@ def _automatic_retry_start_stage(
     if requested not in PIPELINE_STAGES:
         return None
 
-    missing = _missing_resume_checkpoints(company, args, requested)
-    effective = min(
-        (requested, *missing),
-        key=PIPELINE_STAGES.index,
-    )
+    inspection = _inspect_company_checkpoint_prefix(company, args, requested)
+    effective = inspection.effective_start
     company.source_trace["batch_completion_retry"] = {
         "requested_start_stage": requested,
         "effective_start_stage": effective,
-        "checkpoint_chain": "complete" if not missing else "incomplete",
-        "missing_checkpoints": missing,
+        "checkpoint_chain": "complete" if not inspection.defects else "incomplete",
+        "missing_checkpoints": [defect.stage for defect in inspection.defects],
+        **inspection.trace_record(mode="automatic_retry"),
     }
     return effective
+
+
+def _explicit_resume_start_stage(
+    company: CompanyInput,
+    args: argparse.Namespace,
+) -> str | None:
+    requested = getattr(args, "resume_from_stage", None)
+    if requested not in PIPELINE_STAGES:
+        return None
+    inspection = _inspect_company_checkpoint_prefix(company, args, requested)
+    _record_resume_inspection(company, inspection)
+    return inspection.effective_start
+
+
+def _explicit_rerun_preflight(
+    company: CompanyInput,
+    args: argparse.Namespace,
+) -> DiscoveryResult | None:
+    requested = getattr(args, "rerun_stage", None)
+    if requested not in PIPELINE_STAGES:
+        return None
+    inspection = _inspect_company_checkpoint_prefix(company, args, requested)
+    if not inspection.defects:
+        return None
+    company.source_trace["checkpoint_prefix"] = inspection.trace_record(mode="rerun")
+    defect_summary = ", ".join(
+        f"{defect.stage}:{defect.defect_class}" for defect in inspection.defects
+    )
+    return failure_result(
+        company,
+        error="checkpoint_prefix_invalid",
+        detail=(
+            f"Cannot rerun from {requested}: checkpoint prefix is not reusable "
+            f"({defect_summary}); rebuild from {inspection.effective_start}."
+        ),
+        run_configuration=_run_configuration(args),
+    )
 
 
 def _upstream_rerun_stage(args: argparse.Namespace) -> str | None:
     rerun_stage = getattr(args, "rerun_stage", None)
     if rerun_stage in {
+        STAGE_LINKEDIN_DISCOVERY,
         STAGE_WEBSITE_RESOLUTION,
         STAGE_HIRING_IDENTITY_RESOLUTION,
     }:
@@ -830,110 +865,50 @@ def _downstream_start_stage(
     if requested not in {STAGE_JOB_BOARD_DISCOVERY, STAGE_OPENING_MATCH}:
         return STAGE_CAREER_DISCOVERY, None
 
-    missing = _missing_resume_checkpoints(company, args, requested)
-    if not missing:
-        company.source_trace.setdefault("resume", {}).update(
-            {
-                "effective_start_stage": requested,
-                "checkpoint_chain": "complete",
-                "used_replay_upstream": False,
-                "skipped_stages": [],
-            }
-        )
+    inspection = _inspect_company_checkpoint_prefix(company, args, requested)
+    _record_resume_inspection(company, inspection)
+    if not inspection.defects:
         return requested, None
 
-    resume_trace = company.source_trace.setdefault("resume", {})
-    resume_trace.update(
-        {
-            "effective_start_stage": STAGE_CAREER_DISCOVERY,
-            "checkpoint_chain": "incomplete",
-            "missing_checkpoints": missing,
-            "used_replay_upstream": True,
-        }
-    )
-    if company.company_website_url or company.external_apply_url:
-        resume_trace["fallback"] = "rebuild_downstream_from_career_discovery"
-        return STAGE_CAREER_DISCOVERY, "rebuild_downstream"
-    resume_trace["fallback"] = "missing_resume_evidence"
-    return STAGE_CAREER_DISCOVERY, "missing_resume_evidence"
+    company.source_trace["resume"]["fallback"] = "rebuild_from_earliest_checkpoint_gap"
+    return inspection.effective_start, "rebuild_from_checkpoint_gap"
 
 
-def _missing_resume_checkpoints(
+def _inspect_company_checkpoint_prefix(
     company: CompanyInput,
     args: argparse.Namespace,
     requested: str,
-) -> list[str]:
+) -> CheckpointPrefixInspection:
     run_configuration = _run_configuration(args)
     fingerprint = execution_fingerprint(
         dataclass_to_dict(company),
         run_configuration.digest,
     )
     store = FilesystemCheckpointStore(_checkpoint_dir(args))
-    requested_index = PIPELINE_STAGES.index(requested)
-    missing: list[str] = []
-    context = PipelineContext.from_company(company)
-    chain_is_usable = True
-    for stage in PIPELINE_STAGES[:requested_index]:
-        execution = store.load(fingerprint, stage)
-        if execution is None or execution.result.status not in {"success", "not_applicable"}:
-            missing.append(stage)
-            chain_is_usable = False
-            continue
-        if not chain_is_usable:
-            continue
-        candidate_context = copy.deepcopy(context)
-        try:
-            candidate_context.apply(execution)
-        except (TypeError, ValueError):
-            missing.append(stage)
-            chain_is_usable = False
-            continue
-        if not _resume_context_update_is_usable(candidate_context, execution):
-            missing.append(stage)
-            chain_is_usable = False
-            continue
-        context = candidate_context
-    return missing
+    return inspect_checkpoint_prefix(
+        store,
+        fingerprint,
+        PipelineContext.from_company(company),
+        requested,
+    )
 
 
-def _resume_context_update_is_usable(
-    context: PipelineContext,
-    execution: StageExecution,
-) -> bool:
-    optional_text_fields = {
-        "hiring_entity_name",
-        "provider",
-    }
-    nullable_url_fields = {
-        "career_root_url",
-        "career_page_url",
-        "job_list_page_url",
-        "open_position_url",
-    }
-    for field_name, value in execution.updates.items():
-        if field_name in optional_text_fields and value is not None and not isinstance(value, str):
-            return False
-        if field_name == "company_website_url" and (
-            not isinstance(value, str) or not value.strip()
-        ):
-            return False
-        if field_name in nullable_url_fields and value is not None and (
-            not isinstance(value, str) or not value.strip()
-        ):
-            return False
-
-    if execution.result.status != "success":
-        return True
-    required_output = {
-        STAGE_WEBSITE_RESOLUTION: "company_website_url",
-        STAGE_CAREER_DISCOVERY: "career_page_url",
-        STAGE_JOB_BOARD_DISCOVERY: "job_list_page_url",
-        STAGE_OPENING_MATCH: "open_position_url",
-    }.get(execution.result.stage)
-    if required_output is None:
-        return True
-    value = getattr(context, required_output)
-    return isinstance(value, str) and bool(value.strip())
+def _record_resume_inspection(
+    company: CompanyInput,
+    inspection: CheckpointPrefixInspection,
+) -> None:
+    company.source_trace.setdefault("resume", {}).update(
+        {
+            "resume_from_stage": inspection.requested_start,
+            "requested_start_stage": inspection.requested_start,
+            "effective_start_stage": inspection.effective_start,
+            "checkpoint_chain": "complete" if not inspection.defects else "incomplete",
+            "missing_checkpoints": [defect.stage for defect in inspection.defects],
+            "used_replay_upstream": False,
+            "skipped_stages": [],
+            **inspection.trace_record(mode="resume"),
+        }
+    )
 
 
 def _downstream_rerun_stage(args: argparse.Namespace) -> str | None:
@@ -942,43 +917,10 @@ def _downstream_rerun_stage(args: argparse.Namespace) -> str | None:
         STAGE_CAREER_DISCOVERY,
         STAGE_JOB_BOARD_DISCOVERY,
         STAGE_OPENING_MATCH,
+        STAGE_RESULT_VALIDATION,
     }:
         return rerun_stage
     return None
-
-
-def resume_uses_replay_upstream(args: argparse.Namespace) -> bool:
-    return getattr(args, "resume_from_stage", None) in {
-        STAGE_CAREER_DISCOVERY,
-        STAGE_JOB_BOARD_DISCOVERY,
-        STAGE_OPENING_MATCH,
-    }
-
-
-def prepare_replay_company_for_resume(company: CompanyInput, args: argparse.Namespace) -> CompanyInput:
-    if company.company_website_url:
-        company.company_website_url = normalize_url(company.company_website_url)
-    if company.career_root_url:
-        company.career_root_url = normalize_url(company.career_root_url)
-    company.source_trace.setdefault("resume", {})
-    company.source_trace["resume"].update(
-        {
-            "resume_from_stage": args.resume_from_stage,
-            "used_replay_upstream": True,
-            "skipped_stages": [
-                STAGE_WEBSITE_RESOLUTION,
-                STAGE_HIRING_IDENTITY_RESOLUTION,
-            ],
-        }
-    )
-    company.source_trace.setdefault("stage_metrics", {})
-    company.source_trace["website_resolution"] = {
-        "selected": {
-            "url": company.company_website_url,
-            "reason": f"reused from replay input for --resume-from-stage {args.resume_from_stage}",
-        }
-    }
-    return company
 
 
 def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyInput:
@@ -1177,19 +1119,10 @@ def _recover_checkpoint_prefix(
     fingerprint = execution_fingerprint(dataclass_to_dict(company), settings.digest)
     store = FilesystemCheckpointStore(_checkpoint_dir(args))
     context = PipelineContext.from_company(company)
-    for stage in PIPELINE_STAGES:
-        execution = store.load(fingerprint, stage)
-        if execution is None or execution.result.status not in {
-            "success",
-            "not_applicable",
-        }:
-            break
-        candidate_context = copy.deepcopy(context)
-        try:
-            candidate_context.apply(execution)
-        except (TypeError, ValueError):
-            break
-        context = candidate_context
+    inspection = inspect_complete_checkpoint_prefix(store, fingerprint, context)
+    for execution in inspection.executions:
+        context.apply(execution)
+        stage = execution.result.stage
         context.trace.setdefault("checkpoint_events", []).append(
             {
                 "action": "parent_timeout_restore",

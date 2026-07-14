@@ -83,6 +83,37 @@ class CliTests(unittest.TestCase):
             str(evidence_cache),
         )
 
+    def test_rerun_checkpoint_prefix_error_exits_without_writing_outputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            trace = Path(directory) / "trace.json"
+            checkpoints = Path(directory) / "checkpoints"
+
+            with self.assertRaisesRegex(
+                SystemExit,
+                r"Cannot rerun from career_discovery:.*linkedin_discovery",
+            ):
+                main(
+                    [
+                        "--input",
+                        str(ROOT / "samples" / "linkedin_jobs.json"),
+                        "--fixtures-dir",
+                        str(ROOT / "samples" / "sites"),
+                        "--offline",
+                        "--checkpoint-dir",
+                        str(checkpoints),
+                        "--rerun-stage",
+                        "career_discovery",
+                        "--output",
+                        str(output),
+                        "--trace-output",
+                        str(trace),
+                    ]
+                )
+
+            self.assertFalse(output.exists())
+            self.assertFalse(trace.exists())
+
 
 if __name__ == "__main__":
     unittest.main()

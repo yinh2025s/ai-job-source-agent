@@ -39,11 +39,9 @@ from scripts.live_batch_eval import (
     _record_company_completion,
     _run_configuration,
     load_batch_companies,
-    prepare_replay_company_for_resume,
     prepare_company,
     print_summary,
     record_checkpoint,
-    resume_uses_replay_upstream,
     run_company,
     run_pipeline_phase,
     validate_artifact_args,
@@ -314,6 +312,102 @@ class LiveBatchEvalTests(unittest.TestCase):
             recovered.open_position_url,
             "https://boards.greenhouse.io/checkpoint/jobs/exact-opening",
         )
+        self.assertEqual(
+            [event["stage"] for event in recovered.trace["checkpoint_events"]],
+            list(PIPELINE_STAGES),
+        )
+
+    def test_checkpoint_recovery_never_restores_valid_records_after_a_gap(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            linkedin_company_url="https://www.linkedin.com/company/checkpoint-labs",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            store, fingerprint = self.save_checkpoint_chain(
+                company,
+                args,
+                stages=PIPELINE_STAGES,
+            )
+            store._checkpoint_path(fingerprint, "hiring_identity_resolution").unlink()
+
+            recovered = _recover_checkpoint_prefix(company, args)
+
+        self.assertEqual(
+            [stage.stage for stage in recovered.stage_results],
+            ["linkedin_discovery", "website_resolution"],
+        )
+        self.assertEqual(
+            [event["stage"] for event in recovered.trace["checkpoint_events"]],
+            ["linkedin_discovery", "website_resolution"],
+        )
+        self.assertIsNone(recovered.career_page_url)
+        self.assertIsNone(recovered.job_list_page_url)
+        self.assertIsNone(recovered.open_position_url)
+
+    def test_explicit_rerun_defect_fails_before_child_execution_or_mutation(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            company_website_url="https://checkpoint.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.rerun_stage = "career_discovery"
+            args.resume_from_stage = None
+            with patch(
+                "scripts.live_batch_eval.run_with_process_budget",
+            ) as run_budgeted, patch(
+                "scripts.live_batch_eval.FilesystemCheckpointStore.invalidate_from",
+            ) as invalidate:
+                result = run_company(company, args)
+
+        run_budgeted.assert_not_called()
+        invalidate.assert_not_called()
+        self.assertEqual(result.error, "checkpoint_prefix_invalid")
+        self.assertEqual(result.trace["batch_error"], "checkpoint_prefix_invalid")
+        self.assertNotIn("https://", result.trace["batch_error_detail"])
+        prefix = result.trace["source_trace"]["checkpoint_prefix"]
+        self.assertEqual(prefix["mode"], "rerun")
+        self.assertEqual(prefix["requested_start"], "career_discovery")
+        self.assertEqual(prefix["effective_start"], "linkedin_discovery")
+        self.assertEqual(
+            prefix["defect_stages"],
+            list(PIPELINE_STAGES[:3]),
+        )
+
+    def test_valid_downstream_rerun_goes_directly_through_core_strict_preflight(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            company_website_url="https://checkpoint.example",
+        )
+        downstream = DiscoveryResult(
+            company_name=company.company_name,
+            company_website_url=company.company_website_url,
+            status="success",
+            stage_results=[],
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.rerun_stage = "opening_match"
+            args.resume_from_stage = None
+            args.company_time_budget = 10
+            args.website_time_budget = 5
+            self.save_checkpoint_chain(
+                company,
+                args,
+                stages=PIPELINE_STAGES[:5],
+            )
+            with patch(
+                "scripts.live_batch_eval.run_with_process_budget",
+                return_value=downstream,
+            ) as run_budgeted:
+                result = run_company(company, args)
+
+        self.assertIs(result, downstream)
+        run_budgeted.assert_called_once()
+        phase_args = run_budgeted.call_args.args[1]
+        self.assertEqual(phase_args[2], "opening_match")
+        self.assertEqual(phase_args[4], "opening_match")
 
     def test_result_validation_timeout_is_consistently_failed(self):
         completed = DiscoveryResult(
@@ -948,14 +1042,22 @@ class LiveBatchEvalTests(unittest.TestCase):
             effective = _automatic_retry_start_stage(company, args)
 
         self.assertEqual(effective, "job_board_discovery")
+        retry = company.source_trace["batch_completion_retry"]
+        self.assertEqual(retry["requested_start_stage"], "opening_match")
+        self.assertEqual(retry["effective_start_stage"], "job_board_discovery")
+        self.assertEqual(retry["checkpoint_chain"], "incomplete")
+        self.assertEqual(retry["missing_checkpoints"], ["job_board_discovery"])
+        self.assertEqual(retry["defect_class"], "missing_corrupt_or_incompatible")
+        self.assertEqual(retry["defect_stages"], ["job_board_discovery"])
         self.assertEqual(
-            company.source_trace["batch_completion_retry"],
-            {
-                "requested_start_stage": "opening_match",
-                "effective_start_stage": "job_board_discovery",
-                "checkpoint_chain": "incomplete",
-                "missing_checkpoints": ["job_board_discovery"],
-            },
+            retry["defects"],
+            [
+                {
+                    "stage": "job_board_discovery",
+                    "defect_class": "missing_corrupt_or_incompatible",
+                    "detail": "The checkpoint store returned no compatible record.",
+                }
+            ],
         )
 
     def test_automatic_retry_starts_upstream_phase_at_failed_stage(self):
@@ -1300,37 +1402,40 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual(manifest["status"], "skipped")
         self.assertEqual(manifest["summary"]["total"], 0)
 
-    def test_resume_from_stage_reuses_replay_upstream_evidence(self):
+    def test_replay_input_without_checkpoints_recomputes_from_earliest_gap(self):
         company = CompanyInput(
             company_name="PostHog",
-            company_website_url="posthog.com",
+            company_website_url="https://posthog.com",
             career_root_url="https://posthog.com/careers/jobs",
             source="replay_input",
         )
-        args = SimpleNamespace(resume_from_stage="opening_match")
-
-        prepared = prepare_replay_company_for_resume(company, args)
-
-        self.assertTrue(resume_uses_replay_upstream(args))
-        self.assertEqual(prepared.company_website_url, "https://posthog.com")
-        self.assertEqual(prepared.source_trace["resume"]["skipped_stages"], [
-            "website_resolution",
-            "hiring_identity_resolution",
-        ])
-
-    def test_resume_from_stage_requires_replay_website(self):
-        company = CompanyInput(company_name="Missing Website", source="replay_input")
-        args = SimpleNamespace(
-            resume_from_stage="opening_match",
-            company_time_budget=1,
-            website_time_budget=1,
+        upstream = DiscoveryResult(
+            company_name=company.company_name,
+            company_website_url="",
+            status="failed",
+            stage_results=[],
         )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.resume_from_stage = "opening_match"
+            args.rerun_stage = None
+            args.company_time_budget = 10
+            args.website_time_budget = 5
+            with patch(
+                "scripts.live_batch_eval.run_with_process_budget",
+                return_value=upstream,
+            ) as run_budgeted:
+                result = run_company(company, args)
 
-        result = run_company(company, args)
-
-        self.assertEqual(result.error_code, "WEBSITE_NOT_RESOLVED")
-        self.assertIn("replay company_website_url", result.trace["batch_error_detail"])
-        self.assertIn("external_apply_url", result.trace["batch_error_detail"])
+        self.assertIs(result, upstream)
+        run_budgeted.assert_called_once()
+        self.assertEqual(run_budgeted.call_args.args[1][2], "linkedin_discovery")
+        resume = company.source_trace["resume"]
+        self.assertEqual(resume["requested_start_stage"], "opening_match")
+        self.assertEqual(resume["effective_start_stage"], "linkedin_discovery")
+        self.assertEqual(resume["defect_stages"], list(PIPELINE_STAGES[:5]))
+        self.assertFalse(resume["used_replay_upstream"])
+        self.assertEqual(resume["skipped_stages"], [])
 
     def test_external_apply_bypasses_missing_website_in_two_phase_runner(self):
         company = CompanyInput(
@@ -1374,8 +1479,8 @@ class LiveBatchEvalTests(unittest.TestCase):
 
             start_at, fallback = _downstream_start_stage(company, args)
 
-        self.assertEqual(start_at, "career_discovery")
-        self.assertEqual(fallback, "rebuild_downstream")
+        self.assertEqual(start_at, "linkedin_discovery")
+        self.assertEqual(fallback, "rebuild_from_checkpoint_gap")
 
     def test_resume_from_job_board_restores_s1_to_s4_without_reexecution(self):
         company = CompanyInput(
@@ -1463,8 +1568,8 @@ class LiveBatchEvalTests(unittest.TestCase):
 
             start_at, fallback = _downstream_start_stage(company, args)
 
-        self.assertEqual(start_at, "career_discovery")
-        self.assertEqual(fallback, "rebuild_downstream")
+        self.assertEqual(start_at, "linkedin_discovery")
+        self.assertEqual(fallback, "rebuild_from_checkpoint_gap")
         self.assertIn("job_board_discovery", company.source_trace["resume"]["missing_checkpoints"])
 
     def test_resume_rebuilds_when_s4_checkpoint_has_unsupported_update(self):
@@ -1484,7 +1589,7 @@ class LiveBatchEvalTests(unittest.TestCase):
             start_at, fallback = _downstream_start_stage(company, args)
 
         self.assertEqual(start_at, "career_discovery")
-        self.assertEqual(fallback, "rebuild_downstream")
+        self.assertEqual(fallback, "rebuild_from_checkpoint_gap")
         self.assertIn(
             "career_discovery",
             company.source_trace["resume"]["missing_checkpoints"],
@@ -1507,7 +1612,7 @@ class LiveBatchEvalTests(unittest.TestCase):
             start_at, fallback = _downstream_start_stage(company, args)
 
         self.assertEqual(start_at, "career_discovery")
-        self.assertEqual(fallback, "rebuild_downstream")
+        self.assertEqual(fallback, "rebuild_from_checkpoint_gap")
         self.assertIn(
             "career_discovery",
             company.source_trace["resume"]["missing_checkpoints"],
