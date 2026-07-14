@@ -5,15 +5,20 @@ import json
 import os
 import re
 import time
+import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import fcntl
 
 from .reasons import classify_fetch_error, reason_spec
 from .request_identity import build_request_identity, is_sensitive_key, sanitize_url
 from .web import FetchError, Page, fixture_path_candidates
+
+if TYPE_CHECKING:
+    from .snapshot_capture import SnapshotCaptureCoordinator, SnapshotRequestCapture
 
 
 SENSITIVE_QUERY_KEYS = {
@@ -63,6 +68,12 @@ class SnapshotRecord:
     sha256: str
     byte_count: int
     captured_at_epoch: float
+    snapshot_store_id: str | None = None
+    scope_id: str | None = None
+    capture_attempt_id: str | None = None
+    execution_fingerprint: str | None = None
+    stage: str | None = None
+    request_ordinal: int | None = None
 
 
 @dataclass
@@ -74,6 +85,12 @@ class FetchFailureRecord:
     failure: dict
     captured_at_epoch: float
     terminal: bool
+    snapshot_store_id: str | None = None
+    scope_id: str | None = None
+    capture_attempt_id: str | None = None
+    execution_fingerprint: str | None = None
+    stage: str | None = None
+    request_ordinal: int | None = None
 
 
 class SnapshotStore:
@@ -85,6 +102,21 @@ class SnapshotStore:
         self.index_path = self.root_dir / "snapshots.jsonl"
         self.failure_index_path = self.root_dir / "fetch-failures.jsonl"
         self.sequence_path = self.root_dir / ".snapshot-sequence"
+        self.store_id_path = self.root_dir / ".snapshot-store-id"
+
+    @property
+    def snapshot_store_id(self) -> str:
+        """Return the durable opaque identity for this snapshot root."""
+        self.root_dir.mkdir(parents=True, exist_ok=True)
+        with self._write_lock():
+            try:
+                store_id = self.store_id_path.read_text(encoding="ascii").strip()
+            except FileNotFoundError:
+                store_id = uuid.uuid4().hex
+                _write_bytes_atomic(self.store_id_path, f"{store_id}\n".encode("ascii"))
+            if re.fullmatch(r"[a-f0-9]{32}", store_id) is None:
+                raise ValueError("Snapshot store ID is missing or corrupt")
+            return store_id
 
     def write_page(
         self,
@@ -92,7 +124,9 @@ class SnapshotStore:
         request_url: str | None = None,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        capture: SnapshotRequestCapture | None = None,
     ) -> SnapshotRecord:
+        self._validate_capture(capture)
         request_identity = build_request_identity(
             request_url or page.url,
             data=data,
@@ -114,7 +148,7 @@ class SnapshotStore:
             _write_bytes_atomic(path, encoded)
             artifact_paths, artifact_blob_paths = self._write_artifacts(page, sanitized_final_url)
             record = SnapshotRecord(
-                schema_version=2,
+                schema_version=3 if capture is not None else 2,
                 kind="page",
                 sequence=self._next_sequence(),
                 request=request_identity.as_dict(),
@@ -130,8 +164,9 @@ class SnapshotStore:
                 sha256=digest,
                 byte_count=len(encoded),
                 captured_at_epoch=round(time.time(), 3),
+                **(_capture_fields(capture) if capture is not None else {}),
             )
-            _append_jsonl_durable(self.index_path, record.__dict__)
+            _append_jsonl_durable(self.index_path, _record_payload(record))
         return record
 
     def write_failure(
@@ -140,7 +175,9 @@ class SnapshotStore:
         request_url: str,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        capture: SnapshotRequestCapture | None = None,
     ) -> FetchFailureRecord:
+        self._validate_capture(capture)
         request_identity = build_request_identity(request_url, data=data, headers=headers)
         reason_code = error.reason_code or classify_fetch_error(str(error))
         retryable = (
@@ -153,7 +190,7 @@ class SnapshotStore:
         self.root_dir.mkdir(parents=True, exist_ok=True)
         with self._write_lock():
             record = FetchFailureRecord(
-                schema_version=2,
+                schema_version=3 if capture is not None else 2,
                 kind="fetch_failure",
                 sequence=self._next_sequence(),
                 request=request_identity.as_dict(),
@@ -166,8 +203,9 @@ class SnapshotStore:
                 },
                 captured_at_epoch=round(time.time(), 3),
                 terminal=True,
+                **(_capture_fields(capture) if capture is not None else {}),
             )
-            _append_jsonl_durable(self.failure_index_path, record.__dict__)
+            _append_jsonl_durable(self.failure_index_path, _record_payload(record))
         return record
 
     def _next_sequence(self) -> int:
@@ -198,6 +236,10 @@ class SnapshotStore:
             artifact_blob_paths[name] = str(blob_path.relative_to(self.root_dir))
         return artifact_paths, artifact_blob_paths
 
+    def _validate_capture(self, capture: SnapshotRequestCapture | None) -> None:
+        if capture is not None and capture.snapshot_store_id != self.snapshot_store_id:
+            raise ValueError("Snapshot capture belongs to another snapshot store")
+
     @contextmanager
     def _write_lock(self):
         lock_path = self.root_dir / ".snapshot.lock"
@@ -212,23 +254,43 @@ class SnapshotStore:
 class SnapshottingFetcher:
     """Wrap a fetcher and record terminal fetch outcomes as snapshots."""
 
-    def __init__(self, fetcher, snapshot_dir: str | Path) -> None:
+    def __init__(
+        self,
+        fetcher,
+        snapshot_dir: str | Path,
+        coordinator: SnapshotCaptureCoordinator | None = None,
+    ) -> None:
         self.fetcher = fetcher
         self.snapshot_store = SnapshotStore(snapshot_dir)
+        self.coordinator = coordinator
+        if coordinator is not None:
+            coordinator.bind_store(self.snapshot_store)
         self.timeout = getattr(fetcher, "timeout", None)
 
     def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
+        capture = self.coordinator.begin_request() if self.coordinator is not None else None
         try:
             page = self.fetcher.fetch(url, data=data, headers=headers)
         except FetchError as error:
-            self.snapshot_store.write_failure(error, url, data=data, headers=headers)
+            record = self.snapshot_store.write_failure(
+                error,
+                url,
+                data=data,
+                headers=headers,
+                capture=capture,
+            )
+            if self.coordinator is not None:
+                self.coordinator.accept_terminal_record(record)
             raise
         record = self.snapshot_store.write_page(
             page,
             request_url=url,
             data=data,
             headers=headers,
+            capture=capture,
         )
+        if self.coordinator is not None:
+            self.coordinator.accept_terminal_record(record)
         page.source = f"{page.source}|snapshot:{record.path}"
         return page
 
@@ -243,12 +305,17 @@ class SnapshottingFetcher:
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
     ) -> FetchFailureRecord:
-        return self.snapshot_store.write_failure(
+        capture = self.coordinator.begin_request() if self.coordinator is not None else None
+        record = self.snapshot_store.write_failure(
             error,
             url,
             data=data,
             headers=headers,
+            capture=capture,
         )
+        if self.coordinator is not None:
+            self.coordinator.accept_terminal_record(record)
+        return record
 
     def __getattr__(self, name: str):
         return getattr(self.fetcher, name)
@@ -345,6 +412,32 @@ def _is_sensitive_key(key: str) -> bool:
 def _safe_path_part(part: str) -> str:
     cleaned = re.sub(r"[^A-Za-z0-9._-]+", "_", part)
     return cleaned or "_"
+
+
+def _capture_fields(capture: SnapshotRequestCapture) -> dict[str, object]:
+    return {
+        "snapshot_store_id": capture.snapshot_store_id,
+        "scope_id": capture.scope_id,
+        "capture_attempt_id": capture.capture_attempt_id,
+        "execution_fingerprint": capture.execution_fingerprint,
+        "stage": capture.stage,
+        "request_ordinal": capture.request_ordinal,
+    }
+
+
+def _record_payload(record: SnapshotRecord | FetchFailureRecord) -> dict[str, object]:
+    payload = record.__dict__.copy()
+    if record.schema_version == 2:
+        for field_name in (
+            "snapshot_store_id",
+            "scope_id",
+            "capture_attempt_id",
+            "execution_fingerprint",
+            "stage",
+            "request_ordinal",
+        ):
+            payload.pop(field_name)
+    return payload
 
 
 def _write_immutable_blob(path: Path, content: bytes, digest: str) -> None:

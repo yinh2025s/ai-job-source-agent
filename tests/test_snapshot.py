@@ -184,6 +184,16 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn("snapshot:sites/example.com/careers/index.html", page.source)
         self.assertTrue(index_exists)
 
+    def test_legacy_snapshot_records_remain_explicit_schema_v2(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            store.write_page(Page(url="https://example.com/jobs", html="ok", source="live"))
+            record = json.loads(Path(store.index_path).read_text(encoding="utf-8"))
+
+        self.assertEqual(record["schema_version"], 2)
+        self.assertNotIn("scope_id", record)
+        self.assertNotIn("request_ordinal", record)
+
     def test_snapshot_store_writes_page_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SnapshotStore(directory)
