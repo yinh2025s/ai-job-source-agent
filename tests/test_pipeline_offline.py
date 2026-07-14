@@ -1010,6 +1010,81 @@ class OfflinePipelineTests(unittest.TestCase):
         self.assertEqual(fetcher.urls, [career, us_listing, neutral_listing])
         self.assertEqual(trace["target_region"], "us")
 
+    def test_cross_region_career_hub_discovers_matching_workday_board(self):
+        career = "https://regional.example/en-au/careers"
+        us_board = "https://regional.wd5.myworkdayjobs.com/en-US/careers"
+
+        class RegionalHubFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.urls.append(url)
+                if url == career:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=f'<a href="{us_board}">Search US jobs</a>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        fetcher = RegionalHubFetcher()
+        job_list_url, trace = JobSourceAgent(
+            fetcher,
+            max_job_pages=3,
+            max_ats_board_fetches=0,
+        ).find_job_board(career, target_location="United States")
+
+        self.assertEqual(job_list_url, us_board)
+        self.assertEqual(fetcher.urls, [career])
+        self.assertEqual(trace["provider"], "workday")
+        self.assertEqual(trace["target_region"], "us")
+
+    def test_cross_region_career_hub_is_inspected_but_not_promoted(self):
+        career = "https://regional.example/en-au/careers"
+        au_board = "https://regional.wd5.myworkdayjobs.com/en-AU/careers"
+        au_listing = "https://regional.example/en-au/careers/jobs"
+
+        class ConflictingRegionalHubFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.urls.append(url)
+                if url == career:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            f'<a href="{au_board}">Search Australia jobs</a>'
+                            f'<a href="{au_listing}">View all Australia jobs</a>'
+                        ),
+                    )
+                raise AssertionError("conflicting regional candidates must not be fetched")
+
+        fetcher = ConflictingRegionalHubFetcher()
+        agent = JobSourceAgent(
+            fetcher,
+            max_job_pages=3,
+            max_ats_board_fetches=0,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_job_board(career, target_location="United States")
+
+        self.assertEqual(raised.exception.code, "job_board_not_found")
+        self.assertEqual(fetcher.urls, [career])
+        trace = raised.exception.trace
+        self.assertEqual(trace["pages_visited"][0]["url"], career)
+        self.assertIsNone(trace["job_list_page_url"])
+        self.assertNotIn("selected", trace)
+        self.assertEqual(
+            {item["url"] for item in trace["regional_exclusions"]},
+            {au_board, au_listing},
+        )
+
     def test_job_board_without_location_preserves_first_regional_candidate(self):
         career = "https://routes.example/careers"
         belgium_listing = "https://routes.example/en-be/careers/job-results"

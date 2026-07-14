@@ -585,7 +585,8 @@ def fixture_path_candidates(
         legacy = base / "index.html"
     else:
         candidate = base.joinpath(*[_safe_fixture_path_part(part) for part in parts])
-        legacy = candidate if candidate.suffix else candidate / "index.html"
+        suffix = candidate.suffix
+        legacy = candidate if suffix and suffix != "." else candidate / "index.html"
     canonical_path = legacy
     if parsed.query:
         query = urlencode(

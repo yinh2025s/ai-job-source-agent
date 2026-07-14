@@ -5,7 +5,7 @@ import json
 import os
 import shutil
 import sys
-from dataclasses import asdict, fields
+from dataclasses import asdict, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
 from urllib.parse import urlparse
@@ -56,6 +56,14 @@ from scripts.export_replay_input import _matches_filters, export_replay_records
 
 BUNDLE_SCHEMA_VERSION = 5
 SCOPED_BUNDLE_SCHEMA_VERSION = 6
+SCOPED_REPLAY_SOURCE_KINDS = frozenset(
+    {
+        "input",
+        "fixed_input",
+        "linkedin_public_jobs",
+        "linkedin_browser_extension",
+    }
+)
 
 
 class FailureReplayError(ValueError):
@@ -435,6 +443,7 @@ def _run_scoped_replay_records(
         record_plans,
         strict=True,
     ):
+        company = _scoped_execution_company(company, source_record)
         execution_fingerprint_value = plan.stage_evidence_lineage[0].execution_fingerprint
         record_checkpoint_root = checkpoint_root / "records" / plan.record_id
         resume_stage = _seed_authoritative_handoffs(
@@ -484,8 +493,64 @@ def _run_scoped_replay_records(
             raise FailureReplayError(
                 f"Scoped replay record {plan.record_id} diverged: {error}"
             ) from error
+        replay_source_trace = replay_record.get("source_trace")
+        replay_metadata = (
+            replay_source_trace.get("replay")
+            if isinstance(replay_source_trace, dict)
+            else None
+        )
+        if isinstance(replay_metadata, dict):
+            discovery.trace.setdefault("source_trace", {})["replay"] = dict(
+                replay_metadata
+            )
         discoveries.append(discovery)
     return discoveries
+
+
+def _scoped_execution_company(company, source_record: dict):
+    trace = source_record.get("trace")
+    stage_traces = trace.get("stages") if isinstance(trace, dict) else None
+    linkedin_trace = (
+        stage_traces.get("linkedin_discovery")
+        if isinstance(stage_traces, dict)
+        else None
+    )
+    source = linkedin_trace.get("source") if isinstance(linkedin_trace, dict) else None
+    if source not in SCOPED_REPLAY_SOURCE_KINDS:
+        return company
+
+    website_trace = stage_traces.get("website_resolution")
+    preferred_website = (
+        website_trace.get("preferred_url")
+        if isinstance(website_trace, dict)
+        else None
+    )
+    identity_trace = stage_traces.get("hiring_identity_resolution")
+    selected_identity = (
+        identity_trace.get("selected") if isinstance(identity_trace, dict) else None
+    )
+    identity_career_root = (
+        selected_identity.get("career_root_url")
+        if isinstance(selected_identity, dict)
+        else None
+    )
+    career_trace = stage_traces.get("career_discovery")
+    trusted_direct_root = (
+        isinstance(career_trace, dict)
+        and career_trace.get("preferred_root_validation") == "trusted_provenance"
+        and not isinstance(identity_career_root, str)
+    )
+    source_trace = dict(company.source_trace)
+    source_trace.pop("replay", None)
+    return replace(
+        company,
+        company_website_url=(
+            preferred_website if isinstance(preferred_website, str) else ""
+        ),
+        career_root_url=(company.career_root_url if trusted_direct_root else None),
+        source=source,
+        source_trace=source_trace,
+    )
 
 
 def _export_replay_records_with_sources(

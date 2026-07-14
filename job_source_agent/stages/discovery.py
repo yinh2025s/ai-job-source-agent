@@ -105,7 +105,8 @@ class CareerDiscoveryStage:
         try:
             replay_trace = context.company.source_trace.get("replay")
             replay_root = context.company.source == "replay_input" or isinstance(replay_trace, dict)
-            if context.career_root_url and not replay_root:
+            trusted_identity_root = _identity_stage_resolved_career_root(context)
+            if context.career_root_url and (not replay_root or trusted_identity_root):
                 career_url = normalize_url(context.career_root_url)
                 trace = {
                     "homepage_url": context.company_website_url,
@@ -535,6 +536,48 @@ def _upstream_stage_failed(context: PipelineContext, stage: str) -> bool:
         result.stage == stage and result.status in {"failed", "unsupported"}
         for result in context.stage_results
     )
+
+
+def _identity_stage_resolved_career_root(context: PipelineContext) -> bool:
+    identity_results = [
+        result
+        for result in context.stage_results
+        if result.stage == STAGE_HIRING_IDENTITY_RESOLUTION
+    ]
+    if len(identity_results) != 1 or identity_results[0].status != "success":
+        return False
+    if not context.career_root_url or not isinstance(identity_results[0].evidence, list):
+        return False
+
+    stage_trace = context.trace.get("stages", {}).get(
+        STAGE_HIRING_IDENTITY_RESOLUTION
+    )
+    selected = stage_trace.get("selected") if isinstance(stage_trace, dict) else None
+    selected_root = (
+        selected.get("career_root_url") if isinstance(selected, dict) else None
+    )
+    if not isinstance(selected_root, str):
+        return False
+
+    root_evidence = []
+    for item in identity_results[0].evidence:
+        if not isinstance(item, dict):
+            return False
+        if item.get("field") == "career_root_url":
+            if set(item) != {"field", "url"} or not isinstance(item["url"], str):
+                return False
+            root_evidence.append(item["url"])
+
+    if len(root_evidence) != 1:
+        return False
+    try:
+        normalized_root = normalize_url(context.career_root_url)
+        return (
+            normalize_url(root_evidence[0]) == normalized_root
+            and normalize_url(selected_root) == normalized_root
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def _elapsed_ms(started: float) -> int:

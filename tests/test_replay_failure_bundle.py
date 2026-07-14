@@ -18,12 +18,102 @@ from scripts.replay_failure_bundle import (
     _build_record_integrity,
     _export_replay_records_with_sources,
     _replay_resume_stage,
+    _scoped_execution_company,
     main,
     replay_failure_bundle,
 )
 
 
 class FailureReplayBundleTests(unittest.TestCase):
+    def test_scoped_execution_restores_authoritative_original_source_semantics(self):
+        company = CompanyInput(
+            company_name="Example",
+            career_root_url="https://jobs.example.test",
+            source="replay_input",
+            source_trace={
+                "linkedin_posting": {"availability": "listed"},
+                "replay": {"record_id": "record-1"},
+            },
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "linkedin_discovery": {"source": "fixed_input"},
+                    "website_resolution": {
+                        "preferred_url": "https://example.test"
+                    },
+                    "hiring_identity_resolution": {"matched_rule": None},
+                    "career_discovery": {
+                        "preferred_root_validation": "trusted_provenance"
+                    },
+                }
+            }
+        }
+
+        execution_company = _scoped_execution_company(company, source_record)
+
+        self.assertEqual(execution_company.source, "fixed_input")
+        self.assertEqual(execution_company.company_website_url, "https://example.test")
+        self.assertEqual(
+            execution_company.career_root_url,
+            "https://jobs.example.test",
+        )
+        self.assertEqual(
+            execution_company.source_trace,
+            {"linkedin_posting": {"availability": "listed"}},
+        )
+        self.assertEqual(company.source, "replay_input")
+        self.assertIn("replay", company.source_trace)
+
+    def test_scoped_execution_does_not_promote_discovered_output_to_input_root(self):
+        company = CompanyInput(
+            company_name="Example",
+            company_website_url="https://example.test",
+            career_root_url="https://jobs.example.test",
+            source="replay_input",
+            source_trace={"replay": {"record_id": "record-1"}},
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "linkedin_discovery": {"source": "input"},
+                    "website_resolution": {
+                        "preferred_url": "https://example.test"
+                    },
+                    "hiring_identity_resolution": {"matched_rule": None},
+                    "career_discovery": {
+                        "selected_from": "verified_homepage_navigation"
+                    },
+                }
+            }
+        }
+
+        execution_company = _scoped_execution_company(company, source_record)
+
+        self.assertEqual(execution_company.company_website_url, "https://example.test")
+        self.assertIsNone(execution_company.career_root_url)
+
+    def test_scoped_execution_unknown_source_fails_closed_as_replay_input(self):
+        company = CompanyInput(
+            company_name="Example",
+            career_root_url="https://stale.example.test",
+            source="replay_input",
+            source_trace={"replay": {"record_id": "record-1"}},
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "linkedin_discovery": {"source": "untrusted_custom_source"}
+                }
+            }
+        }
+
+        execution_company = _scoped_execution_company(company, source_record)
+
+        self.assertIs(execution_company, company)
+        self.assertEqual(execution_company.source, "replay_input")
+        self.assertIn("replay", execution_company.source_trace)
+
     def _args(self, root: Path, **overrides):
         values = {
             "results": str(root / "results.json"),

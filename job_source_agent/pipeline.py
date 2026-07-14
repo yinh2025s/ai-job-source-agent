@@ -1135,7 +1135,16 @@ class JobSourceAgent:
             page_url, deferred_page = queue.pop(0)
             normalized_page_url = page_url.rstrip("/")
             incoming_candidate = queued_candidates.get(normalized_page_url)
-            if not self._url_matches_target_region(page_url, target_region):
+            is_initial_career_root = (
+                normalized_page_url == career_page_url.rstrip("/")
+                and incoming_candidate is None
+                and not self._is_provider_job_board_url(page_url)
+                and not self._looks_like_job_detail_url(page_url)
+            )
+            if (
+                not is_initial_career_root
+                and not self._url_matches_target_region(page_url, target_region)
+            ):
                 trace.setdefault("regional_exclusions", []).append(
                     self._regional_exclusion(page_url, target_region)
                 )

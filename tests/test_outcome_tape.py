@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 import unittest
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError, replace
 
 from job_source_agent.evidence_scope import EvidenceScopeRef
@@ -147,12 +148,39 @@ class OutcomeTapeTests(unittest.TestCase):
             fetcher.fetch(URL)
         self.assert_divergence(raised)
 
-    def test_mismatch_consumes_only_the_current_entry_and_never_searches_ahead(self):
+    def test_independent_request_identities_can_replay_out_of_capture_order(self):
         other = "https://example.com/other"
         fetcher = OutcomeTapeFetcher(self.tape([self.page(1), self.page(2, url=other)]))
-        with self.assertRaises(FetchError):
-            fetcher.fetch(other)
+
         self.assertEqual(fetcher.fetch(other).url, other)
+        self.assertEqual(fetcher.fetch(URL).url, URL)
+        fetcher.finish()
+
+    def test_mismatch_does_not_consume_a_remaining_entry(self):
+        fetcher = OutcomeTapeFetcher(self.tape([self.page(1)]))
+
+        with self.assertRaises(FetchError) as raised:
+            fetcher.fetch("https://example.com/unexpected")
+
+        self.assert_divergence(raised)
+        self.assertEqual(fetcher.fetch(URL).url, URL)
+        fetcher.finish()
+
+    def test_concurrent_distinct_requests_consume_each_entry_once(self):
+        urls = [f"https://example.com/jobs?page={index}" for index in range(1, 17)]
+        fetcher = OutcomeTapeFetcher(
+            self.tape(
+                [
+                    self.page(index, url=url, html=str(index))
+                    for index, url in enumerate(urls, start=1)
+                ]
+            )
+        )
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            pages = list(executor.map(fetcher.fetch, reversed(urls)))
+
+        self.assertEqual({page.url for page in pages}, set(urls))
         fetcher.finish()
 
     def test_rejects_unknown_kind_and_unsanitized_private_payloads(self):

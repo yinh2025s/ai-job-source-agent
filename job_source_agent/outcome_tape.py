@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import threading
 from dataclasses import dataclass
 from typing import Any, ClassVar, Iterable, Literal, TypeAlias
 
@@ -201,7 +202,8 @@ class OutcomeTapeFetcher:
         if not isinstance(tape, OutcomeTape):
             raise TypeError("tape must be an OutcomeTape")
         self._tape = tape
-        self._cursor = 0
+        self._consumed = [False] * len(tape.entries)
+        self._lock = threading.Lock()
 
     def fetch(
         self,
@@ -210,20 +212,32 @@ class OutcomeTapeFetcher:
         headers: dict[str, str] | None = None,
     ) -> Page:
         identity = build_request_identity(url, data=data, headers=headers)
-        if self._cursor >= len(self._tape.entries):
-            raise _divergence("outcome tape received an extra request", identity)
-
-        entry = self._tape.entries[self._cursor]
-        self._cursor += 1
-        if identity != entry.request:
-            raise _divergence("outcome tape request does not match the next entry", identity)
+        with self._lock:
+            entry_index = next(
+                (
+                    index
+                    for index, entry in enumerate(self._tape.entries)
+                    if not self._consumed[index] and identity == entry.request
+                ),
+                None,
+            )
+            if entry_index is None:
+                message = (
+                    "outcome tape received an extra request"
+                    if all(self._consumed)
+                    else "outcome tape request does not match any remaining entry"
+                )
+                raise _divergence(message, identity)
+            self._consumed[entry_index] = True
+            entry = self._tape.entries[entry_index]
         if isinstance(entry, PageOutcomeTapeEntry):
             return entry.to_page()
         raise entry.to_error()
 
     def finish(self) -> None:
-        if self._cursor != len(self._tape.entries):
-            raise _divergence("outcome tape has unconsumed entries")
+        with self._lock:
+            if not all(self._consumed):
+                raise _divergence("outcome tape has unconsumed entries")
 
     def remaining_fetch_seconds(self) -> float | None:
         return None

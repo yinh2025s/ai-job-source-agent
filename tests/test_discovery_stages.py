@@ -229,6 +229,125 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(service.preferred_url, "https://wrong.example/careers")
         self.assertEqual(execution.updates["career_page_url"], "https://job-boards.greenhouse.io/acme")
 
+    def test_replay_career_root_from_fresh_matching_identity_evidence_is_trusted(self):
+        class MustNotFetchCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise AssertionError("freshly resolved identity root should not be re-fetched")
+
+        career_root = "https://careers.example-health.test/jobs"
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Example Health",
+                company_website_url="https://example-health.test",
+                career_root_url="https://stale.example/careers",
+                source="replay_input",
+                source_trace={"replay": {"source_result_file": "old.json"}},
+            )
+        )
+        context.career_root_url = career_root
+        context.stage_results.append(
+            StageResult(
+                stage=STAGE_HIRING_IDENTITY_RESOLUTION,
+                status="success",
+                evidence=[{"field": "career_root_url", "url": career_root}],
+            )
+        )
+        context.trace["stages"][STAGE_HIRING_IDENTITY_RESOLUTION] = {
+            "selected": {"career_root_url": career_root}
+        }
+
+        execution = CareerDiscoveryStage(MustNotFetchCareer()).run(context)
+
+        self.assertEqual(execution.updates["career_page_url"], career_root)
+        self.assertEqual(execution.trace["preferred_root_validation"], "trusted_provenance")
+
+    def test_replay_career_root_passed_through_s3_is_revalidated(self):
+        class CapturingCareer(FakeDiscoveryService):
+            def __init__(self):
+                self.preferred_url = None
+
+            def find_career_page(
+                self,
+                company_website_url,
+                company_name=None,
+                preferred_url=None,
+                target_title=None,
+                target_location=None,
+            ):
+                self.preferred_url = preferred_url
+                return "https://careers.example.test/jobs", {"validated": True}
+
+        stale_root = "https://stale.example/careers"
+        service = CapturingCareer()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Example",
+                company_website_url="https://example.test",
+                career_root_url=stale_root,
+                source="replay_input",
+                source_trace={"replay": {"source_result_file": "old.json"}},
+            )
+        )
+        context.stage_results.append(
+            StageResult(
+                stage=STAGE_HIRING_IDENTITY_RESOLUTION,
+                status="success",
+                evidence=[{"field": "career_root_url", "url": stale_root}],
+            )
+        )
+        context.trace["stages"][STAGE_HIRING_IDENTITY_RESOLUTION] = {
+            "matched_rule": None
+        }
+
+        execution = CareerDiscoveryStage(service).run(context)
+
+        self.assertEqual(service.preferred_url, stale_root)
+        self.assertEqual(execution.updates["career_page_url"], "https://careers.example.test/jobs")
+
+    def test_replay_career_root_mismatching_identity_evidence_is_revalidated(self):
+        class CapturingCareer(FakeDiscoveryService):
+            def __init__(self):
+                self.preferred_url = None
+
+            def find_career_page(
+                self,
+                company_website_url,
+                company_name=None,
+                preferred_url=None,
+                target_title=None,
+                target_location=None,
+            ):
+                self.preferred_url = preferred_url
+                return "https://careers.example-health.test/jobs", {"validated": True}
+
+        stale_root = "https://stale.example/careers"
+        resolved_root = "https://careers.example-health.test/jobs"
+        service = CapturingCareer()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Example Health",
+                company_website_url="https://example-health.test",
+                career_root_url=stale_root,
+                source="replay_input",
+                source_trace={"replay": {"source_result_file": "old.json"}},
+            )
+        )
+        context.stage_results.append(
+            StageResult(
+                stage=STAGE_HIRING_IDENTITY_RESOLUTION,
+                status="success",
+                evidence=[{"field": "career_root_url", "url": resolved_root}],
+            )
+        )
+        context.trace["stages"][STAGE_HIRING_IDENTITY_RESOLUTION] = {
+            "selected": {"career_root_url": resolved_root}
+        }
+
+        execution = CareerDiscoveryStage(service).run(context)
+
+        self.assertEqual(service.preferred_url, stale_root)
+        self.assertEqual(execution.updates["career_page_url"], resolved_root)
+
     def test_job_board_stage_accepts_provider_from_verified_page_evidence(self):
         class PageAwareService(FakeDiscoveryService):
             def find_job_board(self, career_page_url, company_name=None, target_location=None):
