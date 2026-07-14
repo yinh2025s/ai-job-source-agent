@@ -208,6 +208,14 @@ class PipelineApplicationTests(unittest.TestCase):
             {"stage": STAGE_WEBSITE_RESOLUTION, "action": "restore"},
             resumed.trace["checkpoint_events"],
         )
+        self.assertEqual(
+            resumed.trace["checkpoint_prefix"]["requested_start"],
+            STAGE_HIRING_IDENTITY_RESOLUTION,
+        )
+        self.assertEqual(
+            resumed.trace["checkpoint_prefix"]["effective_start"],
+            STAGE_HIRING_IDENTITY_RESOLUTION,
+        )
         attempts = {
             item["stage"]: item["producer_attempt_id"]
             for item in resumed.trace["stage_evidence_lineage"]
@@ -220,6 +228,28 @@ class PipelineApplicationTests(unittest.TestCase):
                 for stage in PIPELINE_STAGES[2:]
             )
         )
+
+    def test_resume_exposes_prefix_fallback_diagnostics_in_result_trace(self):
+        company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]
+        with tempfile.TemporaryDirectory() as directory:
+            application = self.build_application(directory)
+            application.pipeline.discover(company)
+            website_checkpoint = next(
+                Path(directory).rglob(f"{STAGE_WEBSITE_RESOLUTION}.json")
+            )
+            website_checkpoint.unlink()
+
+            resumed = application.pipeline.discover(
+                company,
+                start_at=STAGE_CAREER_DISCOVERY,
+                stop_after=STAGE_CAREER_DISCOVERY,
+            )
+
+        prefix = resumed.trace["checkpoint_prefix"]
+        self.assertEqual(prefix["requested_start"], STAGE_CAREER_DISCOVERY)
+        self.assertEqual(prefix["effective_start"], STAGE_WEBSITE_RESOLUTION)
+        self.assertEqual(prefix["defect_class"], "missing_corrupt_or_incompatible")
+        self.assertIn(STAGE_WEBSITE_RESOLUTION, prefix["defect_stages"])
 
     def test_linkedin_native_only_is_partial_in_both_result_statuses(self):
         context = PipelineContext.from_company(

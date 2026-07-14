@@ -107,6 +107,11 @@ def discovery_result_from_context(
             "source_trace": company.source_trace,
             "stages": context.trace.get("stages", {}),
             "checkpoint_events": context.trace.get("checkpoint_events", []),
+            **(
+                {"checkpoint_prefix": context.trace["checkpoint_prefix"]}
+                if "checkpoint_prefix" in context.trace
+                else {}
+            ),
             "run_configuration_digest": settings.digest,
             "execution_fingerprint": execution_fingerprint_value
             or execution_fingerprint(asdict(company), settings.digest),

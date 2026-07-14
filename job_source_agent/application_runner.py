@@ -9,6 +9,7 @@ from .contracts import (
     Stage,
     StageExecution,
 )
+from .checkpoint_prefix import CheckpointPrefixError, inspect_checkpoint_prefix
 from .evidence_scope import StageEvidenceLineage
 from .models import PIPELINE_STAGES, StageResult
 
@@ -66,7 +67,7 @@ class ApplicationRunner:
         ``not_run`` so stale downstream checkpoint results cannot leak into a run.
         """
 
-        self._validate_checkpoint_configuration(input_fingerprint)
+        self._validate_checkpoint_configuration(input_fingerprint, rerun_from=rerun_from)
         if rerun_from is not None:
             _stage_index(rerun_from, option="rerun_from")
             if start_at is not None and start_at != rerun_from:
@@ -83,11 +84,26 @@ class ApplicationRunner:
             raise ValueError(
                 f"start_at stage {start_at!r} comes after stop_after stage {stop_after!r}"
             )
-        if rerun_from is not None:
+        checkpoint_preflight = None
+        if self._checkpoint_store is not None:
             assert self._checkpoint_store is not None
             assert input_fingerprint is not None
-            self._checkpoint_store.invalidate_from(input_fingerprint, rerun_from)
-            _record_checkpoint_event(context, rerun_from, "invalidate_from")
+            checkpoint_preflight = inspect_checkpoint_prefix(
+                self._checkpoint_store,
+                input_fingerprint,
+                context,
+                start_at,
+            )
+            if rerun_from is not None and checkpoint_preflight.defects:
+                raise CheckpointPrefixError(checkpoint_preflight)
+            start_at = checkpoint_preflight.effective_start
+            start_index = _stage_index(start_at, option="start_at")
+            self._checkpoint_store.invalidate_from(input_fingerprint, start_at)
+            _reset_checkpoint_context(context)
+            context.trace["checkpoint_prefix"] = checkpoint_preflight.trace_record(
+                mode="rerun" if rerun_from is not None else "resume"
+            )
+            _record_checkpoint_event(context, start_at, "invalidate_from")
 
         previous_results = _index_existing_results(context)
         previous_traces = dict(context.trace.get("stages", {}))
@@ -98,7 +114,11 @@ class ApplicationRunner:
 
         for index, stage_name in enumerate(PIPELINE_STAGES):
             if index < start_index:
-                checkpoint = self._load_checkpoint(input_fingerprint, stage_name)
+                checkpoint = (
+                    checkpoint_preflight.executions[index]
+                    if checkpoint_preflight is not None
+                    else self._load_checkpoint(input_fingerprint, stage_name)
+                )
                 if checkpoint is not None:
                     _validate_execution(checkpoint, stage_name, source="Checkpoint")
                     context.apply(checkpoint)
@@ -182,7 +202,12 @@ class ApplicationRunner:
 
         return context
 
-    def _validate_checkpoint_configuration(self, input_fingerprint: str | None) -> None:
+    def _validate_checkpoint_configuration(
+        self,
+        input_fingerprint: str | None,
+        *,
+        rerun_from: str | None,
+    ) -> None:
         if self._checkpoint_store is None and input_fingerprint is not None:
             raise ValueError("input_fingerprint requires a checkpoint_store")
         if self._checkpoint_store is not None and (
@@ -191,6 +216,8 @@ class ApplicationRunner:
             raise ValueError(
                 "input_fingerprint must be a non-empty string when checkpoint_store is configured"
             )
+        if self._checkpoint_store is None and rerun_from is not None:
+            raise ValueError("rerun_from requires a checkpoint_store")
 
     def _load_checkpoint(
         self,
@@ -247,6 +274,23 @@ def _record_checkpoint_event(
     context.trace.setdefault("checkpoint_events", []).append(
         {"stage": stage_name, "action": action}
     )
+
+
+def _reset_checkpoint_context(context: PipelineContext) -> None:
+    baseline = PipelineContext.from_company(context.company)
+    context.company_website_url = baseline.company_website_url
+    context.hiring_entity_name = baseline.hiring_entity_name
+    context.career_root_url = baseline.career_root_url
+    context.homepage_navigation_evidence = None
+    context.career_page_url = None
+    context.job_list_page_url = None
+    context.discovered_job_board = None
+    context.open_position_url = None
+    context.provider = None
+    context.stage_results = []
+    context.stage_evidence_lineage = {}
+    context.trace["stages"] = {}
+    context.trace["checkpoint_events"] = []
 
 
 def _not_run(stage_name: str, detail: str, *, scheduler_reason: str) -> StageExecution:
