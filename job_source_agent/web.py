@@ -763,9 +763,11 @@ def _matches_with_omitted_sensitive_query(expected_url: str, recorded_url: str) 
         expected.scheme != recorded.scheme
         or expected.netloc != recorded.netloc
         or not paths_match
-        or expected.query
-        or not recorded.query
     ):
+        return False
+    if expected.query == recorded.query:
+        return True
+    if expected.query or not recorded.query:
         return False
     recorded_query = parse_qsl(recorded.query, keep_blank_values=True)
     return bool(recorded_query) and all(is_sensitive_key(key) for key, _ in recorded_query)

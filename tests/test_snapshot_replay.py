@@ -118,6 +118,52 @@ class SnapshotReplayTests(unittest.TestCase):
 
         self.assertEqual(page.html, "<html>Root jobs</html>")
 
+    def test_redirect_root_response_with_slash_replays_without_slash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            SnapshotStore(snapshots).write_page(
+                Page(
+                    url="https://jobs.taxbit.example/",
+                    final_url="https://jobs.taxbit.example/",
+                    html="<html>TaxBit jobs</html>",
+                    source="live",
+                ),
+                request_url="https://www.taxbit.example/careers",
+            )
+
+            replay_snapshots(snapshots, output)
+            page = Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                "https://jobs.taxbit.example"
+            )
+
+        self.assertEqual(page.html, "<html>TaxBit jobs</html>")
+        self.assertEqual(page.final_url, "https://jobs.taxbit.example/")
+
+    def test_redirect_root_response_without_slash_replays_with_slash(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            snapshots = root / "snapshots"
+            output = root / "replay"
+            SnapshotStore(snapshots).write_page(
+                Page(
+                    url="https://jobs.taxbit.example",
+                    final_url="https://jobs.taxbit.example",
+                    html="<html>TaxBit jobs</html>",
+                    source="live",
+                ),
+                request_url="https://www.taxbit.example/careers",
+            )
+
+            replay_snapshots(snapshots, output)
+            page = Fetcher(fixtures_dir=output / "sites", offline=True).fetch(
+                "https://jobs.taxbit.example/"
+            )
+
+        self.assertEqual(page.html, "<html>TaxBit jobs</html>")
+        self.assertEqual(page.final_url, "https://jobs.taxbit.example")
+
     def test_non_root_response_alias_rejects_trailing_slash_difference(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
