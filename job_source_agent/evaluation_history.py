@@ -319,6 +319,13 @@ def derive_cohort_identity(
     )
     if batch_execution_digest is not None:
         identity["batch_execution_configuration_digest"] = batch_execution_digest
+    observed_result_total = summary.get("total")
+    if (
+        isinstance(observed_result_total, int)
+        and not isinstance(observed_result_total, bool)
+        and observed_result_total >= 0
+    ):
+        identity["observed_result_total"] = str(observed_result_total)
     return identity or None
 
 
@@ -370,17 +377,29 @@ def cohort_identities_compatible(
     right: dict[str, str] | None,
 ) -> bool:
     if left is None or right is None:
-        return left is right
+        return False
+    left_total = left.get("observed_result_total")
+    right_total = right.get("observed_result_total")
+    if (
+        not _is_canonical_nonnegative_integer(left_total)
+        or left_total != right_total
+    ):
+        return False
     left_primary = left.get("companies_sha256") or left.get("input_identity")
     right_primary = right.get("companies_sha256") or right.get("input_identity")
+    if left_primary is None or right_primary is None:
+        return left_primary is right_primary and left == right
     return (
-        left_primary is not None
-        and left_primary == right_primary
+        left_primary == right_primary
         and left.get("expectations_identity") == right.get("expectations_identity")
         and left.get("run_configuration_digest") == right.get("run_configuration_digest")
         and left.get("batch_execution_configuration_digest")
         == right.get("batch_execution_configuration_digest")
     )
+
+
+def _is_canonical_nonnegative_integer(value: Any) -> bool:
+    return isinstance(value, str) and re.fullmatch(r"0|[1-9][0-9]*", value) is not None
 
 
 def _canonical_json(value: Any) -> bytes:
