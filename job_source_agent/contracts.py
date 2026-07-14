@@ -4,11 +4,12 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
 from .job_board import DiscoveredJobBoard
+from .homepage_navigation import HomepageNavigationEvidence
 from .models import CompanyInput, StageResult
 from .web import Page
 
 
-CONTRACT_SCHEMA_VERSION = "1.1"
+CONTRACT_SCHEMA_VERSION = "1.2"
 
 
 @runtime_checkable
@@ -42,6 +43,7 @@ class PipelineContext:
     company_website_url: str = ""
     hiring_entity_name: str | None = None
     career_root_url: str | None = None
+    homepage_navigation_evidence: HomepageNavigationEvidence | None = None
     career_page_url: str | None = None
     job_list_page_url: str | None = None
     discovered_job_board: DiscoveredJobBoard | None = None
@@ -69,6 +71,12 @@ class PipelineContext:
                 value, DiscoveredJobBoard
             ):
                 raise TypeError("discovered_job_board update must use DiscoveredJobBoard")
+            if field_name == "homepage_navigation_evidence" and not isinstance(
+                value, HomepageNavigationEvidence
+            ):
+                raise TypeError(
+                    "homepage_navigation_evidence update must use HomepageNavigationEvidence"
+                )
             setattr(self, field_name, value)
         self.stage_results.append(execution.result)
         self.trace.setdefault("stages", {})[execution.result.stage] = execution.trace
@@ -110,6 +118,7 @@ _CONTEXT_UPDATE_FIELDS = {
     "company_website_url",
     "hiring_entity_name",
     "career_root_url",
+    "homepage_navigation_evidence",
     "career_page_url",
     "job_list_page_url",
     "discovered_job_board",

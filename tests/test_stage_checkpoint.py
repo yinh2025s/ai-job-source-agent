@@ -10,11 +10,30 @@ from unittest.mock import patch
 from job_source_agent.checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from job_source_agent.contracts import CheckpointStore, StageExecution
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
+from job_source_agent.homepage_navigation import HomepageNavigationEvidence
 from job_source_agent.models import PIPELINE_STAGES, StageResult
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 
 
 class FilesystemCheckpointStoreTests(unittest.TestCase):
+    def test_homepage_navigation_round_trips_as_typed_context_update(self):
+        evidence = HomepageNavigationEvidence(
+            homepage_url="https://company.example/",
+            candidate_urls=("https://company.example/careers",),
+        )
+        execution = StageExecution(
+            result=StageResult(stage="website_resolution", status="success"),
+            updates={"homepage_navigation_evidence": evidence},
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = FilesystemCheckpointStore(directory)
+            store.save("fingerprint", execution)
+            restored = store.load("fingerprint", "website_resolution")
+
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored.updates["homepage_navigation_evidence"], evidence)
+
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)

@@ -13,6 +13,7 @@ import fcntl
 
 from .checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from .contracts import CONTRACT_SCHEMA_VERSION, StageExecution
+from .homepage_navigation import HomepageNavigationEvidence
 from .job_board import DiscoveredJobBoard
 from .models import PIPELINE_STAGES, StageResult
 
@@ -50,6 +51,17 @@ class FilesystemCheckpointStore:
                     execution_payload["updates"].pop("discovered_job_board", None)
                 else:
                     execution_payload["updates"]["discovered_job_board"] = checkpoint_board
+            homepage_evidence = execution.updates.get("homepage_navigation_evidence")
+            if "homepage_navigation_evidence" in execution.updates and not isinstance(
+                homepage_evidence, HomepageNavigationEvidence
+            ):
+                raise TypeError(
+                    "homepage_navigation_evidence checkpoint update has an invalid type"
+                )
+            if isinstance(homepage_evidence, HomepageNavigationEvidence):
+                execution_payload["updates"]["homepage_navigation_evidence"] = (
+                    homepage_evidence.to_checkpoint_payload()
+                )
             payload = {
                 "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
                 "adapter_version": ADAPTER_VERSION,
@@ -203,6 +215,13 @@ def _deserialize_checkpoint(
         updates = dict(updates)
         updates["discovered_job_board"] = DiscoveredJobBoard.from_checkpoint_payload(
             updates["discovered_job_board"]
+        )
+    if "homepage_navigation_evidence" in updates:
+        updates = dict(updates)
+        updates["homepage_navigation_evidence"] = (
+            HomepageNavigationEvidence.from_checkpoint_payload(
+                updates["homepage_navigation_evidence"]
+            )
         )
 
     return StageExecution(
