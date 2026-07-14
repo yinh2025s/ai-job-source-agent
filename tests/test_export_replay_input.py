@@ -5,6 +5,12 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from job_source_agent.checkpoint import CHECKPOINT_SCHEMA_VERSION, checkpoint_metadata
+from job_source_agent.evidence_scope import (
+    EMPTY_RECORDS_SHA256,
+    EvidenceScopeRef,
+    StageEvidenceLineage,
+    evidence_scope_id,
+)
 from job_source_agent.linkedin import load_company_inputs
 from scripts.export_replay_input import export_replay_records, main
 
@@ -134,6 +140,71 @@ class ExportReplayInputTests(unittest.TestCase):
             {"status": "expired", "availability": "unavailable"},
         )
         self.assertNotIn("payload", json.dumps(exported))
+
+    def test_preserves_only_strict_typed_stage_evidence_lineage(self):
+        attempt_id = "capture-attempt-export"
+        execution_fingerprint = "a" * 64
+        store_id = "snapshot-store-export"
+        scope = EvidenceScopeRef(
+            snapshot_store_id=store_id,
+            scope_id=evidence_scope_id(
+                store_id,
+                attempt_id,
+                execution_fingerprint,
+                "career_discovery",
+            ),
+            capture_attempt_id=attempt_id,
+            execution_fingerprint=execution_fingerprint,
+            stage="career_discovery",
+            request_count=0,
+            records_sha256=EMPTY_RECORDS_SHA256,
+        )
+        lineage = StageEvidenceLineage(
+            stage="career_discovery",
+            execution_fingerprint=execution_fingerprint,
+            producer_attempt_id=attempt_id,
+            snapshot_scope=scope,
+        )
+        payload = {
+            "stage": lineage.stage,
+            "execution_fingerprint": lineage.execution_fingerprint,
+            "producer_attempt_id": lineage.producer_attempt_id,
+            "snapshot_scope": {
+                "snapshot_store_id": scope.snapshot_store_id,
+                "scope_id": scope.scope_id,
+                "capture_attempt_id": scope.capture_attempt_id,
+                "execution_fingerprint": scope.execution_fingerprint,
+                "stage": scope.stage,
+                "request_count": scope.request_count,
+                "records_sha256": scope.records_sha256,
+                "first_sequence": scope.first_sequence,
+                "last_sequence": scope.last_sequence,
+                "schema_version": scope.schema_version,
+            },
+            "schema_version": lineage.schema_version,
+        }
+        record = {
+            "company_name": "Scoped Example",
+            "company_website_url": "https://scoped.example",
+            "trace": {
+                "stage_evidence_lineage": [payload],
+                "raw_html": "must not persist",
+                "cookies": ["secret"],
+            },
+        }
+
+        exported = export_replay_records([record], self._args())
+
+        self.assertEqual(exported[0]["stage_evidence_lineage"], [payload])
+        self.assertNotIn("must not persist", json.dumps(exported))
+        self.assertNotIn("secret", json.dumps(exported))
+
+        invalid = dict(record)
+        invalid["trace"] = {
+            "stage_evidence_lineage": [{**payload, "raw_html": "secret"}]
+        }
+        with self.assertRaisesRegex(ValueError, "unknown fields"):
+            export_replay_records([invalid], self._args())
 
     def test_preserves_only_typed_expected_replay_transition(self):
         record = {

@@ -3,12 +3,14 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import asdict
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.checkpoint import checkpoint_metadata
 from job_source_agent.evaluation import result_provider
+from job_source_agent.evidence_scope import StageEvidenceLineage
 from job_source_agent.models import PIPELINE_STAGES
 
 
@@ -24,6 +26,7 @@ REPLAY_FIELDS = (
     "job_location",
     "source",
     "source_trace",
+    "stage_evidence_lineage",
     "checkpoint",
 )
 
@@ -141,6 +144,9 @@ def _to_replay_record(record: dict, source_path: str) -> dict:
         "source": "replay_input",
         "source_trace": source_trace,
     }
+    lineage = _stable_stage_evidence_lineage(record)
+    if lineage:
+        replay_record["stage_evidence_lineage"] = lineage
     replay_record["checkpoint"] = checkpoint_metadata(replay_record)
     return {key: value for key, value in replay_record.items() if key in REPLAY_FIELDS and value is not None}
 
@@ -172,6 +178,23 @@ def _stable_source_trace(record: dict) -> dict:
     if linkedin_posting:
         stable["linkedin_posting"] = linkedin_posting
     return stable
+
+
+def _stable_stage_evidence_lineage(record: dict) -> list[dict]:
+    payload = record.get("stage_evidence_lineage")
+    if payload is None:
+        trace = record.get("trace")
+        payload = trace.get("stage_evidence_lineage") if isinstance(trace, dict) else None
+    if payload is None:
+        return []
+    if not isinstance(payload, list):
+        raise ValueError("stage_evidence_lineage must be a list")
+
+    restored = [StageEvidenceLineage.from_payload(item) for item in payload]
+    stage_indexes = [PIPELINE_STAGES.index(item.stage) for item in restored]
+    if stage_indexes != sorted(set(stage_indexes)):
+        raise ValueError("stage_evidence_lineage must use canonical unique stage order")
+    return [asdict(item) for item in restored]
 
 
 def _stable_string_fields(value: object, fields: tuple[str, ...]) -> dict[str, str]:
