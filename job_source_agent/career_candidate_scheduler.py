@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from .models import LinkCandidate
 
 
-SCHEDULE_VERSION = "1"
+SCHEDULE_VERSION = "2"
 
 _LANGUAGE_SEGMENTS = {
     "ar", "cs", "da", "de", "en", "es", "fi", "fr", "he", "id", "it",
@@ -106,6 +106,15 @@ def candidate_evidence_tier(candidate: LinkCandidate) -> int:
         candidate.origin == "unknown"
         and "homepage navigation link" in candidate.reasons
         and has_explicit_career_semantics
+    ):
+        return 1
+    candidate_host = candidate_concrete_host(candidate.url)
+    if (
+        candidate.origin == "embedded_url"
+        and urlparse(candidate.url).scheme.casefold() == "https"
+        and candidate_host
+        and candidate_host == candidate_concrete_host(candidate.source_url)
+        and "explicit job-list route" in candidate.reasons
     ):
         return 1
     if candidate.origin in {"path_probe", "subdomain_probe", "blind_ats_probe"}:

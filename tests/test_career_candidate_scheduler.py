@@ -22,11 +22,19 @@ class RecordingFailureFetcher(Fetcher):
         raise FetchError(f"fixture miss: {url}")
 
 
-def candidate(url, score, reasons, *, text="", origin="unknown"):
+def candidate(
+    url,
+    score,
+    reasons,
+    *,
+    text="",
+    origin="unknown",
+    source_url="https://example.com",
+):
     return LinkCandidate(
         url=url,
         text=text,
-        source_url="https://example.com",
+        source_url=source_url,
         score=score,
         reasons=reasons,
         origin=origin,
@@ -41,6 +49,143 @@ def schedule(agent, candidates):
 
 
 class CareerCandidateSchedulerTests(unittest.TestCase):
+    def test_same_host_embedded_explicit_job_list_uses_first_party_evidence_rank(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        scheduled, trace = schedule(
+            agent,
+            [
+                candidate(
+                    "https://example.com/careers",
+                    200,
+                    ["career keyword 'careers'"],
+                    origin="page_link",
+                ),
+                candidate(
+                    "https://example.com/jobs",
+                    300,
+                    ["explicit job-list route"],
+                    origin="embedded_url",
+                ),
+            ],
+        )
+
+        self.assertEqual(
+            [item.url for item in scheduled],
+            ["https://example.com/jobs", "https://example.com/careers"],
+        )
+        self.assertEqual(trace["version"], "2")
+
+    def test_cross_host_embedded_explicit_job_list_stays_in_lower_tier(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        scheduled, _trace = schedule(
+            agent,
+            [
+                candidate(
+                    "https://example.com/careers",
+                    100,
+                    ["career keyword 'careers'"],
+                    origin="page_link",
+                ),
+                candidate(
+                    "https://jobs.example.net/jobs",
+                    900,
+                    ["explicit job-list route"],
+                    origin="embedded_url",
+                ),
+            ],
+        )
+
+        self.assertEqual(scheduled[0].url, "https://example.com/careers")
+
+    def test_non_explicit_embedded_route_stays_in_lower_tier(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        scheduled, _trace = schedule(
+            agent,
+            [
+                candidate(
+                    "https://example.com/careers",
+                    100,
+                    ["career keyword 'careers'"],
+                    origin="page_link",
+                ),
+                candidate(
+                    "https://example.com/about",
+                    900,
+                    ["embedded page reference"],
+                    origin="embedded_url",
+                ),
+            ],
+        )
+
+        self.assertEqual(scheduled[0].url, "https://example.com/careers")
+
+    def test_non_https_embedded_explicit_job_list_stays_in_lower_tier(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        scheduled, _trace = schedule(
+            agent,
+            [
+                candidate(
+                    "https://example.com/careers",
+                    100,
+                    ["career keyword 'careers'"],
+                    origin="page_link",
+                ),
+                candidate(
+                    "http://example.com/jobs",
+                    900,
+                    ["explicit job-list route"],
+                    origin="embedded_url",
+                ),
+            ],
+        )
+
+        self.assertEqual(scheduled[0].url, "https://example.com/careers")
+
+    def test_existing_identity_evidence_precedes_promoted_embedded_job_list(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        scheduled, _trace = schedule(
+            agent,
+            [
+                candidate(
+                    "https://example.com/career-root",
+                    60,
+                    ["identity-supplied career root requiring verification"],
+                    origin="identity_career_root",
+                ),
+                candidate(
+                    "https://example.com/jobs",
+                    900,
+                    ["explicit job-list route"],
+                    origin="embedded_url",
+                ),
+            ],
+        )
+
+        self.assertEqual(scheduled[0].url, "https://example.com/career-root")
+
+    def test_lower_score_embedded_explicit_job_list_remains_ineligible(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        scheduled, trace = schedule(
+            agent,
+            [
+                candidate(
+                    "https://example.com/jobs",
+                    49,
+                    ["explicit job-list route"],
+                    origin="embedded_url",
+                ),
+            ],
+        )
+
+        self.assertEqual(scheduled, [])
+        self.assertEqual(trace["eligible_count"], 0)
+
     def test_evidence_tiers_precede_generated_score(self):
         agent = JobSourceAgent(Fetcher(offline=True))
 
