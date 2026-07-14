@@ -108,14 +108,7 @@ def candidate_evidence_tier(candidate: LinkCandidate) -> int:
         and has_explicit_career_semantics
     ):
         return 1
-    candidate_host = candidate_concrete_host(candidate.url)
-    if (
-        candidate.origin == "embedded_url"
-        and urlparse(candidate.url).scheme.casefold() == "https"
-        and candidate_host
-        and candidate_host == candidate_concrete_host(candidate.source_url)
-        and "explicit job-list route" in candidate.reasons
-    ):
+    if _is_first_party_embedded_job_list(candidate):
         return 1
     if candidate.origin in {"path_probe", "subdomain_probe", "blind_ats_probe"}:
         return 3
@@ -208,13 +201,29 @@ def _evidence_priority_boost(candidate: LinkCandidate) -> int:
         for reason in candidate.reasons
     ):
         return 1000
-    if "homepage navigation link" in candidate.reasons and any(
-        reason.startswith("career keyword")
-        or reason in {
-            "explicit job-list route",
-            "homepage team link requiring employment evidence",
-        }
-        for reason in candidate.reasons
+    if _is_first_party_embedded_job_list(candidate) or (
+        "homepage navigation link" in candidate.reasons
+        and any(
+            reason.startswith("career keyword")
+            or reason in {
+                "explicit job-list route",
+                "homepage team link requiring employment evidence",
+            }
+            for reason in candidate.reasons
+        )
     ):
         return 500
     return 0
+
+
+def _is_first_party_embedded_job_list(candidate: LinkCandidate) -> bool:
+    source = urlparse(candidate.source_url)
+    candidate_host = candidate_concrete_host(candidate.url)
+    return (
+        candidate.origin == "embedded_url"
+        and urlparse(candidate.url).scheme.casefold() == "https"
+        and source.scheme.casefold() == "https"
+        and bool(candidate_host)
+        and candidate_host == candidate_concrete_host(source.geturl())
+        and "explicit job-list route" in candidate.reasons
+    )

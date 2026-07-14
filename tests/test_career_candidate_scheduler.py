@@ -58,7 +58,7 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
                 candidate(
                     "https://example.com/careers",
                     200,
-                    ["career keyword 'careers'"],
+                    ["career keyword 'careers'", "homepage navigation link"],
                     origin="page_link",
                 ),
                 candidate(
@@ -139,6 +139,30 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
                     900,
                     ["explicit job-list route"],
                     origin="embedded_url",
+                ),
+            ],
+        )
+
+        self.assertEqual(scheduled[0].url, "https://example.com/careers")
+
+    def test_embedded_job_list_from_non_https_source_stays_in_lower_tier(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        scheduled, _trace = schedule(
+            agent,
+            [
+                candidate(
+                    "https://example.com/careers",
+                    100,
+                    ["career keyword 'careers'"],
+                    origin="page_link",
+                ),
+                candidate(
+                    "https://example.com/jobs",
+                    900,
+                    ["explicit job-list route"],
+                    origin="embedded_url",
+                    source_url="http://example.com",
                 ),
             ],
         )
