@@ -55,6 +55,12 @@ dependency.
    S6 and the successful S5 board required page evidence, replay starts at S5 and
    revalidates the locator from sanitized snapshots. It never reconstructs a
    typed locator from diagnostic trace. URL-native handoffs may continue at S6.
+8. `results.json` and `trace.json` are both supported failure-bundle inputs. When
+   diagnostic detection method is absent, replay may use only the stable S5
+   provider, public board URL, and registry capabilities to decide that a
+   page-aware/page-probe provider whose URL is not self-identifying must restart
+   at S5. This is a recovery-boundary decision, not locator reconstruction;
+   unknown, malformed, or URL-native records retain the existing path.
 
 ### Compatibility And Recovery
 
@@ -109,3 +115,6 @@ Costs and limits:
 - Iteration `.61` adds page-evidence S5 replay and URL-native S6 boundary tests.
   The `.59` capture improves from 5 reproduced / 2 fixture gaps to 6 reproduced /
   1 fixture gap without weakening the Akkodis hard-timeout evidence gate.
+- Iteration `.73` gives results-only and trace-based artifacts the same recovery
+  semantics without persisting provider locators in public results. The frozen-30
+  capture replays 30/30 from either input with zero fixture gaps or mismatches.
