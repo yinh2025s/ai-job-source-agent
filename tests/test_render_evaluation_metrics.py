@@ -33,6 +33,28 @@ class RenderEvaluationMetricTests(unittest.TestCase):
             report,
         )
 
+    def test_renders_independent_review_provenance_and_dispositions(self):
+        report = render_markdown_report(
+            {
+                "review_manifest": {
+                    "cohort_provenance": "frozen_observed",
+                    "review_method": "independent_manual_official_evidence_review",
+                    "reviewer": "reviewer-1",
+                    "reviewed_at": "2026-07-15",
+                    "reviewed_record_count": 30,
+                },
+                "record_disposition_counts": {
+                    "exact_public": 19,
+                    "system_gap": 7,
+                },
+            }
+        )
+
+        self.assertIn("## Independent Review", report)
+        self.assertIn("| Cohort provenance | frozen_observed |", report)
+        self.assertIn("## Record Dispositions", report)
+        self.assertIn("| exact_public | 19 |", report)
+
 
 if __name__ == "__main__":
     unittest.main()

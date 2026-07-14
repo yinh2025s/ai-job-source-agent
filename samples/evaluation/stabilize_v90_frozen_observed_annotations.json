@@ -1,0 +1,390 @@
+{
+  "schema_version": "1.0",
+  "cohort_provenance": "frozen_observed",
+  "reviewed_at": "2026-07-15",
+  "review_method": "independent_manual_artifact_and_official_evidence_review",
+  "reviewer": "Codex review outside the runtime identity gate",
+  "source_results_sha256": "88a6c1f94c75ac4d9e3133cfc7944f6e0b989e00033330536436d16e557abf2a",
+  "source_trace_sha256": "ae4b42f2b778dc27e82ae68dfa6b623d645da772648d3cab8d9cd321452a4cfa",
+  "source_summary_sha256": "1c0a711d8133cd9ddac96ac802799aaa5df0428783f4b7051ca27c618e64337a",
+  "records": [
+    {
+      "company_name": "ModMed",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/machine-learning-engineer-at-modmed-4404238079",
+      "linkedin_job_title": "Machine Learning Engineer",
+      "expected_open_position_url": "https://modmed.wd501.myworkdayjobs.com/ModMed12/job/Boca-Raton-FL/Machine-Learning--Engineer_R4352",
+      "expected_candidate_opening_url": "https://modmed.wd501.myworkdayjobs.com/ModMed12/job/Boca-Raton-FL/Machine-Learning--Engineer_R4352",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://modmed.wd501.myworkdayjobs.com/ModMed12/job/Boca-Raton-FL/Machine-Learning--Engineer_R4352", "finding": "Captured official opening title, hiring identity, tenant, and board reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Eightpoint",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-engineer-at-eightpoint-4434671394",
+      "linkedin_job_title": "AI Engineer",
+      "expected_open_position_url": "https://eightpoint.io/jobs/ai-engineer",
+      "expected_candidate_opening_url": "https://eightpoint.io/jobs/ai-engineer",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://eightpoint.io/jobs/ai-engineer", "finding": "Captured first-party opening title and company identity reviewed."}],
+      "review_notes": "Exact output confirmed from frozen first-party evidence."
+    },
+    {
+      "company_name": "Stage 2 Capital",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/machine-learning-engineer-at-stage-2-capital-4439091228",
+      "linkedin_job_title": "Machine Learning Engineer",
+      "expected_open_position_url": "https://modmed.wd501.myworkdayjobs.com/ModMed12/job/Boca-Raton-FL/Machine-Learning--Engineer_R4352",
+      "expected_candidate_opening_url": "https://modmed.wd501.myworkdayjobs.com/ModMed12/job/Boca-Raton-FL/Machine-Learning--Engineer_R4352",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [
+        {"kind": "official_public_opening", "url": "https://modmed.wd501.myworkdayjobs.com/ModMed12/job/Boca-Raton-FL/Machine-Learning--Engineer_R4352", "finding": "Captured official ModMed opening reviewed."},
+        {"kind": "verified_hiring_relationship", "url": "https://www.linkedin.com/jobs/view/machine-learning-engineer-at-stage-2-capital-4439091228", "finding": "Posting repeatedly identifies ModMed as the hiring entity."}
+      ],
+      "review_notes": "The duplicate ModMed URL is valid for this distinct source record because the hiring entity is explicitly resolved to ModMed."
+    },
+    {
+      "company_name": "VELOX",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/artificial-ai-engineer-at-velox-4272412466",
+      "linkedin_job_title": "Artificial (AI) Engineer",
+      "expected_open_position_url": "https://velox.breezy.hr/p/42dadbd6181a-artificial-ai-engineer",
+      "expected_candidate_opening_url": "https://velox.breezy.hr/p/42dadbd6181a-artificial-ai-engineer",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://velox.breezy.hr/p/42dadbd6181a-artificial-ai-engineer", "finding": "Official VELOX opening title and Boise location reviewed."}],
+      "review_notes": "Exact output confirmed from official Breezy evidence."
+    },
+    {
+      "company_name": "Seez",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/generative-ai-and-ml-engineer-at-seez-4438626678",
+      "linkedin_job_title": "Generative AI and ML Engineer",
+      "expected_open_position_url": "https://apply.workable.com/seezcareers/j/3E9E52CCA0/",
+      "expected_candidate_opening_url": "https://apply.workable.com/seezcareers/j/3E9E52CCA0/",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://apply.workable.com/seezcareers/j/3E9E52CCA0/", "finding": "Captured Seez Workable opening and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Edra",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-engineer-new-york-at-edra-4385028052",
+      "linkedin_job_title": "AI Engineer (New York)",
+      "expected_open_position_url": "https://jobs.ashbyhq.com/edra/a1e91194-5358-4f28-a046-1b624a66c061",
+      "expected_candidate_opening_url": "https://jobs.ashbyhq.com/edra/a1e91194-5358-4f28-a046-1b624a66c061",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://jobs.ashbyhq.com/edra/a1e91194-5358-4f28-a046-1b624a66c061", "finding": "Official Edra Ashby opening title and New York location reviewed."}],
+      "review_notes": "Exact output confirmed from official Ashby evidence."
+    },
+    {
+      "company_name": "Distyl",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-engineer-at-distyl-4427879619",
+      "linkedin_job_title": "AI Engineer",
+      "expected_open_position_url": "https://jobs.ashbyhq.com/Distyl/26cc59d5-af3c-4ae7-9ee9-f70733e68dd7",
+      "expected_candidate_opening_url": "https://jobs.ashbyhq.com/Distyl/26cc59d5-af3c-4ae7-9ee9-f70733e68dd7",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://jobs.ashbyhq.com/Distyl/26cc59d5-af3c-4ae7-9ee9-f70733e68dd7", "finding": "Captured Distyl Ashby opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Taxbit",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/agentic-ai-engineer-at-taxbit-4436887601",
+      "linkedin_job_title": "Agentic AI Engineer",
+      "expected_open_position_url": "https://job-boards.greenhouse.io/taxbit/jobs/6111141004",
+      "expected_candidate_opening_url": "https://job-boards.greenhouse.io/taxbit/jobs/6111141004",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://job-boards.greenhouse.io/taxbit/jobs/6111141004", "finding": "Captured Taxbit Greenhouse opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Suffolk Construction",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/site-ai-engineer-las-vegas-nv-at-suffolk-construction-4403244933",
+      "linkedin_job_title": "Site AI Engineer - Las Vegas, NV",
+      "expected_open_position_url": "https://careers-suffolkconstruction.icims.com/jobs/11054/site-ai-engineer---las-vegas%2c-nv/job",
+      "expected_candidate_opening_url": "https://careers-suffolkconstruction.icims.com/jobs/11054/site-ai-engineer---las-vegas%2c-nv/job",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://careers-suffolkconstruction.icims.com/jobs/11054/site-ai-engineer---las-vegas%2c-nv/job", "finding": "Captured Suffolk iCIMS opening title, location, and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Dematic",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-application-engineer-at-dematic-4425328685",
+      "linkedin_job_title": "AI Application Engineer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": "https://kiongroup.wd3.myworkdayjobs.com/en-US/KION_SCS/job/Atlanta-GA-United-States/AI-Application-Engineer_JR-0087751",
+      "record_disposition": "system_gap",
+      "eligible_exact_opening": true,
+      "identity_verdict": "rejected",
+      "evidence": [
+        {"kind": "first_party_career_handoff", "url": "https://www.dematic.com/en-au/about/careers/", "finding": "Dematic career evidence hands off to the KION recruiting system."},
+        {"kind": "official_public_opening", "url": "https://kiongroup.wd3.myworkdayjobs.com/en-US/KION_SCS/job/Atlanta-GA-United-States/AI-Application-Engineer_JR-0087751", "finding": "Official opening names KION and Dematic and includes the target title and Grand Rapids location."}
+      ],
+      "review_notes": "A correct fail-closed result, but a false negative because the relationship proof was not promoted into the typed chain."
+    },
+    {
+      "company_name": "Mighty",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-software-engineer-at-mighty-4367479749",
+      "linkedin_job_title": "AI Software Engineer",
+      "expected_open_position_url": "https://job-boards.greenhouse.io/mighty/jobs/5783098004",
+      "expected_candidate_opening_url": "https://job-boards.greenhouse.io/mighty/jobs/5783098004",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://job-boards.greenhouse.io/mighty/jobs/5783098004", "finding": "Captured Mighty Greenhouse opening title and company identity reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Quest Global",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/agentic-ai-engineer-at-quest-global-4432658971",
+      "linkedin_job_title": "Agentic AI Engineer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": "https://careers.quest-global.com/global/en/job/P-119867/agentic-ai-engineer",
+      "record_disposition": "system_gap",
+      "eligible_exact_opening": true,
+      "identity_verdict": "rejected",
+      "evidence": [
+        {"kind": "first_party_career_handoff", "url": "https://careers.quest-global.com/global/en", "finding": "Quest Global operates the branded career site and search surface."},
+        {"kind": "official_public_opening", "url": "https://careers.quest-global.com/global/en/job/P-119867/agentic-ai-engineer", "finding": "Captured branded career inventory contains the exact target opening."}
+      ],
+      "review_notes": "False negative caused by unpromoted provider relationship evidence."
+    },
+    {
+      "company_name": "Viking",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-engineer-at-viking-4411153562",
+      "linkedin_job_title": "AI Engineer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": null,
+      "record_disposition": "verified_closed",
+      "eligible_exact_opening": false,
+      "identity_verdict": "not_applicable",
+      "evidence": [{"kind": "complete_official_inventory", "url": "https://www.vikingcareers.com/world/en/search-results", "finding": "Complete title-filtered official inventory returned zero target openings."}],
+      "review_notes": "Source posting was stale relative to the official inventory."
+    },
+    {
+      "company_name": "Nevis",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/applied-ai-engineer-at-nevis-4343658270",
+      "linkedin_job_title": "Applied AI Engineer",
+      "expected_open_position_url": "https://jobs.ashbyhq.com/nevis/682261e2-85ac-4869-a74f-be54ec9b3e39",
+      "expected_candidate_opening_url": "https://jobs.ashbyhq.com/nevis/682261e2-85ac-4869-a74f-be54ec9b3e39",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://jobs.ashbyhq.com/nevis/682261e2-85ac-4869-a74f-be54ec9b3e39", "finding": "Captured Nevis Ashby opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "GPTZero",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/artificial-intelligence-engineer-at-gptzero-4348272559",
+      "linkedin_job_title": "Artificial Intelligence Engineer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": null,
+      "record_disposition": "verified_closed",
+      "eligible_exact_opening": false,
+      "identity_verdict": "not_applicable",
+      "evidence": [{"kind": "complete_official_inventory", "url": "https://jobs.ashbyhq.com/GPTZero", "finding": "Complete official Ashby inventory contained four roles and no target opening."}],
+      "review_notes": "Source posting was stale relative to the official inventory."
+    },
+    {
+      "company_name": "Aventis Solutions",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-engineer-x4-at-aventis-solutions-4435557027",
+      "linkedin_job_title": "Ai Engineer x4",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": null,
+      "record_disposition": "recruiter_client_undisclosed",
+      "eligible_exact_opening": false,
+      "identity_verdict": "not_applicable",
+      "evidence": [{"kind": "source_posting_identity", "url": "https://www.linkedin.com/jobs/view/ai-engineer-x4-at-aventis-solutions-4435557027", "finding": "Posting says the recruiter acts for a partner/client but does not disclose a verifiable hiring entity."}],
+      "review_notes": "No official opening is eligible for evaluation until the client is disclosed."
+    },
+    {
+      "company_name": "ReturnPro",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-ml-engineer-at-returnpro-4322480362",
+      "linkedin_job_title": "AI/ML Engineer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": "https://www.paycomonline.net/v4/ats/web.php/portal/AA674B442E9B6A1284BD7F78CB0C3E73/jobs/247738",
+      "record_disposition": "system_gap",
+      "eligible_exact_opening": true,
+      "identity_verdict": "rejected",
+      "evidence": [
+        {"kind": "first_party_career_handoff", "url": "https://www.returnpro.com/company/careers", "finding": "ReturnPro first-party careers evidence hands off to the captured Paycom portal."},
+        {"kind": "official_public_opening", "url": "https://www.paycomonline.net/v4/ats/web.php/portal/AA674B442E9B6A1284BD7F78CB0C3E73/jobs/247738", "finding": "Complete official Paycom inventory contained the exact target opening."}
+      ],
+      "review_notes": "False negative caused by unpromoted provider relationship evidence."
+    },
+    {
+      "company_name": "Deloitte",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/agentic-ai-engineer-%E2%80%94-healthcare-ai-at-deloitte-4426727893",
+      "linkedin_job_title": "Agentic AI Engineer \u2014 Healthcare AI",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": null,
+      "record_disposition": "system_gap",
+      "eligible_exact_opening": "unknown",
+      "identity_verdict": "not_applicable",
+      "evidence": [{"kind": "typed_transport_failure", "url": "https://apply.deloitte.com", "finding": "Retryable NETWORK_TIMEOUT evidence prevented a complete opening decision."}],
+      "review_notes": "Recoverable transport failure is a system defect; capture-time opening eligibility remains unknown."
+    },
+    {
+      "company_name": "Zello",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/applied-ai-engineer-at-zello-4388533232",
+      "linkedin_job_title": "Applied AI Engineer",
+      "expected_open_position_url": "https://jobs.ashbyhq.com/Zello/2fa8cd4a-7ddb-40c6-8577-4a004c182e80",
+      "expected_candidate_opening_url": "https://jobs.ashbyhq.com/Zello/2fa8cd4a-7ddb-40c6-8577-4a004c182e80",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://jobs.ashbyhq.com/Zello/2fa8cd4a-7ddb-40c6-8577-4a004c182e80", "finding": "Captured Zello Ashby opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Percepta",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/applied-ai-engineer-at-percepta-4367613269",
+      "linkedin_job_title": "Applied AI Engineer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": null,
+      "record_disposition": "verified_closed",
+      "eligible_exact_opening": false,
+      "identity_verdict": "not_applicable",
+      "evidence": [{"kind": "complete_official_inventory", "url": "https://percepta.taleo.net/careersection/10300/jobsearch.ftl", "finding": "Complete title-filtered official Taleo inventory returned zero target openings."}],
+      "review_notes": "Source posting was stale relative to the official inventory."
+    },
+    {
+      "company_name": "VOLO Health",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/health-ai-engineer-at-volo-health-4426871575",
+      "linkedin_job_title": "Health AI Engineer",
+      "expected_open_position_url": "https://volohealth.com:443/careers/health-ai-engineer",
+      "expected_candidate_opening_url": "https://volohealth.com:443/careers/health-ai-engineer",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://volohealth.com:443/careers/health-ai-engineer", "finding": "Captured first-party VOLO Health opening title and company identity reviewed."}],
+      "review_notes": "Exact output confirmed from frozen first-party evidence."
+    },
+    {
+      "company_name": "Akkodis",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/artificial-intelligence-engineer-at-akkodis-4417678360",
+      "linkedin_job_title": "Artificial Intelligence Engineer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": null,
+      "record_disposition": "system_gap",
+      "eligible_exact_opening": "unknown",
+      "identity_verdict": "not_applicable",
+      "evidence": [{"kind": "typed_transport_failure", "url": "https://www.akkodis.com/en/careers", "finding": "Retryable NETWORK_TIMEOUT evidence prevented complete job-board discovery."}],
+      "review_notes": "Recoverable transport failure is a system defect; capture-time opening eligibility remains unknown."
+    },
+    {
+      "company_name": "Direct Supply",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-engineer-at-direct-supply-4427115131",
+      "linkedin_job_title": "AI Engineer",
+      "expected_open_position_url": "https://directsupply.wd501.myworkdayjobs.com/direct-supply-careers/job/Milwaukee-WI/AI-Engineer_REQ-2026-2439",
+      "expected_candidate_opening_url": "https://directsupply.wd501.myworkdayjobs.com/direct-supply-careers/job/Milwaukee-WI/AI-Engineer_REQ-2026-2439",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://directsupply.wd501.myworkdayjobs.com/direct-supply-careers/job/Milwaukee-WI/AI-Engineer_REQ-2026-2439", "finding": "Captured Direct Supply Workday opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "General Motors",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-agent-engineer-at-general-motors-4399791760",
+      "linkedin_job_title": "AI Agent Engineer",
+      "expected_open_position_url": "https://search-careers.gm.com/en/jobs/jr-202606937/ai-agent-engineer/",
+      "expected_candidate_opening_url": "https://search-careers.gm.com/en/jobs/jr-202606937/ai-agent-engineer/",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://search-careers.gm.com/en/jobs/jr-202606937/ai-agent-engineer/", "finding": "Captured General Motors first-party opening title and company identity reviewed."}],
+      "review_notes": "Exact output confirmed from frozen first-party evidence."
+    },
+    {
+      "company_name": "Awesome Motive, Inc.",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-developer-at-awesome-motive-inc-4436760068",
+      "linkedin_job_title": "AI Developer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": "https://apply.workable.com/awesomemotive/j/EAE33061D1/",
+      "record_disposition": "system_gap",
+      "eligible_exact_opening": true,
+      "identity_verdict": "rejected",
+      "evidence": [
+        {"kind": "first_party_career_handoff", "url": "https://awesomemotive.com/careers/", "finding": "First-party career page visibly links the target Workable opening."},
+        {"kind": "official_public_opening", "url": "https://apply.workable.com/awesomemotive/j/EAE33061D1/", "finding": "Captured Workable opening matches the target title and hiring brand."}
+      ],
+      "review_notes": "False negative because the generic-to-Workable opening identity was not promoted."
+    },
+    {
+      "company_name": "Divergent",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-ai-at-divergent-4429892220",
+      "linkedin_job_title": "Software Engineer, AI",
+      "expected_open_position_url": "https://job-boards.greenhouse.io/divergent/jobs/5275959008",
+      "expected_candidate_opening_url": "https://job-boards.greenhouse.io/divergent/jobs/5275959008",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://job-boards.greenhouse.io/divergent/jobs/5275959008", "finding": "Captured Divergent Greenhouse opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Kobie",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-engineer-at-kobie-4428752418",
+      "linkedin_job_title": "AI Engineer",
+      "expected_open_position_url": "https://jobs.lever.co/kobie/d14582bd-64a2-439e-a7e3-a50ce7270a3d",
+      "expected_candidate_opening_url": "https://jobs.lever.co/kobie/d14582bd-64a2-439e-a7e3-a50ce7270a3d",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://jobs.lever.co/kobie/d14582bd-64a2-439e-a7e3-a50ce7270a3d", "finding": "Captured Kobie Lever opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Smart Bricks",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ai-engineer-at-smart-bricks-4418977492",
+      "linkedin_job_title": "AI Engineer",
+      "expected_open_position_url": "https://smart-bricks.whitecarrot.ai/jobs/a34cdab0-b26f-4337-a7ed-8788c64760b0",
+      "expected_candidate_opening_url": "https://smart-bricks.whitecarrot.ai/jobs/a34cdab0-b26f-4337-a7ed-8788c64760b0",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://smart-bricks.whitecarrot.ai/jobs/a34cdab0-b26f-4337-a7ed-8788c64760b0", "finding": "Captured Smart Bricks WhiteCarrot opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "PermitFlow",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/applied-ai-engineer-at-permitflow-4379979141",
+      "linkedin_job_title": "Applied AI Engineer",
+      "expected_open_position_url": "https://jobs.ashbyhq.com/permitflow/08b96a9a-b344-42cc-8c69-a1c1e0babb90",
+      "expected_candidate_opening_url": "https://jobs.ashbyhq.com/permitflow/08b96a9a-b344-42cc-8c69-a1c1e0babb90",
+      "record_disposition": "exact_public",
+      "eligible_exact_opening": true,
+      "identity_verdict": "verified",
+      "evidence": [{"kind": "official_public_opening", "url": "https://jobs.ashbyhq.com/permitflow/08b96a9a-b344-42cc-8c69-a1c1e0babb90", "finding": "Captured PermitFlow Ashby opening title and tenant reviewed."}],
+      "review_notes": "Exact output confirmed from frozen official provider evidence."
+    },
+    {
+      "company_name": "Adobe",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/forward-deployed-ai-engineer-at-adobe-4424633080",
+      "linkedin_job_title": "Forward-Deployed AI Engineer",
+      "expected_open_position_url": null,
+      "expected_candidate_opening_url": "https://careers.adobe.com/us/en/job/R168316/forward-deployed-ai-engineer",
+      "record_disposition": "system_gap",
+      "eligible_exact_opening": true,
+      "identity_verdict": "rejected",
+      "evidence": [
+        {"kind": "first_party_career_handoff", "url": "https://careers.adobe.com/us/en", "finding": "Adobe operates the branded career site and search surface."},
+        {"kind": "official_public_opening", "url": "https://careers.adobe.com/us/en/job/R168316/forward-deployed-ai-engineer", "finding": "Captured branded career inventory contained the exact target opening."}
+      ],
+      "review_notes": "False negative caused by unpromoted provider relationship evidence."
+    }
+  ]
+}

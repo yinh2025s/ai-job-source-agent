@@ -55,6 +55,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines.extend(_overview(summary))
     lines.extend(_rates(summary))
     lines.extend(_evaluation_metrics(summary))
+    lines.extend(_evaluation_review(summary))
     lines.extend(
         _simple_count_table(
             "Terminal Outcomes",
@@ -139,6 +140,36 @@ def _evaluation_metrics(summary: dict) -> list[str]:
             )
         )
     lines.append("")
+    return lines
+
+
+def _evaluation_review(summary: dict) -> list[str]:
+    manifest = summary.get("review_manifest")
+    counts = summary.get("record_disposition_counts")
+    if not isinstance(manifest, dict) and not isinstance(counts, dict):
+        return []
+    lines = ["## Independent Review", ""]
+    if isinstance(manifest, dict):
+        lines.extend(
+            [
+                "| Field | Value |",
+                "| --- | --- |",
+                f"| Cohort provenance | {manifest.get('cohort_provenance', '-')} |",
+                f"| Review method | {manifest.get('review_method', '-')} |",
+                f"| Reviewer | {manifest.get('reviewer', '-')} |",
+                f"| Reviewed at | {manifest.get('reviewed_at', '-')} |",
+                f"| Reviewed records | {manifest.get('reviewed_record_count', '-')} |",
+                "",
+            ]
+        )
+    if isinstance(counts, dict):
+        lines.extend(
+            _simple_count_table(
+                "Record Dispositions",
+                counts,
+                "Disposition",
+            )
+        )
     return lines
 
 

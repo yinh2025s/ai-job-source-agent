@@ -68,12 +68,12 @@
 | --- | --- | --- |
 | Opening identity continuity | 已实现 | S3-S6 传递 typed hiring/provider/opening identity；S7 独立 fail-closed，并抑制被拒绝的 exact URL |
 | Availability 与 typed error | 已实现 | complete/incomplete/retryable 语义收口；fetch reason、retryability、status 与 request provenance 不再降级为普通 not-found |
-| Evaluation contract | 已实现 | 六类 disposition 与显式 eligibility 已落地；缺少独立标注时指标显示 unavailable/not reportable，不填 0、不推断 |
+| Evaluation contract | 已闭环 | 六类 disposition 与显式 eligibility 已落地；30/30 冻结记录已完成独立于 runtime gate 的 artifact/official-evidence review，并由 SHA-256 绑定工具安全合并 |
 | Replay identity outcome gate | 已闭环 | Scoped bundle v7 比较 terminal semantic、identity verdict、failure code 和规范化 identity chain；同 stage rerun 只消费最终 lineage sequence bounds，保留 v6 scoped evidence 读取兼容 |
-| 离线门禁 | 已通过 | 1389 tests、provider 25/25、resolver 6/6、architecture 26 adapters / 0 issues |
+| 离线门禁 | 已通过 | 1405 tests、provider 25/25、resolver 6/6、architecture 26 adapters / 0 issues |
 | 冻结 live gate | 已执行一次 | observed 30-company cohort 已完成；不重跑、不调参后包装为同一轮结果，现有 artifact 用于离线 replay 闭环 |
 
-本轮没有新增 provider，也没有加入公司特例。历史 `.89` 入口改动已在 identity gate 下集成，不再属于“待提交能力”。完整 30 条 bundle 达到 30/30 reproduced，失败子集达到 11/11 reproduced，均为 record integrity passed、0 fixture gap、0 mismatch；稳定化实现阶段由此封板，但 precision/recall 仍等待独立审阅。
+本轮没有新增 provider，也没有加入公司特例。历史 `.89` 入口改动已在 identity gate 下集成，不再属于“待提交能力”。最终完整 30 条 bundle 达到 30/30 reproduced，均为 record integrity passed、0 fixture gap、0 mismatch。独立标注也已完成，稳定化实现与可信评测阶段均已封板。
 
 ### 冻结 Observed Cohort 结果
 
@@ -84,9 +84,9 @@
 | Exact URL / raw exact rate | 19/30 | 可报告，但必须与失败分布同时出现 |
 | Pipeline status | 19 success / 5 partial / 6 failed | 可报告 |
 | Identity verdict | 19 verified / 6 not_applicable / 5 rejected | 可报告；这是 runtime gate 结果，不等于人工 URL precision |
-| Exact precision | unavailable / not reportable | 缺少独立 URL review，不能由 `verified` verdict 自证 |
-| Conditional exact recall | unavailable / not reportable | 缺少逐样本 public-opening eligibility annotation |
-| System defect rate | unavailable / not reportable | 六类 disposition 尚未完成独立审阅 |
+| Exact precision | 19/19（100.0%） | 由 runtime gate 外的 frozen artifact/official evidence review 得出；只适用于 observed cohort |
+| Conditional exact recall | 19/24（79.2%） | 24 条 confirmed eligible；Deloitte、Akkodis 的 eligibility 保持 unknown |
+| System defect rate | 7/30（23.3%） | 5 个 identity-evidence false negative，加 2 个 retryable transport gap |
 
 当前 failure clusters：
 
@@ -228,15 +228,15 @@ P0-A 必须先写以下通用 contract tests：
 
 ### Provider 扩展暂停条件
 
-Provider/heuristic churn 继续暂停。Replay release blocker 与统一离线门禁已闭环；只有 30 条记录完成独立 disposition/eligibility 审阅，且用户明确进入下一开发轮后，才重新按 failure cluster 评估通用能力。历史 Phase 3 provider backlog 保留为参考，但当前不执行；单个 observed cohort 的 runtime identity verdict 不能替代独立 precision review。
+Provider/heuristic churn 继续暂停。Replay release blocker、独立 disposition/eligibility 审阅与稳定化门禁均已闭环；只有用户明确进入下一开发轮后，才重新按 failure cluster 评估通用能力。历史 Phase 3 provider backlog 保留为参考，但当前不执行；observed cohort 的 100% exact precision 不能外推为 blind 产品精度。
 
 ### 下一轮候选（最多三项）
 
 候选按“覆盖样本数 × 正确性风险 × 预计收益”排序；它们是稳定化候选，不授权新增 provider 或公司规则。
 
-1. **Independent disposition and eligibility review**：逐条核验 19 个 exact URL，并为 11 个 non-exact 标注六类 disposition、public-opening eligibility 和证据来源，随后才发布 exact precision、conditional recall 与 system defect rate。覆盖全部 30 条，是恢复可信产品指标的最高收益工作。
-2. **Opaque provider relationship contract**：对 Dematic、Quest Global、ReturnPro、Adobe 共 4 个 `provider relationship unverified` 结果做只读证据审计，先冻结可泛化的 hiring-entity ↔ tenant 授权契约与负例，再决定是否实现；不得直接加入 KION、Phenom 或 Paycom tenant/company 特例。
-3. **Retryable transport follow-up**：对 Deloitte、Akkodis 两个 timeout 只做新的串行 evidence capture 或离线 transport 分析，确认是 external blocked 还是 system gap；不得把重试成功率包装为 identity 或 provider 能力，也不得与共享 live benchmark 并发。
+1. **New unfamiliar holdout**：在任何继续调参前冻结真正未观察样本，独立测量 precision、conditional recall 与 cross-company error；当前 observed cohort 的 100% precision 不足以证明泛化。
+2. **Provider-neutral relationship promotion contract**：为 Dematic、Quest Global、ReturnPro、Awesome Motive、Adobe 这 5 个 false negative 冻结 first-party career handoff 到 typed provider relationship 的通用正负 contract；不得加入公司或 tenant 特例。
+3. **Retryable transport isolation**：对 Deloitte、Akkodis 的 timeout 做串行 transport reliability 验证；完整证据前 eligibility 继续为 unknown，不得降级成 not-found。
 
 ## 标准七关 Pipeline
 
@@ -1355,4 +1355,4 @@ Workday、iCIMS、SuccessFactors、Ashby、Workable 等 adapter 都保留在 bac
 
 最诚实的当前状态：
 
-> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。当前 correctness stabilization 已实现 S3-S7 typed opening identity continuity、S7 fail-closed validation、typed fetch failure fidelity、六类 evaluation disposition 和 identity-aware replay outcome gate，没有新增 provider 或公司特例。Replay sequence-bound 修复前的统一离线门禁为 1387 tests、25/25 provider、6/6 resolver、26 adapters / 0 issues；修复合入后仍需主线重跑这些 gate。一次冻结但已观察的 30-company live 为 19 exact、19 success / 5 partial / 6 failed，identity verdict 为 19 verified / 6 not_applicable / 5 rejected；这只能报告为 raw 19/30，不能称为 blind，exact precision、conditional recall 和 system defect rate 在独立审阅前均不可报告。当前先完成 replay release blocker 和外部 disposition/eligibility 标注，provider/heuristic 扩张继续暂停。
+> 七关状态模型、统一错误码、benchmark 矩阵和 SOLID 并行开发架构已完成第一版。Correctness stabilization 已实现 S3-S7 typed opening identity continuity、S7 fail-closed validation、complete-inventory availability、typed fetch failure fidelity、六类 evaluation disposition、安全 annotation merge 和 identity-aware replay outcome gate，没有新增 provider 或公司特例。一次冻结但已观察的 30-company live 为 19 exact、19 success / 5 partial / 6 failed；独立 artifact review 得到 exact precision 19/19、conditional exact recall 19/24（另 2 条 eligibility unknown）、system defect 7/30。完整 scoped replay 为 30/30 reproduced、0 gap、0 mismatch。该结果不能称为 blind，下一轮应先冻结陌生 holdout；provider/heuristic 扩张继续暂停。
