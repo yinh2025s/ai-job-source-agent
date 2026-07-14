@@ -837,11 +837,17 @@ class JobSourceAgent:
                 )
             )
         ):
-            searched_url, search_trace = self._search_verified_ats_board(
-                company_name,
-                career_page_url,
-                target_location=target_location,
-            )
+            if target_location is None:
+                searched_url, search_trace = self._search_verified_ats_board(
+                    company_name,
+                    career_page_url,
+                )
+            else:
+                searched_url, search_trace = self._search_verified_ats_board(
+                    company_name,
+                    career_page_url,
+                    target_location=target_location,
+                )
             trace["ats_search_fallback"] = search_trace
             if searched_url:
                 job_list_url = searched_url
