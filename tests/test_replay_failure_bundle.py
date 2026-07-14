@@ -254,6 +254,18 @@ class FailureReplayBundleTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             board_url = "https://jobs.example.test/jobs"
+            current = DeterministicRunConfig.from_agent_config(
+                AgentConfig(enable_sitemap_discovery=False)
+            ).to_payload()
+            legacy_payload = {
+                "schema_version": "1.0",
+                "agent": {
+                    key: value
+                    for key, value in current["agent"].items()
+                    if key != "max_career_discovery_transport_calls"
+                },
+            }
+            legacy_config = DeterministicRunConfig.from_payload(legacy_payload)
             results = [{
                 "company_name": "Shared Name",
                 "company_website_url": "https://authoritative.example.test",
@@ -263,6 +275,8 @@ class FailureReplayBundleTests(unittest.TestCase):
                 "job_list_page_url": board_url,
                 "linkedin_job_title": "Missing Role",
                 "pipeline_status": "partial",
+                "run_configuration": legacy_payload,
+                "run_configuration_digest": legacy_config.digest,
                 "trace": {"stages": {"website_resolution": {"private": "do-not-copy"}}},
                 "stages": [
                     {"stage": "linkedin_discovery", "status": "not_applicable"},
@@ -332,6 +346,13 @@ class FailureReplayBundleTests(unittest.TestCase):
         )
         self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["save"], 2)
         self.assertEqual(manifest["summary"]["checkpoint_action_counts"]["restore"], 5)
+        self.assertEqual(manifest["run_configuration"], legacy_payload)
+        self.assertEqual(manifest["run_configuration_digest"], legacy_config.digest)
+        self.assertEqual(replay_results[0]["run_configuration"], legacy_payload)
+        self.assertEqual(
+            replay_results[0]["run_configuration_digest"],
+            legacy_config.digest,
+        )
         self.assertNotIn("do-not-copy", checkpoint_text)
 
     def test_results_only_page_aware_provider_reruns_job_board_discovery(self):

@@ -108,6 +108,36 @@ class CareerTransportPipelineTests(unittest.TestCase):
             },
         )
 
+    def test_cached_homepage_preserves_budget_for_candidate_and_trace_counts_cache_hit(self):
+        homepage = "https://company.example"
+        jobs = "https://company.example/jobs"
+        base = RecordingCareerFetcher(
+            {
+                homepage: f'<a href="{jobs}">Search jobs</a>',
+                jobs: "<html><body>Open roles and careers</body></html>",
+            }
+        )
+        agent = build_agent(base, limit=1)
+
+        agent.fetcher.fetch(homepage)
+        selected, trace = agent.find_career_page(homepage, company_name="Company")
+
+        self.assertEqual(selected, jobs)
+        self.assertEqual(base.calls, [homepage, jobs])
+        self.assertEqual(
+            trace["transport_budget"],
+            {
+                "policy": "stage_transport_dispatch_budget",
+                "limit": 1,
+                "dispatched": 1,
+                "remaining": 0,
+                "exhausted": True,
+                "rejected": 0,
+                "by_phase": {"homepage_and_common_paths_candidates": 1},
+                "cache_hits": 1,
+            },
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

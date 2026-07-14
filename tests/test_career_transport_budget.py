@@ -97,6 +97,23 @@ class CareerTransportBudgetFetcherTests(unittest.TestCase):
             {"adapter": 1, "provider": 1, "search": 2},
         )
 
+    def test_exceptional_scope_and_phase_cleanup_allow_a_fresh_unattributed_scope(self):
+        base = RecordingFetcher()
+        fetcher = CareerTransportBudgetFetcher(base)
+
+        with self.assertRaisesRegex(RuntimeError, "stop"):
+            with fetcher.career_discovery_scope(2) as failed_budget:
+                with fetcher.career_discovery_phase("failed_phase"):
+                    fetcher.fetch("failed-request")
+                    raise RuntimeError("stop")
+
+        with fetcher.career_discovery_scope(1) as fresh_budget:
+            fetcher.fetch("fresh-request")
+
+        self.assertEqual(failed_budget.snapshot()["by_phase"], {"failed_phase": 1})
+        self.assertEqual(fresh_budget.snapshot()["by_phase"], {})
+        self.assertEqual([call[0] for call in base.calls], ["failed-request", "fresh-request"])
+
     def test_invalid_limits_nested_scopes_and_orphan_phase_are_rejected(self):
         fetcher = CareerTransportBudgetFetcher(RecordingFetcher())
 
@@ -185,6 +202,27 @@ class CareerTransportBudgetFetcherTests(unittest.TestCase):
         self.assertEqual(len(base.calls), 1)
         self.assertEqual(budget.snapshot()["dispatched"], 1)
         self.assertEqual(budget.snapshot()["rejected"], 1)
+
+    def test_composed_cache_and_retry_charge_attempts_but_not_cached_reuse(self):
+        base = RecordingFetcher(failures=1)
+        fetcher = PageCacheFetcher(
+            RetryingFetcher(
+                CareerTransportBudgetFetcher(base),
+                max_retries=1,
+                base_delay=0,
+            )
+        )
+
+        with fetcher.career_discovery_scope(2) as budget:
+            first = fetcher.fetch("https://example.test/jobs")
+            cached = fetcher.fetch("https://example.test/jobs")
+
+        self.assertEqual(first.html, "ok")
+        self.assertEqual(cached.html, "ok")
+        self.assertEqual(len(base.calls), 2)
+        self.assertEqual(budget.snapshot()["dispatched"], 2)
+        self.assertEqual(budget.snapshot()["rejected"], 0)
+        self.assertEqual(fetcher.cache_hits, 1)
 
 
 if __name__ == "__main__":
