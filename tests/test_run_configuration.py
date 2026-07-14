@@ -19,13 +19,14 @@ class DeterministicRunConfigTests(unittest.TestCase):
 
         self.assertEqual(implicit.to_payload(), explicit.to_payload())
         self.assertEqual(implicit.digest, explicit.digest)
-        self.assertEqual(implicit.to_payload()["schema_version"], "1.0")
+        self.assertEqual(implicit.to_payload()["schema_version"], "1.1")
 
     def test_round_trip_faithfully_rebuilds_agent_config(self):
         expected = AgentConfig(
             max_candidates=21,
             max_job_pages=13,
             max_career_candidate_fetches=9,
+            max_career_discovery_transport_calls=7,
             max_career_search_queries=4,
             max_ats_board_fetches=3,
             enable_sitemap_discovery=False,
@@ -39,6 +40,72 @@ class DeterministicRunConfigTests(unittest.TestCase):
 
         self.assertEqual(restored, expected)
 
+    def test_schema_1_1_round_trip_and_digest_include_transport_call_limit(self):
+        unbounded = DeterministicRunConfig.from_agent_config(
+            AgentConfig(max_career_discovery_transport_calls=None)
+        )
+        bounded = DeterministicRunConfig.from_agent_config(
+            AgentConfig(max_career_discovery_transport_calls=0)
+        )
+
+        self.assertIsNone(
+            unbounded.to_payload()["agent"]["max_career_discovery_transport_calls"]
+        )
+        self.assertEqual(
+            DeterministicRunConfig.from_payload(bounded.to_payload()),
+            bounded,
+        )
+        self.assertNotEqual(unbounded.digest, bounded.digest)
+
+    def test_schema_1_1_rejects_invalid_transport_call_limits(self):
+        payload = DeterministicRunConfig.from_agent_config(AgentConfig()).to_payload()
+
+        for value in (-1, 1001, 1.5, True, "1"):
+            with self.subTest(value=value):
+                with self.assertRaises(ValueError):
+                    DeterministicRunConfig.from_payload(
+                        {
+                            **payload,
+                            "agent": {
+                                **payload["agent"],
+                                "max_career_discovery_transport_calls": value,
+                            },
+                        }
+                    )
+
+    def test_schema_1_0_payload_and_digest_are_preserved_exactly(self):
+        payload = {
+            "schema_version": "1.0",
+            "agent": {
+                "max_candidates": 17,
+                "max_job_pages": 8,
+                "max_career_candidate_fetches": 17,
+                "max_career_search_queries": 5,
+                "max_ats_board_fetches": 5,
+                "enable_sitemap_discovery": True,
+                "enable_career_search": True,
+                "career_search_timeout": None,
+            },
+        }
+        configuration = DeterministicRunConfig.from_payload(payload)
+
+        self.assertEqual(configuration.to_payload(), payload)
+        self.assertEqual(
+            configuration.digest,
+            "ab4af58ca003e9f16ffddf8b4f2e44b28066ce6792147daaf647bcf8f818b73a",
+        )
+        self.assertIsNone(configuration.to_agent_config().max_career_discovery_transport_calls)
+        with self.assertRaises(ValueError):
+            DeterministicRunConfig.from_payload(
+                {
+                    **payload,
+                    "agent": {
+                        **payload["agent"],
+                        "max_career_discovery_transport_calls": None,
+                    },
+                }
+            )
+
     def test_payload_rejects_missing_extra_and_invalid_fields(self):
         payload = DeterministicRunConfig.from_agent_config(AgentConfig()).to_payload()
         invalid_payloads = [
@@ -47,6 +114,14 @@ class DeterministicRunConfigTests(unittest.TestCase):
             {**payload, "schema_version": "0.9"},
             {**payload, "agent": {k: v for k, v in payload["agent"].items() if k != "max_job_pages"}},
             {**payload, "agent": {**payload["agent"], "unexpected": 1}},
+            {
+                **payload,
+                "agent": {
+                    k: v
+                    for k, v in payload["agent"].items()
+                    if k != "max_career_discovery_transport_calls"
+                },
+            },
             {**payload, "agent": {**payload["agent"], "max_candidates": True}},
             {**payload, "agent": {**payload["agent"], "enable_career_search": 1}},
         ]

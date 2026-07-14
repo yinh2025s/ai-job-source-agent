@@ -3,12 +3,13 @@ from __future__ import annotations
 import hashlib
 import json
 import math
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RUN_CONFIGURATION_SCHEMA_VERSION = "1.0"
+RUN_CONFIGURATION_SCHEMA_VERSION = "1.1"
 BATCH_EXECUTION_SCHEMA_VERSION = "1.0"
+_LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION = "1.0"
 _MAX_BUDGET = 1_000
 _MAX_TIMEOUT_SECONDS = 300.0
 
@@ -23,6 +24,7 @@ class AgentConfig:
     enable_sitemap_discovery: bool = True
     enable_career_search: bool = True
     career_search_timeout: float | None = None
+    max_career_discovery_transport_calls: int | None = None
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,11 @@ class DeterministicRunConfig:
     enable_sitemap_discovery: bool
     enable_career_search: bool
     career_search_timeout: float | None
+    max_career_discovery_transport_calls: int | None = None
+    _schema_version: str = field(
+        default=RUN_CONFIGURATION_SCHEMA_VERSION,
+        repr=False,
+    )
 
     @classmethod
     def from_agent_config(cls, config: AgentConfig) -> DeterministicRunConfig:
@@ -58,7 +65,11 @@ class DeterministicRunConfig:
     def from_payload(cls, payload: Any) -> DeterministicRunConfig:
         if not isinstance(payload, dict) or set(payload) != {"schema_version", "agent"}:
             raise ValueError("Run configuration must contain only schema_version and agent")
-        if payload["schema_version"] != RUN_CONFIGURATION_SCHEMA_VERSION:
+        schema_version = payload["schema_version"]
+        if schema_version not in {
+            _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             raise ValueError("Run configuration schema version is incompatible")
         agent = payload["agent"]
         expected_fields = {
@@ -71,6 +82,8 @@ class DeterministicRunConfig:
             "enable_career_search",
             "career_search_timeout",
         }
+        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            expected_fields.add("max_career_discovery_transport_calls")
         if not isinstance(agent, dict) or set(agent) != expected_fields:
             raise ValueError("Run configuration agent fields are incomplete or unsupported")
 
@@ -80,6 +93,15 @@ class DeterministicRunConfig:
             agent["max_career_candidate_fetches"],
             "max_career_candidate_fetches",
             minimum=0,
+        )
+        max_career_discovery_transport_calls = (
+            _optional_bounded_integer(
+                agent["max_career_discovery_transport_calls"],
+                "max_career_discovery_transport_calls",
+                minimum=0,
+            )
+            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            else None
         )
         max_career_search_queries = _bounded_integer(
             agent["max_career_search_queries"],
@@ -100,21 +122,44 @@ class DeterministicRunConfig:
             max_candidates=max_candidates,
             max_job_pages=max_job_pages,
             max_career_candidate_fetches=max_career_candidate_fetches,
+            max_career_discovery_transport_calls=max_career_discovery_transport_calls,
             max_career_search_queries=max_career_search_queries,
             max_ats_board_fetches=max_ats_board_fetches,
             enable_sitemap_discovery=enable_sitemap_discovery,
             enable_career_search=enable_career_search,
             career_search_timeout=career_search_timeout,
+            _schema_version=schema_version,
         )
 
     def to_payload(self) -> dict[str, Any]:
-        return {
-            "schema_version": RUN_CONFIGURATION_SCHEMA_VERSION,
-            "agent": asdict(self),
+        agent = {
+            "max_candidates": self.max_candidates,
+            "max_job_pages": self.max_job_pages,
+            "max_career_candidate_fetches": self.max_career_candidate_fetches,
+            "max_career_search_queries": self.max_career_search_queries,
+            "max_ats_board_fetches": self.max_ats_board_fetches,
+            "enable_sitemap_discovery": self.enable_sitemap_discovery,
+            "enable_career_search": self.enable_career_search,
+            "career_search_timeout": self.career_search_timeout,
         }
+        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            agent["max_career_discovery_transport_calls"] = (
+                self.max_career_discovery_transport_calls
+            )
+        return {"schema_version": self._schema_version, "agent": agent}
 
     def to_agent_config(self) -> AgentConfig:
-        return AgentConfig(**asdict(self))
+        return AgentConfig(
+            max_candidates=self.max_candidates,
+            max_job_pages=self.max_job_pages,
+            max_career_candidate_fetches=self.max_career_candidate_fetches,
+            max_career_discovery_transport_calls=self.max_career_discovery_transport_calls,
+            max_career_search_queries=self.max_career_search_queries,
+            max_ats_board_fetches=self.max_ats_board_fetches,
+            enable_sitemap_discovery=self.enable_sitemap_discovery,
+            enable_career_search=self.enable_career_search,
+            career_search_timeout=self.career_search_timeout,
+        )
 
     @property
     def digest(self) -> str:
@@ -221,6 +266,18 @@ def _bounded_integer(
             f"Run configuration {field} must be between {minimum} and {maximum}"
         )
     return value
+
+
+def _optional_bounded_integer(
+    value: Any,
+    field: str,
+    *,
+    minimum: int,
+    maximum: int = _MAX_BUDGET,
+) -> int | None:
+    if value is None:
+        return None
+    return _bounded_integer(value, field, minimum=minimum, maximum=maximum)
 
 
 def _boolean(value: Any, field: str) -> bool:
