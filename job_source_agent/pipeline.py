@@ -24,6 +24,7 @@ from .content_probe import (
 )
 from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
+from .homepage_navigation import HomepageNavigationEvidence
 from .job_board import DiscoveredJobBoard
 from .listing_extraction import explicit_empty_inventory_evidence
 from .models import (
@@ -439,6 +440,7 @@ class JobSourceAgent:
         preferred_url: str | None = None,
         target_title: str | None = None,
         target_location: str | None = None,
+        homepage_navigation_evidence: HomepageNavigationEvidence | None = None,
     ) -> tuple[str, dict]:
         scope = getattr(self.fetcher, "career_discovery_scope", None)
         if not callable(scope):
@@ -448,6 +450,7 @@ class JobSourceAgent:
                 preferred_url=preferred_url,
                 target_title=target_title,
                 target_location=target_location,
+                homepage_navigation_evidence=homepage_navigation_evidence,
             )
 
         cache_hits_before = int(getattr(self.fetcher, "cache_hits", 0) or 0)
@@ -460,6 +463,7 @@ class JobSourceAgent:
                     preferred_url=preferred_url,
                     target_title=target_title,
                     target_location=target_location,
+                    homepage_navigation_evidence=homepage_navigation_evidence,
                 )
             except DiscoveryError as exc:
                 exc.trace["transport_budget"] = self._career_transport_budget_trace(
@@ -482,11 +486,69 @@ class JobSourceAgent:
         preferred_url: str | None = None,
         target_title: str | None = None,
         target_location: str | None = None,
+        homepage_navigation_evidence: HomepageNavigationEvidence | None = None,
     ) -> tuple[str, dict]:
         homepage_url = normalize_url(company_website_url)
         homepage: Page | None = None
         raw_candidates: list[RawLink] = []
-        trace = {"homepage_url": homepage_url, "homepage_fetch_error": None, "candidates": [], "candidate_fetch_errors": []}
+        attempted_candidate_urls: set[str] = set()
+        trace = {
+            "homepage_url": homepage_url,
+            "homepage_fetch_error": None,
+            "candidates": [],
+            "candidate_fetch_errors": [],
+        }
+        evidence_trace = {
+            "used": False,
+            "candidate_count": 0,
+            "fallback": "homepage_fetch",
+        }
+        trace["homepage_navigation_evidence"] = evidence_trace
+        if homepage_navigation_evidence is None:
+            evidence_trace["status"] = "absent"
+        elif homepage_navigation_evidence.homepage_url != homepage_url:
+            evidence_trace["status"] = "homepage_url_mismatch"
+        else:
+            evidence_candidates = self._dedupe_candidates(
+                sorted(
+                    [
+                        self._score_career_candidate(
+                            link,
+                            homepage_url,
+                            target_title=target_title,
+                            target_location=target_location,
+                        )
+                        for link in homepage_navigation_evidence.raw_links()
+                    ],
+                    key=lambda candidate: candidate.score,
+                    reverse=True,
+                )
+            )
+            evidence_trace.update(
+                {
+                    "used": True,
+                    "status": "candidate_verification",
+                    "candidate_count": len(evidence_candidates),
+                }
+            )
+            selected_url = self._select_verified_career_candidate(
+                evidence_candidates,
+                trace,
+                target_title=target_title,
+                schedule_source="verified_homepage_navigation",
+                company_name=company_name,
+                homepage_url=homepage_url,
+                attempted_candidate_urls=attempted_candidate_urls,
+            )
+            if selected_url:
+                evidence_trace["fallback"] = None
+                trace["selected_from"] = "verified_homepage_navigation"
+                trace["sitemap_discovery"] = {
+                    "skipped": True,
+                    "reason": "verified homepage navigation candidate selected before homepage transport",
+                }
+                return selected_url, trace
+            evidence_trace["status"] = "no_verified_candidate"
         try:
             with self._career_transport_phase("homepage"):
                 homepage = self.fetcher.fetch(company_website_url)
@@ -531,6 +593,7 @@ class JobSourceAgent:
             schedule_source="homepage_and_common_paths",
             company_name=company_name,
             homepage_url=homepage_url,
+            attempted_candidate_urls=attempted_candidate_urls,
         )
         if selected_url:
             trace["sitemap_discovery"] = {
@@ -573,6 +636,7 @@ class JobSourceAgent:
                     schedule_source="bundle_navigation",
                     company_name=company_name,
                     homepage_url=homepage_url,
+                    attempted_candidate_urls=attempted_candidate_urls,
                 )
                 if selected_url:
                     trace["sitemap_discovery"] = {
@@ -619,6 +683,7 @@ class JobSourceAgent:
                 schedule_source="sitemap",
                 company_name=company_name,
                 homepage_url=homepage_url,
+                attempted_candidate_urls=attempted_candidate_urls,
             )
             if selected_url:
                 trace["selected_from"] = "sitemap_discovery"
@@ -637,6 +702,7 @@ class JobSourceAgent:
                 schedule_source="search",
                 company_name=company_name,
                 homepage_url=homepage_url,
+                attempted_candidate_urls=attempted_candidate_urls,
             )
             if selected_url:
                 trace["selected_from"] = "search_discovery"
@@ -659,6 +725,7 @@ class JobSourceAgent:
                 schedule_source="blind_ats",
                 company_name=company_name,
                 homepage_url=homepage_url,
+                attempted_candidate_urls=attempted_candidate_urls,
             )
             if selected_url:
                 trace["selected"] = ats_trace["selected"]
@@ -1895,7 +1962,7 @@ class JobSourceAgent:
         ):
             candidate.score += 220
             candidate.reasons.append("explicit job-list route")
-        if link.origin == "page_link":
+        if link.origin in {"page_link", "verified_homepage_navigation"}:
             candidate.score += 110
             candidate.reasons.append("homepage navigation link")
         elif link.origin == "identity_career_root":
@@ -1912,7 +1979,7 @@ class JobSourceAgent:
             if is_brand_join_path and join_path not in {"join-us", "join-our-team"}:
                 candidate.score += 100
                 candidate.reasons.append("brand-specific join path")
-        if link.origin == "page_link" and path_parts == ["team"]:
+        if link.origin in {"page_link", "verified_homepage_navigation"} and path_parts == ["team"]:
             candidate.score += 200
             candidate.reasons.append("homepage team link requiring employment evidence")
         source_path = urlparse(link.source_url).path.lower()
@@ -1972,6 +2039,7 @@ class JobSourceAgent:
         schedule_source: str = "candidate_selection",
         company_name: str | None = None,
         homepage_url: str | None = None,
+        attempted_candidate_urls: set[str] | None = None,
     ) -> str | None:
         with self._career_transport_phase(f"{schedule_source}_candidates"):
             return self._select_verified_career_candidate_in_phase(
@@ -1982,6 +2050,7 @@ class JobSourceAgent:
                 schedule_source=schedule_source,
                 company_name=company_name,
                 homepage_url=homepage_url,
+                attempted_candidate_urls=attempted_candidate_urls,
             )
 
     def _select_verified_career_candidate_in_phase(
@@ -1993,7 +2062,14 @@ class JobSourceAgent:
         schedule_source: str = "candidate_selection",
         company_name: str | None = None,
         homepage_url: str | None = None,
+        attempted_candidate_urls: set[str] | None = None,
     ) -> str | None:
+        if attempted_candidate_urls:
+            candidates = [
+                candidate
+                for candidate in candidates
+                if self._career_candidate_key(candidate.url) not in attempted_candidate_urls
+            ]
         fetch_attempts = 0
         fetch_limit = self.max_career_candidate_fetches if max_fetches is None else max_fetches
         scheduled_fetch_limit = min(self.max_candidates, fetch_limit)
@@ -2041,6 +2117,8 @@ class JobSourceAgent:
         trace.setdefault("candidate_schedules", []).append(candidate_schedule)
         for candidate in bounded_candidates:
             fetch_attempts += 1
+            if attempted_candidate_urls is not None:
+                attempted_candidate_urls.add(self._career_candidate_key(candidate.url))
             derived_reasons = [reason for reason in candidate.reasons if reason.startswith("derived ")]
             if derived_reasons:
                 adapter_decision = self._verify_derived_provider_with_adapter(
@@ -2183,6 +2261,9 @@ class JobSourceAgent:
                 "untried_evidence_backed_count": len(untried_evidence_backed),
             }
         return None
+
+    def _career_candidate_key(self, url: str) -> str:
+        return normalize_url(url).rstrip("/")
 
     def _career_transport_phase(self, name: str):
         phase = getattr(self.fetcher, "career_discovery_phase", None)

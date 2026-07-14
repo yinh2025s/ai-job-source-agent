@@ -2,6 +2,7 @@ import unittest
 
 from job_source_agent.contracts import PipelineContext
 from job_source_agent.errors import DiscoveryError
+from job_source_agent.homepage_navigation import HomepageNavigationEvidence
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
 from job_source_agent.models import (
     STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -35,6 +36,30 @@ class FakeDiscoveryService:
 
 
 class DiscoveryStageTests(unittest.TestCase):
+    def test_career_stage_passes_saved_homepage_navigation_evidence(self):
+        class CapturingCareer(FakeDiscoveryService):
+            def __init__(self):
+                self.evidence = None
+
+            def find_career_page(self, *args, homepage_navigation_evidence=None, **kwargs):
+                self.evidence = homepage_navigation_evidence
+                return super().find_career_page(*args, **kwargs)
+
+        evidence = HomepageNavigationEvidence(
+            homepage_url="https://acme.example",
+            candidate_urls=("https://acme.example/careers",),
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", company_website_url="https://acme.example")
+        )
+        context.homepage_navigation_evidence = evidence
+        service = CapturingCareer()
+
+        execution = CareerDiscoveryStage(service).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertIs(service.evidence, evidence)
+
     def test_career_stage_does_not_search_publisher_after_identity_failure(self):
         class MustNotSearch(FakeDiscoveryService):
             def find_career_page(self, *args, **kwargs):

@@ -5,6 +5,7 @@ from typing import Protocol
 
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
+from ..homepage_navigation import HomepageNavigationEvidence
 from ..job_board import DiscoveredJobBoard
 from ..models import (
     STAGE_CAREER_DISCOVERY,
@@ -27,6 +28,7 @@ class CareerDiscoveryService(Protocol):
         preferred_url: str | None = None,
         target_title: str | None = None,
         target_location: str | None = None,
+        homepage_navigation_evidence: HomepageNavigationEvidence | None = None,
     ) -> tuple[str, dict]:
         ...
 
@@ -113,12 +115,19 @@ class CareerDiscoveryStage:
                 }
                 detail = "Career root supplied by a trusted direct input or identity rule."
             else:
+                find_kwargs = {
+                    "company_name": context.company.company_name,
+                    "preferred_url": context.career_root_url,
+                    "target_title": context.company.job_title,
+                    "target_location": context.company.job_location,
+                }
+                if context.homepage_navigation_evidence is not None:
+                    find_kwargs["homepage_navigation_evidence"] = (
+                        context.homepage_navigation_evidence
+                    )
                 career_url, trace = self.service.find_career_page(
                     context.company_website_url,
-                    company_name=context.company.company_name,
-                    preferred_url=context.career_root_url,
-                    target_title=context.company.job_title,
-                    target_location=context.company.job_location,
+                    **find_kwargs,
                 )
                 detail = (
                     "Replay career root was revalidated."

@@ -5,7 +5,7 @@ from urllib.parse import urlparse
 from .models import LinkCandidate
 
 
-SCHEDULE_VERSION = "2"
+SCHEDULE_VERSION = "3"
 
 _LANGUAGE_SEGMENTS = {
     "ar", "cs", "da", "de", "en", "es", "fi", "fr", "he", "id", "it",
@@ -98,7 +98,11 @@ def candidate_evidence_tier(candidate: LinkCandidate) -> int:
     ):
         return 0
     if (
-        candidate.origin in {"page_link", "first_party_bundle_navigation"}
+        candidate.origin in {
+            "page_link",
+            "verified_homepage_navigation",
+            "first_party_bundle_navigation",
+        }
         and has_explicit_career_semantics
     ):
         return 1
@@ -202,7 +206,10 @@ def _evidence_priority_boost(candidate: LinkCandidate) -> int:
     ):
         return 1000
     if _is_first_party_embedded_job_list(candidate) or (
-        "homepage navigation link" in candidate.reasons
+        (
+            candidate.origin in {"page_link", "verified_homepage_navigation"}
+            or "homepage navigation link" in candidate.reasons
+        )
         and any(
             reason.startswith("career keyword")
             or reason in {

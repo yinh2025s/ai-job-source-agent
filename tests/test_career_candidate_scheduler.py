@@ -2,6 +2,7 @@ import unittest
 
 from job_source_agent.career_candidate_scheduler import (
     candidate_concrete_host,
+    candidate_evidence_tier,
     candidate_host_family,
     candidate_locale_key,
     candidate_route_family,
@@ -74,7 +75,27 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
             [item.url for item in scheduled],
             ["https://example.com/jobs", "https://example.com/careers"],
         )
-        self.assertEqual(trace["version"], "2")
+        self.assertEqual(trace["version"], "3")
+
+    def test_verified_homepage_navigation_has_page_link_tier_and_boost(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+        verified = candidate(
+            "https://example.com/careers",
+            100,
+            ["career keyword 'careers'", "homepage navigation link"],
+            origin="verified_homepage_navigation",
+        )
+        path_probe = candidate(
+            "https://example.com/jobs",
+            500,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+
+        scheduled, _trace = schedule(agent, [path_probe, verified])
+
+        self.assertEqual(candidate_evidence_tier(verified), 1)
+        self.assertEqual(scheduled[0].origin, "verified_homepage_navigation")
 
     def test_cross_host_embedded_explicit_job_list_stays_in_lower_tier(self):
         agent = JobSourceAgent(Fetcher(offline=True))
