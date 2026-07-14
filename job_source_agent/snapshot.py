@@ -156,7 +156,7 @@ class SnapshotStore:
                 page_url=sanitize_url(page.url),
                 final_url=sanitized_final_url,
                 sanitized_url=sanitized_final_url,
-                source=page.source,
+                source=sanitize_snapshot_source(page.source),
                 path=str(path.relative_to(self.root_dir)),
                 blob_path=str(blob_path.relative_to(self.root_dir)),
                 artifact_paths=artifact_paths,
@@ -403,6 +403,18 @@ def sanitize_snapshot_body(body: str) -> str:
         )
     redacted = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}", r"\1[REDACTED]", redacted)
     return redacted
+
+
+def sanitize_snapshot_source(source: object) -> str:
+    """Reduce runtime diagnostics to a privacy-safe provenance label."""
+
+    if not isinstance(source, str):
+        return "fetch"
+    candidate = source.strip().split("|", 1)[0]
+    if ":" in candidate:
+        candidate = candidate.split(":", 1)[0]
+    candidate = re.sub(r"[^A-Za-z0-9._-]+", "_", candidate).strip("._-")
+    return candidate[:64] or "fetch"
 
 
 def _is_sensitive_key(key: str) -> bool:

@@ -194,6 +194,22 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("scope_id", record)
         self.assertNotIn("request_ordinal", record)
 
+    def test_snapshot_source_strips_runtime_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            store.write_page(
+                Page(
+                    url="https://example.com/jobs",
+                    html="ok",
+                    source="fixture:/private/tmp/secret/sites/example.html",
+                )
+            )
+            record = json.loads(Path(store.index_path).read_text(encoding="utf-8"))
+
+        self.assertEqual(record["source"], "fixture")
+        self.assertNotIn("private", json.dumps(record))
+        self.assertNotIn("secret", json.dumps(record))
+
     def test_snapshot_store_writes_page_artifacts(self):
         with tempfile.TemporaryDirectory() as directory:
             store = SnapshotStore(directory)

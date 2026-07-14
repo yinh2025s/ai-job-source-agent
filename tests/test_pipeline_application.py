@@ -122,6 +122,28 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertEqual(result.trace["run_configuration_digest"], expected.digest)
         self.assertEqual(result.trace["execution_fingerprint"], result.execution_fingerprint)
 
+    def test_authoritative_replay_execution_fingerprint_override_is_strict(self):
+        company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]
+        authoritative = "f" * 64
+
+        result = self.build_application().pipeline.discover(
+            company,
+            execution_fingerprint_override=authoritative,
+        )
+
+        self.assertEqual(result.execution_fingerprint, authoritative)
+        self.assertTrue(
+            all(
+                item["execution_fingerprint"] == authoritative
+                for item in result.trace["stage_evidence_lineage"]
+            )
+        )
+        with self.assertRaisesRegex(ValueError, "lowercase SHA-256"):
+            self.build_application().pipeline.discover(
+                company,
+                execution_fingerprint_override="not-a-digest",
+            )
+
     def test_stop_after_marks_downstream_stages_not_run(self):
         company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]
 

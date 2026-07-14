@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import asdict
 
 from .application_runner import ApplicationRunner
@@ -41,6 +42,7 @@ class PipelineApplication:
         stop_after: str | None = None,
         rerun_from: str | None = None,
         capture_attempt_id: str | None = None,
+        execution_fingerprint_override: str | None = None,
     ) -> DiscoveryResult:
         context = PipelineContext.from_company(company)
         run_options: dict = {
@@ -48,6 +50,12 @@ class PipelineApplication:
             "stop_after": stop_after,
         }
         fingerprint = execution_fingerprint(asdict(company), self.run_configuration.digest)
+        if execution_fingerprint_override is not None:
+            if re.fullmatch(r"[0-9a-f]{64}", execution_fingerprint_override) is None:
+                raise ValueError(
+                    "execution_fingerprint_override must be a lowercase SHA-256 digest"
+                )
+            fingerprint = execution_fingerprint_override
         attempt_id = capture_attempt_id or new_capture_attempt_id()
         run_options["execution_fingerprint"] = fingerprint
         run_options["producer_attempt_id"] = attempt_id

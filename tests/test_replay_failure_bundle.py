@@ -7,8 +7,9 @@ from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
+from job_source_agent.composition import FetcherConfig, build_application
 from job_source_agent.snapshot import SnapshotStore
-from job_source_agent.models import PIPELINE_STAGES
+from job_source_agent.models import PIPELINE_STAGES, CompanyInput, dataclass_to_dict
 from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 from job_source_agent.web import Page
 from scripts.replay_failure_bundle import (
@@ -149,6 +150,105 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(comparison["classification"], "reproduced")
         self.assertEqual(comparison["original_outcome"], comparison["replay_outcome"])
         self.assertEqual(manifest["run_configuration_provenance"], "legacy_defaulted")
+
+    def test_scoped_capture_replays_as_isolated_bundle_v6(self):
+        company = CompanyInput(
+            company_name="Aurora Data",
+            company_website_url="https://aurora-data.example",
+            job_title="AI Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            application = build_application(
+                FetcherConfig(
+                    fixtures_dir=Path(__file__).resolve().parents[1] / "samples" / "sites",
+                    offline=True,
+                    snapshot_dir=root / "snapshots",
+                )
+            )
+            source = application.pipeline.discover(
+                company,
+                capture_attempt_id="capture-attempt-bundle-v6",
+            )
+            (root / "results.json").write_text(
+                json.dumps([dataclass_to_dict(source.trace_record())]),
+                encoding="utf-8",
+            )
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    pipeline_status=None,
+                    stage=None,
+                    stage_status=None,
+                    reason_code=None,
+                    legacy_run_config=None,
+                )
+            )
+            replay_results = json.loads(
+                (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
+            )
+            replay_trace = json.loads(
+                (root / "bundle" / "replay-trace.json").read_text(encoding="utf-8")
+            )
+
+        self.assertEqual(manifest["bundle_schema_version"], 6)
+        self.assertEqual(manifest["evidence_mode"], "scoped_outcome_tape")
+        self.assertEqual(manifest["outcome_gate"]["status"], "passed")
+        self.assertEqual(manifest["record_integrity"]["status"], "passed")
+        self.assertEqual(manifest["snapshot_summary"]["scope_count"], 7)
+        self.assertEqual(replay_results[0]["open_position_url"], source.open_position_url)
+        self.assertEqual(
+            manifest["record_plans"][0]["record_id"],
+            replay_trace[0]["trace"]["source_trace"]["replay"]["record_id"],
+        )
+        self.assertNotIn("fixtures", manifest["paths"])
+        self.assertEqual(manifest["paths"]["tapes"], "offline/tapes")
+
+    def test_scoped_duplicate_inputs_use_independent_tape_cursors_and_checkpoints(self):
+        company = CompanyInput(
+            company_name="Aurora Data",
+            company_website_url="https://aurora-data.example",
+            job_title="AI Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            application = build_application(
+                FetcherConfig(
+                    fixtures_dir=Path(__file__).resolve().parents[1] / "samples" / "sites",
+                    offline=True,
+                    snapshot_dir=root / "snapshots",
+                )
+            )
+            source = dataclass_to_dict(
+                application.pipeline.discover(
+                    company,
+                    capture_attempt_id="capture-attempt-duplicates",
+                ).trace_record()
+            )
+            (root / "results.json").write_text(
+                json.dumps([source, source]),
+                encoding="utf-8",
+            )
+
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    pipeline_status=None,
+                    stage=None,
+                    stage_status=None,
+                    reason_code=None,
+                    legacy_run_config=None,
+                )
+            )
+            checkpoint_roots = list(
+                (root / "bundle" / "checkpoints" / "records").iterdir()
+            )
+
+        record_ids = [plan["record_id"] for plan in manifest["record_plans"]]
+        self.assertEqual(manifest["outcome_gate"]["status"], "passed")
+        self.assertEqual(manifest["summary"]["total"], 2)
+        self.assertEqual(len(set(record_ids)), 2)
+        self.assertEqual(len(checkpoint_roots), 2)
 
     def test_source_run_configuration_is_replayed_faithfully_and_not_exported_as_input(self):
         with tempfile.TemporaryDirectory() as directory:

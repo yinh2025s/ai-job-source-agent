@@ -17,7 +17,12 @@ from job_source_agent.checkpoint import (
     CHECKPOINT_SCHEMA_VERSION,
     execution_fingerprint,
 )
-from job_source_agent.composition import AgentConfig, FetcherConfig, build_application
+from job_source_agent.composition import (
+    AgentConfig,
+    FetcherConfig,
+    build_application,
+    build_application_from_fetcher,
+)
 from job_source_agent.contracts import StageExecution
 from job_source_agent.evaluation import result_provider, summarize_results
 from job_source_agent.linkedin import load_company_inputs
@@ -27,19 +32,30 @@ from job_source_agent.models import (
     StageResult,
     dataclass_to_dict,
 )
+from job_source_agent.outcome_tape import OutcomeTape
 from job_source_agent.providers.base import (
     PageAwareProviderAdapter,
     PageProbeProviderAdapter,
 )
 from job_source_agent.providers.registry import DEFAULT_PROVIDER_REGISTRY
-from job_source_agent.snapshot_replay import SnapshotReplayError, replay_snapshots
+from job_source_agent.replay_record_plan import (
+    ReplayRecordPlan,
+    build_replay_record_plans,
+)
+from job_source_agent.scoped_replay import ScopedReplayController
+from job_source_agent.snapshot_replay import (
+    SnapshotReplayError,
+    load_scoped_outcome_tapes,
+    replay_snapshots,
+)
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.run_configuration import DeterministicRunConfig
-from job_source_agent.web import normalize_url
+from job_source_agent.web import FetchError, normalize_url
 from scripts.export_replay_input import _matches_filters, export_replay_records
 
 
 BUNDLE_SCHEMA_VERSION = 5
+SCOPED_BUNDLE_SCHEMA_VERSION = 6
 
 
 class FailureReplayError(ValueError):
@@ -156,28 +172,62 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         source_records,
         getattr(args, "legacy_run_config", None),
     )
+    try:
+        record_plans = build_replay_record_plans(source_records, replay_records)
+    except (TypeError, ValueError) as error:
+        raise FailureReplayError(f"Invalid replay evidence plan: {error}") from error
+    evidence_mode = record_plans[0].evidence_mode
+    for replay_record, plan in zip(replay_records, record_plans, strict=True):
+        replay_record.setdefault("source_trace", {}).setdefault("replay", {})[
+            "record_id"
+        ] = plan.record_id
 
     _reset_checkpoint_output(output_root / "checkpoints")
-    fixture_result = replay_snapshots(args.snapshot_dir, output_root / "offline")
     input_path = output_root / "replay-input.json"
     _write_json_atomic(input_path, replay_records)
     companies = load_company_inputs(input_path)
-    resume_stages = _seed_authoritative_handoffs(
-        companies,
-        replay_records,
-        source_records,
-        output_root / "checkpoints",
-        run_configuration,
-    )
-    application = build_application(
-        FetcherConfig(fixtures_dir=output_root / "offline" / "sites", offline=True),
-        checkpoint_dir=output_root / "checkpoints",
-        run_configuration=run_configuration,
-    )
-    discoveries = [
-        application.pipeline.discover(company, start_at=resume_stage)
-        for company, resume_stage in zip(companies, resume_stages, strict=True)
-    ]
+    if evidence_mode == "scoped_outcome_tape":
+        scopes_by_id = {
+            lineage.snapshot_scope.scope_id: lineage.snapshot_scope
+            for plan in record_plans
+            for lineage in plan.stage_evidence_lineage
+            if lineage.snapshot_scope is not None
+        }
+        tapes = load_scoped_outcome_tapes(args.snapshot_dir, scopes_by_id.values())
+        scoped_manifest = _write_scoped_tapes(output_root / "offline", tapes)
+        discoveries = _run_scoped_replay_records(
+            companies,
+            replay_records,
+            source_records,
+            record_plans,
+            tapes,
+            output_root / "checkpoints",
+            run_configuration,
+        )
+        snapshot_summary = scoped_manifest["summary"]
+        bundle_schema_version = SCOPED_BUNDLE_SCHEMA_VERSION
+        replay_paths = {
+            "tapes": "offline/tapes",
+            "snapshot_manifest": "offline/scoped-replay-manifest.json",
+        }
+    else:
+        fixture_result = replay_snapshots(args.snapshot_dir, output_root / "offline")
+        discoveries = _run_legacy_replay_records(
+            companies,
+            replay_records,
+            source_records,
+            record_plans,
+            output_root / "checkpoints",
+            output_root / "offline" / "sites",
+            run_configuration,
+        )
+        snapshot_summary = fixture_result.summary
+        bundle_schema_version = BUNDLE_SCHEMA_VERSION
+        replay_paths = {
+            "fixtures": "offline/sites",
+            "snapshot_manifest": "offline/replay-manifest.json",
+            "fetch_failures": "offline/fetch-failures.json",
+        }
     result_records = [result.result_record() for result in discoveries]
     trace_records = [dataclass_to_dict(result.trace_record()) for result in discoveries]
     summary = summarize_results(trace_records)
@@ -204,22 +254,29 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
     _write_json_atomic(output_root / "replay-summary.json", summary)
     manifest = {
         "status": "failed" if record_integrity["status"] == "failed" else "success",
-        "bundle_schema_version": BUNDLE_SCHEMA_VERSION,
+        "bundle_schema_version": bundle_schema_version,
         "checkpoint_schema_version": CHECKPOINT_SCHEMA_VERSION,
         "result_schema_version": RESULT_SCHEMA_VERSION,
         "adapter_version": ADAPTER_VERSION,
         "run_configuration": run_configuration.to_payload(),
         "run_configuration_digest": run_configuration.digest,
         "run_configuration_provenance": run_configuration_provenance,
+        "evidence_mode": evidence_mode,
+        "record_plans": [
+            {
+                "source_ordinal": plan.source_ordinal,
+                "record_id": plan.record_id,
+                "evidence_mode": plan.evidence_mode,
+            }
+            for plan in record_plans
+        ],
         "paths": {
             "input": "replay-input.json",
-            "fixtures": "offline/sites",
-            "snapshot_manifest": "offline/replay-manifest.json",
-            "fetch_failures": "offline/fetch-failures.json",
             "results": "replay-results.json",
             "trace": "replay-trace.json",
             "summary": "replay-summary.json",
             "checkpoints": "checkpoints",
+            **replay_paths,
         },
         "filters": {
             "pipeline_status": args.pipeline_status or [],
@@ -229,7 +286,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             "provider": args.provider or [],
             "limit": args.limit,
         },
-        "snapshot_summary": fixture_result.summary,
+        "snapshot_summary": snapshot_summary,
         "summary": summary,
         "record_integrity": record_integrity,
         "outcome_gate": outcome_gate,
@@ -283,6 +340,152 @@ def _reset_checkpoint_output(path: Path) -> None:
         raise FailureReplayError(f"Unsafe replay checkpoint output: {path}")
     if path.exists():
         shutil.rmtree(path)
+
+
+def _write_scoped_tapes(
+    output_root: Path,
+    tapes: dict[str, OutcomeTape],
+) -> dict:
+    _reset_checkpoint_output(output_root)
+    tape_root = output_root / "tapes"
+    tape_root.mkdir(parents=True, exist_ok=True)
+    entries = []
+    for scope_id, tape in sorted(tapes.items()):
+        path = tape_root / f"{scope_id}.json"
+        _write_json_atomic(
+            path,
+            {
+                "scope": asdict(tape.scope),
+                "tape": tape.as_payload(),
+            },
+        )
+        entries.append(
+            {
+                "scope_id": scope_id,
+                "path": str(path.relative_to(output_root)),
+                "request_count": tape.scope.request_count,
+                "records_sha256": tape.scope.records_sha256,
+            }
+        )
+    summary = {
+        "evidence_mode": "scoped_outcome_tape",
+        "scope_count": len(entries),
+        "outcome_count": sum(entry["request_count"] for entry in entries),
+    }
+    manifest = {
+        "schema_version": 3,
+        "evidence_mode": "scoped_outcome_tape",
+        "entries": entries,
+        "summary": summary,
+    }
+    _write_json_atomic(output_root / "scoped-replay-manifest.json", manifest)
+    return manifest
+
+
+def _run_legacy_replay_records(
+    companies: list,
+    replay_records: list[dict],
+    source_records: list[dict],
+    record_plans: tuple[ReplayRecordPlan, ...],
+    checkpoint_root: Path,
+    fixtures_dir: Path,
+    run_configuration: DeterministicRunConfig,
+) -> list:
+    discoveries = []
+    for company, replay_record, source_record, plan in zip(
+        companies,
+        replay_records,
+        source_records,
+        record_plans,
+        strict=True,
+    ):
+        record_checkpoint_root = checkpoint_root / "records" / plan.record_id
+        resume_stage = _seed_authoritative_handoffs(
+            [company],
+            [replay_record],
+            [source_record],
+            record_checkpoint_root,
+            run_configuration,
+        )[0]
+        application = build_application(
+            FetcherConfig(fixtures_dir=fixtures_dir, offline=True),
+            checkpoint_dir=record_checkpoint_root,
+            run_configuration=run_configuration,
+        )
+        discoveries.append(
+            application.pipeline.discover(company, start_at=resume_stage)
+        )
+    return discoveries
+
+
+def _run_scoped_replay_records(
+    companies: list,
+    replay_records: list[dict],
+    source_records: list[dict],
+    record_plans: tuple[ReplayRecordPlan, ...],
+    tapes: dict[str, OutcomeTape],
+    checkpoint_root: Path,
+    run_configuration: DeterministicRunConfig,
+) -> list:
+    discoveries = []
+    for company, replay_record, source_record, plan in zip(
+        companies,
+        replay_records,
+        source_records,
+        record_plans,
+        strict=True,
+    ):
+        execution_fingerprint_value = plan.stage_evidence_lineage[0].execution_fingerprint
+        record_checkpoint_root = checkpoint_root / "records" / plan.record_id
+        resume_stage = _seed_authoritative_handoffs(
+            [company],
+            [replay_record],
+            [source_record],
+            record_checkpoint_root,
+            run_configuration,
+            record_plans=(plan,),
+        )[0]
+        start_stage = resume_stage or PIPELINE_STAGES[0]
+        start_index = PIPELINE_STAGES.index(start_stage)
+        scopes_by_stage = {
+            lineage.stage: lineage.snapshot_scope
+            for lineage in plan.stage_evidence_lineage
+            if lineage.snapshot_scope is not None
+            and PIPELINE_STAGES.index(lineage.stage) >= start_index
+        }
+        expected_stages = set(PIPELINE_STAGES[start_index:])
+        if set(scopes_by_stage) != expected_stages:
+            missing = sorted(expected_stages - set(scopes_by_stage), key=PIPELINE_STAGES.index)
+            raise FailureReplayError(
+                f"Scoped replay record {plan.record_id} is missing stage scopes: {missing}"
+            )
+        controller = ScopedReplayController(
+            {
+                stage: tapes[scope.scope_id]
+                for stage, scope in scopes_by_stage.items()
+            },
+            execution_fingerprint=execution_fingerprint_value,
+        )
+        application = build_application_from_fetcher(
+            controller,
+            checkpoint_dir=record_checkpoint_root,
+            run_configuration=run_configuration,
+            capture_coordinator=controller,
+        )
+        try:
+            discovery = application.pipeline.discover(
+                company,
+                start_at=resume_stage,
+                capture_attempt_id=f"scoped-replay-{plan.record_id[:16]}",
+                execution_fingerprint_override=execution_fingerprint_value,
+            )
+            controller.assert_all_consumed()
+        except (FetchError, KeyError, TypeError, ValueError) as error:
+            raise FailureReplayError(
+                f"Scoped replay record {plan.record_id} diverged: {error}"
+            ) from error
+        discoveries.append(discovery)
+    return discoveries
 
 
 def _export_replay_records_with_sources(
@@ -413,13 +616,16 @@ def _seed_authoritative_handoffs(
     source_records: list[dict],
     checkpoint_root: Path,
     run_configuration: DeterministicRunConfig,
+    record_plans: tuple[ReplayRecordPlan, ...] | None = None,
 ) -> list[str | None]:
     store = FilesystemCheckpointStore(checkpoint_root)
     resume_stages: list[str | None] = []
-    for company, replay_record, source_record in zip(
+    aligned_plans = record_plans or (None,) * len(companies)
+    for company, replay_record, source_record, record_plan in zip(
         companies,
         replay_records,
         source_records,
+        aligned_plans,
         strict=True,
     ):
         resume_stage = _replay_resume_stage(
@@ -430,8 +636,21 @@ def _seed_authoritative_handoffs(
         if executions is None:
             resume_stages.append(None)
             continue
-        fingerprint = execution_fingerprint(asdict(company), run_configuration.digest)
+        fingerprint = (
+            record_plan.stage_evidence_lineage[0].execution_fingerprint
+            if record_plan is not None and record_plan.stage_evidence_lineage
+            else execution_fingerprint(asdict(company), run_configuration.digest)
+        )
+        lineage_by_stage = (
+            {
+                lineage.stage: lineage
+                for lineage in record_plan.stage_evidence_lineage
+            }
+            if record_plan is not None
+            else {}
+        )
         for execution in executions:
+            execution.evidence_lineage = lineage_by_stage.get(execution.result.stage)
             store.save(fingerprint, execution)
         resume_stages.append(resume_stage)
     return resume_stages
@@ -654,6 +873,8 @@ def _build_outcome_gate(
             if source_records is not None and index < len(source_records)
             else None
         )
+        expected_record_id = _replay_record_id(replay_input)
+        actual_record_id = _replay_record_id(replay_trace)
         compare_identity = bool(
             source_record is not None
             and (
@@ -693,7 +914,10 @@ def _build_outcome_gate(
             and original.get("pipeline_status") == "success"
             and original == replayed_original
         )
-        if successful_outcome_reproduced:
+        if expected_record_id is not None and actual_record_id != expected_record_id:
+            classification = "mismatch"
+            reason = "record_identity_changed"
+        elif successful_outcome_reproduced:
             classification = "reproduced"
             reason = "outcome_equal"
         elif _contains_reason_code(
@@ -731,6 +955,7 @@ def _build_outcome_gate(
         comparisons.append(
             {
                 "index": index,
+                "record_id": expected_record_id,
                 "company_name": _record_field(replay_input, replay_result, "company_name"),
                 "job_title": _record_field(
                     replay_input,
@@ -764,6 +989,19 @@ def _build_outcome_gate(
         "classification_counts": counts,
         "records": comparisons,
     }
+
+
+def _replay_record_id(record: dict | None) -> str | None:
+    if not isinstance(record, dict):
+        return None
+    trace = record.get("trace")
+    payload = trace if isinstance(trace, dict) else record
+    source_trace = payload.get("source_trace")
+    replay = source_trace.get("replay") if isinstance(source_trace, dict) else None
+    record_id = replay.get("record_id") if isinstance(replay, dict) else None
+    if not isinstance(record_id, str):
+        return None
+    return record_id
 
 
 def _original_outcome(record: dict | None) -> dict | None:
