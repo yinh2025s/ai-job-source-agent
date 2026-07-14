@@ -4,6 +4,8 @@ import time
 from typing import Protocol
 
 from ..contracts import PipelineContext, StageExecution
+from ..identity_continuity import HiringIdentityEvidence
+from ..result_identity import canonicalize_identity_url
 from ..errors import DiscoveryError
 from ..homepage_navigation import HomepageNavigationEvidence
 from ..models import (
@@ -212,7 +214,7 @@ class HiringIdentityResolutionStage:
 
         try:
             evidence: list[dict] = []
-            updates: dict[str, str | None] = {}
+            updates: dict[str, object] = {}
             detail = (
                 "No alternate hiring entity was found; the input company remains the hiring entity."
             )
@@ -275,6 +277,55 @@ class HiringIdentityResolutionStage:
                             "url": normalize_url(context.company.career_root_url),
                         }
                     )
+            hiring_entity_name = (
+                updates.get("hiring_entity_name") or context.company.company_name
+            )
+            relationship_type = (
+                getattr(identity, "relationship_type", None) if identity else None
+            )
+            relationship_verified = (
+                getattr(identity, "relationship_verified", None) if identity else None
+            )
+            verification_method = (
+                getattr(identity, "verification_method", None) if identity else None
+            )
+            relationship_evidence_url = (
+                getattr(identity, "evidence_url", None) if identity else None
+            )
+            if not identity or _same_entity(context.company.company_name, str(hiring_entity_name)):
+                relationship_type = "same_entity"
+                relationship_verified = True
+                verification_method = "same_entity"
+            if relationship_type not in {
+                "same_entity",
+                "brand_parent",
+                "acquired_brand",
+                "alternate_employer",
+                "input_asserted",
+            }:
+                relationship_type = "alternate_employer"
+            if verification_method is None:
+                verification_method = "unverified_identity"
+            relationship_evidence_url = relationship_evidence_url or (
+                updates.get("career_root_url") or context.company_website_url
+            )
+            updates["hiring_identity_evidence"] = HiringIdentityEvidence(
+                source_company_name=context.company.company_name,
+                hiring_entity_name=str(hiring_entity_name),
+                relationship_type=relationship_type,
+                verification_method=verification_method,
+                verified=bool(relationship_verified),
+                evidence_url=canonicalize_identity_url(relationship_evidence_url)
+                if relationship_evidence_url
+                else None,
+            )
+            evidence.append(
+                {
+                    "type": "hiring_identity",
+                    "relationship_type": relationship_type,
+                    "verified": bool(relationship_verified),
+                }
+            )
         except (AttributeError, TypeError, ValueError) as exc:
             return _identity_failed_execution(
                 "COMPANY_IDENTITY_AMBIGUOUS",
@@ -345,3 +396,13 @@ def _identity_failed_execution(
 
 def _elapsed_ms(started: float) -> int:
     return max(0, round((time.perf_counter() - started) * 1000))
+
+
+def _same_entity(left: str, right: str) -> bool:
+    normalized_left = "".join(
+        character.casefold() for character in left if character.isalnum()
+    )
+    normalized_right = "".join(
+        character.casefold() for character in right if character.isalnum()
+    )
+    return normalized_left == normalized_right

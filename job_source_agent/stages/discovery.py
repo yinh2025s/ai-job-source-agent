@@ -2,11 +2,13 @@ from __future__ import annotations
 
 import time
 from typing import Protocol
+from urllib.parse import urlsplit
 
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
 from ..homepage_navigation import HomepageNavigationEvidence
-from ..job_board import DiscoveredJobBoard, JobBoardPortfolio
+from ..identity_continuity import OpeningIdentity, ProviderIdentity
+from ..job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from ..models import (
     STAGE_CAREER_DISCOVERY,
     STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -16,6 +18,7 @@ from ..models import (
 from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
 from ..reasons import canonical_reason_code, classify_fetch_error, make_stage_result
+from ..result_identity import canonicalize_identity_url, tenant_locator
 from ..source_posting import trusted_linkedin_native_posting
 from ..web import FetchError, normalize_url
 
@@ -128,7 +131,7 @@ class CareerDiscoveryStage:
                 detail = "Career root supplied by a trusted direct input or identity rule."
             else:
                 find_kwargs = {
-                    "company_name": context.company.company_name,
+                    "company_name": context.hiring_entity_name or context.company.company_name,
                     "preferred_url": context.career_root_url,
                     "target_title": context.company.job_title,
                     "target_location": context.company.job_location,
@@ -209,7 +212,9 @@ class JobBoardDiscoveryStage:
             if callable(find_portfolio):
                 job_list_url, trace, portfolio = find_portfolio(
                     context.career_page_url,
-                    company_name=context.company.company_name,
+                    company_name=(
+                        context.hiring_entity_name or context.company.company_name
+                    ),
                     target_title=context.company.job_title,
                     target_location=context.company.job_location,
                 )
@@ -224,13 +229,13 @@ class JobBoardDiscoveryStage:
             if not callable(find_portfolio) and callable(find_with_evidence):
                 job_list_url, trace, discovered_board = find_with_evidence(
                     context.career_page_url,
-                    company_name=context.company.company_name,
+                    company_name=context.hiring_entity_name or context.company.company_name,
                     target_location=context.company.job_location,
                 )
             elif not callable(find_portfolio):
                 job_list_url, trace = self.service.find_job_board(
                     context.career_page_url,
-                    company_name=context.company.company_name,
+                    company_name=context.hiring_entity_name or context.company.company_name,
                     target_location=context.company.job_location,
                 )
                 discovered_board = None
@@ -274,6 +279,12 @@ class JobBoardDiscoveryStage:
         updates = {"job_list_page_url": job_list_url, "provider": provider}
         if discovered_board is not None:
             updates["discovered_job_board"] = discovered_board
+        updates["provider_identity"] = _provider_identity(
+            context,
+            job_list_url,
+            discovered_board,
+            self.provider_registry,
+        )
         if (
             portfolio is not None
             and (
@@ -399,6 +410,11 @@ class JobBoardDiscoveryStage:
             },
             **(fallback_trace or {}),
         }
+        discovered = DiscoveredJobBoard(
+            board=board,
+            detection_method="external_apply_url",
+            evidence_url=source_url,
+        )
         return StageExecution(
             result=make_stage_result(
                 self.name,
@@ -412,7 +428,17 @@ class JobBoardDiscoveryStage:
                 ],
                 detail="Native provider board derived from the LinkedIn External Apply URL.",
             ),
-            updates={"job_list_page_url": board.url, "provider": adapter.name},
+            updates={
+                "job_list_page_url": board.url,
+                "provider": adapter.name,
+                "discovered_job_board": discovered,
+                "provider_identity": _provider_identity(
+                    context,
+                    board.url,
+                    discovered,
+                    self.provider_registry,
+                ),
+            },
             trace=trace,
         )
 
@@ -480,6 +506,13 @@ class OpeningMatchStage:
         updates = {"job_list_page_url": job_list_url}
         if opening_url:
             updates["open_position_url"] = opening_url
+            opening_identity = _opening_identity(
+                context,
+                opening_url,
+                self.provider_registry,
+            )
+            if opening_identity is not None:
+                updates["opening_identity"] = opening_identity
             return StageExecution(
                 result=make_stage_result(
                     self.name,
@@ -619,6 +652,11 @@ class OpeningMatchStage:
                         "discovered_job_board": discovered,
                         "provider": board.provider,
                         "open_position_url": opening_url,
+                        **_opening_identity_update(
+                            context,
+                            opening_url,
+                            self.provider_registry,
+                        ),
                     },
                     trace=portfolio_trace,
                 )
@@ -816,3 +854,133 @@ def _identity_stage_resolved_career_root(context: PipelineContext) -> bool:
 
 def _elapsed_ms(started: float) -> int:
     return max(0, round((time.perf_counter() - started) * 1000))
+
+
+def _provider_identity(
+    context: PipelineContext,
+    job_list_url: str,
+    discovered: DiscoveredJobBoard | None,
+    registry: ProviderRegistry,
+) -> ProviderIdentity:
+    board = discovered.board if discovered is not None else None
+    adapter = registry.adapter_for(job_list_url)
+    if board is None and adapter is not None:
+        board = adapter.identify_board(job_list_url)
+    if board is None:
+        canonical_board = canonicalize_identity_url(job_list_url)
+        provider = "generic"
+        tenant = tenant_locator(canonical_board)
+        evidence_url = context.career_page_url or canonical_board
+    else:
+        canonical_board = canonicalize_identity_url(board.url)
+        provider = board.provider
+        tenant = board.identifier or tenant_locator(canonical_board)
+        evidence_url = discovered.evidence_url if discovered is not None else job_list_url
+    verified, method = _authorize_provider_board(
+        context,
+        provider,
+        tenant,
+        canonical_board,
+    )
+    return ProviderIdentity(
+        hiring_entity_name=(
+            context.hiring_identity_evidence.hiring_entity_name
+            if context.hiring_identity_evidence is not None
+            else context.hiring_entity_name or context.company.company_name
+        ),
+        provider=provider,
+        tenant=tenant,
+        canonical_board_url=canonical_board,
+        evidence_url=canonicalize_identity_url(evidence_url),
+        verification_method=method,
+        relationship_verified=verified,
+    )
+
+
+def _authorize_provider_board(
+    context: PipelineContext,
+    provider: str,
+    tenant: str,
+    canonical_board: str,
+) -> tuple[bool, str]:
+    hiring = context.hiring_identity_evidence
+    if hiring is None or not hiring.verified:
+        return False, "linked_url_only"
+    if context.career_root_url and _same_url(context.career_root_url, canonical_board):
+        return True, "identity_career_root"
+    entity_key = _identity_key(hiring.hiring_entity_name)
+    if entity_key and entity_key in _identity_key(tenant):
+        return True, "tenant_name_match"
+    if provider == "generic" and context.career_page_url and _same_host(
+        context.career_page_url, canonical_board
+    ):
+        return True, "first_party_same_site"
+    return False, "linked_url_only"
+
+
+def _opening_identity(
+    context: PipelineContext,
+    opening_url: str,
+    registry: ProviderRegistry,
+) -> OpeningIdentity | None:
+    provider_identity = context.provider_identity
+    if provider_identity is None:
+        return None
+    canonical_opening = canonicalize_identity_url(opening_url)
+    if provider_identity.provider == "generic":
+        if not _same_host(provider_identity.canonical_board_url, canonical_opening):
+            return None
+        return OpeningIdentity(
+            hiring_entity_name=provider_identity.hiring_entity_name,
+            provider="generic",
+            tenant=provider_identity.tenant,
+            canonical_board_url=provider_identity.canonical_board_url,
+            canonical_opening_url=canonical_opening,
+        )
+    adapter = registry.adapter_named(provider_identity.provider)
+    board = adapter.identify_board(opening_url) if adapter is not None else None
+    if board is None or board.provider != provider_identity.provider:
+        return None
+    canonical_board = canonicalize_identity_url(board.url)
+    tenant = board.identifier or tenant_locator(canonical_board)
+    if (
+        tenant != provider_identity.tenant
+        or canonical_board != provider_identity.canonical_board_url
+    ):
+        return None
+    return OpeningIdentity(
+        hiring_entity_name=provider_identity.hiring_entity_name,
+        provider=board.provider,
+        tenant=tenant,
+        canonical_board_url=canonical_board,
+        canonical_opening_url=canonical_opening,
+    )
+
+
+def _opening_identity_update(
+    context: PipelineContext,
+    opening_url: str,
+    registry: ProviderRegistry,
+) -> dict[str, OpeningIdentity]:
+    identity = _opening_identity(context, opening_url, registry)
+    return {"opening_identity": identity} if identity is not None else {}
+
+
+def _same_url(left: str, right: str) -> bool:
+    try:
+        return canonicalize_identity_url(left) == canonicalize_identity_url(right)
+    except ValueError:
+        return False
+
+
+def _same_host(left: str, right: str) -> bool:
+    try:
+        return urlsplit(canonicalize_identity_url(left)).hostname == urlsplit(
+            canonicalize_identity_url(right)
+        ).hostname
+    except ValueError:
+        return False
+
+
+def _identity_key(value: str) -> str:
+    return "".join(character.casefold() for character in value if character.isalnum())

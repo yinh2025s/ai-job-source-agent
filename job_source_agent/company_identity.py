@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import re
 from typing import Protocol
 
 from .posting_identity import PostingIdentityEvidence
@@ -14,6 +15,10 @@ class CompanyIdentity:
     career_root_url: str | None = None
     official_website_url: str | None = None
     reasons: list[str] | None = None
+    relationship_type: str | None = None
+    relationship_verified: bool = False
+    verification_method: str | None = None
+    evidence_url: str | None = None
 
 
 BRAND_HIRING_RULES = {
@@ -245,8 +250,9 @@ class CompanyIdentityResolver:
                     "career_root_url": identity.career_root_url,
                     "official_website_url": identity.official_website_url,
                     "reasons": identity.reasons or [],
+                    "relationship": _relationship_payload(identity, company_name),
                 }
-                return identity, trace
+                return _resolved_identity(identity, company_name), trace
 
         if self.posting_probe is None:
             return None, trace
@@ -277,8 +283,21 @@ class CompanyIdentityResolver:
                         *(identity.reasons or []),
                         "LinkedIn job description verified a different hiring entity",
                     ],
+                    "relationship": _relationship_payload(
+                        identity,
+                        company_name,
+                        relationship_type="alternate_employer",
+                        verification_method="posting_identity_probe",
+                        evidence_url=linkedin_job_url,
+                    ),
                 }
-                return identity, trace
+                return _resolved_identity(
+                    identity,
+                    company_name,
+                    relationship_type="alternate_employer",
+                    verification_method="posting_identity_probe",
+                    evidence_url=linkedin_job_url,
+                ), trace
 
         if self.website_resolver is None:
             trace["alternate_employer_resolution"] = {
@@ -298,6 +317,10 @@ class CompanyIdentityResolver:
             hiring_entity_name=employer_name,
             official_website_url=employer_website,
             reasons=["LinkedIn job description verified a different hiring entity"],
+            relationship_type="alternate_employer",
+            relationship_verified=True,
+            verification_method="posting_identity_probe",
+            evidence_url=linkedin_job_url,
         )
         trace["selected"] = {
             "brand_name": identity.brand_name,
@@ -305,6 +328,7 @@ class CompanyIdentityResolver:
             "career_root_url": None,
             "official_website_url": identity.official_website_url,
             "reasons": identity.reasons,
+            "relationship": _relationship_payload(identity, company_name),
         }
         return identity, trace
 
@@ -330,3 +354,59 @@ class CompanyIdentityResolver:
 
 def _normalize_company_key(company_name: str) -> str:
     return " ".join(part.lower() for part in company_name.replace("&", " ").split())
+
+
+def _resolved_identity(
+    identity: CompanyIdentity,
+    source_company_name: str,
+    *,
+    relationship_type: str | None = None,
+    verification_method: str | None = None,
+    evidence_url: str | None = None,
+) -> CompanyIdentity:
+    relationship_type = relationship_type or identity.relationship_type
+    if relationship_type is None:
+        relationship_type = (
+            "same_entity"
+            if _same_entity(source_company_name, identity.hiring_entity_name)
+            else "brand_parent"
+        )
+    return CompanyIdentity(
+        brand_name=identity.brand_name,
+        hiring_entity_name=identity.hiring_entity_name,
+        career_root_url=identity.career_root_url,
+        official_website_url=identity.official_website_url,
+        reasons=identity.reasons,
+        relationship_type=relationship_type,
+        relationship_verified=True,
+        verification_method=(
+            verification_method or identity.verification_method or "identity_rule"
+        ),
+        evidence_url=(
+            evidence_url
+            or identity.evidence_url
+            or identity.career_root_url
+            or identity.official_website_url
+        ),
+    )
+
+
+def _relationship_payload(
+    identity: CompanyIdentity,
+    source_company_name: str,
+    **overrides: str | None,
+) -> dict[str, str | bool | None]:
+    resolved = _resolved_identity(identity, source_company_name, **overrides)
+    return {
+        "type": resolved.relationship_type,
+        "verified": resolved.relationship_verified,
+        "verification_method": resolved.verification_method,
+        "evidence_url": resolved.evidence_url,
+    }
+
+
+def _same_entity(left: str, right: str) -> bool:
+    def key(value: str) -> str:
+        return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
+
+    return key(left) == key(right)
