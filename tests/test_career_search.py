@@ -24,6 +24,20 @@ class MappingFetcher(Fetcher):
         return self.handler(url)
 
 
+class BudgetMappingFetcher(MappingFetcher):
+    def __init__(self, handler, remaining):
+        super().__init__(handler)
+        self.remaining = iter(remaining)
+        self.budget_checks = 0
+
+    def remaining_fetch_seconds(self):
+        self.budget_checks += 1
+        value = next(self.remaining)
+        if isinstance(value, Exception):
+            raise value
+        return value
+
+
 def fixture(name):
     return (FIXTURES / name).read_text(encoding="utf-8")
 
@@ -60,7 +74,7 @@ class CareerSearchTests(unittest.TestCase):
             lambda url: Page(url, "<rss><channel /></rss>", final_url=url)
         )
 
-        CareerSearchResolver(fetcher, max_queries=5, max_source_fetches=6).search(
+        result = CareerSearchResolver(fetcher, max_queries=5, max_source_fetches=6).search(
             "Zillow, Inc.",
             "https://zillow.com",
             ats_only=True,
@@ -70,6 +84,56 @@ class CareerSearchTests(unittest.TestCase):
         self.assertTrue(all("format=rss" in url for url in fetcher.calls))
         self.assertIn("site%3Amyworkdayjobs.com", fetcher.calls[1])
         self.assertNotIn("Inc", fetcher.calls[0])
+        self.assertFalse(result.trace["fetch_budget_supported"])
+        self.assertEqual(result.trace["fetch_budget_checks"], 0)
+
+    def test_fetch_budget_exhaustion_stops_ats_fanout_before_next_fetch(self):
+        fetcher = BudgetMappingFetcher(
+            lambda url: Page(url, "<rss><channel /></rss>", final_url=url),
+            [1.0, 0.0],
+        )
+
+        result = CareerSearchResolver(fetcher, max_queries=5).search(
+            "Zillow, Inc.",
+            "https://zillow.com",
+            ats_only=True,
+        )
+
+        self.assertEqual(len(fetcher.calls), 1)
+        self.assertEqual(fetcher.budget_checks, 2)
+        self.assertEqual(result.trace["stopped_reason"], "deadline_exhausted")
+        self.assertTrue(result.trace["fetch_budget_supported"])
+        self.assertEqual(result.trace["fetch_budget_checks"], 2)
+        self.assertTrue(result.trace["fetch_budget_unavailable"])
+        self.assertFalse(result.trace["fetch_budget_invalid"])
+        self.assertFalse(any("remaining" in key for key in result.trace))
+
+    def test_invalid_fetch_budget_stops_before_any_source_fetch(self):
+        invalid_values = [
+            True,
+            "1",
+            float("nan"),
+            float("inf"),
+            -1.0,
+            RuntimeError("bad budget"),
+        ]
+
+        for invalid in invalid_values:
+            with self.subTest(invalid=invalid):
+                fetcher = BudgetMappingFetcher(
+                    lambda url: Page(url, "<rss><channel /></rss>", final_url=url),
+                    [invalid],
+                )
+
+                result = CareerSearchResolver(fetcher, max_queries=5).search(
+                    "Acme Co", "https://acme.example", ats_only=True
+                )
+
+                self.assertEqual(fetcher.calls, [])
+                self.assertEqual(result.trace["stopped_reason"], "deadline_exhausted")
+                self.assertEqual(result.trace["fetch_budget_checks"], 1)
+                self.assertTrue(result.trace["fetch_budget_unavailable"])
+                self.assertTrue(result.trace["fetch_budget_invalid"])
 
     def test_bing_rss_filters_drift_and_accepts_official_result(self):
         def handler(url):

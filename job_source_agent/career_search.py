@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import math
 import re
 from dataclasses import dataclass
 from html import unescape
@@ -8,6 +9,7 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qs, unquote, urlencode, urlparse, urlunparse
 from xml.etree import ElementTree as ET
 
+from .contracts import FetchBudget
 from .models import LinkCandidate
 from .scoring import is_ats_url, is_resource_url, score_career_link
 from .web import FetchError, Fetcher, RawLink, domain_of, safe_normalize_url
@@ -71,6 +73,7 @@ class CareerSearchResolver:
         official_domain = domain_of(company_website_url)
         candidates: list[LinkCandidate] = []
         seen: set[str] = set()
+        fetch_budget = self.fetcher if isinstance(self.fetcher, FetchBudget) else None
         trace = {
             "queries": [],
             "query_url": None,
@@ -78,6 +81,10 @@ class CareerSearchResolver:
             "error": None,
             "source_fetch_budget": self.max_source_fetches,
             "source_fetch_budget_exhausted": False,
+            "fetch_budget_supported": fetch_budget is not None,
+            "fetch_budget_checks": 0,
+            "fetch_budget_unavailable": False,
+            "fetch_budget_invalid": False,
             "stopped_reason": None,
             "ats_only": ats_only,
         }
@@ -103,6 +110,14 @@ class CareerSearchResolver:
                 if source_fetches >= self.max_source_fetches:
                     trace["source_fetch_budget_exhausted"] = True
                     break
+                if fetch_budget is not None:
+                    trace["fetch_budget_checks"] += 1
+                    available, invalid = _fetch_budget_available(fetch_budget)
+                    if not available:
+                        trace["fetch_budget_unavailable"] = True
+                        trace["fetch_budget_invalid"] = invalid
+                        trace["stopped_reason"] = "deadline_exhausted"
+                        break
                 source_fetches += 1
                 query_trace = {
                     "source": source.name,
@@ -150,6 +165,8 @@ class CareerSearchResolver:
                 break
             if trace["source_fetch_budget_exhausted"]:
                 break
+            if trace["stopped_reason"] == "deadline_exhausted":
+                break
 
         candidates.sort(key=lambda candidate: (-candidate.score, candidate.url))
         selected = candidates[: self.max_results]
@@ -188,6 +205,25 @@ class CareerSearchResolver:
                 continue
             candidates.append(candidate)
             query_trace["candidates"].append(_candidate_trace(candidate))
+
+
+def _fetch_budget_available(fetcher: FetchBudget) -> tuple[bool, bool]:
+    try:
+        remaining = fetcher.remaining_fetch_seconds()
+    except Exception:
+        return False, True
+    if remaining is None:
+        return True, False
+    if (
+        isinstance(remaining, bool)
+        or not isinstance(remaining, (int, float))
+        or not math.isfinite(remaining)
+    ):
+        return False, True
+    if remaining < 0:
+        return False, True
+    return remaining > 0, False
+
 
 class _BingResultParser(HTMLParser):
     def __init__(self) -> None:
