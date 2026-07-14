@@ -97,9 +97,9 @@ class FetchFailureOutcomeTapeEntry:
         _validate_membership(self)
         _validate_request(self.request)
         if self.status is not None and (
-            type(self.status) is not int or not 100 <= self.status <= 599
+            type(self.status) is not int or not 100 <= self.status <= 999
         ):
-            raise OutcomeTapeError("failure status must be an HTTP status or null")
+            raise OutcomeTapeError("failure status must be a response status or null")
         if self.reason_code not in REASON_SPECS:
             raise OutcomeTapeError("failure reason_code is unknown")
         if type(self.retryable) is not bool:

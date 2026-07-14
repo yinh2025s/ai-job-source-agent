@@ -95,7 +95,7 @@ class ScopedSnapshotRequiresBundleV6Error(SnapshotReplayError):
             locations += f", ... ({self.record_count - len(self.records)} more)"
         super().__init__(
             "Legacy snapshot materialization cannot consume schema-v3 scoped records"
-            f" ({locations}). Use scripts/replay_failure_bundle.py with a bundle v6/scoped "
+            f" ({locations}). Use scripts/replay_failure_bundle.py with a scoped bundle "
             "replay instead."
         )
 
@@ -109,7 +109,7 @@ class ScopedSnapshotRequiresBundleV6Error(SnapshotReplayError):
                 "record_count": self.record_count,
                 "records": list(self.records),
                 "records_truncated": self.record_count > len(self.records),
-                "required_replay": "bundle_v6_scoped",
+                "required_replay": "scoped_bundle_v6_or_newer",
             },
         }
 
@@ -155,6 +155,8 @@ def load_scoped_outcome_tapes(
         scope_id = record["scope_id"]
         if scope_id not in requested:
             continue
+        if not _sequence_in_scope(record["sequence"], requested[scope_id]):
+            continue
         entry = _parse_v3_page_record(source_root, record, line_number)
         selected[scope_id].append((record["sequence"], entry))
 
@@ -170,6 +172,8 @@ def load_scoped_outcome_tapes(
         )
         scope_id = record["scope_id"]
         if scope_id not in requested:
+            continue
+        if not _sequence_in_scope(record["sequence"], requested[scope_id]):
             continue
         entry = _parse_v3_failure_record(record, line_number)
         selected[scope_id].append((record["sequence"], entry))
@@ -193,6 +197,14 @@ def load_scoped_outcome_tapes(
                 f"Evidence scope {scope_id} sequence bounds do not match its records"
             )
     return tapes
+
+
+def _sequence_in_scope(sequence: int, scope: EvidenceScopeRef) -> bool:
+    if scope.request_count == 0:
+        return False
+    assert scope.first_sequence is not None
+    assert scope.last_sequence is not None
+    return scope.first_sequence <= sequence <= scope.last_sequence
 
 
 def replay_snapshots(snapshot_dir: str | Path, output_dir: str | Path) -> ReplayResult:
@@ -681,8 +693,8 @@ def _validate_failure_record(record: dict[str, Any], line_number: int) -> dict[s
     }:
         raise SnapshotReplayError(f"Failure line {line_number}: invalid failure fields")
     status = failure["status"]
-    if status is not None and (type(status) is not int or not 100 <= status <= 599):
-        raise SnapshotReplayError(f"Failure line {line_number}: invalid HTTP status")
+    if status is not None and (type(status) is not int or not 100 <= status <= 999):
+        raise SnapshotReplayError(f"Failure line {line_number}: invalid response status")
     reason_code = failure["reason_code"]
     if reason_code not in REASON_SPECS:
         raise SnapshotReplayError(f"Failure line {line_number}: unknown reason code")

@@ -564,7 +564,7 @@ class Fetcher:
                 or type(retryable) is not bool
                 or not isinstance(message, str)
                 or not message
-                or (status is not None and (type(status) is not int or not 100 <= status <= 599))
+                or (status is not None and (type(status) is not int or not 100 <= status <= 999))
             ):
                 raise _invalid_failure_fixture()
             if recorded_identity.as_dict() != expected:

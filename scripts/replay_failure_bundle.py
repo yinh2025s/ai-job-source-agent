@@ -61,7 +61,7 @@ from scripts.export_replay_input import _matches_filters, export_replay_records
 
 
 BUNDLE_SCHEMA_VERSION = 5
-SCOPED_BUNDLE_SCHEMA_VERSION = 6
+SCOPED_BUNDLE_SCHEMA_VERSION = 7
 SCOPED_REPLAY_SOURCE_KINDS = frozenset(
     {
         "input",

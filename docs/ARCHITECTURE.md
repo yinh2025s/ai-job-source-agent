@@ -67,8 +67,9 @@ and an optional exact snapshot scope. Restored checkpoints retain the producer t
 created them, so selective retry may intentionally produce a mixed-attempt completion
 without making evidence ambiguous. Snapshot v3 scope membership is defined by stage-local
 request ordinals plus a terminal-descriptor digest, not by timestamps or global sequence
-bounds. Scoped replay bundle v6 consumes one strict ordered tape per referenced scope and
-isolates every source occurrence by record ID, checkpoint root, application, cache, and
+bounds. Scoped replay bundle v7 consumes one strict ordered tape per referenced scope,
+retains v6 scoped-evidence compatibility, and isolates every source occurrence by record
+ID, checkpoint root, application, cache, and
 tape cursor. Legacy v1/v2 snapshots use explicit bundle v5 materialization; scoped and
 legacy records cannot be mixed. Missing, extra, corrupt, cross-stage, or unconsumed
 outcomes fail closed, and unreferenced records from interrupted stages remain orphans.

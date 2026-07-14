@@ -560,6 +560,35 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual(result.summary["replayable_failures"], 1)
         self.assertEqual(materialized_pages, [])
 
+    def test_scoped_failure_preserves_nonstandard_server_response_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshots = Path(directory) / "snapshots"
+            store = SnapshotStore(snapshots)
+            coordinator = SnapshotCaptureCoordinator(store)
+            coordinator.begin_stage(
+                "attempt-response-999",
+                "a" * 64,
+                "website_resolution",
+            )
+            capture = coordinator.begin_request()
+            record = store.write_failure(
+                FetchError(
+                    "HTTP Error 999",
+                    status=999,
+                    reason_code="FETCH_FAILED",
+                    retryable=True,
+                ),
+                "https://www.linkedin.com/company/example",
+                capture=capture,
+            )
+            coordinator.accept_terminal_record(record)
+            scope = coordinator.finalize()
+
+            tape = load_scoped_outcome_tapes(snapshots, [scope])[scope.scope_id]
+
+        self.assertEqual(tape.entries[0].status, 999)
+        self.assertEqual(tape.entries[0].reason_code, "FETCH_FAILED")
+
     def test_later_page_replays_over_earlier_failure_for_same_identity(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -859,6 +888,29 @@ class SnapshotReplayTests(unittest.TestCase):
         self.assertEqual([entry.html for entry in tape.entries], ["first", "second"])
         self.assertEqual(tape.entries[0].request, tape.entries[1].request)
 
+    def test_scoped_tape_uses_final_sequence_bounds_after_same_stage_rerun(self):
+        with tempfile.TemporaryDirectory() as directory:
+            snapshots = Path(directory) / "snapshots"
+            store = SnapshotStore(snapshots)
+            first = self._capture_scope(
+                store,
+                "attempt-rerun-0001",
+                "hiring_identity_resolution",
+                [("page", "https://jobs.example.com/identity", "superseded")],
+            )
+            final = self._capture_scope(
+                store,
+                "attempt-rerun-0001",
+                "hiring_identity_resolution",
+                [("page", "https://jobs.example.com/identity", "final")],
+            )
+
+            self.assertEqual(first.scope_id, final.scope_id)
+            tape = load_scoped_outcome_tapes(snapshots, [final])[final.scope_id]
+
+        self.assertEqual([entry.request_ordinal for entry in tape.entries], [1])
+        self.assertEqual(tape.entries[0].html, "final")
+
     def test_scoped_tape_preserves_crlf_bytes_used_by_scope_digest(self):
         with tempfile.TemporaryDirectory() as directory:
             snapshots = Path(directory) / "snapshots"
@@ -1038,7 +1090,7 @@ class SnapshotReplayTests(unittest.TestCase):
             raised.exception.records,
             ({"index": "snapshots.jsonl", "line": 1, "schema_version": 3},),
         )
-        self.assertIn("bundle v6/scoped replay", str(raised.exception))
+        self.assertIn("scoped bundle", str(raised.exception))
 
     def test_legacy_materialization_rejects_mixed_legacy_and_v3_records(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -1174,7 +1226,10 @@ class SnapshotReplayTests(unittest.TestCase):
                 error["error"]["code"],
                 "SCOPED_SNAPSHOT_REQUIRES_BUNDLE_V6",
             )
-            self.assertEqual(error["error"]["required_replay"], "bundle_v6_scoped")
+            self.assertEqual(
+                error["error"]["required_replay"],
+                "scoped_bundle_v6_or_newer",
+            )
             self.assertEqual(fixture.read_text(encoding="utf-8"), "existing fixture")
             self.assertEqual(manifest.read_text(encoding="utf-8"), '{"existing": true}\n')
 

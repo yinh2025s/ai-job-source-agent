@@ -249,7 +249,7 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(comparison["original_outcome"], comparison["replay_outcome"])
         self.assertEqual(manifest["run_configuration_provenance"], "legacy_defaulted")
 
-    def test_scoped_capture_replays_as_isolated_bundle_v6(self):
+    def test_scoped_capture_replays_as_isolated_bundle_v7(self):
         company = CompanyInput(
             company_name="Aurora Data",
             company_website_url="https://aurora-data.example",
@@ -289,7 +289,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                 (root / "bundle" / "replay-trace.json").read_text(encoding="utf-8")
             )
 
-        self.assertEqual(manifest["bundle_schema_version"], 6)
+        self.assertEqual(manifest["bundle_schema_version"], 7)
         self.assertEqual(manifest["evidence_mode"], "scoped_outcome_tape")
         self.assertEqual(manifest["outcome_gate"]["status"], "passed")
         self.assertEqual(manifest["record_integrity"]["status"], "passed")

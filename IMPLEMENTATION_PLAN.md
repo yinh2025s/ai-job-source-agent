@@ -62,18 +62,18 @@
 
 ### 稳定化执行状态
 
-本轮 contract implementation 已完成，相关集成提交包括 `b810282`、`81bd207`、`76f2de8`、`a99181d` 和 `1679779`。当前状态不是继续扩展 provider，而是完成 replay release blocker、重新执行离线门禁并封板：
+本轮 contract implementation 与 replay 发布闭环均已完成，相关集成提交包括 `b810282`、`81bd207`、`76f2de8`、`a99181d` 和 `1679779`。当前状态不是继续扩展 provider，而是等待独立标注后再决定下一轮：
 
 | 范围 | 状态 | 已验证事实 / 剩余动作 |
 | --- | --- | --- |
 | Opening identity continuity | 已实现 | S3-S6 传递 typed hiring/provider/opening identity；S7 独立 fail-closed，并抑制被拒绝的 exact URL |
 | Availability 与 typed error | 已实现 | complete/incomplete/retryable 语义收口；fetch reason、retryability、status 与 request provenance 不再降级为普通 not-found |
 | Evaluation contract | 已实现 | 六类 disposition 与显式 eligibility 已落地；缺少独立标注时指标显示 unavailable/not reportable，不填 0、不推断 |
-| Replay identity outcome gate | 已实现，发布闭环中 | 已比较 terminal semantic、identity verdict、failure code 和规范化 identity chain；同 stage rerun 的 duplicate ordinal 正按 lineage sequence bounds 修复 |
-| 离线门禁 | 修复前已通过 | 1387 tests、provider 25/25、resolver 6/6、architecture 26 adapters / 0 issues；replay 修复合入后必须由主线统一重跑 |
+| Replay identity outcome gate | 已闭环 | Scoped bundle v7 比较 terminal semantic、identity verdict、failure code 和规范化 identity chain；同 stage rerun 只消费最终 lineage sequence bounds，保留 v6 scoped evidence 读取兼容 |
+| 离线门禁 | 已通过 | 1389 tests、provider 25/25、resolver 6/6、architecture 26 adapters / 0 issues |
 | 冻结 live gate | 已执行一次 | observed 30-company cohort 已完成；不重跑、不调参后包装为同一轮结果，现有 artifact 用于离线 replay 闭环 |
 
-本轮没有新增 provider，也没有加入公司特例。历史 `.89` 入口改动已在 identity gate 下集成，不再属于“待提交能力”；但在 replay 修复、最终离线门禁和文档提交完成前，整个稳定化阶段仍未发布封板。
+本轮没有新增 provider，也没有加入公司特例。历史 `.89` 入口改动已在 identity gate 下集成，不再属于“待提交能力”。完整 30 条 bundle 达到 30/30 reproduced，失败子集达到 11/11 reproduced，均为 record integrity passed、0 fixture gap、0 mismatch；稳定化实现阶段由此封板，但 precision/recall 仍等待独立审阅。
 
 ### 冻结 Observed Cohort 结果
 
@@ -96,7 +96,7 @@
 - Ambiguous hiring identity（1）：Aventis；不得猜测未披露招聘客户。
 - Retryable network timeout（2）：Deloitte、Akkodis；保留 retryable 语义，不转成 not-found。
 
-自动 replay 在读取完整 live artifact 时发现 same-stage rerun 产生重复 ordinal。主线只用最终 lineage 的 sequence bounds 排除同 scope 的 orphan record，然后从既有 trace/snapshot 离线重建 bundle；不得为修复该 replay 基础设施问题重新运行 live cohort。
+自动 replay 在读取完整 live artifact 时发现 same-stage rerun 产生重复 ordinal。主线现已只用最终 lineage 的 sequence bounds 排除同 scope 的 orphan record，并从既有 trace/snapshot 离线重建 bundle；完整 30 条与 11 条失败子集分别 30/30、11/11 reproduced。外部返回的非标准 response status `999` 作为 typed transport evidence 原样保留。整个修复没有重新运行 live cohort。
 
 ### 阶段入口工作区
 
@@ -228,15 +228,15 @@ P0-A 必须先写以下通用 contract tests：
 
 ### Provider 扩展暂停条件
 
-Provider/heuristic churn 继续暂停。只有 replay release blocker 闭环、修复后统一离线门禁全绿、30 条记录完成独立 disposition/eligibility 审阅，且用户明确进入下一开发轮后，才重新按 failure cluster 评估通用能力。历史 Phase 3 provider backlog 保留为参考，但当前不执行；单个 observed cohort 的 runtime identity verdict 不能替代独立 precision review。
+Provider/heuristic churn 继续暂停。Replay release blocker 与统一离线门禁已闭环；只有 30 条记录完成独立 disposition/eligibility 审阅，且用户明确进入下一开发轮后，才重新按 failure cluster 评估通用能力。历史 Phase 3 provider backlog 保留为参考，但当前不执行；单个 observed cohort 的 runtime identity verdict 不能替代独立 precision review。
 
 ### 下一轮候选（最多三项）
 
 候选按“覆盖样本数 × 正确性风险 × 预计收益”排序；它们是稳定化候选，不授权新增 provider 或公司规则。
 
-1. **Replay sequence-bound closure**：完成 duplicate ordinal 回归、从现有 artifact 离线重建 failure/full replay bundle，并统一重跑 1387+ 全量测试、25/25 provider、6/6 resolver 和 architecture gate。覆盖样本只有当前暴露记录，但属于发布级确定性风险，优先级最高。
+1. **Independent disposition and eligibility review**：逐条核验 19 个 exact URL，并为 11 个 non-exact 标注六类 disposition、public-opening eligibility 和证据来源，随后才发布 exact precision、conditional recall 与 system defect rate。覆盖全部 30 条，是恢复可信产品指标的最高收益工作。
 2. **Opaque provider relationship contract**：对 Dematic、Quest Global、ReturnPro、Adobe 共 4 个 `provider relationship unverified` 结果做只读证据审计，先冻结可泛化的 hiring-entity ↔ tenant 授权契约与负例，再决定是否实现；不得直接加入 KION、Phenom 或 Paycom tenant/company 特例。
-3. **Independent disposition and eligibility review**：逐条核验 19 个 exact URL，并为 11 个 non-exact 标注六类 disposition、public-opening eligibility 和证据来源，随后才发布 exact precision、conditional recall 与 system defect rate。该项同时区分 3 个 opening not found、1 个 ambiguous identity、1 个 opening identity missing 和 2 个 retryable timeout，避免把外部状态误当代码缺陷。
+3. **Retryable transport follow-up**：对 Deloitte、Akkodis 两个 timeout 只做新的串行 evidence capture 或离线 transport 分析，确认是 external blocked 还是 system gap；不得把重试成功率包装为 identity 或 provider 能力，也不得与共享 live benchmark 并发。
 
 ## 标准七关 Pipeline
 
