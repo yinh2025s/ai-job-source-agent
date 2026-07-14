@@ -136,6 +136,137 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(probe["asset_urls"], [route_asset, shared_asset])
         self.assertEqual(probe["provider_urls"], [board])
 
+    def test_validates_strong_same_site_listing_route_before_provider_assets(self):
+        career = "https://www.example.com/en/careers"
+        listing = "https://www.example.com/en-us/careers/job-results"
+        asset = "https://www.example.com/assets/page-careers.js"
+
+        class EmbeddedBoardAdapter:
+            name = "embedded_board"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return False
+
+            def identify_board(self, url):
+                return None
+
+            def identify_board_from_page(self, page):
+                if "sitecore-job-results" not in page.html:
+                    return None
+                return JobBoard(url=listing, provider=self.name)
+
+            def probe_board(self, fetcher, page):
+                fetcher.fetch(asset)
+                return None
+
+            def list_jobs(self, fetcher, board, query):
+                raise AssertionError("S5 must not query provider inventory")
+
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<script src="{asset}"></script>'
+                    f'<script>const listingRoute = "{listing}";</script>'
+                ),
+            ),
+            listing: Page(url=listing, html="<main>sitecore-job-results</main>"),
+        })
+        agent = JobSourceAgent(
+            fetcher,
+            provider_registry=ProviderRegistry((EmbeddedBoardAdapter(),)),
+            max_job_pages=2,
+        )
+
+        job_list, trace, discovered = agent.find_job_board_with_evidence(career)
+
+        self.assertEqual(job_list, listing)
+        self.assertEqual(fetcher.requested, [career, listing])
+        self.assertNotIn(asset, fetcher.requested)
+        self.assertEqual(trace["provider_detection"]["method"], "page_evidence")
+        self.assertIsNotNone(discovered)
+
+    def test_visible_canonical_provider_board_precedes_same_site_listing_route(self):
+        career = "https://www.example.com/careers"
+        generic_listing = "https://www.example.com/jobs"
+        board = "https://jobs.ashbyhq.com/example"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<a href="{generic_listing}">Search jobs</a>'
+                    f'<a href="{board}">View roles</a>'
+                ),
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(fetcher.requested, [career])
+        self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
+
+    def test_same_site_redirect_uses_final_url_without_deferred_request_key(self):
+        requested = "https://www.example.com/careers"
+        redirected = "https://www.example.com/join-us"
+        listing = "https://www.example.com/jobs"
+        asset = "https://www.example.com/assets/join-us.js"
+        fetcher = MappingFetcher({
+            requested: Page(
+                url=requested,
+                final_url=redirected,
+                html=(
+                    f'<script src="{asset}"></script>'
+                    f'<a href="{listing}">Search jobs</a>'
+                ),
+            ),
+            asset: Page(url=asset, html="const page = 'join-us';"),
+            listing: Page(url=listing, html="<main>Search open roles</main>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(requested)
+
+        self.assertEqual(job_list, listing)
+        self.assertEqual(fetcher.requested, [requested, asset, listing])
+        self.assertEqual(trace["pages_visited"][0]["url"], redirected)
+
+    def test_provider_asset_probe_follows_failed_priority_listing_validation(self):
+        career = "https://www.example.com/en/careers"
+        listing = "https://www.example.com/en-us/careers/job-results"
+        asset = "https://www.example.com/assets/page-careers.js"
+        board = "https://jobs.ashbyhq.com/example"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<script src="{asset}"></script>'
+                    f'<a href="{listing}">Search jobs</a>'
+                ),
+            ),
+            listing: Page(
+                url=listing,
+                final_url=career,
+                html="<main>Careers</main>",
+            ),
+            asset: Page(url=asset, html=f'const board = "{board}";'),
+            board: Page(url=board, html="<main>Ashby job board</main>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(fetcher.requested, [career, listing, asset, board])
+        self.assertEqual(fetcher.requested.count(asset), 1)
+        provider_asset_probes = [
+            probe
+            for probe in trace["content_payload_probes"]
+            if probe["method"] == "first_party_provider_asset"
+        ]
+        self.assertEqual(len(provider_asset_probes), 1)
+        candidate_urls = [candidate["url"] for candidate in trace["candidates"]]
+        self.assertEqual(candidate_urls.count(listing), 1)
+
     def test_preserves_asset_backed_provider_handoff_when_board_redirects_to_career(self):
         career = "https://www.example.com/careers/"
         route_asset = "https://www.example.com/assets/page-careers.js"

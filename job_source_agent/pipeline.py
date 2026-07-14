@@ -48,7 +48,13 @@ from .opening_matcher import (
     score_title_match,
     structured_job_links,
 )
-from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
+from .providers import (
+    DEFAULT_PROVIDER_REGISTRY,
+    JobBoard,
+    JobQuery,
+    ProviderAdapter,
+    ProviderRegistry,
+)
 from .reasons import (
     canonical_reason_code,
     classify_fetch_error,
@@ -926,62 +932,95 @@ class JobSourceAgent:
             "fetch_errors": [],
         }
 
-        queue = [career_page_url]
+        queue: list[tuple[str, Page | None]] = [(career_page_url, None)]
         queued_candidates: dict[str, LinkCandidate] = {}
         asset_backed_provider_targets: set[str] = set()
+        deferred_candidate_slices: dict[str, tuple[int, int]] = {}
         visited: set[str] = set()
         pages_checked = 0
 
-        while queue and pages_checked < self.max_job_pages:
-            page_url = queue.pop(0)
+        while queue:
+            page_url, deferred_page = queue.pop(0)
             normalized_page_url = page_url.rstrip("/")
             incoming_candidate = queued_candidates.get(normalized_page_url)
+            if deferred_page is not None:
+                page = deferred_page
+            elif pages_checked >= self.max_job_pages:
+                continue
             if normalized_page_url in visited:
-                continue
-            visited.add(normalized_page_url)
-            pages_checked += 1
+                if deferred_page is None:
+                    continue
+            elif deferred_page is None:
+                visited.add(normalized_page_url)
+                pages_checked += 1
 
-            try:
-                page = self.fetcher.fetch(page_url)
-            except FetchError as exc:
-                failure = {"url": page_url, **_fetch_failure_trace(exc)}
-                if incoming_candidate is not None:
-                    failure.update(
-                        {
-                            "origin": incoming_candidate.origin,
-                            "score": incoming_candidate.score,
-                            "evidence_tier": (
-                                1
-                                if incoming_candidate.origin
-                                in {"page_link", "form_action"}
-                                and "explicit job-list command"
-                                in incoming_candidate.reasons
-                                else candidate_evidence_tier(incoming_candidate)
-                            ),
-                        }
-                    )
-                elif normalized_page_url == career_page_url.rstrip("/"):
-                    failure.update(
-                        {
-                            "origin": "verified_career_page",
-                            "evidence_tier": 0,
-                        }
-                    )
-                trace["fetch_errors"].append(failure)
-                continue
-            page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
-            if content_probe:
-                trace.setdefault("content_payload_probes", []).append(content_probe)
-            page, provider_asset_probe = probe_first_party_provider_assets(
-                self.fetcher,
-                page,
-                self._is_provider_job_board_url,
-            )
-            if provider_asset_probe:
-                trace.setdefault("content_payload_probes", []).append(provider_asset_probe)
+                try:
+                    page = self.fetcher.fetch(page_url)
+                except FetchError as exc:
+                    failure = {"url": page_url, **_fetch_failure_trace(exc)}
+                    if incoming_candidate is not None:
+                        failure.update(
+                            {
+                                "origin": incoming_candidate.origin,
+                                "score": incoming_candidate.score,
+                                "evidence_tier": (
+                                    1
+                                    if incoming_candidate.origin
+                                    in {"page_link", "form_action"}
+                                    and "explicit job-list command"
+                                    in incoming_candidate.reasons
+                                    else candidate_evidence_tier(incoming_candidate)
+                                ),
+                            }
+                        )
+                    elif normalized_page_url == career_page_url.rstrip("/"):
+                        failure.update(
+                            {
+                                "origin": "verified_career_page",
+                                "evidence_tier": 0,
+                            }
+                        )
+                    trace["fetch_errors"].append(failure)
+                    continue
+                page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
+                if content_probe:
+                    trace.setdefault("content_payload_probes", []).append(content_probe)
+
             actual_page_url = page.final_url or page.url
             normalized_actual_url = actual_page_url.rstrip("/")
-            if normalized_actual_url != normalized_page_url and normalized_actual_url in visited:
+            redirects_to_visited_page = (
+                normalized_actual_url != normalized_page_url
+                and normalized_actual_url in visited
+            )
+            page_board = (
+                None
+                if redirects_to_visited_page
+                else self.provider_registry.board_for_page(page)
+            )
+            if page_board is not None:
+                adapter, board = page_board
+                trace["provider"] = adapter.name
+                trace["provider_detection"] = {
+                    "method": "page_evidence",
+                    "provider": adapter.name,
+                    "url": board.url,
+                }
+                trace["job_list_page_url"] = board.url
+                trace["pages_visited"].append(
+                    {"url": actual_page_url, "source": page.source, "top_candidates": []}
+                )
+                return (
+                    None,
+                    board.url,
+                    trace,
+                    DiscoveredJobBoard(
+                        board=board,
+                        detection_method="page_evidence",
+                        evidence_url=actual_page_url,
+                    ),
+                )
+
+            if redirects_to_visited_page:
                 pages_checked -= 1
                 requested_adapter = self.provider_registry.adapter_for(page_url)
                 requested_board = (
@@ -1037,6 +1076,97 @@ class JobSourceAgent:
                         ),
                     )
                 continue
+
+            priority_deduped: list[LinkCandidate] = []
+            can_prioritize_page_links = (
+                deferred_page is None
+                and normalized_actual_url == normalized_page_url
+                and self._same_site_host(
+                    urlparse(actual_page_url).hostname or "",
+                    urlparse(career_page_url).hostname or "",
+                )
+            )
+            if can_prioritize_page_links:
+                priority_scored = sorted(
+                    [
+                        score_job_link(
+                            self._upgrade_same_site_http_link(link, actual_page_url),
+                            actual_page_url,
+                        )
+                        for link in extract_links(page)
+                    ],
+                    key=lambda candidate: candidate.score,
+                    reverse=True,
+                )
+                priority_deduped = self._dedupe_candidates(priority_scored)
+                visible_provider_board = self._visible_canonical_provider_board(
+                    priority_deduped
+                )
+                if visible_provider_board is not None:
+                    adapter, board, candidate = visible_provider_board
+                    trace["pages_visited"].append(
+                        {
+                            "url": actual_page_url,
+                            "source": page.source,
+                            "top_candidates": dataclass_to_dict(priority_deduped[:8]),
+                        }
+                    )
+                    trace["candidates"].extend(dataclass_to_dict(priority_deduped[:5]))
+                    trace["selected"] = dataclass_to_dict(candidate)
+                    trace["provider"] = adapter.name
+                    trace["provider_detection"] = {
+                        "method": "linked_url_evidence",
+                        "provider": adapter.name,
+                        "url": board.url,
+                    }
+                    canonical_board_url = self._canonical_provider_board_url(
+                        adapter.name,
+                        board.url,
+                        board.identifier,
+                    )
+                    trace["job_list_page_url"] = canonical_board_url
+                    return None, canonical_board_url, trace, None
+
+            if can_prioritize_page_links and pages_checked < self.max_job_pages:
+                priority_candidate = self._strong_same_site_listing_candidate(
+                    priority_deduped,
+                    actual_page_url,
+                    career_page_url,
+                )
+                if (
+                    priority_candidate is not None
+                    and priority_candidate.url.rstrip("/") not in visited
+                ):
+                    queued_candidates.setdefault(
+                        priority_candidate.url.rstrip("/"), priority_candidate
+                    )
+                    trace["pages_visited"].append(
+                        {
+                            "url": actual_page_url,
+                            "source": page.source,
+                            "top_candidates": dataclass_to_dict(priority_deduped[:8]),
+                        }
+                    )
+                    serialized_candidates = dataclass_to_dict(priority_deduped[:5])
+                    candidate_start = len(trace["candidates"])
+                    trace["candidates"].extend(serialized_candidates)
+                    deferred_candidate_slices[normalized_page_url] = (
+                        candidate_start,
+                        len(serialized_candidates),
+                    )
+                    queue.insert(0, (page_url, page))
+                    queue.insert(0, (priority_candidate.url, None))
+                    continue
+
+            page, provider_asset_probe = probe_first_party_provider_assets(
+                self.fetcher,
+                page,
+                self._is_provider_job_board_url,
+            )
+            if provider_asset_probe:
+                trace.setdefault("content_payload_probes", []).append(provider_asset_probe)
+            actual_page_url = page.final_url or page.url
+            normalized_actual_url = actual_page_url.rstrip("/")
             visited.add(normalized_actual_url)
             page_board = self.provider_registry.board_for_page(page, self.fetcher)
             if page_board is not None:
@@ -1124,38 +1254,40 @@ class JobSourceAgent:
                 trace["job_list_page_url"] = actual_page_url
             elif verified_generic_listing:
                 trace["job_list_page_url"] = actual_page_url
-            trace["pages_visited"].append(
-                {
-                    "url": actual_page_url,
-                    "source": page.source,
-                    "top_candidates": dataclass_to_dict(deduped[:8]),
-                }
-            )
-            trace["candidates"].extend(dataclass_to_dict(deduped[:5]))
+            visited_page = {
+                "url": actual_page_url,
+                "source": page.source,
+                "top_candidates": dataclass_to_dict(deduped[:8]),
+            }
+            if deferred_page is not None and normalized_page_url in deferred_candidate_slices:
+                existing_page = next(
+                    (
+                        item
+                        for item in reversed(trace["pages_visited"])
+                        if item["url"].rstrip("/") == normalized_page_url
+                    ),
+                    None,
+                )
+                if existing_page is not None:
+                    existing_page.update(visited_page)
+            else:
+                trace["pages_visited"].append(visited_page)
+            serialized_candidates = dataclass_to_dict(deduped[:5])
+            if deferred_page is not None and normalized_page_url in deferred_candidate_slices:
+                candidate_start, candidate_count = deferred_candidate_slices[
+                    normalized_page_url
+                ]
+                trace["candidates"][
+                    candidate_start : candidate_start + candidate_count
+                ] = serialized_candidates
+            else:
+                trace["candidates"].extend(serialized_candidates)
             if verified_generic_listing:
                 trace["selected_from"] = "explicit_first_party_listing_route"
                 trace["selected_page_source"] = page.source
                 return None, actual_page_url, trace, None
 
-            visible_provider_boards = [
-                (adapter, board, candidate)
-                for candidate in deduped
-                if candidate.origin == "page_link" and candidate.text
-                if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
-                and adapter.supports_listing
-                and (board := adapter.identify_board(candidate.url)) is not None
-                and normalize_url(candidate.url)
-                == normalize_url(
-                    self._canonical_provider_board_url(
-                        adapter.name,
-                        board.url,
-                        board.identifier,
-                    )
-                )
-            ]
-            visible_linked_provider_board = (
-                visible_provider_boards[0] if visible_provider_boards else None
-            )
+            visible_linked_provider_board = self._visible_canonical_provider_board(deduped)
             linked_provider_board = visible_linked_provider_board or next(
                 (
                     (adapter, board, candidate)
@@ -1252,9 +1384,66 @@ class JobSourceAgent:
                     and candidate.url.rstrip("/") not in visited
                 ):
                     queued_candidates.setdefault(candidate.url.rstrip("/"), candidate)
-                    queue.append(candidate.url)
+                    queue.append((candidate.url, None))
 
         return None, trace["job_list_page_url"], trace, None
+
+    def _strong_same_site_listing_candidate(
+        self,
+        candidates: list[LinkCandidate],
+        source_url: str,
+        career_root_url: str,
+    ) -> LinkCandidate | None:
+        source_host = urlparse(source_url).hostname or ""
+        bounded = candidates[: self.max_candidates]
+        prioritized = sorted(
+            bounded,
+            key=lambda candidate: (
+                candidate.score,
+                self._career_category_priority(
+                    candidate,
+                    source_url,
+                    career_root_url,
+                ),
+                self._shared_path_prefix(candidate.url, source_url),
+            ),
+            reverse=True,
+        )
+        for candidate in prioritized:
+            target_host = urlparse(candidate.url).hostname or ""
+            if (
+                target_host
+                and self._same_site_host(target_host, source_host)
+                and self._looks_like_generic_job_list_route(candidate.url)
+                and is_likely_job_listing_page(candidate)
+                and self._is_safe_traversal_target(candidate, source_url)
+            ):
+                return candidate
+        return None
+
+    def _visible_canonical_provider_board(
+        self,
+        candidates: list[LinkCandidate],
+    ) -> tuple[ProviderAdapter, JobBoard, LinkCandidate] | None:
+        return next(
+            (
+                (adapter, board, candidate)
+                for candidate in candidates
+                if candidate.origin == "page_link" and candidate.text
+                if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
+                and adapter.supports_listing
+                and (board := adapter.identify_board(candidate.url)) is not None
+                and normalize_url(candidate.url)
+                == normalize_url(
+                    self._canonical_provider_board_url(
+                        adapter.name,
+                        board.url,
+                        board.identifier,
+                    )
+                )
+            ),
+            None,
+        )
 
     def _career_category_priority(
         self,
