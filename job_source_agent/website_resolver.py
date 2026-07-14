@@ -472,9 +472,23 @@ class CompanyWebsiteResolver:
             verify_count,
             candidate_sources,
         )
-        if to_verify:
-            with ThreadPoolExecutor(max_workers=verify_count, thread_name_prefix="website-verify") as executor:
-                verified = list(
+        direct_to_verify = [
+            candidate
+            for candidate in to_verify
+            if _has_direct_identity_source(candidate)
+        ]
+        remaining_to_verify = [
+            candidate for candidate in to_verify if candidate not in direct_to_verify
+        ]
+
+        def verify_wave(wave: list[WebsiteCandidate]) -> list[WebsiteCandidate]:
+            if not wave:
+                return []
+            with ThreadPoolExecutor(
+                max_workers=len(wave),
+                thread_name_prefix="website-verify",
+            ) as executor:
+                return list(
                     executor.map(
                         lambda candidate: _append_candidate_sources(
                             self._score_candidate(
@@ -487,12 +501,19 @@ class CompanyWebsiteResolver:
                             ),
                             candidate_sources.get(domain_of(candidate.url), set()),
                         ),
-                        to_verify,
+                        wave,
                     )
                 )
-        else:
-            verified = []
-        verified_domains = {domain_of(candidate.url) for candidate in to_verify}
+
+        verified = verify_wave(direct_to_verify)
+        directly_selectable_domains = {
+            domain_of(candidate.url)
+            for candidate in verified
+            if self._select_verified_candidate([candidate]) is not None
+        }
+        if len(directly_selectable_domains) != 1:
+            verified.extend(verify_wave(remaining_to_verify))
+        verified_domains = {domain_of(candidate.url) for candidate in verified}
         refined = verified + [
             candidate for candidate in base_scored if domain_of(candidate.url) not in verified_domains
         ]
@@ -652,11 +673,22 @@ class CompanyWebsiteResolver:
         scored: list[WebsiteCandidate],
         require_fast_confidence: bool = False,
     ) -> WebsiteCandidate | None:
+        authoritative_identity_available = any(
+            "LinkedIn company page identifies official website" in candidate.reasons
+            or (
+                "homepage verified" in candidate.reasons
+                and _has_positive_page_identity(candidate)
+            )
+            for candidate in scored
+        )
         for candidate in scored:
             if candidate.score < 25:
                 continue
             linkedin_official = (
                 "LinkedIn company page identifies official website" in candidate.reasons
+            )
+            access_controlled_institution = (
+                "access-controlled institutional acronym" in candidate.reasons
             )
             if any(
                 reason in candidate.reasons
@@ -666,18 +698,27 @@ class CompanyWebsiteResolver:
                 )
             ):
                 continue
-            if "homepage verified" not in candidate.reasons and not linkedin_official:
+            if (
+                "homepage verified" not in candidate.reasons
+                and not linkedin_official
+                and not access_controlled_institution
+            ):
+                continue
+            if access_controlled_institution and authoritative_identity_available:
                 continue
             if "homepage verified" not in candidate.reasons and linkedin_official:
-                candidate.reasons.append(
+                acceptance_reason = (
                     "LinkedIn official website accepted without homepage response"
                 )
+                if acceptance_reason not in candidate.reasons:
+                    candidate.reasons.append(acceptance_reason)
             preferred_core_identity = (
                 "candidate source: preferred_input" in candidate.reasons
                 and _has_positive_core_page_identity(candidate)
             )
             if (
                 not linkedin_official
+                and not access_controlled_institution
                 and not _has_positive_page_identity(candidate)
                 and not preferred_core_identity
             ):
@@ -725,6 +766,7 @@ class CompanyWebsiteResolver:
                 or "LinkedIn company slug matches domain TLD" in candidate.reasons
                 or "homepage canonical URL" in candidate.reasons
                 or "LinkedIn company page identifies official website" in candidate.reasons
+                or access_controlled_institution
             ):
                 continue
             if (
@@ -809,7 +851,18 @@ class CompanyWebsiteResolver:
 
         try:
             page = self.fetcher.fetch(url)
-        except FetchError:
+        except FetchError as exc:
+            if _is_access_controlled_institutional_acronym(
+                domain,
+                company_tokens,
+                exc,
+            ):
+                reasons.append("access-controlled institutional acronym")
+                reasons.append(
+                    f"homepage access denied: {exc.reason_code or 'HTTP_ACCESS_DENIED'} "
+                    f"({exc.status})"
+                )
+                return WebsiteCandidate(url, score, reasons)
             if domain.endswith(".com"):
                 score += 10
                 reasons.append("preferred .com domain despite fetch failure")
@@ -1171,6 +1224,19 @@ def _domain_matches_institutional_acronym(
     return re.sub(r"[^a-z0-9]", "", label.casefold()) == institutional_acronym
 
 
+def _is_access_controlled_institutional_acronym(
+    domain: str,
+    company_tokens: list[str],
+    error: FetchError,
+) -> bool:
+    acronym = _institutional_acronym(company_tokens)
+    if not acronym or len(acronym) < 4:
+        return False
+    if domain.casefold() != f"{acronym}.edu":
+        return False
+    return error.status in {401, 403}
+
+
 def _matching_company_abbreviation(
     domain: str,
     company_tokens: list[str],
@@ -1205,10 +1271,15 @@ def _text_confirms_company_identity(text: str, company_tokens: list[str]) -> boo
         return True
     token = re.escape(company_tokens[0])
     normalized = " ".join(html_unescape(text).split())
+    legal_entity_suffix = (
+        r"(?:ag|b\.?v\.?|corp(?:oration)?|gmbh|inc(?:orporated)?|"
+        r"ltd|limited|llc|plc|pte\.?\s+ltd|s\.?a\.?)"
+    )
     return any(
         re.search(pattern, normalized, flags=re.I) is not None
         for pattern in (
             rf"^\s*{token}\s*(?:$|[|,:\-])",
+            rf"^\s*{token}\s+{legal_entity_suffix}\s*(?:$|[|,:\-])",
             rf"\bofficial\s+(?:website|homepage)\s+(?:of|for)\s+{token}(?:\W|$)",
             rf"\b{token}\s+(?:official\s+)?(?:website|homepage)(?:\W|$)",
         )

@@ -26,3 +26,5 @@ NNNN-short-decision-title.md
 - [ADR-0012: Checkpoint Verified Homepage Navigation Evidence](0012-checkpoint-homepage-navigation-evidence.md)
 - [ADR-0013: Retry Typed Batch Completions](0013-retry-typed-batch-completions.md)
 - [ADR-0014: Scope Snapshot Evidence By Attempt And Stage](0014-scope-snapshot-evidence-by-attempt-and-stage.md)
+- [ADR-0015: Gate Result Identity And Checkpoint Prefix](0015-gate-result-identity-and-checkpoint-prefix.md)
+- [ADR-0016: Prioritize Direct Website Evidence Before Speculation](0016-prioritize-direct-website-evidence.md)

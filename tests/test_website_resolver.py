@@ -1144,6 +1144,90 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertLess(time.monotonic() - started, 0.45)
         self.assertTrue(all("homepage verified" in candidate.reasons for candidate in candidates))
 
+    def test_verified_preferred_candidate_skips_speculative_verification_wave(self):
+        class PreferredFirstFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if domain_of(url) == "acme.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.ai/",
+                        html="<html><head><title>Acme</title></head><body>Acme</body></html>",
+                    )
+                time.sleep(0.2)
+                raise FetchError("speculative candidate unavailable")
+
+        fetcher = PreferredFirstFetcher()
+        resolver = CompanyWebsiteResolver(fetcher, verify_limit=3)
+        started = time.monotonic()
+
+        candidates = resolver._rank_and_verify_candidates(
+            ["https://acme.com", "https://acme.ai", "https://acme.io"],
+            "Acme",
+            None,
+            candidate_sources={"acme.ai": {"preferred_input"}},
+        )
+
+        self.assertLess(time.monotonic() - started, 0.15)
+        self.assertEqual(fetcher.calls, ["https://acme.ai"])
+        selected = resolver._select_verified_candidate(candidates)
+        self.assertIsNotNone(selected)
+        assert selected is not None
+        self.assertEqual(selected.url, "https://acme.ai/")
+
+    def test_verified_short_brand_preferred_domain_beats_speculative_dot_com(self):
+        class ShortBrandFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                domain = domain_of(url)
+                if domain == "rivr.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://www.rivr.ai/",
+                        html="<html><head><title>RIVR</title></head><body>RIVR robotics</body></html>",
+                    )
+                if "linkedin.com" in domain or "bing.com" in domain or "duckduckgo.com" in domain:
+                    raise FetchError("external evidence unavailable")
+                raise AssertionError(f"speculative candidate should not be fetched: {url}")
+
+        fetcher = ShortBrandFetcher()
+        resolver = CompanyWebsiteResolver(fetcher, verify_limit=3)
+
+        website_url, trace = resolver.resolve(
+            "RIVR",
+            preferred_url="https://www.rivr.ai",
+        )
+
+        self.assertEqual(website_url, "https://www.rivr.ai/")
+        self.assertIn("candidate source: preferred_input", trace["selected"]["reasons"])
+        self.assertFalse(any(domain_of(url) == "rivr.com" for url in fetcher.calls))
+
+    def test_short_brand_title_with_legal_entity_suffix_confirms_identity(self):
+        class LegalEntityTitleFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://atira.ai/",
+                    html=(
+                        "<html><head><title>Atira GmbH</title></head>"
+                        "<body>Atira builds software.</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(LegalEntityTitleFetcher(offline=True))
+        candidate = resolver._score_candidate("https://atira.ai", "Atira", verify=True)
+
+        self.assertIn("homepage title confirms company identity", candidate.reasons)
+        self.assertIsNotNone(resolver._select_verified_candidate([candidate]))
+
     def test_short_company_name_does_not_match_inside_unrelated_text(self):
         class UnrelatedFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):
@@ -1729,6 +1813,95 @@ class WebsiteResolverTests(unittest.TestCase):
             "homepage title confirms company abbreviation",
             snhu_trace["selected"]["reasons"],
         )
+
+    def test_exact_institutional_acronym_edu_can_use_access_denied_evidence(self):
+        class AccessControlledInstitutionFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "snhu.edu":
+                    raise FetchError(
+                        "Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(
+            AccessControlledInstitutionFetcher(offline=True),
+            verify_limit=3,
+        )
+
+        website_url, trace = resolver.resolve("Southern New Hampshire University")
+
+        self.assertEqual(website_url, "https://snhu.edu")
+        self.assertIn(
+            "access-controlled institutional acronym",
+            trace["selected"]["reasons"],
+        )
+        self.assertIn(
+            "homepage access denied: HTTP_FORBIDDEN (403)",
+            trace["selected"]["reasons"],
+        )
+
+    def test_institutional_acronym_access_fallback_is_narrow(self):
+        cases = (
+            ("Southern New Hampshire University", "snhu.edu", 404),
+            ("Southern New Hampshire University", "snhu.com", 403),
+            ("Royal Art University", "rau.edu", 403),
+            ("Southern New Hampshire Software", "snhs.edu", 403),
+        )
+        for company_name, denied_domain, status in cases:
+            with self.subTest(company_name=company_name, domain=denied_domain, status=status):
+                class RejectedFallbackFetcher(Fetcher):
+                    def fetch(self, url, data=None, headers=None):
+                        if domain_of(url) == denied_domain:
+                            raise FetchError(
+                                "access response",
+                                status=status,
+                                reason_code=(
+                                    "HTTP_FORBIDDEN" if status == 403 else "HTTP_NOT_FOUND"
+                                ),
+                                retryable=False,
+                            )
+                        raise FetchError("not this candidate")
+
+                resolver = CompanyWebsiteResolver(
+                    RejectedFallbackFetcher(offline=True),
+                    verify_limit=12,
+                )
+                website_url, _trace = resolver.resolve(company_name)
+                self.assertIsNone(website_url)
+
+    def test_verified_identity_beats_access_controlled_institutional_acronym(self):
+        class CompetingInstitutionFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                domain = domain_of(url)
+                if domain == "snhu.edu":
+                    raise FetchError(
+                        "Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                if domain == "southernnewhampshireuniversity.com":
+                    return Page(
+                        url=url,
+                        final_url="https://southernnewhampshireuniversity.com/",
+                        html=(
+                            "<html><head><title>Southern New Hampshire University</title></head>"
+                            "<body>Southern New Hampshire University</body></html>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(
+            CompetingInstitutionFetcher(offline=True),
+            verify_limit=3,
+        )
+
+        website_url, _trace = resolver.resolve("Southern New Hampshire University")
+
+        self.assertEqual(website_url, "https://southernnewhampshireuniversity.com/")
 
     def test_incomplete_body_only_identity_cannot_select_unrelated_company(self):
         class TokenCollisionFetcher(Fetcher):
