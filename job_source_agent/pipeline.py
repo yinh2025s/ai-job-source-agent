@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import re
 from dataclasses import asdict
-from urllib.parse import urlparse
+from html.parser import HTMLParser
+from urllib.parse import parse_qsl, urljoin, urlparse
 from xml.etree import ElementTree as ET
 
 from .career_search import CareerSearchResolver
@@ -109,6 +110,79 @@ NON_JOB_BOARD_PATH_PARTS = {
     "share_image",
     "static",
 }
+
+_CAREER_REDIRECT_QUERY_KEYS = {
+    "continue",
+    "dest",
+    "destination",
+    "next",
+    "redirect",
+    "redirect_to",
+    "redirect_uri",
+    "return",
+    "return_to",
+    "returnurl",
+    "target",
+    "url",
+}
+
+_CAREER_REDIRECT_SURFACE_MARKERS = {
+    "account",
+    "auth",
+    "blog",
+    "cdn",
+    "challenge",
+    "feed",
+    "image",
+    "images",
+    "login",
+    "media",
+    "oauth",
+    "press",
+    "signin",
+    "static",
+    "track",
+    "tracking",
+}
+
+
+class _CareerRedirectMetadataParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.canonical_urls: list[str] = []
+        self.og_urls: list[str] = []
+        self.identity_values: list[str] = []
+        self._identity_tag: str | None = None
+        self._identity_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attrs_by_name = {name.casefold(): value or "" for name, value in attrs}
+        tag = tag.casefold()
+        if tag == "link" and "canonical" in attrs_by_name.get("rel", "").casefold().split():
+            if attrs_by_name.get("href"):
+                self.canonical_urls.append(attrs_by_name["href"])
+        elif tag == "meta":
+            name = (attrs_by_name.get("property") or attrs_by_name.get("name") or "").casefold()
+            content = attrs_by_name.get("content", "").strip()
+            if name == "og:url" and content:
+                self.og_urls.append(content)
+            if name in {"og:site_name", "og:title", "application-name"} and content:
+                self.identity_values.append(content)
+        if tag in {"title", "h1"}:
+            self._identity_tag = tag
+            self._identity_text = []
+
+    def handle_data(self, data: str) -> None:
+        if self._identity_tag:
+            self._identity_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if self._identity_tag == tag.casefold():
+            value = " ".join(" ".join(self._identity_text).split())
+            if value:
+                self.identity_values.append(value)
+            self._identity_tag = None
+            self._identity_text = []
 
 
 class JobSourceAgent:
@@ -390,6 +464,8 @@ class JobSourceAgent:
             trace,
             target_title=target_title,
             schedule_source="homepage_and_common_paths",
+            company_name=company_name,
+            homepage_url=homepage_url,
         )
         if selected_url:
             trace["sitemap_discovery"] = {
@@ -429,6 +505,8 @@ class JobSourceAgent:
                     max_fetches=2,
                     target_title=target_title,
                     schedule_source="bundle_navigation",
+                    company_name=company_name,
+                    homepage_url=homepage_url,
                 )
                 if selected_url:
                     trace["sitemap_discovery"] = {
@@ -472,6 +550,8 @@ class JobSourceAgent:
                 trace,
                 target_title=target_title,
                 schedule_source="sitemap",
+                company_name=company_name,
+                homepage_url=homepage_url,
             )
             if selected_url:
                 trace["selected_from"] = "sitemap_discovery"
@@ -487,6 +567,8 @@ class JobSourceAgent:
                 trace,
                 target_title=target_title,
                 schedule_source="search",
+                company_name=company_name,
+                homepage_url=homepage_url,
             )
             if selected_url:
                 trace["selected_from"] = "search_discovery"
@@ -507,6 +589,8 @@ class JobSourceAgent:
                 max_fetches=self.max_ats_board_fetches,
                 target_title=target_title,
                 schedule_source="blind_ats",
+                company_name=company_name,
+                homepage_url=homepage_url,
             )
             if selected_url:
                 trace["selected"] = ats_trace["selected"]
@@ -1488,6 +1572,8 @@ class JobSourceAgent:
         max_fetches: int | None = None,
         target_title: str | None = None,
         schedule_source: str = "candidate_selection",
+        company_name: str | None = None,
+        homepage_url: str | None = None,
     ) -> str | None:
         fetch_attempts = 0
         fetch_limit = self.max_career_candidate_fetches if max_fetches is None else max_fetches
@@ -1618,6 +1704,20 @@ class JobSourceAgent:
                         "url": board.url,
                     }
                     return board.url
+                redirect_verification = self._verify_generic_official_career_redirect(
+                    candidate,
+                    page,
+                    company_name=company_name,
+                    homepage_url=homepage_url,
+                )
+                trace.setdefault("generic_career_redirect_verification", []).append(
+                    redirect_verification
+                )
+                if redirect_verification["verified"]:
+                    trace["selected"] = dataclass_to_dict(candidate)
+                    trace["selected_page_source"] = page.source
+                    trace["selected_redirect_kind"] = "generic_official_career_root"
+                    return actual_url
                 trace["candidate_fetch_errors"].append(
                     {
                         "url": candidate.url,
@@ -1664,6 +1764,196 @@ class JobSourceAgent:
                 "untried_evidence_backed_count": len(untried_evidence_backed),
             }
         return None
+
+    def _verify_generic_official_career_redirect(
+        self,
+        candidate: LinkCandidate,
+        page: Page,
+        *,
+        company_name: str | None,
+        homepage_url: str | None,
+    ) -> dict:
+        actual_url = page.final_url or page.url
+        verification = {
+            "candidate_url": candidate.url,
+            "final_url": actual_url,
+            "verified": False,
+            "kind": "generic_official_career_root",
+        }
+
+        source_url = homepage_url or candidate.source_url
+        source = urlparse(source_url)
+        requested = urlparse(candidate.url)
+        final = urlparse(actual_url)
+        unsafe_reason = self._generic_career_redirect_url_rejection(requested, require_career_intent=True)
+        if unsafe_reason is None:
+            unsafe_reason = self._generic_career_redirect_url_rejection(final, require_career_intent=False)
+        if unsafe_reason:
+            verification["reason"] = unsafe_reason
+            return verification
+        if not source.hostname or source.scheme != "https" or not self._is_default_https_origin(source):
+            verification["reason"] = "official source origin is not safe HTTPS"
+            return verification
+        if self._registrable_site(requested.hostname or "") != self._registrable_site(source.hostname):
+            verification["reason"] = "redirect request did not originate on the official site"
+            return verification
+        if self._registrable_site(requested.hostname or "") == self._registrable_site(final.hostname or ""):
+            verification["reason"] = "redirect did not cross registrable domains"
+            return verification
+        if self._is_provider_job_board_url(actual_url) or is_ats_url(actual_url):
+            verification["reason"] = "provider redirects require provider verification"
+            return verification
+        if not company_name:
+            verification["reason"] = "company identity unavailable"
+            return verification
+
+        metadata = _CareerRedirectMetadataParser()
+        try:
+            metadata.feed(page.html[:500000])
+        except (ValueError, TypeError):
+            verification["reason"] = "invalid redirect page markup"
+            return verification
+
+        company_tokens = self._company_identity_tokens(company_name)
+        identity_matches = [
+            value
+            for value in metadata.identity_values
+            if company_tokens and company_tokens.issubset(set(re.findall(r"[a-z0-9]+", value.casefold())))
+        ]
+        if not identity_matches:
+            verification["reason"] = "redirect page company identity mismatch"
+            return verification
+
+        declared_identity_urls = metadata.canonical_urls + metadata.og_urls
+        if not declared_identity_urls:
+            verification["reason"] = "redirect page lacks canonical or og:url identity"
+            return verification
+        normalized_identity_urls = [urljoin(actual_url, value) for value in declared_identity_urls]
+        if any(not self._same_url_origin(value, actual_url) for value in normalized_identity_urls):
+            verification["reason"] = "redirect page canonical or og:url crosses origin"
+            return verification
+
+        page_links = extract_links(page)
+        actionable_routes = [
+            link.url
+            for link in page_links
+            if self._same_url_origin(link.url, actual_url)
+            and self._is_safe_generic_redirect_link(link.url)
+            and self._is_actionable_career_route(link)
+        ]
+        if not actionable_routes:
+            verification["reason"] = "redirect page lacks same-origin job route"
+            return verification
+
+        official_backlinks = [
+            link.url
+            for link in page_links
+            if link.origin == "page_link"
+            and self._same_url_origin(link.url, source_url)
+            and self._is_safe_generic_redirect_link(link.url)
+        ]
+        if not official_backlinks:
+            verification["reason"] = "redirect page lacks official source-origin backlink"
+            return verification
+
+        verification.update(
+            {
+                "verified": True,
+                "identity_evidence": identity_matches[:3],
+                "identity_urls": normalized_identity_urls[:3],
+                "actionable_routes": actionable_routes[:3],
+                "official_backlinks": official_backlinks[:3],
+            }
+        )
+        return verification
+
+    def _generic_career_redirect_url_rejection(self, parsed, *, require_career_intent: bool) -> str | None:
+        if parsed.scheme != "https" or not parsed.hostname or not self._is_default_https_origin(parsed):
+            return "redirect URL is not credential-free HTTPS on port 443"
+        query_keys = {key.casefold() for key, _value in parse_qsl(parsed.query, keep_blank_values=True)}
+        if parsed.query:
+            if query_keys & _CAREER_REDIRECT_QUERY_KEYS:
+                return "redirect URL contains an open-redirect query target"
+            return "redirect URL is not query-free"
+        path_parts = {part.casefold() for part in parsed.path.split("/") if part}
+        host_parts = set(re.split(r"[.-]", parsed.hostname.casefold()))
+        if (path_parts | host_parts) & _CAREER_REDIRECT_SURFACE_MARKERS:
+            return "redirect URL targets a disallowed surface"
+        if require_career_intent and not path_parts & {
+            "career",
+            "careers",
+            "jobs",
+            "join-us",
+            "join-our-team",
+            "open-positions",
+            "opportunities",
+        }:
+            return "requested URL lacks career intent"
+        return None
+
+    def _is_default_https_origin(self, parsed) -> bool:
+        if parsed.username or parsed.password:
+            return False
+        try:
+            return parsed.port in {None, 443}
+        except ValueError:
+            return False
+
+    def _same_url_origin(self, first_url: str, second_url: str) -> bool:
+        first = urlparse(first_url)
+        second = urlparse(second_url)
+        if not self._is_default_https_origin(first) or not self._is_default_https_origin(second):
+            return False
+        return (
+            first.scheme == second.scheme == "https"
+            and (first.hostname or "").casefold() == (second.hostname or "").casefold()
+            and (first.port or 443) == (second.port or 443)
+        )
+
+    def _is_safe_generic_redirect_link(self, url: str) -> bool:
+        parsed = urlparse(url)
+        return self._generic_career_redirect_url_rejection(parsed, require_career_intent=False) is None
+
+    def _is_actionable_career_route(self, link: RawLink) -> bool:
+        path_parts = {part.casefold() for part in urlparse(link.url).path.split("/") if part}
+        route_markers = {
+            "jobs",
+            "job-search",
+            "job-listings",
+            "openings",
+            "open-positions",
+            "positions",
+            "search-jobs",
+            "search-results",
+        }
+        command_text = " ".join(link.text.casefold().split())
+        return bool(path_parts & route_markers) and (
+            link.origin == "form_action"
+            or any(
+                marker in command_text
+                for marker in ("apply", "jobs", "openings", "positions", "roles", "search")
+            )
+        )
+
+    def _company_identity_tokens(self, company_name: str) -> set[str]:
+        legal_suffixes = {
+            "co",
+            "company",
+            "corp",
+            "corporation",
+            "gmbh",
+            "inc",
+            "incorporated",
+            "limited",
+            "llc",
+            "ltd",
+            "plc",
+        }
+        return {
+            token
+            for token in re.findall(r"[a-z0-9]+", company_name.casefold())
+            if token not in legal_suffixes
+        }
 
     def _verify_derived_provider_with_adapter(
         self,
