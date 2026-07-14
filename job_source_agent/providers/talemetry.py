@@ -32,7 +32,7 @@ _CF_CHALLENGE_MARKERS = (
 
 class TalemetryAdapter:
     name = "talemetry"
-    supports_listing = True
+    supports_listing = False
 
     def recognizes(self, url: str) -> bool:
         # Career Sites tenants use customer-owned hosts and require page evidence.

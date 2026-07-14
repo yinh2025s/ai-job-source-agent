@@ -17,6 +17,8 @@ class ValidateArchitectureTests(unittest.TestCase):
 
         self.assertTrue(report["valid"])
         self.assertIn("greenhouse", report["native_adapters"])
+        self.assertIn("greenhouse", report["listing_adapters"])
+        self.assertEqual(report["detection_only_adapters"], ["talemetry"])
         self.assertEqual(report["issues"], [])
 
     def test_cli_writes_machine_readable_report(self):
@@ -43,4 +45,3 @@ class ValidateArchitectureTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

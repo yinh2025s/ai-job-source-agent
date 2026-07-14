@@ -60,6 +60,7 @@ class TalemetryAdapterTests(unittest.TestCase):
 
         self.assertIs(native["talemetry"], ADAPTER)
         self.assertIsInstance(ADAPTER, ProviderAdapter)
+        self.assertFalse(ADAPTER.supports_listing)
         self.assertFalse(ADAPTER.recognizes(BOARD_PAGE))
         self.assertIsNone(ADAPTER.identify_board(BOARD_PAGE))
 

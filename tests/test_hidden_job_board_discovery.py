@@ -3,8 +3,10 @@ import html
 import json
 from pathlib import Path
 
+from job_source_agent.job_board import JobBoard
 from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.errors import DiscoveryError
+from job_source_agent.providers.registry import ProviderRegistry
 from job_source_agent.web import FetchError, Fetcher, Page
 
 
@@ -25,6 +27,88 @@ class MappingFetcher:
 
 
 class HiddenJobBoardDiscoveryTests(unittest.TestCase):
+    def test_page_evidence_native_board_skips_blind_ats_search(self):
+        career = "https://careers.example.com/open-roles"
+
+        class CustomerDomainAdapter:
+            name = "customer_domain"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return False
+
+            def identify_board(self, url):
+                return None
+
+            def identify_board_from_page(self, page):
+                if "customer-domain-jobs" not in page.html:
+                    return None
+                return JobBoard(url=career, provider=self.name)
+
+            def list_jobs(self, fetcher, board, query):
+                raise AssertionError("S5 must not query provider inventory")
+
+        fetcher = MappingFetcher({
+            career: Page(url=career, html="<main>customer-domain-jobs</main>"),
+        })
+        agent = JobSourceAgent(
+            fetcher,
+            provider_registry=ProviderRegistry((CustomerDomainAdapter(),)),
+            max_job_pages=1,
+        )
+
+        job_list, trace, discovered = agent.find_job_board_with_evidence(
+            career,
+            company_name="Example",
+        )
+
+        self.assertEqual(job_list, career)
+        self.assertEqual(fetcher.requested, [career])
+        self.assertNotIn("ats_search_fallback", trace)
+        self.assertEqual(trace["provider_detection"]["method"], "page_evidence")
+        self.assertIsNotNone(discovered)
+        self.assertEqual(discovered.board.provider, "customer_domain")
+
+    def test_detection_only_page_evidence_keeps_ats_search_fallback(self):
+        career = "https://careers.example.com/open-roles"
+        searched_board = "https://jobs.lever.co/example"
+
+        class DetectionOnlyAdapter:
+            name = "detection_only"
+            supports_listing = False
+
+            def recognizes(self, url):
+                return False
+
+            def identify_board(self, url):
+                return None
+
+            def identify_board_from_page(self, page):
+                return JobBoard(url=career, provider=self.name)
+
+            def list_jobs(self, fetcher, board, query):
+                raise AssertionError("Detection-only inventory must not be queried in S5")
+
+        fetcher = MappingFetcher({career: Page(url=career, html="<main>Careers</main>")})
+        agent = JobSourceAgent(
+            fetcher,
+            provider_registry=ProviderRegistry((DetectionOnlyAdapter(),)),
+            max_job_pages=1,
+        )
+        agent._search_verified_ats_board = lambda company_name, career_url: (
+            searched_board,
+            {"search": {"status": "verified"}},
+        )
+
+        job_list, trace, discovered = agent.find_job_board_with_evidence(
+            career,
+            company_name="Example",
+        )
+
+        self.assertEqual(job_list, searched_board)
+        self.assertEqual(trace["selected_from"], "ats_search_fallback")
+        self.assertIsNone(discovered)
+
     def test_recovers_provider_url_from_bounded_same_site_module_assets(self):
         career = "https://www.example.com/careers/"
         route_asset = "https://www.example.com/assets/page-careers-A1.js"

@@ -14,6 +14,10 @@ from job_source_agent.providers import (
     build_default_provider_registry,
     discover_native_adapters,
 )
+from job_source_agent.providers.base import (
+    PageAwareProviderAdapter,
+    PageProbeProviderAdapter,
+)
 from job_source_agent.reasons import REASON_SPECS
 
 
@@ -23,6 +27,10 @@ def validate_architecture() -> dict:
     issues: list[dict[str, str]] = []
     native_names = [adapter.name for adapter in native_adapters]
     registry_names = [adapter.name for adapter in registry.adapters]
+    listing_names = [adapter.name for adapter in native_adapters if adapter.supports_listing]
+    detection_only_names = [
+        adapter.name for adapter in native_adapters if not adapter.supports_listing
+    ]
 
     for name in sorted(set(native_names)):
         if native_names.count(name) > 1:
@@ -34,8 +42,13 @@ def validate_architecture() -> dict:
     for adapter in native_adapters:
         if not isinstance(adapter, ProviderAdapter):
             issues.append({"provider": adapter.name, "code": "PROVIDER_CONTRACT_MISMATCH"})
-        if not adapter.supports_listing:
-            issues.append({"provider": adapter.name, "code": "NATIVE_LISTING_NOT_SUPPORTED"})
+        if not adapter.supports_listing and not isinstance(
+            adapter,
+            (PageAwareProviderAdapter, PageProbeProviderAdapter),
+        ):
+            issues.append(
+                {"provider": adapter.name, "code": "DETECTION_EVIDENCE_NOT_SUPPORTED"}
+            )
         module_name = adapter.__class__.__module__.rsplit(".", 1)[-1]
         if module_name != adapter.name:
             issues.append(
@@ -49,7 +62,7 @@ def validate_architecture() -> dict:
             (registered for registered in registry.adapters if registered.name == adapter.name),
             None,
         )
-        if selected is None or selected is not adapter or not selected.supports_listing:
+        if selected is None or selected is not adapter:
             issues.append({"provider": adapter.name, "code": "NATIVE_ADAPTER_NOT_SELECTED"})
         for reason_code in _declared_reason_codes(adapter):
             if reason_code not in REASON_SPECS:
@@ -65,6 +78,8 @@ def validate_architecture() -> dict:
         "valid": not issues,
         "native_adapter_count": len(native_adapters),
         "native_adapters": native_names,
+        "listing_adapters": listing_names,
+        "detection_only_adapters": detection_only_names,
         "registry_adapter_count": len(registry.adapters),
         "issues": issues,
     }

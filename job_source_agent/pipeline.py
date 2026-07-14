@@ -673,6 +673,7 @@ class JobSourceAgent:
         if (
             company_name
             and self.max_ats_board_fetches
+            and not self._has_native_listing_board(discovered_board)
             and (
                 not job_list_url
                 or (
@@ -738,6 +739,15 @@ class JobSourceAgent:
         trace.pop("opening_error", None)
         trace["job_list_page_url"] = job_list_url
         return job_list_url, trace, discovered_board
+
+    def _has_native_listing_board(
+        self,
+        discovered_board: DiscoveredJobBoard | None,
+    ) -> bool:
+        if discovered_board is None:
+            return False
+        adapter = self.provider_registry.adapter_named(discovered_board.board.provider)
+        return adapter is not None and adapter.supports_listing
 
     def _search_verified_ats_board(
         self,
