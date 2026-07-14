@@ -481,6 +481,7 @@ def _load_completed_companies(
     }
     args.batch_completion_resume_stats = stats
     args.batch_completion_resume_decisions = {}
+    args.batch_completion_retry_stages = {}
     if getattr(args, "no_resume", False) or getattr(args, "rerun_stage", None):
         return {}
     input_records = [dataclass_to_dict(company) for company in companies]
@@ -499,7 +500,9 @@ def _load_completed_companies(
         stats[decision.action] += 1
         if decision.action == "retryable_resubmit":
             fingerprint = execution_fingerprint(input_record, run_configuration.digest)
-            stage_store.invalidate_from(fingerprint, decision.retry_stage or PIPELINE_STAGES[0])
+            retry_stage = decision.retry_stage or PIPELINE_STAGES[0]
+            stage_store.invalidate_from(fingerprint, retry_stage)
+            args.batch_completion_retry_stages[fingerprint] = retry_stage
             continue
         restored_trace = copy.deepcopy(completion.trace)
         trace_payload = restored_trace.get("trace")
@@ -654,20 +657,35 @@ def _atomic_write_json(path: Path, payload) -> None:
 def run_company(company: CompanyInput, args: argparse.Namespace):
     started = time.monotonic()
     upstream_result: DiscoveryResult | None = None
+    automatic_retry_start = _automatic_retry_start_stage(company, args)
     if resume_uses_replay_upstream(args):
         prepare_replay_company_for_resume(company, args)
-    else:
+    elif automatic_retry_start not in {
+        STAGE_CAREER_DISCOVERY,
+        STAGE_JOB_BOARD_DISCOVERY,
+        STAGE_OPENING_MATCH,
+        STAGE_RESULT_VALIDATION,
+    }:
         upstream_budget = min(args.website_time_budget, args.company_time_budget)
         upstream_deadline = time.monotonic() + _inner_deadline_budget(upstream_budget)
+        upstream_start = (
+            automatic_retry_start
+            if automatic_retry_start in {
+                STAGE_LINKEDIN_DISCOVERY,
+                STAGE_WEBSITE_RESOLUTION,
+                STAGE_HIRING_IDENTITY_RESOLUTION,
+            }
+            else None
+        )
         try:
             upstream_result = run_with_process_budget(
                 run_pipeline_phase,
                 (
                     company,
                     args,
-                    None,
+                    upstream_start,
                     STAGE_HIRING_IDENTITY_RESOLUTION,
-                    _upstream_rerun_stage(args),
+                    None if automatic_retry_start else _upstream_rerun_stage(args),
                     upstream_deadline,
                 ),
                 timeout=upstream_budget,
@@ -695,7 +713,15 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         if not upstream_result.company_website_url and not company.external_apply_url:
             return upstream_result
 
-    downstream_start, resume_fallback = _downstream_start_stage(company, args)
+    if automatic_retry_start in {
+        STAGE_CAREER_DISCOVERY,
+        STAGE_JOB_BOARD_DISCOVERY,
+        STAGE_OPENING_MATCH,
+        STAGE_RESULT_VALIDATION,
+    }:
+        downstream_start, resume_fallback = automatic_retry_start, None
+    else:
+        downstream_start, resume_fallback = _downstream_start_stage(company, args)
     if resume_fallback == "missing_resume_evidence":
         return failure_result(
             company,
@@ -726,7 +752,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                 args,
                 downstream_start,
                 None,
-                _downstream_rerun_stage(args),
+                None if automatic_retry_start else _downstream_rerun_stage(args),
                 downstream_deadline,
             ),
             timeout=remaining,
@@ -751,6 +777,35 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             completed_result=recovered or upstream_result,
             run_configuration=_run_configuration(args),
         )
+
+
+def _automatic_retry_start_stage(
+    company: CompanyInput,
+    args: argparse.Namespace,
+) -> str | None:
+    retry_stages = getattr(args, "batch_completion_retry_stages", None)
+    if not isinstance(retry_stages, dict) or not retry_stages:
+        return None
+    fingerprint = execution_fingerprint(
+        dataclass_to_dict(company),
+        _run_configuration(args).digest,
+    )
+    requested = retry_stages.get(fingerprint)
+    if requested not in PIPELINE_STAGES:
+        return None
+
+    missing = _missing_resume_checkpoints(company, args, requested)
+    effective = min(
+        (requested, *missing),
+        key=PIPELINE_STAGES.index,
+    )
+    company.source_trace["batch_completion_retry"] = {
+        "requested_start_stage": requested,
+        "effective_start_stage": effective,
+        "checkpoint_chain": "complete" if not missing else "incomplete",
+        "missing_checkpoints": missing,
+    }
+    return effective
 
 
 def _upstream_rerun_stage(args: argparse.Namespace) -> str | None:

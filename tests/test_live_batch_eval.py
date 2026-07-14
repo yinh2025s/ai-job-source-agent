@@ -25,6 +25,7 @@ from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.web import Fetcher, Page
 from scripts.live_batch_eval import (
+    _automatic_retry_start_stage,
     build_automatic_failure_bundle,
     build_automatic_replay_bundle,
     build_summary,
@@ -881,10 +882,125 @@ class LiveBatchEvalTests(unittest.TestCase):
                     "reason_code": "NETWORK_TIMEOUT",
                 },
             )
+            self.assertEqual(
+                args.batch_completion_retry_stages[fingerprint],
+                "career_discovery",
+            )
             for stage in PIPELINE_STAGES[:3]:
                 self.assertIsNotNone(stage_store.load(fingerprint, stage))
             for stage in PIPELINE_STAGES[3:]:
                 self.assertIsNone(stage_store.load(fingerprint, stage))
+
+    def test_automatic_retry_uses_failed_downstream_stage_as_real_start(self):
+        cases = (
+            ("career_discovery", 3),
+            ("opening_match", 5),
+        )
+        for retry_stage, restored_count in cases:
+            with self.subTest(retry_stage=retry_stage), tempfile.TemporaryDirectory() as directory:
+                company = CompanyInput(
+                    company_name="Aurora Data",
+                    company_website_url="https://aurora-data.example",
+                    job_title="AI Engineer",
+                )
+                args = self.pipeline_args(directory)
+                args.company_time_budget = 10
+                args.website_time_budget = 5
+                args.resume_from_stage = None
+                args.rerun_stage = None
+                first = run_company(company, args)
+                self.assertEqual(first.status, "success")
+
+                fingerprint = execution_fingerprint(
+                    company.__dict__,
+                    _run_configuration(args).digest,
+                )
+                FilesystemCheckpointStore(args.checkpoint_dir).invalidate_from(
+                    fingerprint,
+                    retry_stage,
+                )
+                args.batch_completion_retry_stages = {fingerprint: retry_stage}
+
+                resumed = run_company(company, args)
+
+            events = resumed.trace["checkpoint_events"]
+            restored = [event["stage"] for event in events if event["action"] == "restore"]
+            saved = [event["stage"] for event in events if event["action"] == "save"]
+            self.assertEqual(restored, list(PIPELINE_STAGES[:restored_count]))
+            self.assertEqual(saved, list(PIPELINE_STAGES[restored_count:]))
+            retry_trace = resumed.trace["source_trace"]["batch_completion_retry"]
+            self.assertEqual(retry_trace["requested_start_stage"], retry_stage)
+            self.assertEqual(retry_trace["effective_start_stage"], retry_stage)
+            self.assertEqual(retry_trace["checkpoint_chain"], "complete")
+            self.assertEqual(retry_trace["missing_checkpoints"], [])
+
+    def test_automatic_retry_falls_back_to_earliest_missing_prefix_stage(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            company_website_url="https://checkpoint.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            store, fingerprint = self.save_checkpoint_chain(company, args)
+            store.invalidate_from(fingerprint, "job_board_discovery")
+            args.batch_completion_retry_stages = {fingerprint: "opening_match"}
+
+            effective = _automatic_retry_start_stage(company, args)
+
+        self.assertEqual(effective, "job_board_discovery")
+        self.assertEqual(
+            company.source_trace["batch_completion_retry"],
+            {
+                "requested_start_stage": "opening_match",
+                "effective_start_stage": "job_board_discovery",
+                "checkpoint_chain": "incomplete",
+                "missing_checkpoints": ["job_board_discovery"],
+            },
+        )
+
+    def test_automatic_retry_starts_upstream_phase_at_failed_stage(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            company_website_url="https://checkpoint.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.company_time_budget = 10
+            args.website_time_budget = 5
+            args.resume_from_stage = None
+            args.rerun_stage = None
+            _, fingerprint = self.save_checkpoint_chain(
+                company,
+                args,
+                stages=PIPELINE_STAGES[:1],
+            )
+            args.batch_completion_retry_stages = {
+                fingerprint: "website_resolution",
+            }
+            upstream = DiscoveryResult(
+                company_name=company.company_name,
+                company_website_url=company.company_website_url,
+                status="success",
+            )
+            downstream = DiscoveryResult(
+                company_name=company.company_name,
+                company_website_url=company.company_website_url,
+                status="success",
+            )
+            with patch(
+                "scripts.live_batch_eval.run_with_process_budget",
+                side_effect=[upstream, downstream],
+            ) as run_budget:
+                result = run_company(company, args)
+
+        self.assertIs(result, downstream)
+        upstream_call = run_budget.call_args_list[0].args[1]
+        downstream_call = run_budget.call_args_list[1].args[1]
+        self.assertEqual(upstream_call[2], "website_resolution")
+        self.assertEqual(upstream_call[3], "hiring_identity_resolution")
+        self.assertIsNone(upstream_call[4])
+        self.assertEqual(downstream_call[2], "career_discovery")
+        self.assertIsNone(downstream_call[4])
 
     def test_company_completions_are_persisted_and_rendered_in_input_order(self):
         companies = {
