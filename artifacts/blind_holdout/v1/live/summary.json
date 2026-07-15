@@ -1,0 +1,1983 @@
+{
+  "total": 40,
+  "success": 14,
+  "partial": 9,
+  "failed": 17,
+  "pipeline_success": 4,
+  "pipeline_partial": 18,
+  "pipeline_failed": 18,
+  "pipeline_unsupported": 0,
+  "with_website": 33,
+  "with_career_page": 23,
+  "with_job_list": 15,
+  "with_opening": 4,
+  "rates": {
+    "website": 0.825,
+    "career_page": 0.575,
+    "job_list": 0.375,
+    "opening": 0.1
+  },
+  "status_counts": {
+    "success": 14,
+    "partial": 9,
+    "failed": 17
+  },
+  "pipeline_status_counts": {
+    "partial": 18,
+    "success": 4,
+    "failed": 18
+  },
+  "error_counts": {
+    "none": 15,
+    "job_board_not_found": 8,
+    "career_page_not_found": 3,
+    "fetch_budget_exhausted": 7,
+    "website_not_resolved": 7
+  },
+  "provider_counts": {
+    "greenhouse": 4,
+    "ashby": 1,
+    "hydrationroom.com": 1,
+    "northwell-health.com": 1,
+    "unknown": 17,
+    "chcsno.org": 1,
+    "workday": 2,
+    "westpace.isolvedhire.com": 1,
+    "mrbeastjobs.com": 1,
+    "goguava.ai": 1,
+    "connoisseurmedia.com": 1,
+    "kodiakcakes.com": 1,
+    "addisongroup.com": 1,
+    "tata.com": 1,
+    "systemone.com": 1,
+    "averydennison.com": 1,
+    "bankspower.com": 1,
+    "ellawayblues.com": 1,
+    "bbva.com": 1,
+    "hoxtoncircle.com": 1
+  },
+  "failure_stage_counts": {
+    "job_list": 8,
+    "career_page": 10,
+    "website": 7
+  },
+  "stage_funnel": {
+    "linkedin_discovery": {
+      "success": 40
+    },
+    "website_resolution": {
+      "success": 33,
+      "failed": 7
+    },
+    "hiring_identity_resolution": {
+      "success": 33,
+      "not_run": 7
+    },
+    "career_discovery": {
+      "success": 23,
+      "failed": 10,
+      "not_run": 7
+    },
+    "job_board_discovery": {
+      "success": 15,
+      "failed": 8,
+      "not_run": 17
+    },
+    "opening_match": {
+      "partial": 10,
+      "success": 5,
+      "not_run": 25
+    },
+    "result_validation": {
+      "success": 32,
+      "not_run": 7,
+      "failed": 1
+    }
+  },
+  "provider_stage_status_counts": {
+    "greenhouse": {
+      "linkedin_discovery": {
+        "success": 4
+      },
+      "website_resolution": {
+        "success": 4
+      },
+      "hiring_identity_resolution": {
+        "success": 4
+      },
+      "career_discovery": {
+        "success": 4
+      },
+      "job_board_discovery": {
+        "success": 4
+      },
+      "opening_match": {
+        "partial": 2,
+        "success": 2
+      },
+      "result_validation": {
+        "success": 4
+      }
+    },
+    "ashby": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "success": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "hydrationroom.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "failed": 1
+      },
+      "opening_match": {
+        "not_run": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "northwell-health.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "failed": 1
+      },
+      "opening_match": {
+        "not_run": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "unknown": {
+      "linkedin_discovery": {
+        "success": 17
+      },
+      "website_resolution": {
+        "success": 10,
+        "failed": 7
+      },
+      "hiring_identity_resolution": {
+        "success": 10,
+        "not_run": 7
+      },
+      "career_discovery": {
+        "failed": 10,
+        "not_run": 7
+      },
+      "job_board_discovery": {
+        "not_run": 17
+      },
+      "opening_match": {
+        "not_run": 17
+      },
+      "result_validation": {
+        "success": 10,
+        "not_run": 7
+      }
+    },
+    "chcsno.org": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "failed": 1
+      },
+      "opening_match": {
+        "not_run": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "workday": {
+      "linkedin_discovery": {
+        "success": 2
+      },
+      "website_resolution": {
+        "success": 2
+      },
+      "hiring_identity_resolution": {
+        "success": 2
+      },
+      "career_discovery": {
+        "success": 2
+      },
+      "job_board_discovery": {
+        "success": 2
+      },
+      "opening_match": {
+        "success": 2
+      },
+      "result_validation": {
+        "failed": 1,
+        "success": 1
+      }
+    },
+    "westpace.isolvedhire.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "partial": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "mrbeastjobs.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "partial": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "goguava.ai": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "partial": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "connoisseurmedia.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "failed": 1
+      },
+      "opening_match": {
+        "not_run": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "kodiakcakes.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "failed": 1
+      },
+      "opening_match": {
+        "not_run": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "addisongroup.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "partial": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "tata.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "partial": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "systemone.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "partial": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "averydennison.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "partial": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "bankspower.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "failed": 1
+      },
+      "opening_match": {
+        "not_run": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "ellawayblues.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "success": 1
+      },
+      "opening_match": {
+        "partial": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "bbva.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "failed": 1
+      },
+      "opening_match": {
+        "not_run": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    },
+    "hoxtoncircle.com": {
+      "linkedin_discovery": {
+        "success": 1
+      },
+      "website_resolution": {
+        "success": 1
+      },
+      "hiring_identity_resolution": {
+        "success": 1
+      },
+      "career_discovery": {
+        "success": 1
+      },
+      "job_board_discovery": {
+        "failed": 1
+      },
+      "opening_match": {
+        "not_run": 1
+      },
+      "result_validation": {
+        "success": 1
+      }
+    }
+  },
+  "reason_code_counts": {
+    "OPENING_NOT_FOUND": 2,
+    "JOB_BOARD_NOT_FOUND": 8,
+    "CAREER_PAGE_NOT_FOUND": 3,
+    "FETCH_BUDGET_EXHAUSTED": 7,
+    "WEBSITE_NOT_RESOLVED": 7,
+    "RESULT_IDENTITY_MISMATCH": 1,
+    "OPENING_DISCOVERY_INCOMPLETE": 8
+  },
+  "provider_reason_code_counts": {
+    "greenhouse": {
+      "OPENING_NOT_FOUND": 2
+    },
+    "ashby": {},
+    "hydrationroom.com": {
+      "JOB_BOARD_NOT_FOUND": 1
+    },
+    "northwell-health.com": {
+      "JOB_BOARD_NOT_FOUND": 1
+    },
+    "unknown": {
+      "CAREER_PAGE_NOT_FOUND": 3,
+      "FETCH_BUDGET_EXHAUSTED": 7,
+      "WEBSITE_NOT_RESOLVED": 7
+    },
+    "chcsno.org": {
+      "JOB_BOARD_NOT_FOUND": 1
+    },
+    "workday": {
+      "RESULT_IDENTITY_MISMATCH": 1
+    },
+    "westpace.isolvedhire.com": {
+      "OPENING_DISCOVERY_INCOMPLETE": 1
+    },
+    "mrbeastjobs.com": {
+      "OPENING_DISCOVERY_INCOMPLETE": 1
+    },
+    "goguava.ai": {
+      "OPENING_DISCOVERY_INCOMPLETE": 1
+    },
+    "connoisseurmedia.com": {
+      "JOB_BOARD_NOT_FOUND": 1
+    },
+    "kodiakcakes.com": {
+      "JOB_BOARD_NOT_FOUND": 1
+    },
+    "addisongroup.com": {
+      "OPENING_DISCOVERY_INCOMPLETE": 1
+    },
+    "tata.com": {
+      "OPENING_DISCOVERY_INCOMPLETE": 1
+    },
+    "systemone.com": {
+      "OPENING_DISCOVERY_INCOMPLETE": 1
+    },
+    "averydennison.com": {
+      "OPENING_DISCOVERY_INCOMPLETE": 1
+    },
+    "bankspower.com": {
+      "JOB_BOARD_NOT_FOUND": 1
+    },
+    "ellawayblues.com": {
+      "OPENING_DISCOVERY_INCOMPLETE": 1
+    },
+    "bbva.com": {
+      "JOB_BOARD_NOT_FOUND": 1
+    },
+    "hoxtoncircle.com": {
+      "JOB_BOARD_NOT_FOUND": 1
+    }
+  },
+  "stage_duration_ms": {
+    "linkedin_discovery": {
+      "count": 40,
+      "p50": 0,
+      "p95": 0
+    },
+    "website_resolution": {
+      "count": 40,
+      "p50": 6576,
+      "p95": 18608
+    },
+    "hiring_identity_resolution": {
+      "count": 33,
+      "p50": 136,
+      "p95": 2214
+    },
+    "career_discovery": {
+      "count": 33,
+      "p50": 4204,
+      "p95": 48544
+    },
+    "job_board_discovery": {
+      "count": 23,
+      "p50": 8277,
+      "p95": 12396
+    },
+    "opening_match": {
+      "count": 15,
+      "p50": 3313,
+      "p95": 12134
+    },
+    "result_validation": {
+      "count": 33,
+      "p50": 0,
+      "p95": 0
+    }
+  },
+  "checkpoint_action_counts": {
+    "invalidate_from": 40,
+    "restore": 99,
+    "save": 153
+  },
+  "checkpoint_stage_counts": {
+    "career_discovery": 66,
+    "linkedin_discovery": 47,
+    "website_resolution": 40,
+    "hiring_identity_resolution": 40,
+    "job_board_discovery": 33,
+    "opening_match": 33,
+    "result_validation": 33
+  },
+  "source_posting_disposition_counts": {},
+  "availability_diagnostic_counts": {
+    "verified_inventory_no_match": 2,
+    "discovery_incomplete": 8
+  },
+  "terminal_outcome_counts": {
+    "verified_no_match": 2,
+    "exact_opening": 4,
+    "discovery_unresolved": 26,
+    "retryable_failure": 7,
+    "other_non_success": 1
+  },
+  "failure_clusters": [
+    {
+      "stage": "job_board_discovery",
+      "provider": "generic",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "company_count": 8,
+      "retryable_count": 0,
+      "company_names": [
+        "Banks Power",
+        "BBVA",
+        "Community Health Center of Snohomish County (CHC)",
+        "Connoisseur Media",
+        "Hoxton Circle",
+        "Hydration Room",
+        "Kodiak Cakes",
+        "Northwell Health"
+      ],
+      "inventory_disposition_counts": {},
+      "terminal_outcome_counts": {
+        "discovery_unresolved": 8
+      }
+    },
+    {
+      "stage": "opening_match",
+      "provider": "generic",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "company_count": 8,
+      "retryable_count": 0,
+      "company_names": [
+        "Addison Group",
+        "Avery Dennison",
+        "Ellaway Blues Consulting",
+        "Gary and Mary West PACE",
+        "Guava",
+        "MrBeast",
+        "System One",
+        "Tata Technologies"
+      ],
+      "inventory_disposition_counts": {
+        "discovery_incomplete": 8
+      },
+      "terminal_outcome_counts": {
+        "discovery_unresolved": 8
+      }
+    },
+    {
+      "stage": "website_resolution",
+      "provider": "unknown",
+      "reason_code": "WEBSITE_NOT_RESOLVED",
+      "company_count": 7,
+      "retryable_count": 0,
+      "company_names": [
+        "Electrolux Group",
+        "Ford Motor Company",
+        "Gucci",
+        "Lacoste",
+        "Lilly Pulitzer",
+        "PUMA Group",
+        "Texas Children's Hospital"
+      ],
+      "inventory_disposition_counts": {},
+      "terminal_outcome_counts": {
+        "discovery_unresolved": 7
+      }
+    },
+    {
+      "stage": "career_discovery",
+      "provider": "unknown",
+      "reason_code": "FETCH_BUDGET_EXHAUSTED",
+      "company_count": 7,
+      "retryable_count": 7,
+      "company_names": [
+        "Aarris Healthcare",
+        "Cassidy",
+        "Focus Health Network",
+        "Incredible Health",
+        "Parfums Christian Dior",
+        "SpaceX",
+        "Vetted Solutions"
+      ],
+      "inventory_disposition_counts": {},
+      "terminal_outcome_counts": {
+        "retryable_failure": 7
+      }
+    },
+    {
+      "stage": "career_discovery",
+      "provider": "unknown",
+      "reason_code": "CAREER_PAGE_NOT_FOUND",
+      "company_count": 3,
+      "retryable_count": 0,
+      "company_names": [
+        "Atrium Health",
+        "Hugh Chatham Health",
+        "Roper St. Francis Healthcare"
+      ],
+      "inventory_disposition_counts": {},
+      "terminal_outcome_counts": {
+        "discovery_unresolved": 3
+      }
+    },
+    {
+      "stage": "opening_match",
+      "provider": "greenhouse",
+      "reason_code": "OPENING_NOT_FOUND",
+      "company_count": 2,
+      "retryable_count": 0,
+      "company_names": [
+        "L'OCCITANE Group (B Corp)",
+        "Resonate AI"
+      ],
+      "inventory_disposition_counts": {
+        "verified_inventory_no_match": 2
+      },
+      "terminal_outcome_counts": {
+        "verified_no_match": 2
+      }
+    },
+    {
+      "stage": "result_validation",
+      "provider": "workday",
+      "reason_code": "RESULT_IDENTITY_MISMATCH",
+      "company_count": 1,
+      "retryable_count": 0,
+      "company_names": [
+        "New York Cancer & Blood Specialists"
+      ],
+      "inventory_disposition_counts": {},
+      "terminal_outcome_counts": {
+        "other_non_success": 1
+      }
+    }
+  ],
+  "company_stage_matrix": [
+    {
+      "company_name": "Resonate AI",
+      "provider": "greenhouse",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Solace",
+      "provider": "ashby",
+      "pipeline_status": "success",
+      "reason_code": null,
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "success",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Hydration Room",
+      "provider": "hydrationroom.com",
+      "pipeline_status": "partial",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "failed",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Northwell Health",
+      "provider": "northwell-health.com",
+      "pipeline_status": "partial",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "failed",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Hugh Chatham Health",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "CAREER_PAGE_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Incredible Health",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "FETCH_BUDGET_EXHAUSTED",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Texas Children's Hospital",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "WEBSITE_NOT_RESOLVED",
+      "linkedin_discovery": "success",
+      "website_resolution": "failed",
+      "hiring_identity_resolution": "not_run",
+      "career_discovery": "not_run",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "not_run"
+    },
+    {
+      "company_name": "Roper St. Francis Healthcare",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "CAREER_PAGE_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Atrium Health",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "CAREER_PAGE_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Community Health Center of Snohomish County (CHC)",
+      "provider": "chcsno.org",
+      "pipeline_status": "partial",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "failed",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "New York Cancer & Blood Specialists",
+      "provider": "workday",
+      "pipeline_status": "failed",
+      "reason_code": "RESULT_IDENTITY_MISMATCH",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "success",
+      "result_validation": "failed"
+    },
+    {
+      "company_name": "Aarris Healthcare",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "FETCH_BUDGET_EXHAUSTED",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Gary and Mary West PACE",
+      "provider": "westpace.isolvedhire.com",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Focus Health Network",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "FETCH_BUDGET_EXHAUSTED",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Vetted Solutions",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "FETCH_BUDGET_EXHAUSTED",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "L'OCCITANE Group (B Corp)",
+      "provider": "greenhouse",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Lacoste",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "WEBSITE_NOT_RESOLVED",
+      "linkedin_discovery": "success",
+      "website_resolution": "failed",
+      "hiring_identity_resolution": "not_run",
+      "career_discovery": "not_run",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "not_run"
+    },
+    {
+      "company_name": "MrBeast",
+      "provider": "mrbeastjobs.com",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Lilly Pulitzer",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "WEBSITE_NOT_RESOLVED",
+      "linkedin_discovery": "success",
+      "website_resolution": "failed",
+      "hiring_identity_resolution": "not_run",
+      "career_discovery": "not_run",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "not_run"
+    },
+    {
+      "company_name": "PUMA Group",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "WEBSITE_NOT_RESOLVED",
+      "linkedin_discovery": "success",
+      "website_resolution": "failed",
+      "hiring_identity_resolution": "not_run",
+      "career_discovery": "not_run",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "not_run"
+    },
+    {
+      "company_name": "Cassidy",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "FETCH_BUDGET_EXHAUSTED",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Guava",
+      "provider": "goguava.ai",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Connoisseur Media",
+      "provider": "connoisseurmedia.com",
+      "pipeline_status": "partial",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "failed",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Kodiak Cakes",
+      "provider": "kodiakcakes.com",
+      "pipeline_status": "partial",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "failed",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Parfums Christian Dior",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "FETCH_BUDGET_EXHAUSTED",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Newsweek",
+      "provider": "greenhouse",
+      "pipeline_status": "success",
+      "reason_code": null,
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "success",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Addison Group",
+      "provider": "addisongroup.com",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Tata Technologies",
+      "provider": "tata.com",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Atomic Machines",
+      "provider": "greenhouse",
+      "pipeline_status": "success",
+      "reason_code": null,
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "success",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Ford Motor Company",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "WEBSITE_NOT_RESOLVED",
+      "linkedin_discovery": "success",
+      "website_resolution": "failed",
+      "hiring_identity_resolution": "not_run",
+      "career_discovery": "not_run",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "not_run"
+    },
+    {
+      "company_name": "System One",
+      "provider": "systemone.com",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Avery Dennison",
+      "provider": "averydennison.com",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Victaulic",
+      "provider": "workday",
+      "pipeline_status": "success",
+      "reason_code": null,
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "success",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Banks Power",
+      "provider": "bankspower.com",
+      "pipeline_status": "partial",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "failed",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Ellaway Blues Consulting",
+      "provider": "ellawayblues.com",
+      "pipeline_status": "partial",
+      "reason_code": "OPENING_DISCOVERY_INCOMPLETE",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "success",
+      "opening_match": "partial",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Electrolux Group",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "WEBSITE_NOT_RESOLVED",
+      "linkedin_discovery": "success",
+      "website_resolution": "failed",
+      "hiring_identity_resolution": "not_run",
+      "career_discovery": "not_run",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "not_run"
+    },
+    {
+      "company_name": "Gucci",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "WEBSITE_NOT_RESOLVED",
+      "linkedin_discovery": "success",
+      "website_resolution": "failed",
+      "hiring_identity_resolution": "not_run",
+      "career_discovery": "not_run",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "not_run"
+    },
+    {
+      "company_name": "BBVA",
+      "provider": "bbva.com",
+      "pipeline_status": "partial",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "failed",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "SpaceX",
+      "provider": "unknown",
+      "pipeline_status": "failed",
+      "reason_code": "FETCH_BUDGET_EXHAUSTED",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "failed",
+      "job_board_discovery": "not_run",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    },
+    {
+      "company_name": "Hoxton Circle",
+      "provider": "hoxtoncircle.com",
+      "pipeline_status": "partial",
+      "reason_code": "JOB_BOARD_NOT_FOUND",
+      "linkedin_discovery": "success",
+      "website_resolution": "success",
+      "hiring_identity_resolution": "success",
+      "career_discovery": "success",
+      "job_board_discovery": "failed",
+      "opening_match": "not_run",
+      "result_validation": "success"
+    }
+  ],
+  "company_identity_matrix": [
+    {
+      "company_name": "Resonate AI",
+      "website_url": "https://www.resonateapp.com",
+      "career_page_url": "https://job-boards.greenhouse.io/resonate?error=true",
+      "job_board": {
+        "provider": "greenhouse",
+        "tenant": "url:https://job-boards.greenhouse.io/resonate",
+        "canonical_url": "https://job-boards.greenhouse.io/resonate"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Solace",
+      "website_url": "https://solace.com",
+      "career_page_url": "https://solace.com/careers",
+      "job_board": {
+        "provider": "ashby",
+        "tenant": "url:https://jobs.ashbyhq.com/Solace",
+        "canonical_url": "https://jobs.ashbyhq.com/Solace"
+      },
+      "opening": {
+        "canonical_url": "https://jobs.ashbyhq.com/Solace/fd524e44-a77d-45bd-b249-d9f12c249f50"
+      }
+    },
+    {
+      "company_name": "Hydration Room",
+      "website_url": "https://hydrationroom.com",
+      "career_page_url": "https://hydrationroom.com/careers",
+      "job_board": {
+        "provider": "hydrationroom.com",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Northwell Health",
+      "website_url": "https://northwell-health.com",
+      "career_page_url": "https://northwell-health.com/careers",
+      "job_board": {
+        "provider": "northwell-health.com",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Hugh Chatham Health",
+      "website_url": "https://hughchatham.org",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Incredible Health",
+      "website_url": "http://www.incrediblehealth.com",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Texas Children's Hospital",
+      "website_url": null,
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Roper St. Francis Healthcare",
+      "website_url": "https://www.rsfh.com",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Atrium Health",
+      "website_url": "https://atriumhealth.org",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Community Health Center of Snohomish County (CHC)",
+      "website_url": "https://www.chcsno.org",
+      "career_page_url": "https://www.chcsno.org/careers",
+      "job_board": {
+        "provider": "chcsno.org",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "New York Cancer & Blood Specialists",
+      "website_url": "https://nycancer.com",
+      "career_page_url": "https://careers.nycancer.com",
+      "job_board": {
+        "provider": "workday",
+        "tenant": "url:https://oneoncology.wd1.myworkdayjobs.com/NYCBS",
+        "canonical_url": "https://oneoncology.wd1.myworkdayjobs.com/NYCBS"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Aarris Healthcare",
+      "website_url": "https://aarrishealthcare.com",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Gary and Mary West PACE",
+      "website_url": "https://www.westpace.org",
+      "career_page_url": "https://westpace.isolvedhire.com/jobs",
+      "job_board": {
+        "provider": "westpace.isolvedhire.com",
+        "tenant": "url:https://westpace.isolvedhire.com//jobs",
+        "canonical_url": "https://westpace.isolvedhire.com//jobs"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Focus Health Network",
+      "website_url": "https://focushealthnet.com",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Vetted Solutions",
+      "website_url": "https://www.vettedsolutions.com",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "L'OCCITANE Group (B Corp)",
+      "website_url": "https://group.loccitane.com",
+      "career_page_url": "https://careers.loccitane.com",
+      "job_board": {
+        "provider": "greenhouse",
+        "tenant": "url:https://job-boards.greenhouse.io/soldejaneiro",
+        "canonical_url": "https://job-boards.greenhouse.io/soldejaneiro"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Lacoste",
+      "website_url": null,
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "MrBeast",
+      "website_url": "https://www.mrbeastjobs.com",
+      "career_page_url": "https://www.mrbeastjobs.com",
+      "job_board": {
+        "provider": "mrbeastjobs.com",
+        "tenant": "url:https://www.mrbeastjobs.com",
+        "canonical_url": "https://www.mrbeastjobs.com"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Lilly Pulitzer",
+      "website_url": null,
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "PUMA Group",
+      "website_url": null,
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Cassidy",
+      "website_url": "https://www.cassidyai.com",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Guava",
+      "website_url": "https://goguava.ai",
+      "career_page_url": "https://goguava.ai/careers",
+      "job_board": {
+        "provider": "goguava.ai",
+        "tenant": "url:https://goguava.ai/careers",
+        "canonical_url": "https://goguava.ai/careers"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Connoisseur Media",
+      "website_url": "https://connoisseurmedia.com",
+      "career_page_url": "https://connoisseurmedia.com/careers",
+      "job_board": {
+        "provider": "connoisseurmedia.com",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Kodiak Cakes",
+      "website_url": "https://kodiakcakes.com",
+      "career_page_url": "https://kodiakcakes.com/pages/work-with-us",
+      "job_board": {
+        "provider": "kodiakcakes.com",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Parfums Christian Dior",
+      "website_url": "http://www.dior.com",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Newsweek",
+      "website_url": "https://www.newsweek.com",
+      "career_page_url": "https://www.newsweek.com/careers",
+      "job_board": {
+        "provider": "greenhouse",
+        "tenant": "url:https://job-boards.greenhouse.io/newsweek",
+        "canonical_url": "https://job-boards.greenhouse.io/newsweek"
+      },
+      "opening": {
+        "canonical_url": "https://job-boards.greenhouse.io/newsweek/jobs/4691725006"
+      }
+    },
+    {
+      "company_name": "Addison Group",
+      "website_url": "https://addisongroup.com",
+      "career_page_url": "https://addisongroup.com/jobs",
+      "job_board": {
+        "provider": "addisongroup.com",
+        "tenant": "url:https://www.addisongroup.com/jobs",
+        "canonical_url": "https://www.addisongroup.com/jobs"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Tata Technologies",
+      "website_url": "https://www.tata.com/home-page",
+      "career_page_url": "https://www.tata.com/careers/jobs",
+      "job_board": {
+        "provider": "tata.com",
+        "tenant": "url:https://www.tata.com/careers/jobs",
+        "canonical_url": "https://www.tata.com/careers/jobs"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Atomic Machines",
+      "website_url": "https://www.atomicmachines.com",
+      "career_page_url": "https://job-boards.greenhouse.io/atomicmachines",
+      "job_board": {
+        "provider": "greenhouse",
+        "tenant": "url:https://job-boards.greenhouse.io/atomicmachines",
+        "canonical_url": "https://job-boards.greenhouse.io/atomicmachines"
+      },
+      "opening": {
+        "canonical_url": "https://job-boards.greenhouse.io/atomicmachines/jobs/4091947009"
+      }
+    },
+    {
+      "company_name": "Ford Motor Company",
+      "website_url": null,
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "System One",
+      "website_url": "https://www.systemone.com",
+      "career_page_url": "https://www.systemone.com/careers/job-search-tips",
+      "job_board": {
+        "provider": "systemone.com",
+        "tenant": "url:https://www.systemone.com/careers/job-search-tips",
+        "canonical_url": "https://www.systemone.com/careers/job-search-tips"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Avery Dennison",
+      "website_url": "https://www.averydennison.com/en/home.html",
+      "career_page_url": "https://www.averydennison.com/en/home/careers/search-jobs.html",
+      "job_board": {
+        "provider": "averydennison.com",
+        "tenant": "url:https://www.averydennison.com/en/home/careers/search-jobs.html",
+        "canonical_url": "https://www.averydennison.com/en/home/careers/search-jobs.html"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Victaulic",
+      "website_url": "https://www.victaulic.com",
+      "career_page_url": "https://careers.victaulic.com",
+      "job_board": {
+        "provider": "workday",
+        "tenant": "url:https://victaulic.wd1.myworkdayjobs.com/victaulic_careers",
+        "canonical_url": "https://victaulic.wd1.myworkdayjobs.com/victaulic_careers"
+      },
+      "opening": {
+        "canonical_url": "https://victaulic.wd1.myworkdayjobs.com/victaulic_careers/job/Kansas-City-Missouri/Manufacturing-Engineer_R0005270"
+      }
+    },
+    {
+      "company_name": "Banks Power",
+      "website_url": "https://bankspower.com",
+      "career_page_url": "https://bankspower.com/pages/careers-at-banks",
+      "job_board": {
+        "provider": "bankspower.com",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Ellaway Blues Consulting",
+      "website_url": "https://www.ellawayblues.com",
+      "career_page_url": "https://www.ellawayblues.com/jobs",
+      "job_board": {
+        "provider": "ellawayblues.com",
+        "tenant": "url:https://www.ellawayblues.com/jobs",
+        "canonical_url": "https://www.ellawayblues.com/jobs"
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Electrolux Group",
+      "website_url": null,
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Gucci",
+      "website_url": null,
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "BBVA",
+      "website_url": "https://www.bbva.com/en",
+      "career_page_url": "https://www.bbva.com/en/careers",
+      "job_board": {
+        "provider": "bbva.com",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "SpaceX",
+      "website_url": "https://www.spacex.com",
+      "career_page_url": null,
+      "job_board": {
+        "provider": "unknown",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    },
+    {
+      "company_name": "Hoxton Circle",
+      "website_url": "https://www.hoxtoncircle.com",
+      "career_page_url": "https://www.hoxtoncircle.com/find-your-career",
+      "job_board": {
+        "provider": "hoxtoncircle.com",
+        "tenant": null,
+        "canonical_url": null
+      },
+      "opening": {
+        "canonical_url": null
+      }
+    }
+  ],
+  "evaluation_schema_version": "1.0",
+  "evaluation_metrics": {
+    "schema_version": "1.0",
+    "annotation_coverage": {
+      "value": 0.0,
+      "numerator": 0,
+      "denominator": 40,
+      "unknown_count": 0,
+      "status": "available"
+    },
+    "record_disposition_counts": {
+      "exact_public": 0,
+      "external_blocked": 0,
+      "no_public_opening": 0,
+      "recruiter_client_undisclosed": 0,
+      "system_gap": 0,
+      "verified_closed": 0
+    },
+    "record_disposition_status": "not_reportable",
+    "raw_exact_rate": {
+      "value": 0.1,
+      "numerator": 4,
+      "denominator": 40,
+      "unknown_count": 0,
+      "status": "available"
+    },
+    "exact_precision": {
+      "value": null,
+      "numerator": 0,
+      "denominator": 0,
+      "unknown_count": 40,
+      "status": "not_reportable"
+    },
+    "conditional_exact_recall": {
+      "value": null,
+      "numerator": 0,
+      "denominator": 0,
+      "unknown_count": 40,
+      "status": "not_reportable"
+    },
+    "system_defect_rate": {
+      "value": null,
+      "numerator": 0,
+      "denominator": 40,
+      "unknown_count": 40,
+      "status": "not_reportable"
+    }
+  },
+  "record_disposition_counts": {
+    "exact_public": 0,
+    "external_blocked": 0,
+    "no_public_opening": 0,
+    "recruiter_client_undisclosed": 0,
+    "system_gap": 0,
+    "verified_closed": 0
+  },
+  "evaluation_annotation_coverage": {
+    "value": 0.0,
+    "numerator": 0,
+    "denominator": 40,
+    "unknown_count": 0,
+    "status": "available"
+  },
+  "elapsed_sec": 1169.6,
+  "run_configuration": {
+    "schema_version": "1.2",
+    "agent": {
+      "max_candidates": 12,
+      "max_job_pages": 8,
+      "max_career_candidate_fetches": 12,
+      "max_career_search_queries": 3,
+      "max_ats_board_fetches": 5,
+      "enable_sitemap_discovery": true,
+      "enable_career_search": true,
+      "career_search_timeout": 7.0,
+      "max_career_discovery_transport_calls": 32,
+      "max_job_board_attempts": 3
+    }
+  },
+  "run_configuration_digest": "1c3652918ef554822a979f43bda0bf08d36fb727721cbef866f2e34617778b9a",
+  "batch_execution_configuration": {
+    "schema_version": "1.0",
+    "batch": {
+      "company_time_budget": 60.0,
+      "website_time_budget": 20.0,
+      "fetch_timeout": 8.0,
+      "fetch_retries": 1,
+      "retry_base_delay": 0.25,
+      "render_mode": "none",
+      "render_budget": 2,
+      "verify_limit": 3,
+      "offline": false
+    }
+  },
+  "batch_execution_configuration_digest": "1f2ca92a50b252c3f7987a65b9f9b7e4f53911a9b21820ca3af98a1d6dbdaf6a",
+  "batch_completion_resume": {
+    "compatible_completions": 0,
+    "completion_restore": 0,
+    "non_retryable_restore": 0,
+    "unclassified_restore": 0,
+    "retryable_resubmit": 0
+  },
+  "evaluation_manifest": {
+    "run_configuration_digest": "1c3652918ef554822a979f43bda0bf08d36fb727721cbef866f2e34617778b9a",
+    "batch_execution_configuration_digest": "1f2ca92a50b252c3f7987a65b9f9b7e4f53911a9b21820ca3af98a1d6dbdaf6a",
+    "companies_sha256": "1250d5ffe92f424fe1a9399a253fe917e4208e0b82505e799c9fe51436d9ba49"
+  }
+}

@@ -1,0 +1,353 @@
+{
+  "schema_version": "1.0",
+  "cohort_provenance": "blind_unseen",
+  "frozen_at": "2026-07-15T00:56:47.511908+00:00",
+  "history_cutoff": "2026-07-15T00:41:29+00:00",
+  "code_commit": "5b090a236933638dceb463e235daed9e5d71cabc",
+  "source_tree_sha256": "79dad88c02bbaefb7153d8b1a1eb092ed57f394f",
+  "record_count": 40,
+  "cohort_sha256": "04b3d45d2bb738ef0aa8af0edc39235a718a11556002925b8dea807c6e1e3376",
+  "candidate_pool_sha256": "ad86b35287d004870b8e059a99bca79cb4177cee881c44078f6f3b8494608eee",
+  "run_configuration_sha256": "d87626f498f94a5a54c18d93cf16ccd6a0778380802b7aeb5cd4261b15080b9e",
+  "run_configuration": {
+    "schema_version": "1.0",
+    "cohort_size": 40,
+    "linkedin_location": "United States",
+    "workers": 1,
+    "fetch_timeout_seconds": 8,
+    "fetch_retries": 1,
+    "retry_base_delay_seconds": 0.25,
+    "career_search_timeout_seconds": 7,
+    "max_career_search_queries": 3,
+    "verify_limit": 3,
+    "max_career_candidates": 12,
+    "max_career_fetches": 12,
+    "max_career_transport_calls": 32,
+    "max_ats_board_fetches": 5,
+    "max_job_pages": 8,
+    "max_job_board_attempts": 3,
+    "company_time_budget_seconds": 60,
+    "website_time_budget_seconds": 20,
+    "render_js": false,
+    "skip_sitemap": false,
+    "resume": false,
+    "snapshot_capture": true,
+    "full_outcome_replay_after_live": false
+  },
+  "cohort_identity_sha256": "af36e7e4bdf715759849a5bd26367cb3efc749d6afbeb591fceddf045d9e7971",
+  "historical_audit": {
+    "roots": [
+      "/Users/yinhuang/Project/AI Job Source agent",
+      "/private/tmp/blind-v1-historical-artifacts"
+    ],
+    "file_count": 2398,
+    "file_set_sha256": "1354ab2e52267e8a641e07433622ac29a1104c578dd01c49fd210bf5674fccf7",
+    "git_history_sha256": "d0bf788e27ba0470b13ce119684819542fce0fb41fdfd773b00a1dd81eb8cd00",
+    "structured_company_count": 247,
+    "linkedin_job_id_count": 162,
+    "scan_suffixes": [
+      ".csv",
+      ".html",
+      ".json",
+      ".jsonl",
+      ".md",
+      ".py",
+      ".toml",
+      ".txt",
+      ".xml",
+      ".yaml",
+      ".yml"
+    ],
+    "skipped_file_count": 0
+  },
+  "selection": {
+    "policy": "first unseen unique company in frozen candidate order",
+    "company_overlap_policy": "reject structured or case-insensitive text mention",
+    "linkedin_job_overlap_policy": "reject canonical LinkedIn job id",
+    "rejected_overlap_count": 45,
+    "rejected_overlap_sha256": "e1a755135c67d36d1ec03bb75a8c8b13a2cb48157650e02a752e8c2d77880ac9",
+    "post_selection_overlap_count": 0
+  },
+  "records": [
+    {
+      "company_name": "Resonate AI",
+      "linkedin_job_id": "4436043581",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-%24125k-%24200k-0-2%25-to-1%25-at-resonate-ai-4436043581",
+      "job_title": "Software Engineer ($125k-$200k, 0.2% to 1%)",
+      "job_location": "San Francisco, CA"
+    },
+    {
+      "company_name": "Solace",
+      "linkedin_job_id": "4430828700",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-healthcare-advocate-remote-1099-rn-at-solace-4430828700",
+      "job_title": "Registered Nurse Healthcare Advocate (Remote 1099) - RN",
+      "job_location": "United States"
+    },
+    {
+      "company_name": "Hydration Room",
+      "linkedin_job_id": "4439508231",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-full-time-at-hydration-room-4439508231",
+      "job_title": "Registered Nurse (RN) - Full-Time",
+      "job_location": "Oxnard, CA"
+    },
+    {
+      "company_name": "Northwell Health",
+      "linkedin_job_id": "4439580063",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-ambulatory-ob-gyn-at-northwell-health-4439580063",
+      "job_title": "Registered Nurse - Ambulatory (OB/GYN)",
+      "job_location": "Lake Success, NY"
+    },
+    {
+      "company_name": "Hugh Chatham Health",
+      "linkedin_job_id": "4439383470",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-hugh-chatham-health-4439383470",
+      "job_title": "Registered Nurse (RN) Weekender - LDRP",
+      "job_location": "Monroe, NC"
+    },
+    {
+      "company_name": "Incredible Health",
+      "linkedin_job_id": "4440558383",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-pediatric-ambulatory-care-at-incredible-health-4440558383",
+      "job_title": "Registered Nurse - Pediatric Ambulatory Care",
+      "job_location": "Atlanta, GA"
+    },
+    {
+      "company_name": "Texas Children's Hospital",
+      "linkedin_job_id": "4439315467",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-ldrp-at-texas-children-s-hospital-4439315467",
+      "job_title": "Registered Nurse (RN) - LDRP",
+      "job_location": "Austin, TX"
+    },
+    {
+      "company_name": "Roper St. Francis Healthcare",
+      "linkedin_job_id": "4436643921",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-full-time-at-roper-st-francis-healthcare-4436643921",
+      "job_title": "Registered Nurse (RN) - Full Time",
+      "job_location": "Hayward, CA"
+    },
+    {
+      "company_name": "Atrium Health",
+      "linkedin_job_id": "4438801210",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-atrium-health-4438801210",
+      "job_title": "Registered Nurse (RN) Weekender - LDRP",
+      "job_location": "Monroe, NC"
+    },
+    {
+      "company_name": "Community Health Center of Snohomish County (CHC)",
+      "linkedin_job_id": "4439063616",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-clinical-at-community-health-center-of-snohomish-county-chc-4439063616",
+      "job_title": "Registered Nurse - Clinical",
+      "job_location": "Lynnwood, WA"
+    },
+    {
+      "company_name": "New York Cancer & Blood Specialists",
+      "linkedin_job_id": "4436619341",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-at-new-york-cancer-blood-specialists-4436619341",
+      "job_title": "Registered Nurse (RN)",
+      "job_location": "Staten Island, NY"
+    },
+    {
+      "company_name": "Aarris Healthcare",
+      "linkedin_job_id": "4437952329",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/9a-rn-registered-nurse-per-diem-at-aarris-healthcare-4437952329",
+      "job_title": "(9A) RN (Registered Nurse) Per Diem",
+      "job_location": "California, United States"
+    },
+    {
+      "company_name": "Gary and Mary West PACE",
+      "linkedin_job_id": "4439515404",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-%245-000-00-sign-on-bonus-at-gary-and-mary-west-pace-4439515404",
+      "job_title": "Registered Nurse - $5,000.00 sign on bonus",
+      "job_location": "San Marcos, CA"
+    },
+    {
+      "company_name": "Focus Health Network",
+      "linkedin_job_id": "4437923724",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/rn-registered-nurse-offering-%244000-sign-on-bonus-at-focus-health-network-4437923724",
+      "job_title": "RN Registered nurse- Offering $4000 sign on bonus",
+      "job_location": "Royersford, PA"
+    },
+    {
+      "company_name": "Vetted Solutions",
+      "linkedin_job_id": "4439784701",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-full-time-at-vetted-solutions-4439784701",
+      "job_title": "Registered Nurse - Full Time",
+      "job_location": "Irving, TX"
+    },
+    {
+      "company_name": "L'OCCITANE Group (B Corp)",
+      "linkedin_job_id": "4439870928",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/key-account-manager-%E2%80%93-sephora-at-l-occitane-group-b-corp-4439870928",
+      "job_title": "Key Account Manager \u2013 Sephora",
+      "job_location": "New York, NY"
+    },
+    {
+      "company_name": "Lacoste",
+      "linkedin_job_id": "4411244008",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lacoste-4411244008",
+      "job_title": "Account Executive",
+      "job_location": "New York, NY"
+    },
+    {
+      "company_name": "MrBeast",
+      "linkedin_job_id": "4418180820",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-brand-partnerships-vyro-mrbeast-ecosystem-at-mrbeast-4418180820",
+      "job_title": "Account Executive, Brand Partnerships (Vyro & MrBeast Ecosystem)",
+      "job_location": "New York, NY"
+    },
+    {
+      "company_name": "Lilly Pulitzer",
+      "linkedin_job_id": "4429546241",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lilly-pulitzer-4429546241",
+      "job_title": "Account Executive",
+      "job_location": "Greater Philadelphia"
+    },
+    {
+      "company_name": "PUMA Group",
+      "linkedin_job_id": "4400268406",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-remote-midwest-chicago-at-puma-group-4400268406",
+      "job_title": "Account Executive (Remote - Midwest Chicago)",
+      "job_location": "Aurora, CO"
+    },
+    {
+      "company_name": "Cassidy",
+      "linkedin_job_id": "4431720375",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-cassidy-4431720375",
+      "job_title": "Account Executive",
+      "job_location": "New York, NY"
+    },
+    {
+      "company_name": "Guava",
+      "linkedin_job_id": "4423601072",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mid-market-account-executive-at-guava-4423601072",
+      "job_title": "Mid-Market Account Executive",
+      "job_location": "Los Angeles, CA"
+    },
+    {
+      "company_name": "Connoisseur Media",
+      "linkedin_job_id": "4429245326",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-connoisseur-media-4429245326",
+      "job_title": "Account Executive",
+      "job_location": "Salt Lake City, UT"
+    },
+    {
+      "company_name": "Kodiak Cakes",
+      "linkedin_job_id": "4426861689",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/regional-account-manager-sales-south-central-at-kodiak-cakes-4426861689",
+      "job_title": "Regional Account Manager, Sales - South Central",
+      "job_location": "Park City, UT"
+    },
+    {
+      "company_name": "Parfums Christian Dior",
+      "linkedin_job_id": "4428680533",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-miami-north-at-parfums-christian-dior-4428680533",
+      "job_title": "Account Executive, Miami North",
+      "job_location": "Fort Lauderdale, FL"
+    },
+    {
+      "company_name": "Newsweek",
+      "linkedin_job_id": "4431849907",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-newsweek-4431849907",
+      "job_title": "Account Executive",
+      "job_location": "New York, NY"
+    },
+    {
+      "company_name": "Addison Group",
+      "linkedin_job_id": "4431235744",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/senior-manufacturing-engineer-at-addison-group-4431235744",
+      "job_title": "Senior Manufacturing Engineer",
+      "job_location": "Forney, TX"
+    },
+    {
+      "company_name": "Tata Technologies",
+      "linkedin_job_id": "4432858143",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-rotating-component-design-at-tata-technologies-4432858143",
+      "job_title": "Mechanical Engineer (Rotating component design)",
+      "job_location": "Indianapolis, IN"
+    },
+    {
+      "company_name": "Atomic Machines",
+      "linkedin_job_id": "4417252289",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-all-levels-at-atomic-machines-4417252289",
+      "job_title": "Manufacturing Engineer (ALL LEVELS)",
+      "job_location": "Emeryville, CA"
+    },
+    {
+      "company_name": "Ford Motor Company",
+      "linkedin_job_id": "4438667444",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-ford-motor-company-4438667444",
+      "job_title": "Manufacturing Engineer",
+      "job_location": "Dearborn, MI"
+    },
+    {
+      "company_name": "System One",
+      "linkedin_job_id": "4438887636",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-system-one-4438887636",
+      "job_title": "Mechanical Design Engineer",
+      "job_location": "York, PA"
+    },
+    {
+      "company_name": "Avery Dennison",
+      "linkedin_job_id": "4439889950",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-avery-dennison-4439889950",
+      "job_title": "Mechanical Design Engineer",
+      "job_location": "Azusa, CA"
+    },
+    {
+      "company_name": "Victaulic",
+      "linkedin_job_id": "4432401988",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-victaulic-4432401988",
+      "job_title": "Manufacturing Engineer",
+      "job_location": "Kansas City Metropolitan Area"
+    },
+    {
+      "company_name": "Banks Power",
+      "linkedin_job_id": "4134735796",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-banks-power-4134735796",
+      "job_title": "Mechanical Design Engineer",
+      "job_location": "Azusa, CA"
+    },
+    {
+      "company_name": "Ellaway Blues Consulting",
+      "linkedin_job_id": "4431243756",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/senior-manufacturing-engineer-at-ellaway-blues-consulting-4431243756",
+      "job_title": "Senior Manufacturing Engineer",
+      "job_location": "Dallas-Fort Worth Metroplex"
+    },
+    {
+      "company_name": "Electrolux Group",
+      "linkedin_job_id": "4422447041",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-electrolux-group-4422447041",
+      "job_title": "Manufacturing Engineer",
+      "job_location": "Kinston, NC"
+    },
+    {
+      "company_name": "Gucci",
+      "linkedin_job_id": "4432834505",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/gucci-financial-analyst-at-gucci-4432834505",
+      "job_title": "GUCCI Financial Analyst",
+      "job_location": "New York, NY"
+    },
+    {
+      "company_name": "BBVA",
+      "linkedin_job_id": "4435233146",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-bbva-4435233146",
+      "job_title": "Financial Analyst",
+      "job_location": "Houston, TX"
+    },
+    {
+      "company_name": "SpaceX",
+      "linkedin_job_id": "4408086850",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-spacex-4408086850",
+      "job_title": "Financial Analyst",
+      "job_location": "Hawthorne, CA"
+    },
+    {
+      "company_name": "Hoxton Circle",
+      "linkedin_job_id": "4429467989",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/fp-a-financial-business-analyst-at-hoxton-circle-4429467989",
+      "job_title": "FP&A - Financial Business Analyst",
+      "job_location": "Melville, NY"
+    }
+  ]
+}

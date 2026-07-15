@@ -111,11 +111,11 @@ provider/replay 通过率作为对外成功率依据。
 | Gate | 状态 | 产物 / 验收标准 |
 | --- | --- | --- |
 | B0 审计并冻结 blind contract | 已完成 | one-shot runner、历史审计、execution chain、独立 review schema 和攻击性 tests |
-| B1 离线门禁与 prep commit | 门禁已通过，待提交 | 1414 tests、provider 25/25、resolver 6/6、architecture 26/0；提交后验证 tracked tree clean |
-| B2 S1-only 候选与 unseen audit | 待开始 | 至少 30、最多 50 家；0 historical company/job overlap；0 discovery-answer prefill |
-| B3 冻结 cohort | 待开始 | cohort、holdout manifest、run config 和 source identity digest 全部锁定 |
-| B4 one-shot live execution | 待开始 | 串行运行一次；ledger、execution manifest 和 results/trace/summary digest chain 完整 |
-| B5 双轨独立审查 | 待开始 | Codex review 与 SSH-signed human review 分离；每个 exact URL 完成人工多维核验 |
+| B1 离线门禁与 prep commit | 已完成 | 1414 tests、provider 25/25、resolver 6/6、architecture 26/0；冻结 commit `5b090a2` |
+| B2 S1-only 候选与 unseen audit | 已完成 | 160 public cards；40 unique companies；45 historical overlaps rejected；0 prefill |
+| B3 冻结 cohort | 已完成 | cohort SHA-256 `04b3d45d...e3376`；2,398 historical files；0 skipped files |
+| B4 one-shot live execution | 已完成 | run `d5c9a520-2edc-4493-af38-e1bb178eb506`；40/40；ledger consumed once；artifact chain valid |
+| B5 双轨独立审查 | 进行中 | Codex 40/40 complete；4 exact suggestions have official evidence；SSH-signed human review pending |
 | B6 基线报告 | 待开始 | 同时报 raw exact、exact precision、conditional exact recall、system defect 和六类 disposition |
 | B7 阶段停止点 | 待开始 | 发布剩余 failure clusters 和最多三个按覆盖样本数 x 风险 x 收益排序的候选任务；不自动修复 |
 
@@ -132,6 +132,11 @@ provider/replay 通过率作为对外成功率依据。
 
 完成 B6 后先停下来审查结果。任何后续修复都属于新迭代，并使用新的 blind holdout；本次已经
 观察的 cohort 只能作为 regression cohort，不能再次用于产品泛化声明。
+
+当前 provisional 原始漏斗为 33/40 website、23/40 career page、15/40 job list、4/40 exact
+opening。该数字在唯一一次执行后冻结，不因后续人工 review 而改变。人工 review 尚未签名，
+因此 exact precision、conditional exact recall、system defect rate 和最终 disposition 分布暂不
+可发布；详见 `docs/BLIND_HOLDOUT_V1_REPORT.md`。
 
 ### 冻结 Observed Cohort 结果
 

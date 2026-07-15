@@ -1,0 +1,1122 @@
+[
+  {
+    "job_location": "San Francisco, CA",
+    "job_title": "Software Engineer ($125k-$200k, 0.2% to 1%)",
+    "linkedin_company_url": "https://www.linkedin.com/company/ai-resonate",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-%24125k-%24200k-0-2%25-to-1%25-at-resonate-ai-4436043581",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/software-engineer-%24125k-%24200k-0-2%25-to-1%25-at-resonate-ai-4436043581"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Software Engineer",
+        "matched_keywords": [
+          "Software Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:46.771850+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Resonate AI",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "United States",
+    "job_title": "Registered Nurse Healthcare Advocate (Remote 1099) - RN",
+    "linkedin_company_url": "https://www.linkedin.com/company/find-solace",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-healthcare-advocate-remote-1099-rn-at-solace-4430828700",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-healthcare-advocate-remote-1099-rn-at-solace-4430828700"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.719989+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Solace",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Oxnard, CA",
+    "job_title": "Registered Nurse (RN) - Full-Time",
+    "linkedin_company_url": "https://www.linkedin.com/company/hydration-room",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-full-time-at-hydration-room-4439508231",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-full-time-at-hydration-room-4439508231"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720007+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Hydration Room",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Lake Success, NY",
+    "job_title": "Registered Nurse - Ambulatory (OB/GYN)",
+    "linkedin_company_url": "https://www.linkedin.com/company/northwell-health",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-ambulatory-ob-gyn-at-northwell-health-4439580063",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-ambulatory-ob-gyn-at-northwell-health-4439580063"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720022+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Northwell Health",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Monroe, NC",
+    "job_title": "Registered Nurse (RN) Weekender - LDRP",
+    "linkedin_company_url": "https://www.linkedin.com/company/hugh-chatham-health",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-hugh-chatham-health-4439383470",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-hugh-chatham-health-4439383470"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720036+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Hugh Chatham Health",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Atlanta, GA",
+    "job_title": "Registered Nurse - Pediatric Ambulatory Care",
+    "linkedin_company_url": "https://www.linkedin.com/company/incrediblehealth",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-pediatric-ambulatory-care-at-incredible-health-4440558383",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-pediatric-ambulatory-care-at-incredible-health-4440558383"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720050+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Incredible Health",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Austin, TX",
+    "job_title": "Registered Nurse (RN) - LDRP",
+    "linkedin_company_url": "https://www.linkedin.com/company/texas-children's-hospital",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-ldrp-at-texas-children-s-hospital-4439315467",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-ldrp-at-texas-children-s-hospital-4439315467"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720065+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Texas Children's Hospital",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Hayward, CA",
+    "job_title": "Registered Nurse (RN) - Full Time",
+    "linkedin_company_url": "https://www.linkedin.com/company/roperstfrancishealthcare",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-full-time-at-roper-st-francis-healthcare-4436643921",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-full-time-at-roper-st-francis-healthcare-4436643921"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720093+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Roper St. Francis Healthcare",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Monroe, NC",
+    "job_title": "Registered Nurse (RN) Weekender - LDRP",
+    "linkedin_company_url": "https://www.linkedin.com/company/atrium-health-us",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-atrium-health-4438801210",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-atrium-health-4438801210"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720107+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Atrium Health",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Lynnwood, WA",
+    "job_title": "Registered Nurse - Clinical",
+    "linkedin_company_url": "https://www.linkedin.com/company/community-health-center-of-snohomish-county",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-clinical-at-community-health-center-of-snohomish-county-chc-4439063616",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-clinical-at-community-health-center-of-snohomish-county-chc-4439063616"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720146+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Community Health Center of Snohomish County (CHC)",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Staten Island, NY",
+    "job_title": "Registered Nurse (RN)",
+    "linkedin_company_url": "https://www.linkedin.com/company/new-york-cancer-blood-specialists",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-at-new-york-cancer-blood-specialists-4436619341",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-at-new-york-cancer-blood-specialists-4436619341"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720189+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "New York Cancer & Blood Specialists",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "California, United States",
+    "job_title": "(9A) RN (Registered Nurse) Per Diem",
+    "linkedin_company_url": "https://www.linkedin.com/company/aarris-healthcare",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/9a-rn-registered-nurse-per-diem-at-aarris-healthcare-4437952329",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/9a-rn-registered-nurse-per-diem-at-aarris-healthcare-4437952329"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720203+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Aarris Healthcare",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "San Marcos, CA",
+    "job_title": "Registered Nurse - $5,000.00 sign on bonus",
+    "linkedin_company_url": "https://www.linkedin.com/company/gary-and-mary-west-pace",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-%245-000-00-sign-on-bonus-at-gary-and-mary-west-pace-4439515404",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-%245-000-00-sign-on-bonus-at-gary-and-mary-west-pace-4439515404"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720217+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Gary and Mary West PACE",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Royersford, PA",
+    "job_title": "RN Registered nurse- Offering $4000 sign on bonus",
+    "linkedin_company_url": "https://www.linkedin.com/company/focus-health-network",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/rn-registered-nurse-offering-%244000-sign-on-bonus-at-focus-health-network-4437923724",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/rn-registered-nurse-offering-%244000-sign-on-bonus-at-focus-health-network-4437923724"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720230+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Focus Health Network",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Irving, TX",
+    "job_title": "Registered Nurse - Full Time",
+    "linkedin_company_url": "https://www.linkedin.com/company/vetted-solutions-corp",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-full-time-at-vetted-solutions-4439784701",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-full-time-at-vetted-solutions-4439784701"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Registered Nurse",
+        "matched_keywords": [
+          "Registered Nurse"
+        ],
+        "observed_at": "2026-07-15T00:41:49.720255+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Vetted Solutions",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "New York, NY",
+    "job_title": "Key Account Manager \u2013 Sephora",
+    "linkedin_company_url": "https://www.linkedin.com/company/l-occitane-group",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/key-account-manager-%E2%80%93-sephora-at-l-occitane-group-b-corp-4439870928",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/key-account-manager-%E2%80%93-sephora-at-l-occitane-group-b-corp-4439870928"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757677+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "L'OCCITANE Group (B Corp)",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "New York, NY",
+    "job_title": "Account Executive",
+    "linkedin_company_url": "https://www.linkedin.com/company/lacoste",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lacoste-4411244008",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lacoste-4411244008"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757692+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Lacoste",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "New York, NY",
+    "job_title": "Account Executive, Brand Partnerships (Vyro & MrBeast Ecosystem)",
+    "linkedin_company_url": "https://www.linkedin.com/company/mrbeastyoutube",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-brand-partnerships-vyro-mrbeast-ecosystem-at-mrbeast-4418180820",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/account-executive-brand-partnerships-vyro-mrbeast-ecosystem-at-mrbeast-4418180820"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757751+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "MrBeast",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Greater Philadelphia",
+    "job_title": "Account Executive",
+    "linkedin_company_url": "https://www.linkedin.com/company/lilly-pulitzer",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lilly-pulitzer-4429546241",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lilly-pulitzer-4429546241"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757765+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Lilly Pulitzer",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Aurora, CO",
+    "job_title": "Account Executive (Remote - Midwest Chicago)",
+    "linkedin_company_url": "https://www.linkedin.com/company/puma",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-remote-midwest-chicago-at-puma-group-4400268406",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/account-executive-remote-midwest-chicago-at-puma-group-4400268406"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757791+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "PUMA Group",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "New York, NY",
+    "job_title": "Account Executive",
+    "linkedin_company_url": "https://www.linkedin.com/company/cassidyai",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-cassidy-4431720375",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-cassidy-4431720375"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757823+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Cassidy",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Los Angeles, CA",
+    "job_title": "Mid-Market Account Executive",
+    "linkedin_company_url": "https://www.linkedin.com/company/goguava-ai",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/mid-market-account-executive-at-guava-4423601072",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/mid-market-account-executive-at-guava-4423601072"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757836+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Guava",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Salt Lake City, UT",
+    "job_title": "Account Executive",
+    "linkedin_company_url": "https://www.linkedin.com/company/connoisseur-media",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-connoisseur-media-4429245326",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-connoisseur-media-4429245326"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757875+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Connoisseur Media",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Park City, UT",
+    "job_title": "Regional Account Manager, Sales - South Central",
+    "linkedin_company_url": "https://www.linkedin.com/company/kodiak-cakes",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/regional-account-manager-sales-south-central-at-kodiak-cakes-4426861689",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/regional-account-manager-sales-south-central-at-kodiak-cakes-4426861689"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757888+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Kodiak Cakes",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Fort Lauderdale, FL",
+    "job_title": "Account Executive, Miami North",
+    "linkedin_company_url": "https://www.linkedin.com/company/parfums-christian-dior",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-miami-north-at-parfums-christian-dior-4428680533",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/account-executive-miami-north-at-parfums-christian-dior-4428680533"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757901+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Parfums Christian Dior",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "New York, NY",
+    "job_title": "Account Executive",
+    "linkedin_company_url": "https://www.linkedin.com/company/newsweek",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-newsweek-4431849907",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-newsweek-4431849907"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Account Executive",
+        "matched_keywords": [
+          "Account Executive"
+        ],
+        "observed_at": "2026-07-15T00:41:52.757929+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Newsweek",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Forney, TX",
+    "job_title": "Senior Manufacturing Engineer",
+    "linkedin_company_url": "https://www.linkedin.com/company/addisongroup",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/senior-manufacturing-engineer-at-addison-group-4431235744",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/senior-manufacturing-engineer-at-addison-group-4431235744"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.684804+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Addison Group",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Indianapolis, IN",
+    "job_title": "Mechanical Engineer (Rotating component design)",
+    "linkedin_company_url": "https://www.linkedin.com/company/tata-technologies",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-rotating-component-design-at-tata-technologies-4432858143",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-rotating-component-design-at-tata-technologies-4432858143"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.684862+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Tata Technologies",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Emeryville, CA",
+    "job_title": "Manufacturing Engineer (ALL LEVELS)",
+    "linkedin_company_url": "https://www.linkedin.com/company/atomicmachines",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-all-levels-at-atomic-machines-4417252289",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-all-levels-at-atomic-machines-4417252289"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.684915+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Atomic Machines",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Dearborn, MI",
+    "job_title": "Manufacturing Engineer",
+    "linkedin_company_url": "https://www.linkedin.com/company/ford-motor-company",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-ford-motor-company-4438667444",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-ford-motor-company-4438667444"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.684927+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Ford Motor Company",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "York, PA",
+    "job_title": "Mechanical Design Engineer",
+    "linkedin_company_url": "https://www.linkedin.com/company/system-one",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-system-one-4438887636",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-system-one-4438887636"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.684940+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "System One",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Azusa, CA",
+    "job_title": "Mechanical Design Engineer",
+    "linkedin_company_url": "https://www.linkedin.com/company/avery-dennison",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-avery-dennison-4439889950",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-avery-dennison-4439889950"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.684952+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Avery Dennison",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Kansas City Metropolitan Area",
+    "job_title": "Manufacturing Engineer",
+    "linkedin_company_url": "https://www.linkedin.com/company/victaulic",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-victaulic-4432401988",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-victaulic-4432401988"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.684965+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Victaulic",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Azusa, CA",
+    "job_title": "Mechanical Design Engineer",
+    "linkedin_company_url": "https://www.linkedin.com/company/gale-banks-engineering",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-banks-power-4134735796",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-banks-power-4134735796"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.685001+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Banks Power",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Dallas-Fort Worth Metroplex",
+    "job_title": "Senior Manufacturing Engineer",
+    "linkedin_company_url": "https://www.linkedin.com/company/ellaway-blues-consulting",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/senior-manufacturing-engineer-at-ellaway-blues-consulting-4431243756",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/senior-manufacturing-engineer-at-ellaway-blues-consulting-4431243756"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.685026+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Ellaway Blues Consulting",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Kinston, NC",
+    "job_title": "Manufacturing Engineer",
+    "linkedin_company_url": "https://www.linkedin.com/company/electroluxgroup",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-electrolux-group-4422447041",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-electrolux-group-4422447041"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Manufacturing Engineer",
+        "matched_keywords": [
+          "Manufacturing Engineer"
+        ],
+        "observed_at": "2026-07-15T00:41:55.685038+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Electrolux Group",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "New York, NY",
+    "job_title": "GUCCI Financial Analyst",
+    "linkedin_company_url": "https://www.linkedin.com/company/gucci",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/gucci-financial-analyst-at-gucci-4432834505",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/gucci-financial-analyst-at-gucci-4432834505"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Financial Analyst",
+        "matched_keywords": [
+          "Financial Analyst"
+        ],
+        "observed_at": "2026-07-15T00:41:58.651940+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Gucci",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Houston, TX",
+    "job_title": "Financial Analyst",
+    "linkedin_company_url": "https://www.linkedin.com/company/bbva",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-bbva-4435233146",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-bbva-4435233146"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Financial Analyst",
+        "matched_keywords": [
+          "Financial Analyst"
+        ],
+        "observed_at": "2026-07-15T00:41:58.652019+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "BBVA",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Hawthorne, CA",
+    "job_title": "Financial Analyst",
+    "linkedin_company_url": "https://www.linkedin.com/company/spacex",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-spacex-4408086850",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-spacex-4408086850"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Financial Analyst",
+        "matched_keywords": [
+          "Financial Analyst"
+        ],
+        "observed_at": "2026-07-15T00:41:58.652038+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "SpaceX",
+    "source": "linkedin_public_jobs_blind_holdout"
+  },
+  {
+    "job_location": "Melville, NY",
+    "job_title": "FP&A - Financial Business Analyst",
+    "linkedin_company_url": "https://www.linkedin.com/company/hoxton-circle",
+    "linkedin_job_url": "https://www.linkedin.com/jobs/view/fp-a-financial-business-analyst-at-hoxton-circle-4429467989",
+    "source_trace": {
+      "linkedin_posting": {
+        "availability": "listed",
+        "apply_mode": "unknown",
+        "evidence_source": "public_search_card",
+        "job_url": "https://www.linkedin.com/jobs/view/fp-a-financial-business-analyst-at-hoxton-circle-4429467989"
+      },
+      "blind_candidate_collection": {
+        "first_seen_keyword": "Financial Analyst",
+        "matched_keywords": [
+          "Financial Analyst"
+        ],
+        "observed_at": "2026-07-15T00:41:58.652077+00:00",
+        "evidence_source": "public_search_card"
+      },
+      "blind_holdout": {
+        "provenance": "blind_unseen",
+        "frozen": true
+      }
+    },
+    "company_name": "Hoxton Circle",
+    "source": "linkedin_public_jobs_blind_holdout"
+  }
+]
