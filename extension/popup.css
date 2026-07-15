@@ -88,8 +88,11 @@ button.quiet { min-height: 28px; padding: 4px 8px; font-size: 12px; }
 
 .results { max-height: 165px; margin: 0; padding: 0; overflow: auto; list-style: none; }
 .results li { padding: 8px 0; border-top: 1px solid #e3e6ea; }
-.results strong, .results span { display: block; font-size: 12px; }
-.results span { margin-top: 2px; color: #64717e; }
+.results strong, .results span, .results a { display: block; font-size: 12px; }
+.results span, .results a { margin-top: 2px; }
+.results span { color: #64717e; }
+.results a { color: #1769aa; font-weight: 700; text-decoration: none; }
+.results a:hover { text-decoration: underline; }
 
 .message { min-height: 18px; margin-top: 12px; color: #9b2c2c; font-size: 12px; }
 
