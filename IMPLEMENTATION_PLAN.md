@@ -75,6 +75,64 @@
 
 本轮没有新增 provider，也没有加入公司特例。历史 `.89` 入口改动已在 identity gate 下集成，不再属于“待提交能力”。最终完整 30 条 bundle 达到 30/30 reproduced，均为 record integrity passed、0 fixture gap、0 mismatch。独立标注也已完成，稳定化实现与可信评测阶段均已封板。
 
+## 下一阶段：Blind Holdout 产品基线（2026-07-15）
+
+稳定化反馈要求的 correctness contract 已经封板。下一步不再根据已知失败继续增加
+heuristic、provider 或公司特例，而是建立第一批真正陌生、不可回看的产品基线。
+本阶段用于回答“系统面对从未用于开发的真实 LinkedIn 输入时有多可靠”，并取代
+provider/replay 通过率作为对外成功率依据。
+
+### 阶段硬约束
+
+1. 通过 S1-only LinkedIn public search 收集候选；收集阶段不得调用 S2-S7，不得预填
+   website、career、board、opening 或 external apply URL。
+2. 从 30-50 家唯一公司中冻结 cohort。候选公司名和 LinkedIn job ID 必须在当前仓库、
+   指定历史 artifact root 和完整 Git patch history 中均未出现；缺失历史 root、脏的
+   tracked worktree 或不可验证的代码身份一律 fail closed。
+3. 冻结 manifest 必须绑定候选池、规范化 cohort、身份表、运行配置、Git commit、
+   source tree 和历史审计摘要。冻结后不得修改 production code、测试、run config 或
+   cohort；任何变化必须废弃该 cohort，并重新开始一个新的 blind 版本。
+4. 只允许一次完整 live execution。one-shot ledger 在发起请求前原子消费；即使进程失败，
+   cohort 也从 `blind_unseen` 变为 `blind_observed`，不得重跑后仍称同一次 blind evaluation。
+5. Result、trace、summary 和 execution manifest 必须形成摘要链；result/trace 的 company、
+   source job、website、career、board、provider、opening、status 和 stages 发生语义漂移时
+   整轮报告 fail closed。
+6. Codex artifact review 与 human evaluation review 独立生成。人类 review 是唯一指标标签
+   authority，必须使用 reviewer 自有 SSH key 对原始 manifest 做 detached signature；可编辑的
+   reviewer name、Boolean attestation 或 Codex 生成的 hash 不能证明人工身份。
+7. 所有 exact URL 必须人工核验正确 company/hiring entity relationship、provider tenant、
+   canonical board、title、location 和公开可访问性；opening、board 和招聘主体证据必须分别
+   记录，且 opening/board evidence URL 与被评分 URL 一致。
+8. 本阶段不新增 provider、不加公司规则、不调参恢复数字。exact rate 下降可以接受；跨公司
+   URL 或未经验证的 exact success 不可接受。
+
+### 执行清单
+
+| Gate | 状态 | 产物 / 验收标准 |
+| --- | --- | --- |
+| B0 审计并冻结 blind contract | 已完成 | one-shot runner、历史审计、execution chain、独立 review schema 和攻击性 tests |
+| B1 离线门禁与 prep commit | 门禁已通过，待提交 | 1413 tests、provider 25/25、resolver 6/6、architecture 26/0；提交后验证 tracked tree clean |
+| B2 S1-only 候选与 unseen audit | 待开始 | 至少 30、最多 50 家；0 historical company/job overlap；0 discovery-answer prefill |
+| B3 冻结 cohort | 待开始 | cohort、holdout manifest、run config 和 source identity digest 全部锁定 |
+| B4 one-shot live execution | 待开始 | 串行运行一次；ledger、execution manifest 和 results/trace/summary digest chain 完整 |
+| B5 双轨独立审查 | 待开始 | Codex review 与 SSH-signed human review 分离；每个 exact URL 完成人工多维核验 |
+| B6 基线报告 | 待开始 | 同时报 raw exact、exact precision、conditional exact recall、system defect 和六类 disposition |
+| B7 阶段停止点 | 待开始 | 发布剩余 failure clusters 和最多三个按覆盖样本数 x 风险 x 收益排序的候选任务；不自动修复 |
+
+### Blind 基线报告规则
+
+- `exact_precision` 的分母只能是系统输出的 exact opening，分子必须是人工验证通过完整 identity
+  chain 且当前公开可访问的 URL；目标仍为至少 98%，错误公司 URL 必须为 0。
+- `conditional_exact_recall` 只计算人工确认存在 eligible public official opening 的记录；
+  unknown eligibility 不得强行进入分母。
+- `raw_exact_rate` 使用全部冻结输入，同时必须展示 `exact_public`、`verified_closed`、
+  `no_public_opening`、`recruiter_client_undisclosed`、`external_blocked`、`system_gap` 分布。
+- `system_defect_rate` 单独统计错误 company/tenant/URL、parser bug、错误失败分类和可恢复 transport
+  failure。provider fixture、focused replay、observed cohort 和预填 discovery benchmark 不得混入。
+
+完成 B6 后先停下来审查结果。任何后续修复都属于新迭代，并使用新的 blind holdout；本次已经
+观察的 cohort 只能作为 regression cohort，不能再次用于产品泛化声明。
+
 ### 冻结 Observed Cohort 结果
 
 本次只运行了一次冻结的、开发者已观察过的 30-company cohort，因此只能标记为 `frozen_observed`，不能称为 blind、unfamiliar holdout 或独立精度验收。
