@@ -59,13 +59,14 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = null } = {}) {
+function createHarness({ fetchQueue = [], scanQueue = [], pageQueue = [], cancelQueue = [], runId = null, tab = null } = {}) {
   const ids = [
-    "bridgeState", "popupRoot", "scanButton", "runButton", "refreshButton", "saveButton",
+    "bridgeState", "popupRoot", "scanSelectedButton", "scanPageButton", "runButton", "refreshButton", "saveButton",
     "bridgeUrl", "bridgeToken", "message", "recordCount", "applyCount", "runPanel",
     "runStatus", "jobListRate", "openingRate", "results", "scanPanel", "scanResults",
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
+  elements.scanButton = elements.scanSelectedButton;
   elements.bridgeUrl.value = "http://127.0.0.1:8765";
   elements.bridgeToken.value = "bridge-token";
   elements.recordCount.textContent = "0";
@@ -79,6 +80,7 @@ function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = nu
   const storageCalls = { set: [], remove: [] };
   const executed = [];
   const sentMessages = [];
+  const runtimeListeners = [];
   const defaultTab = { id: 4, url: "https://www.linkedin.com/jobs/search/" };
 
   const sandbox = {
@@ -118,7 +120,9 @@ function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = nu
         query: async () => [tab || defaultTab],
         sendMessage: async (tabId, message) => {
           sentMessages.push({ tabId, message });
-          const next = scanQueue.shift();
+          const queue = message.type === "collect_job_source_records" ? scanQueue
+            : (message.type === "collect_job_source_page" ? pageQueue : cancelQueue);
+          const next = queue.shift();
           if (next instanceof Error) throw next;
           return next?.promise || next;
         },
@@ -129,6 +133,11 @@ function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = nu
           if (scanQueue[0] instanceof Error && scanQueue[0].injection) throw scanQueue.shift();
         },
       },
+      runtime: {
+        onMessage: {
+          addListener: (listener) => runtimeListeners.push(listener),
+        },
+      },
     },
   };
   sandbox.globalThis = sandbox;
@@ -136,6 +145,9 @@ function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = nu
 
   return {
     elements, fetchCalls, timers, storage, storageCalls, executed, sentMessages,
+    emitProgress(message, sender = { tab: { id: 4 } }) {
+      runtimeListeners.forEach((listener) => listener(message, sender));
+    },
     async settle(turns = 48) {
       for (let index = 0; index < turns; index += 1) await Promise.resolve();
     },
@@ -152,6 +164,17 @@ function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = nu
 
 const health = () => response(200, { status: "ok" });
 const readyScan = () => ({ ok: true, scan_version: "2", state: "ready", page_url: "https://www.linkedin.com/jobs/search/", records: [{ company_name: "Acme", job_title: "Engineer" }] });
+const pageScan = (overrides = {}) => ({
+  ok: true,
+  scan_version: "3",
+  state: "ready",
+  page_url: "https://www.linkedin.com/jobs/search/",
+  scanned_count: 2,
+  candidate_count: 2,
+  failure_count: 0,
+  records: [{ company_name: "Acme", job_title: "Engineer", external_apply_url: "https://apply.example/acme" }],
+  ...overrides,
+});
 const complete = (runId, results = []) => response(200, {
   run_id: runId,
   status: "complete",
@@ -217,6 +240,99 @@ async function duplicateScan() {
   firstScan.resolve(readyScan());
   await h.settle();
   assert.equal(h.elements.scanButton.disabled, false);
+}
+
+async function pageSuccessAndProgress() {
+  const pendingPage = deferred();
+  const h = createHarness({ fetchQueue: [health()], pageQueue: [pendingPage] });
+  await h.settle();
+  h.elements.scanPageButton.click();
+  await h.settle();
+  assert.equal(h.elements.scanPageButton.textContent, "Cancel scan");
+  assert.equal(h.elements.scanPageButton.disabled, false);
+  assert.equal(h.elements.scanSelectedButton.disabled, true);
+  assert.equal(h.elements.runButton.disabled, true);
+  assert.equal(h.elements.saveButton.disabled, true);
+  h.emitProgress({ type: "job_source_page_progress", scanned_count: 7, candidate_count: 25 });
+  assert.equal(h.elements.message.textContent, "Scanning 7/25");
+  pendingPage.resolve(pageScan());
+  await h.settle();
+  assert.equal(h.elements.recordCount.textContent, "1");
+  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "LinkedIn Apply");
+  assert.equal(h.elements.scanPageButton.textContent, "Scan page");
+  assert.equal(h.elements.scanSelectedButton.disabled, false);
+}
+
+async function pagePartialKeepsRecords() {
+  const h = createHarness({ fetchQueue: [health()], pageQueue: [pageScan({
+    ok: false,
+    state: "partial",
+    scanned_count: 3,
+    candidate_count: 4,
+    failure_count: 1,
+  })] });
+  await h.settle();
+  h.elements.scanPageButton.click();
+  await h.settle();
+  assert.equal(h.elements.recordCount.textContent, "1");
+  assert.equal(h.elements.scanPanel.hidden, false);
+  assert.equal(h.elements.message.textContent, "Partial results: 1 failures.");
+}
+
+async function pageNotReadyDoesNotRetry() {
+  const h = createHarness({ fetchQueue: [health()], pageQueue: [pageScan({
+    state: "not_ready",
+    scanned_count: 0,
+    candidate_count: 0,
+    records: [],
+  })] });
+  await h.settle();
+  h.elements.scanPageButton.click();
+  await h.settle();
+  assert.equal(h.sentMessages.filter((call) => call.message.type === "collect_job_source_page").length, 1);
+  assert.equal(h.timers.size, 0);
+  assert.equal(h.elements.message.textContent, "Page is not ready.");
+  assert.equal(h.elements.scanPageButton.disabled, false);
+}
+
+async function pageCancellationRecoversButtons() {
+  const pendingPage = deferred();
+  const h = createHarness({
+    fetchQueue: [health()],
+    pageQueue: [pendingPage],
+    cancelQueue: [{ ok: true, cancelled: true }],
+  });
+  await h.settle();
+  h.elements.scanPageButton.click();
+  await h.settle();
+  h.elements.scanPageButton.click();
+  await h.settle();
+  assert.equal(h.sentMessages.filter((call) => call.message.type === "collect_job_source_page").length, 1);
+  assert.equal(h.sentMessages.filter((call) => call.message.type === "cancel_job_source_page").length, 1);
+  assert.equal(h.elements.message.textContent, "Scan cancelled.");
+  assert.equal(h.elements.scanPageButton.textContent, "Scan page");
+  assert.equal(h.elements.scanSelectedButton.disabled, false);
+  pendingPage.resolve(pageScan());
+  await h.settle();
+  assert.equal(h.elements.recordCount.textContent, "0");
+}
+
+async function pageWatchdogRecoversButtons() {
+  const pendingPage = deferred();
+  const h = createHarness({
+    fetchQueue: [health()],
+    pageQueue: [pendingPage],
+    cancelQueue: [{ ok: true, cancelled: true }],
+  });
+  await h.settle();
+  h.elements.scanPageButton.click();
+  await h.settle();
+  assert.equal(h.timers.size, 1);
+  await h.runNextTimer();
+  assert.equal(h.sentMessages.filter((call) => call.message.type === "cancel_job_source_page").length, 1);
+  assert.equal(h.elements.message.textContent, "Page scan timed out and was cancelled.");
+  assert.equal(h.elements.scanSelectedButton.disabled, false);
+  assert.equal(h.elements.saveButton.disabled, false);
 }
 
 async function staleOutputReset() {
@@ -357,6 +473,11 @@ const scenarios = {
   duplicate_submission: duplicateSubmission,
   duplicate_while_polling: duplicateWhilePolling,
   duplicate_scan: duplicateScan,
+  page_success_progress: pageSuccessAndProgress,
+  page_partial: pagePartialKeepsRecords,
+  page_not_ready_no_retry: pageNotReadyDoesNotRetry,
+  page_cancellation: pageCancellationRecoversButtons,
+  page_watchdog: pageWatchdogRecoversButtons,
   stale_output_reset: staleOutputReset,
   scan_not_ready_retry: scanNotReadyRetry,
   stale_run_clear: staleRunClear,

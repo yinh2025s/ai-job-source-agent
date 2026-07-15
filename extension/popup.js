@@ -3,6 +3,7 @@ const POLL_DELAY_MS = 2000;
 const SCAN_RETRY_DELAY_MS = 350;
 const MAX_SCAN_RETRIES = 2;
 const MAX_POLL_RETRIES = 2;
+const PAGE_SCAN_WATCHDOG_MS = 45000;
 
 const state = {
   records: [],
@@ -11,7 +12,9 @@ const state = {
   pollRetries: 0,
   connectionKey: null,
   runInFlight: false,
-  busy: { scan: false, run: false, poll: false, save: false },
+  pageScan: null,
+  nextPageScanId: 1,
+  busy: { selectedScan: false, pageScan: false, run: false, poll: false, save: false },
 };
 const $ = (id) => document.getElementById(id);
 
@@ -27,8 +30,11 @@ function hasBusyOperation() {
 
 function syncBusyUi() {
   const busy = hasBusyOperation();
+  const pageScanActive = Boolean(state.pageScan);
   $("popupRoot").setAttribute("aria-busy", String(busy));
-  $("scanButton").disabled = busy;
+  $("scanSelectedButton").disabled = busy;
+  $("scanPageButton").disabled = busy && !pageScanActive;
+  $("scanPageButton").textContent = pageScanActive ? "Cancel scan" : "Scan page";
   $("runButton").disabled = busy || state.records.length === 0 || state.runInFlight;
   $("runButton").textContent = state.runInFlight ? "Verifying..." : "Verify source";
   $("refreshButton").disabled = busy || !state.runId;
@@ -160,6 +166,17 @@ function validScanResponse(payload) {
     && payload.records.every(isObject);
 }
 
+function validPageScanResponse(payload) {
+  const states = new Set(["ready", "partial", "cancelled", "not_ready"]);
+  return isObject(payload) && typeof payload.ok === "boolean" && Array.isArray(payload.records)
+    && typeof payload.page_url === "string" && payload.page_url.length > 0
+    && payload.scan_version === "3" && states.has(payload.state)
+    && Number.isInteger(payload.scanned_count) && payload.scanned_count >= 0
+    && Number.isInteger(payload.candidate_count) && payload.candidate_count >= 0
+    && Number.isInteger(payload.failure_count) && payload.failure_count >= 0
+    && payload.records.every(isObject);
+}
+
 async function loadSettings() {
   const saved = await chrome.storage.local.get(["bridgeUrl", "bridgeToken", "runId"]);
   if (saved.bridgeUrl) $("bridgeUrl").value = saved.bridgeUrl;
@@ -189,23 +206,28 @@ async function checkHealth() {
   }
 }
 
-async function requestScan(tabId, attempt = 0) {
+async function sendContentMessage(tabId, message) {
   let response;
   try {
-    response = await chrome.tabs.sendMessage(tabId, { type: "collect_job_source_records" });
+    response = await chrome.tabs.sendMessage(tabId, message);
   } catch {
     try {
       await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
-      response = await chrome.tabs.sendMessage(tabId, { type: "collect_job_source_records" });
+      response = await chrome.tabs.sendMessage(tabId, message);
     } catch (error) {
       throw new Error(`Page scan failed: ${error?.message || "content script injection failed."}`);
     }
   }
+  return response;
+}
+
+async function requestSelectedScan(tabId, attempt = 0) {
+  const response = await sendContentMessage(tabId, { type: "collect_job_source_records" });
   if (!validScanResponse(response)) throw new Error("Page scan returned an invalid response.");
   if (response.state === "not_ready") {
     if (attempt < MAX_SCAN_RETRIES) {
       await new Promise((resolve) => setTimeout(resolve, SCAN_RETRY_DELAY_MS));
-      return requestScan(tabId, attempt + 1);
+      return requestSelectedScan(tabId, attempt + 1);
     }
     throw new Error("LinkedIn Jobs is still loading. Wait a moment and scan again.");
   }
@@ -213,9 +235,9 @@ async function requestScan(tabId, attempt = 0) {
   return response.records;
 }
 
-async function scanPage() {
+async function scanSelected() {
   if (hasBusyOperation()) return;
-  setBusy("scan", true);
+  setBusy("selectedScan", true);
   clearScanOutput();
   setMessage();
   try {
@@ -224,16 +246,108 @@ async function scanPage() {
     if (!tab?.id || !tab.url?.startsWith("https://www.linkedin.com/jobs/")) {
       throw new Error("Open a LinkedIn Jobs page first.");
     }
-    state.records = await requestScan(tab.id);
+    state.records = await requestSelectedScan(tab.id);
     $("recordCount").textContent = String(state.records.length);
     $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} Apply URLs`;
     renderScannedRecords();
     if (state.records.length === 0) setMessage("No eligible jobs were found on this page.");
   } catch (error) {
-    setMessage(error.message || "Page scan failed.");
+    setMessage(error.message || "Selected scan failed.");
   } finally {
-    setBusy("scan", false);
+    setBusy("selectedScan", false);
   }
+}
+
+function pageScanIsActive(id) {
+  return state.pageScan?.id === id;
+}
+
+function finishPageScan(id) {
+  if (!pageScanIsActive(id)) return false;
+  clearTimeout(state.pageScan.watchdogTimer);
+  state.pageScan = null;
+  setBusy("pageScan", false);
+  return true;
+}
+
+async function cancelPageScan({ watchdog = false } = {}) {
+  const pageScan = state.pageScan;
+  if (!pageScan || pageScan.cancelling) return;
+  pageScan.cancelling = true;
+  try {
+    if (!pageScan.tabId) {
+      setMessage(watchdog ? "Page scan timed out and was cancelled." : "Scan cancelled.");
+      return;
+    }
+    const response = await chrome.tabs.sendMessage(pageScan.tabId, { type: "cancel_job_source_page" });
+    if (!isObject(response) || response.ok !== true || typeof response.cancelled !== "boolean") {
+      throw new Error("Page scan cancellation returned an invalid response.");
+    }
+    setMessage(watchdog ? "Page scan timed out and was cancelled." : "Scan cancelled.");
+  } catch (error) {
+    setMessage(error.message || "Page scan cancellation failed.");
+  } finally {
+    finishPageScan(pageScan.id);
+  }
+}
+
+function renderPageScan(response) {
+  state.records = response.records;
+  $("recordCount").textContent = String(state.records.length);
+  $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} Apply URLs`;
+  renderScannedRecords();
+  if (response.state === "partial") {
+    setMessage(`Partial results: ${response.failure_count} failures.`);
+  } else if (response.state === "cancelled") {
+    setMessage("Scan cancelled.");
+  } else if (response.state === "not_ready") {
+    setMessage("Page is not ready.");
+  } else if (state.records.length === 0) {
+    setMessage("No eligible jobs were found on this page.");
+  }
+}
+
+async function scanLoadedPage() {
+  if (state.pageScan) {
+    await cancelPageScan();
+    return;
+  }
+  if (hasBusyOperation()) return;
+  const pageScan = { id: state.nextPageScanId++, tabId: null, watchdogTimer: null, cancelling: false };
+  state.pageScan = pageScan;
+  setBusy("pageScan", true);
+  clearScanOutput();
+  setMessage();
+  try {
+    await clearStaleRun();
+    if (!pageScanIsActive(pageScan.id)) return;
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!pageScanIsActive(pageScan.id)) return;
+    if (!tab?.id || !tab.url?.startsWith("https://www.linkedin.com/jobs/")) {
+      throw new Error("Open a LinkedIn Jobs page first.");
+    }
+    pageScan.tabId = tab.id;
+    pageScan.watchdogTimer = setTimeout(() => { cancelPageScan({ watchdog: true }); }, PAGE_SCAN_WATCHDOG_MS);
+    const response = await sendContentMessage(tab.id, { type: "collect_job_source_page" });
+    if (!pageScanIsActive(pageScan.id)) return;
+    if (!validPageScanResponse(response)) throw new Error("Page scan returned an invalid response.");
+    if (!response.ok && response.state !== "partial" && response.state !== "cancelled") {
+      throw new Error(payloadMessage(response, "Page scan failed."));
+    }
+    renderPageScan(response);
+  } catch (error) {
+    if (pageScanIsActive(pageScan.id)) setMessage(error.message || "Page scan failed.");
+  } finally {
+    finishPageScan(pageScan.id);
+  }
+}
+
+function handlePageScanProgress(message, sender) {
+  const pageScan = state.pageScan;
+  if (!pageScan || pageScan.cancelling || sender?.tab?.id !== pageScan.tabId) return;
+  if (!Number.isInteger(message.scanned_count) || message.scanned_count < 0
+    || !Number.isInteger(message.candidate_count) || message.candidate_count < 0) return;
+  setMessage(`Scanning ${message.scanned_count}/${message.candidate_count}`);
 }
 
 function validSubmission(payload) {
@@ -458,7 +572,11 @@ async function saveConnection() {
   }
 }
 
-$("scanButton").addEventListener("click", scanPage);
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (message?.type === "job_source_page_progress") handlePageScanProgress(message, sender);
+});
+$("scanSelectedButton").addEventListener("click", scanSelected);
+$("scanPageButton").addEventListener("click", scanLoadedPage);
 $("runButton").addEventListener("click", runDiscovery);
 $("refreshButton").addEventListener("click", pollRun);
 $("saveButton").addEventListener("click", saveConnection);

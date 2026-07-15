@@ -50,6 +50,7 @@ h2 { font-size: 14px; }
 main { padding: 16px 20px 20px; }
 
 .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.toolbar #runButton { grid-column: 1 / -1; }
 button {
   min-height: 36px;
   padding: 8px 12px;
@@ -82,7 +83,7 @@ button.quiet { min-height: 28px; padding: 4px 8px; font-size: 12px; }
 .run-panel { padding-top: 16px; }
 .scan-panel { padding: 12px 0; border-bottom: 1px solid #dfe3e8; }
 .scan-panel h2 { margin-bottom: 6px; }
-.scan-results { max-height: 132px; }
+.scan-results { max-height: 165px; }
 .run-heading { display: flex; align-items: center; justify-content: space-between; }
 .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 1px; margin: 12px 0; background: #dfe3e8; }
 .metrics div { padding: 11px; background: #ffffff; }
