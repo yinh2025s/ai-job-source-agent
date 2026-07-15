@@ -14,6 +14,8 @@ class ExtensionContentTests(unittest.TestCase):
         response = self._collect("hidden_cards")
 
         self.assertTrue(response["ok"])
+        self.assertEqual(response["scan_version"], "2")
+        self.assertEqual(response["state"], "ready")
         self.assertEqual(len(response["records"]), 1)
         self.assertEqual(response["records"][0]["company_name"], "Visible Offscreen")
         self.assertEqual(
@@ -92,6 +94,51 @@ class ExtensionContentTests(unittest.TestCase):
         self.assertEqual(record["external_apply_url"], None)
         self.assertEqual(posting["availability"], "unknown")
         self.assertEqual(posting["apply_mode"], "unknown")
+
+    def test_external_apply_rejects_unsafe_urls_and_description_links(self):
+        record = self._collect("unsafe_external")["records"][0]
+
+        self.assertEqual(record["external_apply_url"], None)
+        self.assertEqual(record["source_trace"]["linkedin_posting"]["apply_mode"], "unknown")
+
+    def test_canonical_identity_rejects_forged_host_and_http_scheme(self):
+        response = self._collect("forged_identity")
+
+        self.assertEqual(response["records"], [])
+        self.assertEqual(response["state"], "not_ready")
+
+    def test_current_job_id_selects_matching_detail_root_not_competing_card(self):
+        records = self._collect("selected_detail")["records"]
+
+        self.assertEqual(records[0]["linkedin_job_url"], "https://www.linkedin.com/jobs/view/300")
+        self.assertEqual(records[0]["company_name"], "Selected Systems")
+        self.assertEqual(records[0]["job_title"], "Selected Detail")
+        self.assertEqual(
+            records[0]["source_trace"]["dom"]["identity_source"],
+            "selected_detail_root",
+        )
+        self.assertEqual(records[1]["linkedin_job_url"], "https://www.linkedin.com/jobs/view/301")
+        self.assertEqual(records[1]["company_name"], "Competing Systems")
+
+    def test_detail_root_selector_priority_and_safe_dom_provenance(self):
+        record = self._collect("selector_priority")["records"][0]
+
+        self.assertEqual(record["company_name"], "Priority First")
+        self.assertEqual(
+            record["source_trace"]["dom"],
+            {
+                "scope": "authenticated_detail_dom",
+                "root_selector": ".jobs-search__job-details--container",
+                "identity_source": "selected_detail_root",
+            },
+        )
+        self.assertNotIn("html", record["source_trace"]["dom"])
+        self.assertNotIn("cookies", record["source_trace"]["dom"])
+        self.assertNotIn("page_url", record["source_trace"]["dom"])
+
+    def test_readiness_is_not_ready_only_for_empty_linkedin_jobs_route(self):
+        self.assertEqual(self._collect("empty_jobs")["state"], "not_ready")
+        self.assertEqual(self._collect("empty_non_jobs")["state"], "ready")
 
     def _collect(self, scenario: str) -> dict:
         completed = subprocess.run(

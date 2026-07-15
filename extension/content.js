@@ -38,10 +38,41 @@
     }
     return "";
   };
+  const LINKEDIN_HOST = (hostname) => (
+    hostname === "linkedin.com" || hostname.endsWith(".linkedin.com")
+  );
+  const LINKEDIN_OWNED_HOST = (hostname) => (
+    LINKEDIN_HOST(hostname) || hostname === "licdn.com" || hostname.endsWith(".licdn.com")
+  );
+  const LOOKS_LIKE_LINKEDIN_HOST = (hostname) => /(?:linkedin|licdn)/i.test(hostname);
+  const isPublicHost = (hostname) => {
+    const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+      return false;
+    }
+    if (host === "::" || host === "::1" || /^(?:fc|fd|fe8|fe9|fea|feb)/i.test(host)) return false;
+    const octets = host.split(".").map(Number);
+    if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
+      return true;
+    }
+    return !(
+      octets[0] === 0 || octets[0] === 10 || octets[0] === 127 || octets[0] >= 224
+      || (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127)
+      || (octets[0] === 169 && octets[1] === 254)
+      || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+      || (octets[0] === 192 && octets[1] === 168)
+      || (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19))
+    );
+  };
+  const jobIdFromValue = (value) => {
+    const match = String(value || "").match(/(?:^|jobPosting:)(\d+)$/i);
+    return match ? match[1] : "";
+  };
   const canonicalJobUrl = (value) => {
     try {
       const url = new URL(value, location.href);
-      const match = url.pathname.match(/\/jobs\/view\/(?:[^/?#]*-)?(\d+)/);
+      if (url.protocol !== "https:" || !LINKEDIN_HOST(url.hostname.toLowerCase())) return "";
+      const match = url.pathname.match(/^\/jobs\/view\/(?:[^/?#]*-)?(\d+)(?:\/|$)/);
       return match ? `https://www.linkedin.com/jobs/view/${match[1]}` : "";
     } catch {
       return "";
@@ -50,28 +81,114 @@
   const canonicalCompanyUrl = (value) => {
     try {
       const url = new URL(value, location.href);
+      if (url.protocol !== "https:" || !LINKEDIN_HOST(url.hostname.toLowerCase())) return "";
       const match = url.pathname.match(/^\/company\/([^/?#]+)/);
       return match ? `https://www.linkedin.com/company/${match[1]}` : "";
     } catch {
       return "";
     }
   };
+  const hasSensitiveQuery = (url) => {
+    const sensitiveKey = /(?:^|[_-])(?:token|session|auth|authorization|api[_-]?key|csrf|xsrf|secret|password|credential|signature|sig)(?:$|[_-])/i;
+    return Array.from(url.searchParams.keys()).some((key) => sensitiveKey.test(key));
+  };
+  const isSafeExternalApplyUrl = (value) => {
+    try {
+      const url = new URL(value, location.href);
+      if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.hash) return "";
+      if (!isPublicHost(url.hostname) || LINKEDIN_OWNED_HOST(url.hostname.toLowerCase())
+        || LOOKS_LIKE_LINKEDIN_HOST(url.hostname) || hasSensitiveQuery(url)) return "";
+      return url.href;
+    } catch {
+      return "";
+    }
+  };
+  const EXTERNAL_APPLY_SELECTORS = [
+    "a[data-control-name='jobdetails_topcard_external_apply']",
+    "a[data-live-test-job-apply-button]",
+    ".job-details-jobs-unified-top-card__apply-button a[href]",
+    ".jobs-unified-top-card__apply-button a[href]",
+    ".jobs-apply-button--top-card a[href]",
+    "a.jobs-apply-button[href]"
+  ];
   const externalApplyUrl = (root) => {
-    for (const anchor of visibleMatches(root, "a[href]")) {
-      if (!isEnabled(anchor)) continue;
-      const label = `${text(anchor)} ${anchor.getAttribute("aria-label") || ""}`.toLowerCase();
-      if (!label.includes("apply")) continue;
-      try {
-        const url = new URL(anchor.href, location.href);
-        const host = url.hostname.toLowerCase();
-        if (host !== "linkedin.com" && !host.endsWith(".linkedin.com") && !host.endsWith(".licdn.com")) {
-          return url.href;
-        }
-      } catch {
-        continue;
+    for (const selector of EXTERNAL_APPLY_SELECTORS) {
+      for (const anchor of visibleMatches(root, selector)) {
+        if (!isEnabled(anchor)) continue;
+        const label = `${text(anchor)} ${anchor.getAttribute("aria-label") || ""}`.toLowerCase();
+        if (!label.includes("apply")) continue;
+        const externalUrl = isSafeExternalApplyUrl(anchor.href);
+        if (externalUrl) return externalUrl;
       }
     }
     return "";
+  };
+  const DETAIL_ROOT_SELECTORS = [
+    ".jobs-search__job-details--container",
+    ".job-view-layout",
+    ".jobs-details",
+    "main"
+  ];
+  const explicitRootJobId = (root) => {
+    for (const attribute of [
+      "data-current-job-id",
+      "data-job-id",
+      "data-occludable-job-id",
+      "data-entity-urn"
+    ]) {
+      const jobId = jobIdFromValue(root.getAttribute?.(attribute));
+      if (jobId) return jobId;
+    }
+    return "";
+  };
+  const selectedJobId = () => {
+    try {
+      const url = new URL(location.href);
+      return jobIdFromValue(url.searchParams.get("currentJobId"))
+        || jobIdFromValue(canonicalJobUrl(url.href).split("/").pop());
+    } catch {
+      return "";
+    }
+  };
+  const rootJobUrl = (root, explicitJobId) => (
+    explicitJobId
+      ? `https://www.linkedin.com/jobs/view/${explicitJobId}`
+      : canonicalJobUrl(firstHref(root, ["a[href*='/jobs/view/']"]))
+  );
+  const selectedDetailRoot = () => {
+    const selectedId = selectedJobId();
+    const roots = DETAIL_ROOT_SELECTORS.flatMap((selector) => (
+      visibleMatches(document, selector).map((root) => ({
+        root,
+        selector,
+        explicitJobId: explicitRootJobId(root)
+      }))
+    ));
+    if (!roots.length) return { root: document, selector: "document", jobUrl: "", identity: "none" };
+    if (selectedId) {
+      const explicitMatch = roots.find(({ explicitJobId }) => explicitJobId === selectedId);
+      if (explicitMatch) return {
+        ...explicitMatch,
+        jobUrl: `https://www.linkedin.com/jobs/view/${selectedId}`,
+        identity: "selected_detail_root"
+      };
+      const descendantMatch = roots.find(({ root, explicitJobId }) => (
+        !explicitJobId && rootJobUrl(root, "").endsWith(`/${selectedId}`)
+      ));
+      if (!descendantMatch) return { root: document, selector: "document", jobUrl: "", identity: "unmatched_selected_job" };
+      return {
+        ...descendantMatch,
+        jobUrl: `https://www.linkedin.com/jobs/view/${selectedId}`,
+        identity: "selected_job_link"
+      };
+    }
+    const candidate = roots.find(({ root, explicitJobId }) => rootJobUrl(root, explicitJobId));
+    if (!candidate) return { root: document, selector: "document", jobUrl: "", identity: "none" };
+    return {
+      ...candidate,
+      jobUrl: rootJobUrl(candidate.root, candidate.explicitJobId),
+      identity: candidate.explicitJobId ? "detail_root_job_id" : "detail_job_link"
+    };
   };
   const hasNativeApply = (root) => visibleMatches(root, [
     "button.jobs-apply-button",
@@ -115,12 +232,9 @@
   };
 
   const detailRecord = () => {
-    const root = visibleMatches(
-      document,
-      ".jobs-search__job-details--container, .job-view-layout, .jobs-details, main"
-    )[0] || document;
-    const jobUrl = canonicalJobUrl(location.href)
-      || canonicalJobUrl(firstHref(root, ["a[href*='/jobs/view/']"]));
+    const detailRoot = selectedDetailRoot();
+    const root = detailRoot.root;
+    const jobUrl = detailRoot.jobUrl;
     const externalUrl = externalApplyUrl(root);
     const linkedinCompanyUrl = canonicalCompanyUrl(firstHref(root, [
       ".job-details-jobs-unified-top-card__company-name a[href*='/company/']",
@@ -149,7 +263,12 @@
       ]),
       source: "linkedin_browser_extension",
       source_trace: {
-        linkedin_posting: linkedinPostingEvidence(root, jobUrl, externalUrl)
+        linkedin_posting: linkedinPostingEvidence(root, jobUrl, externalUrl),
+        dom: {
+          scope: "authenticated_detail_dom",
+          root_selector: detailRoot.selector,
+          identity_source: detailRoot.identity
+        }
       }
     };
   };
@@ -189,7 +308,20 @@
           ".job-search-card__location",
           ".base-search-card__metadata"
         ]),
-        source: "linkedin_browser_extension"
+        source: "linkedin_browser_extension",
+        source_trace: {
+          linkedin_posting: {
+            availability: "listed",
+            apply_mode: "unknown",
+            evidence_source: "public_search_card",
+            job_url: jobUrl
+          },
+          dom: {
+            scope: "public_search_card",
+            root_selector: "job_search_card",
+            identity_source: "card_job_link"
+          }
+        }
       };
       if (record.linkedin_job_url && record.company_name && record.job_title) records.push(record);
     }
@@ -220,10 +352,31 @@
     }).slice(0, 30);
   };
 
+  const isLinkedinJobsRoute = () => {
+    try {
+      const url = new URL(location.href);
+      return url.protocol === "https:" && LINKEDIN_HOST(url.hostname.toLowerCase())
+        && /^\/jobs(?:\/|$)/.test(url.pathname);
+    } catch {
+      return false;
+    }
+  };
+
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== "collect_job_source_records") return false;
     try {
-      sendResponse({ ok: true, records: collect(), page_url: location.href });
+      const records = collect();
+      const completeDetail = records.some((record) => (
+        record.source_trace?.dom?.scope === "authenticated_detail_dom"
+        && record.linkedin_job_url && record.company_name && record.job_title
+      ));
+      sendResponse({
+        ok: true,
+        records,
+        page_url: location.href,
+        scan_version: "2",
+        state: isLinkedinJobsRoute() && !records.length && !completeDetail ? "not_ready" : "ready"
+      });
     } catch (error) {
       sendResponse({ ok: false, error: String(error) });
     }
