@@ -111,7 +111,7 @@ provider/replay 通过率作为对外成功率依据。
 | Gate | 状态 | 产物 / 验收标准 |
 | --- | --- | --- |
 | B0 审计并冻结 blind contract | 已完成 | one-shot runner、历史审计、execution chain、独立 review schema 和攻击性 tests |
-| B1 离线门禁与 prep commit | 门禁已通过，待提交 | 1413 tests、provider 25/25、resolver 6/6、architecture 26/0；提交后验证 tracked tree clean |
+| B1 离线门禁与 prep commit | 门禁已通过，待提交 | 1414 tests、provider 25/25、resolver 6/6、architecture 26/0；提交后验证 tracked tree clean |
 | B2 S1-only 候选与 unseen audit | 待开始 | 至少 30、最多 50 家；0 historical company/job overlap；0 discovery-answer prefill |
 | B3 冻结 cohort | 待开始 | cohort、holdout manifest、run config 和 source identity digest 全部锁定 |
 | B4 one-shot live execution | 待开始 | 串行运行一次；ledger、execution manifest 和 results/trace/summary digest chain 完整 |

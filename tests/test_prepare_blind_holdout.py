@@ -4,7 +4,11 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.prepare_blind_holdout import BlindHoldoutError, prepare_holdout
+from scripts.prepare_blind_holdout import (
+    BlindHoldoutError,
+    _mentioned_company_keys,
+    prepare_holdout,
+)
 
 
 def candidate(index):
@@ -18,6 +22,17 @@ def candidate(index):
 
 
 class PrepareBlindHoldoutTests(unittest.TestCase):
+    def test_company_history_scan_matches_candidates_in_one_pass(self):
+        candidates = {
+            "alpha systems": "Alpha Systems",
+            "m r walls": "M|R Walls",
+            "x": "X",
+        }
+        self.assertEqual(
+            _mentioned_company_keys(candidates, "prior: alpha systems and m|r walls"),
+            {"alpha systems", "m r walls", "x"},
+        )
+
     def test_freezes_only_unseen_unique_companies_and_records_digests(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

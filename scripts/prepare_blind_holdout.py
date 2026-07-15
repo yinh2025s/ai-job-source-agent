@@ -122,23 +122,23 @@ def prepare_holdout(
         file_digests.append((_stable_path(path, roots), hashlib.sha256(content).hexdigest()))
         text = content.decode("utf-8", errors="ignore")
         folded = text.casefold()
-        for company_key, company_name in candidate_company_keys.items():
-            if _company_mentioned(company_name, folded):
-                text_mentioned_companies.add(company_key)
-        for job_id in candidate_job_ids:
-            if job_id in text:
-                text_mentioned_job_ids.add(job_id)
+        text_mentioned_companies.update(
+            _mentioned_company_keys(candidate_company_keys, folded)
+        )
+        text_mentioned_job_ids.update(
+            candidate_job_ids.intersection(re.findall(r"[0-9]{6,}", text))
+        )
         if path.suffix.casefold() in {".json", ".jsonl"}:
             for payload in _json_payloads(text):
                 _collect_structured_identities(payload, seen_companies, seen_job_ids)
     git_text = git_evidence["history_bytes"].decode("utf-8", errors="ignore")
     git_folded = git_text.casefold()
-    for company_key, company_name in candidate_company_keys.items():
-        if _company_mentioned(company_name, git_folded):
-            text_mentioned_companies.add(company_key)
-    for job_id in candidate_job_ids:
-        if job_id in git_text:
-            text_mentioned_job_ids.add(job_id)
+    text_mentioned_companies.update(
+        _mentioned_company_keys(candidate_company_keys, git_folded)
+    )
+    text_mentioned_job_ids.update(
+        candidate_job_ids.intersection(re.findall(r"[0-9]{6,}", git_text))
+    )
 
     selected: list[dict[str, Any]] = []
     selected_companies: set[str] = set()
@@ -311,12 +311,30 @@ def _company_key(value: str) -> str:
     return " ".join(re.findall(r"[a-z0-9]+", value.casefold()))
 
 
-def _company_mentioned(company_name: str, text: str) -> bool:
-    name = " ".join(company_name.casefold().split())
-    if len(name) < 4:
-        return True
-    pattern = re.compile(rf"(?<![a-z0-9]){re.escape(name)}(?![a-z0-9])")
-    return bool(pattern.search(text))
+def _mentioned_company_keys(
+    candidates: dict[str, str], text: str
+) -> set[str]:
+    mentioned = {
+        company_key
+        for company_key, company_name in candidates.items()
+        if len(" ".join(company_name.casefold().split())) < 4
+    }
+    names = sorted(
+        {
+            " ".join(company_name.casefold().split())
+            for company_name in candidates.values()
+            if len(" ".join(company_name.casefold().split())) >= 4
+        },
+        key=len,
+        reverse=True,
+    )
+    if not names:
+        return mentioned
+    pattern = re.compile(
+        rf"(?<![a-z0-9])(?:{'|'.join(re.escape(name) for name in names)})(?![a-z0-9])"
+    )
+    mentioned.update(_company_key(match.group(0)) for match in pattern.finditer(text))
+    return mentioned
 
 
 def _linkedin_job_id(value: str, *, required: bool = True) -> str:
