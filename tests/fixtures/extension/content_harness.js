@@ -4,6 +4,7 @@ const vm = require("node:vm");
 class FakeElement {
   constructor({
     text = "", href = "", attrs = {}, style = {}, hidden = false, disabled = false, parent = null,
+    tagName = "DIV",
   } = {}) {
     this.textContent = text;
     this.href = href;
@@ -12,7 +13,10 @@ class FakeElement {
     this.hidden = hidden;
     this.disabled = disabled;
     this.parentElement = parent;
+    this.tagName = tagName;
+    this.children = [];
     this.matchesBySelector = new Map();
+    if (parent) parent.children.push(this);
   }
 
   setMatches(selector, nodes) {
@@ -22,6 +26,17 @@ class FakeElement {
 
   querySelectorAll(selector) {
     return this.matchesBySelector.get(selector) || [];
+  }
+
+  querySelector(selector) {
+    return this.querySelectorAll(selector)[0] || null;
+  }
+
+  contains(node) {
+    for (let current = node; current; current = current.parentElement) {
+      if (current === this) return true;
+    }
+    return false;
   }
 
   getAttribute(name) {
@@ -52,6 +67,7 @@ const NATIVE_APPLY_SELECTOR = [
   "button[data-control-name='jobdetails_topcard_inapply']",
   "button[data-live-test-job-apply-button]",
   "button[aria-label*='Easy Apply']",
+  "button[aria-label^='Apply']",
 ].join(", ");
 const CLOSED_BANNER_SELECTOR = [
   ".jobs-details-top-card__apply-error",
@@ -284,6 +300,52 @@ function selectorPriorityScenario() {
   return { document, href: "https://www.linkedin.com/jobs/view/402/" };
 }
 
+function semanticSearchDetailScenario() {
+  const document = new FakeElement();
+  const root = new FakeElement();
+  const header = new FakeElement({ parent: root });
+  const companyBlock = new FakeElement({ parent: header });
+  const companyLabel = leaf({
+    text: "Microsoft",
+    attrs: { "aria-label": "Company, Microsoft." },
+  }, companyBlock);
+  const companyLink = leaf({
+    text: "Microsoft",
+    href: "https://www.linkedin.com/company/microsoft/life/",
+    tagName: "A",
+  }, companyBlock);
+  const titleBlock = new FakeElement({ parent: header });
+  const titleParagraph = new FakeElement({ parent: titleBlock, tagName: "P" });
+  const titleLink = leaf({
+    text: "Software Engineer - CTJ - Poly",
+    href: "https://www.linkedin.com/jobs/view/4420695497/?trackingId=ignored",
+    tagName: "A",
+  }, titleParagraph);
+  const location = leaf({
+    text: "Reston, VA · Reposted 4 days ago · 87 people clicked apply",
+    tagName: "P",
+  }, header);
+  const apply = leaf({
+    text: "Apply",
+    href: "https://www.linkedin.com/safety/go/?url=https%3A%2F%2Fapply.careers.microsoft.com%2Fcareers%2Fjob%2F1970393556824773%3Futm_source%3Dlinkedin&urlhash=ignored",
+    attrs: { "aria-label": "Apply on company website" },
+    tagName: "A",
+  }, root);
+
+  document.setMatches(CARD_SELECTOR, []);
+  document.setMatches("a[href*='/jobs/view/']", [titleLink]);
+  header.setMatches("a[href*='/company/']", [companyLink]);
+  header.setMatches("[aria-label^='Company, ']", [companyLabel]);
+  root.setMatches("a[href*='/company/']", [companyLink]);
+  root.setMatches("a, button", [apply]);
+  root.setMatches("a[aria-label*='Apply on company website'][href]", [apply]);
+  setDetailRoots(document, { main: [root] });
+  return {
+    document,
+    href: "https://www.linkedin.com/jobs/search-results/?currentJobId=4420695497",
+  };
+}
+
 function unsafeExternalScenario() {
   const document = new FakeElement();
   const root = detailRoot(809, "Unsafe Apply", "Security Engineer");
@@ -343,6 +405,7 @@ const scenarios = {
   evidence_hidden_disabled: () => evidenceScenario("hidden_disabled"),
   selected_detail: selectedDetailScenario,
   selector_priority: selectorPriorityScenario,
+  semantic_search_detail: semanticSearchDetailScenario,
   unsafe_external: unsafeExternalScenario,
   forged_identity: forgedIdentityScenario,
   empty_jobs: () => emptyScenario("https://www.linkedin.com/jobs/search/"),

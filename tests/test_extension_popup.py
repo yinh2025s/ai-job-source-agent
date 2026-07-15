@@ -14,6 +14,7 @@ class ExtensionPopupTests(unittest.TestCase):
         scenarios = [
             "invalid_endpoint_no_fetch",
             "duplicate_submission",
+            "duplicate_while_polling",
             "duplicate_scan",
             "stale_output_reset",
             "scan_not_ready_retry",
@@ -21,6 +22,7 @@ class ExtensionPopupTests(unittest.TestCase):
             "transient_polling_retry",
             "malformed_response",
             "clickable_safe_links",
+            "scanned_apply_fallback",
             "button_recovery",
         ]
         for scenario in scenarios:

@@ -17,14 +17,19 @@
 
     <main id="popupRoot" aria-busy="false">
       <section class="toolbar" aria-label="Job controls">
-        <button id="scanButton" type="button">Scan page</button>
-        <button id="runButton" class="primary" type="button" disabled>Run discovery</button>
+        <button id="scanButton" class="primary" type="button">Scan page</button>
+        <button id="runButton" type="button" disabled>Verify source</button>
       </section>
 
       <section class="scan-summary" aria-live="polite">
         <strong id="recordCount">0</strong>
         <span>jobs ready</span>
         <span id="applyCount" class="muted">0 Apply URLs</span>
+      </section>
+
+      <section id="scanPanel" class="scan-panel" aria-live="polite" hidden>
+        <h2>Scanned jobs</h2>
+        <ol id="scanResults" class="results scan-results"></ol>
       </section>
 
       <section id="runPanel" class="run-panel" aria-live="polite" hidden>
@@ -38,7 +43,7 @@
             <strong id="jobListRate">--</strong>
           </div>
           <div>
-            <span>Exact openings</span>
+            <span>Verified openings</span>
             <strong id="openingRate">--</strong>
           </div>
         </div>

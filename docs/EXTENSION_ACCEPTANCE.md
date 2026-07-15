@@ -7,7 +7,7 @@ logged-in Chrome session.
 ## Preconditions
 
 - Chrome is logged into LinkedIn and the AI Job Source Agent unpacked extension is installed.
-- The extension card in `chrome://extensions` shows version `0.2.0` after **Reload**.
+- The extension card in `chrome://extensions` shows version `0.2.2` after **Reload**.
 - The local bridge is running with an explicit token:
 
 ```bash
@@ -24,10 +24,12 @@ artifact.
 2. Open the extension, expand **Connection**, enter `http://127.0.0.1:8765` and the matching token,
    then select **Save connection**. The state must become **Online**.
 3. Select **Scan page** once. The popup must remain responsive, report at least one job, and must
-   not duplicate the selected job. If LinkedIn is still hydrating, one bounded retry may occur.
+   not duplicate the selected job. A DOM-observed **LinkedIn Apply** link must be immediately usable
+   without waiting for backend verification. If LinkedIn is still hydrating, one bounded retry may occur.
 4. Compare the first scanned selected job with the visible LinkedIn detail: company, title and job
    identity must refer to the same posting. An External Apply count may be zero.
-5. Select **Run discovery** once. A run must be queued without duplicate submissions.
+5. Select optional **Verify source** once. A run must be queued without duplicate submissions; the
+   immediate Apply link remains the primary path and verification may continue in the background.
 6. Close and reopen the popup while the run is queued or running. The saved run must resume polling
    or allow **Refresh**; it must not create a new run.
 7. When complete, verify rates are between 0% and 100%. Open one displayed **Exact opening** or
@@ -61,3 +63,15 @@ page. Classify the failure before changing code:
 
 Fix a reusable failure cluster with a minimal sanitized fixture. Do not add a company-specific
 selector or move ATS/provider logic into the extension.
+
+## Latest Acceptance Evidence
+
+On 2026-07-15, a logged-in Microsoft Jobs search exposed LinkedIn's obfuscated search UI. Version
+`0.2.0` correctly returned `not_ready` instead of inventing a record; read-only DOM inspection then
+froze a generic selected-job semantic fixture. Version `0.2.1` scanned one selected Microsoft job,
+unwrapped one public LinkedIn Apply destination, and completed strict verification with a verified
+job list but no verified exact opening. The run also exposed a popup polling gap that allowed repeated
+submissions between polls. Version `0.2.2` displays the Apply target immediately, makes verification
+optional, and prevents another submission while the current run is active. The user confirmed the
+v0.2.2 immediate Scan/Apply UI. Reopening the popup during a v0.2.2 in-flight run was not repeated
+manually; its state restoration and duplicate-run lock remain covered by the popup harness.

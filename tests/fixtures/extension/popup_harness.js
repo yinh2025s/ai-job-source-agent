@@ -63,7 +63,7 @@ function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = nu
   const ids = [
     "bridgeState", "popupRoot", "scanButton", "runButton", "refreshButton", "saveButton",
     "bridgeUrl", "bridgeToken", "message", "recordCount", "applyCount", "runPanel",
-    "runStatus", "jobListRate", "openingRate", "results",
+    "runStatus", "jobListRate", "openingRate", "results", "scanPanel", "scanResults",
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
   elements.bridgeUrl.value = "http://127.0.0.1:8765";
@@ -71,6 +71,7 @@ function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = nu
   elements.recordCount.textContent = "0";
   elements.applyCount.textContent = "0 Apply URLs";
   elements.runPanel.hidden = true;
+  elements.scanPanel.hidden = true;
   const fetchCalls = [];
   const timers = new Map();
   let nextTimer = 1;
@@ -184,6 +185,27 @@ async function duplicateSubmission() {
   assert.equal(h.elements.runButton.disabled, false);
 }
 
+async function duplicateWhilePolling() {
+  const h = createHarness({
+    fetchQueue: [
+      health(),
+      response(202, { run_id: "run-polling", status: "queued" }),
+      response(200, { run_id: "run-polling", status: "running" }),
+    ],
+    scanQueue: [readyScan()],
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  h.elements.runButton.click();
+  await h.settle();
+  assert.equal(h.elements.runButton.disabled, true);
+  assert.equal(h.elements.runButton.textContent, "Verifying...");
+  h.elements.runButton.click();
+  await h.settle();
+  assert.equal(h.fetchCalls.filter((call) => call.options.method === "POST").length, 1);
+}
+
 async function duplicateScan() {
   const firstScan = deferred();
   const h = createHarness({ fetchQueue: [health()], scanQueue: [firstScan] });
@@ -276,6 +298,48 @@ async function clickableSafeLinks() {
   assert.equal(items[3].children[1].textContent, "private_url");
 }
 
+async function scannedApplyRemainsAvailableWithoutVerifiedOpening() {
+  const record = {
+    company_name: "Microsoft",
+    job_title: "Software Engineer",
+    linkedin_job_url: "https://www.linkedin.com/jobs/view/4420695497",
+    external_apply_url: "https://apply.careers.microsoft.com/careers/job/1970393556824773",
+  };
+  const result = {
+    company_name: "Microsoft",
+    linkedin_job_title: "Software Engineer",
+    linkedin_job_url: record.linkedin_job_url,
+    job_list_page_url: "https://microsoft.example/careers/",
+  };
+  const h = createHarness({
+    fetchQueue: [
+      health(),
+      response(202, { run_id: "source-fallback", status: "queued" }),
+      complete("source-fallback", [result]),
+    ],
+    scanQueue: [{
+      ok: true,
+      scan_version: "2",
+      state: "ready",
+      page_url: "https://www.linkedin.com/jobs/search/",
+      records: [record],
+    }],
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  assert.equal(h.elements.scanPanel.hidden, false);
+  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "LinkedIn Apply");
+  h.elements.runButton.click();
+  await h.settle();
+  assert.equal(h.elements.results.children[0].children[1].textContent, "Job list");
+  assert.equal(h.elements.results.children[0].children[2].textContent, "LinkedIn Apply");
+  assert.equal(
+    h.elements.results.children[0].children[2].href,
+    "https://apply.careers.microsoft.com/careers/job/1970393556824773",
+  );
+}
+
 async function buttonRecovery() {
   const injectionError = new Error("Injection blocked");
   injectionError.injection = true;
@@ -291,6 +355,7 @@ async function buttonRecovery() {
 const scenarios = {
   invalid_endpoint_no_fetch: invalidEndpointNoFetch,
   duplicate_submission: duplicateSubmission,
+  duplicate_while_polling: duplicateWhilePolling,
   duplicate_scan: duplicateScan,
   stale_output_reset: staleOutputReset,
   scan_not_ready_retry: scanNotReadyRetry,
@@ -298,6 +363,7 @@ const scenarios = {
   transient_polling_retry: transientPollingRetry,
   malformed_response: malformedResponse,
   clickable_safe_links: clickableSafeLinks,
+  scanned_apply_fallback: scannedApplyRemainsAvailableWithoutVerifiedOpening,
   button_recovery: buttonRecovery,
 };
 

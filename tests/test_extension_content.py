@@ -120,6 +120,26 @@ class ExtensionContentTests(unittest.TestCase):
         self.assertEqual(records[1]["linkedin_job_url"], "https://www.linkedin.com/jobs/view/301")
         self.assertEqual(records[1]["company_name"], "Competing Systems")
 
+    def test_obfuscated_search_ui_uses_selected_semantic_detail_and_unwraps_apply(self):
+        record = self._collect("semantic_search_detail")["records"][0]
+
+        self.assertEqual(record["linkedin_job_url"], "https://www.linkedin.com/jobs/view/4420695497")
+        self.assertEqual(record["company_name"], "Microsoft")
+        self.assertEqual(record["job_title"], "Software Engineer - CTJ - Poly")
+        self.assertEqual(record["job_location"], "Reston, VA")
+        self.assertEqual(
+            record["external_apply_url"],
+            "https://apply.careers.microsoft.com/careers/job/1970393556824773?utm_source=linkedin",
+        )
+        self.assertEqual(
+            record["source_trace"]["dom"],
+            {
+                "scope": "authenticated_detail_dom",
+                "root_selector": "selected_job_semantic_detail",
+                "identity_source": "selected_detail_semantic_link",
+            },
+        )
+
     def test_detail_root_selector_priority_and_safe_dom_provenance(self):
         record = self._collect("selector_priority")["records"][0]
 

@@ -95,7 +95,13 @@
   };
   const isSafeExternalApplyUrl = (value) => {
     try {
-      const url = new URL(value, location.href);
+      let url = new URL(value, location.href);
+      if (LINKEDIN_HOST(url.hostname.toLowerCase())) {
+        if (url.protocol !== "https:" || url.pathname !== "/safety/go/") return "";
+        const target = url.searchParams.get("url");
+        if (!target) return "";
+        url = new URL(target);
+      }
       if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.hash) return "";
       if (!isPublicHost(url.hostname) || LINKEDIN_OWNED_HOST(url.hostname.toLowerCase())
         || LOOKS_LIKE_LINKEDIN_HOST(url.hostname) || hasSensitiveQuery(url)) return "";
@@ -110,7 +116,8 @@
     ".job-details-jobs-unified-top-card__apply-button a[href]",
     ".jobs-unified-top-card__apply-button a[href]",
     ".jobs-apply-button--top-card a[href]",
-    "a.jobs-apply-button[href]"
+    "a.jobs-apply-button[href]",
+    "a[aria-label*='Apply on company website'][href]"
   ];
   const externalApplyUrl = (root) => {
     for (const selector of EXTERNAL_APPLY_SELECTORS) {
@@ -130,6 +137,42 @@
     ".jobs-details",
     "main"
   ];
+  const selectedSemanticDetail = () => {
+    const selectedId = selectedJobId();
+    if (!selectedId) return null;
+    const titleLink = visibleMatches(document, "a[href*='/jobs/view/']").find((link) => (
+      canonicalJobUrl(link.href).endsWith(`/${selectedId}`)
+    ));
+    if (!titleLink) return null;
+
+    let header = null;
+    for (let current = titleLink; current && current !== document.body; current = current.parentElement) {
+      const hasCompany = visibleMatches(current, "a[href*='/company/']").length > 0;
+      const locationNode = Array.from(current.children || []).find((child) => (
+        child.tagName === "P" && !child.contains?.(titleLink) && text(child)
+      ));
+      if (hasCompany && locationNode) {
+        header = current;
+        break;
+      }
+    }
+    if (!header) return null;
+
+    let root = header;
+    for (let current = header; current && current !== document.body; current = current.parentElement) {
+      const hasApply = visibleMatches(current, "a, button").some((control) => (
+        /apply/i.test(`${text(control)} ${control.getAttribute?.("aria-label") || ""}`)
+      ));
+      if (hasApply) {
+        root = current;
+        break;
+      }
+    }
+    const locationNode = Array.from(header.children || []).find((child) => (
+      child.tagName === "P" && !child.contains?.(titleLink) && text(child)
+    ));
+    return { root, header, titleLink, locationNode, selectedId };
+  };
   const explicitRootJobId = (root) => {
     for (const attribute of [
       "data-current-job-id",
@@ -157,6 +200,13 @@
       : canonicalJobUrl(firstHref(root, ["a[href*='/jobs/view/']"]))
   );
   const selectedDetailRoot = () => {
+    const semanticDetail = selectedSemanticDetail();
+    if (semanticDetail) return {
+      ...semanticDetail,
+      selector: "selected_job_semantic_detail",
+      jobUrl: `https://www.linkedin.com/jobs/view/${semanticDetail.selectedId}`,
+      identity: "selected_detail_semantic_link"
+    };
     const selectedId = selectedJobId();
     const roots = DETAIL_ROOT_SELECTORS.flatMap((selector) => (
       visibleMatches(document, selector).map((root) => ({
@@ -195,7 +245,8 @@
     "button.jobs-apply-button",
     "button[data-control-name='jobdetails_topcard_inapply']",
     "button[data-live-test-job-apply-button]",
-    "button[aria-label*='Easy Apply']"
+    "button[aria-label*='Easy Apply']",
+    "button[aria-label^='Apply']"
   ].join(", ")).some((button) => {
     if (!isEnabled(button)) return false;
     const label = `${text(button)} ${button.getAttribute("aria-label") || ""}`.toLowerCase();
@@ -235,6 +286,7 @@
   const detailRecord = () => {
     const detailRoot = selectedDetailRoot();
     const root = detailRoot.root;
+    const header = detailRoot.header || root;
     const jobUrl = detailRoot.jobUrl;
     const externalUrl = externalApplyUrl(root);
     const linkedinCompanyUrl = canonicalCompanyUrl(firstHref(root, [
@@ -246,18 +298,21 @@
       linkedin_job_url: jobUrl,
       external_apply_url: externalUrl || null,
       linkedin_company_url: linkedinCompanyUrl || null,
-      company_name: firstText(root, [
+      company_name: firstText(header, [
+        "[aria-label^='Company, ']",
         ".job-details-jobs-unified-top-card__company-name",
         ".jobs-unified-top-card__company-name",
         "a[href*='/company/']"
       ]),
-      job_title: firstText(root, [
+      job_title: detailRoot.titleLink ? text(detailRoot.titleLink) : firstText(root, [
         ".job-details-jobs-unified-top-card__job-title h1",
         ".job-details-jobs-unified-top-card__job-title",
         ".jobs-unified-top-card__job-title",
         "h1"
       ]),
-      job_location: firstText(root, [
+      job_location: detailRoot.locationNode
+        ? text(detailRoot.locationNode).split("·", 1)[0].trim()
+        : firstText(root, [
         ".job-details-jobs-unified-top-card__primary-description-container .tvm__text",
         ".jobs-unified-top-card__bullet",
         ".job-details-jobs-unified-top-card__tertiary-description-container"

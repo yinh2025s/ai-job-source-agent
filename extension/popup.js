@@ -10,6 +10,7 @@ const state = {
   pollTimer: null,
   pollRetries: 0,
   connectionKey: null,
+  runInFlight: false,
   busy: { scan: false, run: false, poll: false, save: false },
 };
 const $ = (id) => document.getElementById(id);
@@ -28,7 +29,8 @@ function syncBusyUi() {
   const busy = hasBusyOperation();
   $("popupRoot").setAttribute("aria-busy", String(busy));
   $("scanButton").disabled = busy;
-  $("runButton").disabled = busy || state.records.length === 0;
+  $("runButton").disabled = busy || state.records.length === 0 || state.runInFlight;
+  $("runButton").textContent = state.runInFlight ? "Verifying..." : "Verify source";
   $("refreshButton").disabled = busy || !state.runId;
   $("saveButton").disabled = busy;
 }
@@ -130,12 +132,15 @@ function clearScanOutput() {
   state.records = [];
   $("recordCount").textContent = "0";
   $("applyCount").textContent = "0 Apply URLs";
+  $("scanPanel").hidden = true;
+  $("scanResults").replaceChildren();
   clearRunOutput();
   syncBusyUi();
 }
 
 async function clearStaleRun() {
   state.runId = null;
+  state.runInFlight = false;
   state.pollRetries = 0;
   if (state.pollTimer !== null) clearTimeout(state.pollTimer);
   state.pollTimer = null;
@@ -160,6 +165,7 @@ async function loadSettings() {
   if (saved.bridgeUrl) $("bridgeUrl").value = saved.bridgeUrl;
   if (saved.bridgeToken) $("bridgeToken").value = saved.bridgeToken;
   state.runId = typeof saved.runId === "string" && saved.runId ? saved.runId : null;
+  state.runInFlight = Boolean(state.runId);
   try {
     state.connectionKey = bridgeConnection().key;
   } catch {
@@ -221,6 +227,7 @@ async function scanPage() {
     state.records = await requestScan(tab.id);
     $("recordCount").textContent = String(state.records.length);
     $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} Apply URLs`;
+    renderScannedRecords();
     if (state.records.length === 0) setMessage("No eligible jobs were found on this page.");
   } catch (error) {
     setMessage(error.message || "Page scan failed.");
@@ -248,6 +255,7 @@ async function runDiscovery() {
     });
     if (!validSubmission(payload)) throw new Error("Bridge returned an invalid run submission.");
     state.runId = payload.run_id;
+    state.runInFlight = true;
     state.pollRetries = 0;
     await chrome.storage.local.set({ runId: state.runId });
     $("runPanel").hidden = false;
@@ -301,12 +309,15 @@ async function pollRun() {
     $("runPanel").hidden = false;
     $("runStatus").textContent = payload.status.charAt(0).toUpperCase() + payload.status.slice(1);
     if (payload.status === "complete") {
+      state.runInFlight = false;
       renderCompletedRun(payload);
       setBridgeState("Online", "online");
     } else if (payload.status === "failed") {
+      state.runInFlight = false;
       setBridgeState("Error", "error");
       setMessage(payload.error || "Discovery failed.");
     } else {
+      state.runInFlight = true;
       setBridgeState("Running", "busy");
       schedulePoll();
     }
@@ -322,6 +333,7 @@ async function pollRun() {
       setMessage("Bridge connection interrupted. Retrying shortly.");
       schedulePoll(POLL_DELAY_MS);
     } else {
+      state.runInFlight = false;
       setBridgeState("Error", "error");
       setMessage(error.message || "Run lookup failed.");
     }
@@ -366,6 +378,40 @@ function appendOutcome(item, label, url) {
   return true;
 }
 
+function resultTitle(record) {
+  const company = typeof record.company_name === "string" && record.company_name
+    ? record.company_name : "Unknown company";
+  const title = typeof record.linkedin_job_title === "string" && record.linkedin_job_title
+    ? record.linkedin_job_title
+    : (typeof record.job_title === "string" && record.job_title ? record.job_title : "Untitled role");
+  return `${company} · ${title}`;
+}
+
+function renderScannedRecords() {
+  $("scanPanel").hidden = state.records.length === 0;
+  $("scanResults").replaceChildren(...state.records.map((record) => {
+    const item = document.createElement("li");
+    const title = document.createElement("strong");
+    title.textContent = resultTitle(record);
+    item.append(title);
+    if (!appendOutcome(item, "LinkedIn Apply", record.external_apply_url)) {
+      const source = document.createElement("span");
+      source.textContent = "LinkedIn job selected";
+      item.append(source);
+    }
+    return item;
+  }));
+}
+
+function sourceRecordFor(result) {
+  return state.records.find((record) => (
+    record.linkedin_job_url && record.linkedin_job_url === result.linkedin_job_url
+  )) || state.records.find((record) => (
+    record.company_name === result.company_name
+    && record.job_title === (result.linkedin_job_title || result.job_title)
+  ));
+}
+
 function renderCompletedRun(payload) {
   const { summary, results } = payload;
   $("jobListRate").textContent = `${Math.round(summary.rates.job_list * 100)}%`;
@@ -373,16 +419,21 @@ function renderCompletedRun(payload) {
   $("results").replaceChildren(...results.map((result) => {
     const item = document.createElement("li");
     const title = document.createElement("strong");
-    title.textContent = `${typeof result.company_name === "string" ? result.company_name : "Unknown company"} · ${typeof result.linkedin_job_title === "string" ? result.linkedin_job_title : (typeof result.job_title === "string" ? result.job_title : "Untitled role")}`;
+    title.textContent = resultTitle(result);
     item.append(title);
-    if (!appendOutcome(item, "Exact opening", result.open_position_url)) {
-      if (!appendOutcome(item, "Job list", result.job_list_page_url)) {
-        const reason = document.createElement("span");
-        reason.textContent = typeof result.error_code === "string" && result.error_code
-          ? result.error_code
-          : (typeof result.reason === "string" && result.reason ? result.reason : "No verified public job URL.");
-        item.append(reason);
-      }
+    const hasExact = appendOutcome(item, "Exact opening", result.open_position_url);
+    let hasOutcome = hasExact;
+    if (!hasExact) {
+      hasOutcome = appendOutcome(item, "Job list", result.job_list_page_url) || hasOutcome;
+      const sourceRecord = sourceRecordFor(result);
+      hasOutcome = appendOutcome(item, "LinkedIn Apply", sourceRecord?.external_apply_url) || hasOutcome;
+    }
+    if (!hasOutcome) {
+      const reason = document.createElement("span");
+      reason.textContent = typeof result.error_code === "string" && result.error_code
+        ? result.error_code
+        : (typeof result.reason === "string" && result.reason ? result.reason : "No verified public job URL.");
+      item.append(reason);
     }
     return item;
   }));
