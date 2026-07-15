@@ -209,11 +209,11 @@ async function requestScan(tabId, attempt = 0) {
 
 async function scanPage() {
   if (hasBusyOperation()) return;
+  setBusy("scan", true);
   clearScanOutput();
   setMessage();
-  await clearStaleRun();
-  setBusy("scan", true);
   try {
+    await clearStaleRun();
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id || !tab.url?.startsWith("https://www.linkedin.com/jobs/")) {
       throw new Error("Open a LinkedIn Jobs page first.");
@@ -267,7 +267,9 @@ function validRunResponse(payload, runId) {
   if (payload.status === "complete") {
     return isObject(payload.summary) && isObject(payload.summary.rates)
       && Number.isFinite(payload.summary.rates.job_list)
+      && payload.summary.rates.job_list >= 0 && payload.summary.rates.job_list <= 1
       && Number.isFinite(payload.summary.rates.opening)
+      && payload.summary.rates.opening >= 0 && payload.summary.rates.opening <= 1
       && Array.isArray(payload.results) && payload.results.every(isObject);
   }
   return payload.status !== "failed" || payload.error === undefined || typeof payload.error === "string";
@@ -331,7 +333,22 @@ async function pollRun() {
 function safeHttpsUrl(value) {
   try {
     const parsed = new URL(value);
-    return parsed.protocol === "https:" && !parsed.username && !parsed.password ? parsed.href : null;
+    if (parsed.protocol !== "https:" || parsed.username || parsed.password) return null;
+    const host = parsed.hostname.toLowerCase().replace(/^\[|\]$/g, "");
+    if (!host || host === "localhost" || host.endsWith(".localhost")
+      || host.endsWith(".local") || host.endsWith(".internal")) return null;
+    if (host === "::" || host === "::1" || /^(?:fc|fd|fe8|fe9|fea|feb)/i.test(host)) return null;
+    const octets = host.split(".").map(Number);
+    if (octets.length === 4 && octets.every((octet) => (
+      Number.isInteger(octet) && octet >= 0 && octet <= 255
+    ))) {
+      if (octets[0] === 0 || octets[0] === 10 || octets[0] === 127 || octets[0] >= 224
+        || (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127)
+        || (octets[0] === 169 && octets[1] === 254)
+        || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
+        || (octets[0] === 192 && octets[1] === 168)) return null;
+    }
+    return parsed.href;
   } catch {
     return null;
   }

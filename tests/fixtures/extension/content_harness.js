@@ -292,6 +292,7 @@ function unsafeExternalScenario() {
     leaf({ text: "Apply", href: "https://user:pass@careers.example/jobs/809" }, root),
     leaf({ text: "Apply", href: "https://careers.example/jobs/809#apply" }, root),
     leaf({ text: "Apply", href: "http://127.0.0.1/jobs/809" }, root),
+    leaf({ text: "Apply", href: "https://careers.internal/jobs/809" }, root),
     leaf({ text: "Apply", href: "https://www.linkedin.com.evil/jobs/809" }, root),
     leaf({ text: "Apply", href: "https://careers.example/jobs/809?access_token=secret" }, root),
   ]);

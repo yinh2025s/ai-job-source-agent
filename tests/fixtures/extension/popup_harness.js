@@ -119,7 +119,7 @@ function createHarness({ fetchQueue = [], scanQueue = [], runId = null, tab = nu
           sentMessages.push({ tabId, message });
           const next = scanQueue.shift();
           if (next instanceof Error) throw next;
-          return next;
+          return next?.promise || next;
         },
       },
       scripting: {
@@ -182,6 +182,19 @@ async function duplicateSubmission() {
   submission.resolve(response(202, { run_id: "run-1", status: "queued" }));
   await h.settle();
   assert.equal(h.elements.runButton.disabled, false);
+}
+
+async function duplicateScan() {
+  const firstScan = deferred();
+  const h = createHarness({ fetchQueue: [health()], scanQueue: [firstScan] });
+  await h.settle();
+  h.elements.scanButton.click();
+  h.elements.scanButton.click();
+  await h.settle();
+  assert.equal(h.sentMessages.length, 1);
+  firstScan.resolve(readyScan());
+  await h.settle();
+  assert.equal(h.elements.scanButton.disabled, false);
 }
 
 async function staleOutputReset() {
@@ -250,15 +263,17 @@ async function clickableSafeLinks() {
     { company_name: "Exact", job_title: "One", open_position_url: "https://jobs.example/opening" },
     { company_name: "List", job_title: "Two", job_list_page_url: "https://jobs.example/list" },
     { company_name: "Unsafe", job_title: "Three", open_position_url: "javascript:alert(1)", error_code: "unsafe_url" },
+    { company_name: "Private", job_title: "Four", open_position_url: "https://127.0.0.1/private", error_code: "private_url" },
   ];
   const h = createHarness({ fetchQueue: [health(), complete("links", results)], runId: "links" });
   await h.settle();
   const items = h.elements.results.children;
-  assert.equal(items.length, 3);
+  assert.equal(items.length, 4);
   assert.equal(items[0].children[1].textContent, "Exact opening");
   assert.equal(items[0].children[1].href, "https://jobs.example/opening");
   assert.equal(items[1].children[1].textContent, "Job list");
   assert.equal(items[2].children[1].textContent, "unsafe_url");
+  assert.equal(items[3].children[1].textContent, "private_url");
 }
 
 async function buttonRecovery() {
@@ -276,6 +291,7 @@ async function buttonRecovery() {
 const scenarios = {
   invalid_endpoint_no_fetch: invalidEndpointNoFetch,
   duplicate_submission: duplicateSubmission,
+  duplicate_scan: duplicateScan,
   stale_output_reset: staleOutputReset,
   scan_not_ready_retry: scanNotReadyRetry,
   stale_run_clear: staleRunClear,

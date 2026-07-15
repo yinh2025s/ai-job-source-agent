@@ -119,6 +119,24 @@ provider/replay 通过率作为对外成功率依据。
 | B6 基线报告 | 待开始 | 同时报 raw exact、exact precision、conditional exact recall、system defect 和六类 disposition |
 | B7 阶段停止点 | 待开始 | 发布剩余 failure clusters 和最多三个按覆盖样本数 x 风险 x 收益排序的候选任务；不自动修复 |
 
+### 插件产品化工作线（2026-07-15）
+
+该工作线只修改 `extension/`、插件测试和插件文档，不改动 Python pipeline、resolver、
+provider、bridge contract 或 blind-holdout 标注。后端稳定化与人工标注继续独立推进。
+
+| Gate | 状态 | 产物 / 验收标准 |
+| --- | --- | --- |
+| E0 冻结 scan contract | 已完成 | response 保留 `ok`、`records`、`page_url`，新增 `scan_version=2` 与 `ready/not_ready` |
+| E1 LinkedIn DOM 正确性 | 已完成 | 当前职位 ID 绑定详情；隐藏/disabled 控件不产生活跃证据；伪造 host 与不安全 Apply URL fail closed |
+| E2 Popup 可靠性 | 已完成 | 仅允许 token-authenticated `127.0.0.1`；超时、有限重试、断线/陈旧 run 恢复、重复操作保护 |
+| E3 结果展示与安全 | 已完成 | 校验 run payload/rate；只渲染 public HTTPS opening/job-list 链接；失败保留 reason code |
+| E4 自动化插件门禁 | 已完成 | 13 个 content DOM 场景、10 个 popup workflow 场景；全量 1420 tests、25/25 provider、6/6 resolver、architecture 26/0 |
+| E5 真实登录态验收 | 待用户执行 | 按 `docs/EXTENSION_ACCEPTANCE.md` reload v0.2.0，完成 Scan、Run、popup reopen 和结果链接核验 |
+
+E5 通过前可以声明“插件离线/模拟门禁通过”，不能声明“真实 LinkedIn 插件验收通过”。
+该人工 gate 不允许 Computer Use 代替用户已登录 Chrome，也不触发后端规则调整；发现 DOM
+失败时先保存最小脱敏现象与 LinkedIn route，再按通用 selector/readiness failure cluster 修复。
+
 ### Blind 基线报告规则
 
 - `exact_precision` 的分母只能是系统输出的 exact opening，分子必须是人工验证通过完整 identity

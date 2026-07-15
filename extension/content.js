@@ -47,7 +47,8 @@
   const LOOKS_LIKE_LINKEDIN_HOST = (hostname) => /(?:linkedin|licdn)/i.test(hostname);
   const isPublicHost = (hostname) => {
     const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-    if (!host || host === "localhost" || host.endsWith(".localhost") || host.endsWith(".local")) {
+    if (!host || host === "localhost" || host.endsWith(".localhost")
+      || host.endsWith(".local") || host.endsWith(".internal")) {
       return false;
     }
     if (host === "::" || host === "::1" || /^(?:fc|fd|fe8|fe9|fea|feb)/i.test(host)) return false;

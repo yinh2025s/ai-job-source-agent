@@ -110,9 +110,9 @@ Trace 记录 schedule policy/version、origin、evidence tier、score、canonica
 
 ## Browser Extension Boundary
 
-`extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。
+`extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。Search SPA 的详情证据必须绑定当前 `currentJobId` 或 detail root 的明确 job identity，不能把竞争 card 或 stale root 的 company/title/apply 组合到当前职位。Content response 使用 scan contract v2 的 `ready/not_ready`，popup 只进行有界 readiness retry。
 
-`scripts/extension_bridge.py` 只绑定 loopback，使用 bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
+`scripts/extension_bridge.py` 只绑定 loopback，使用 bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。Popup 只接受无 path/query/fragment/credential 的 `http://127.0.0.1:<port>`，请求有超时、重复操作保护、有限 polling recovery 和 stale-run 清理；展示层只链接 public HTTPS 结果。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
 
 ## Source Posting Availability
 
