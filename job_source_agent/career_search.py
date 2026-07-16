@@ -69,7 +69,9 @@ class CareerSearchResolver:
         company_name: str,
         company_website_url: str,
         *,
+        target_title: str | None = None,
         ats_only: bool = False,
+        exhaustive: bool = False,
     ) -> CareerSearchResult:
         official_domain = domain_of(company_website_url)
         candidates: list[LinkCandidate] = []
@@ -90,10 +92,11 @@ class CareerSearchResolver:
             "fetch_budget_invalid": False,
             "stopped_reason": None,
             "ats_only": ats_only,
+            "exhaustive": exhaustive,
         }
 
         configured_queries = (
-            build_ats_search_queries(company_name)
+            build_ats_search_queries(company_name, target_title)
             if ats_only
             else build_search_queries(company_name, official_domain)
         )
@@ -104,6 +107,7 @@ class CareerSearchResolver:
         source_fetches = 0
         disabled_sources: set[str] = set()
         for query_text in queries:
+            query_candidate_count = len(candidates)
             sources = _search_sources(query_text)
             if ats_only:
                 sources = [
@@ -173,9 +177,11 @@ class CareerSearchResolver:
                     seen,
                     query_trace,
                     ats_only=ats_only,
+                    allow_unbound_ats=bool(ats_only and target_title),
                 )
-                if candidates:
-                    trace["stopped_reason"] = "search_candidate_found"
+                if len(candidates) > query_candidate_count:
+                    if not exhaustive:
+                        trace["stopped_reason"] = "search_candidate_found"
                     break
                 if source.name == "bing_rss" and raw_urls:
                     use_ats_secondary = ats_only
@@ -186,7 +192,7 @@ class CareerSearchResolver:
                                 "reason": "rss_returned_results_without_valid_candidate",
                             }
                         ]
-            if candidates:
+            if len(candidates) > query_candidate_count and not exhaustive:
                 break
             if trace["source_fetch_budget_exhausted"]:
                 break
@@ -197,7 +203,9 @@ class CareerSearchResolver:
         selected = candidates[: self.max_results]
         trace["candidates"] = [_candidate_trace(candidate) for candidate in selected]
         if trace["stopped_reason"] is None:
-            trace["stopped_reason"] = "no_valid_candidates"
+            trace["stopped_reason"] = (
+                "query_plan_complete" if candidates else "no_valid_candidates"
+            )
         return CareerSearchResult(selected, trace)
 
     def _collect_search_candidates(
@@ -212,6 +220,7 @@ class CareerSearchResolver:
         query_trace: dict,
         *,
         ats_only: bool = False,
+        allow_unbound_ats: bool = False,
     ) -> None:
         for raw_url in raw_urls:
             cleaned = clean_search_result_url(raw_url)
@@ -221,7 +230,12 @@ class CareerSearchResolver:
             seen.add(key)
             if ats_only and not is_ats_url(cleaned):
                 continue
-            if not _is_valid_search_result(cleaned, company_name, official_domain):
+            if not _is_valid_search_result(
+                cleaned,
+                company_name,
+                official_domain,
+                allow_unbound_ats=allow_unbound_ats,
+            ):
                 continue
             link = RawLink(url=cleaned, text=cleaned, source_url=source_url, origin="search_result")
             candidate = score_career_link(link)
@@ -349,7 +363,13 @@ def _is_blocked(url: str) -> bool:
     return any(domain == blocked or domain.endswith("." + blocked) for blocked in BLOCKED_SEARCH_DOMAINS)
 
 
-def _is_valid_search_result(url: str, company_name: str, official_domain: str) -> bool:
+def _is_valid_search_result(
+    url: str,
+    company_name: str,
+    official_domain: str,
+    *,
+    allow_unbound_ats: bool = False,
+) -> bool:
     if is_resource_url(url) or _is_blocked(url):
         return False
     domain = domain_of(url)
@@ -363,6 +383,10 @@ def _is_valid_search_result(url: str, company_name: str, official_domain: str) -
         )
     if not is_ats_url(url):
         return False
+    # Title-targeted search only produces untrusted leads. Opaque ATS tenants
+    # are verified by provider and identity contracts downstream.
+    if allow_unbound_ats:
+        return True
     haystack = re.sub(r"[^a-z0-9]+", "", f"{domain}{urlparse(url).path}".lower())
     tokens = _identity_tokens(company_name, official_domain)
     company_tokens = _identity_tokens(company_name)
@@ -382,8 +406,22 @@ def build_search_queries(company_name: str, official_domain: str) -> list[str]:
     return dedupe_preserving_order(queries)
 
 
-def build_ats_search_queries(company_name: str) -> list[str]:
+def build_ats_search_queries(
+    company_name: str,
+    target_title: str | None = None,
+) -> list[str]:
     normalized_company = " ".join(_identity_tokens(company_name)) or company_name
+    normalized_title = " ".join((target_title or "").replace('"', " ").split())
+    if normalized_title:
+        return [
+            f'"{normalized_company}" "{normalized_title}" jobs',
+            f'site:myworkdayjobs.com "{normalized_company}" "{normalized_title}"',
+            f'site:oraclecloud.com "{normalized_company}" "{normalized_title}"',
+            f'site:job-boards.greenhouse.io "{normalized_company}" "{normalized_title}"',
+            f'site:jobs.lever.co "{normalized_company}" "{normalized_title}"',
+            f'site:jobs.ashbyhq.com "{normalized_company}" "{normalized_title}"',
+            f'site:jobs.smartrecruiters.com "{normalized_company}" "{normalized_title}"',
+        ]
     return [
         f'"{normalized_company}" careers jobs',
         f'site:job-boards.greenhouse.io "{normalized_company}" jobs',

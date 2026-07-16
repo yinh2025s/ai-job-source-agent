@@ -22,7 +22,11 @@ class LeverAdapter:
         parts = [part for part in urlparse(url).path.split("/") if part]
         if not parts:
             return None
-        return JobBoard(url=url, provider=self.name, identifier=parts[0])
+        return JobBoard(
+            url=f"https://jobs.lever.co/{parts[0]}",
+            provider=self.name,
+            identifier=parts[0],
+        )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
         if not board.identifier:

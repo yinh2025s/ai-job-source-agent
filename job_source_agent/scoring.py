@@ -4,7 +4,7 @@ import re
 from urllib.parse import parse_qsl, urlparse
 
 from .models import LinkCandidate
-from .web import RawLink, domain_of, path_depth
+from .web import EXPLICIT_JOB_LIST_COMMANDS, RawLink, domain_of, path_depth
 
 
 ATS_DOMAINS = (
@@ -29,6 +29,11 @@ ATS_DOMAINS = (
     "eightfold.ai",
     "careers.oracle.com",
     "oraclecloud.com",
+    "ultipro.com",
+    "recruiting.paylocity.com",
+    "recruitingbypaycor.com",
+    "applytojob.com",
+    "applicantstack.com",
     "whitecarrot.io",
     "whitecarrot.ai",
 )
@@ -62,6 +67,7 @@ JOB_TITLE_KEYWORDS = {
     "data": 20,
     "product": 20,
     "marketing": 18,
+    "nurse": 35,
     "sales": 18,
     "operations": 18,
     "research": 18,
@@ -96,26 +102,6 @@ NEGATIVE_KEYWORDS = {
     "guide": -55,
     "whitepaper": -80,
 }
-
-EXPLICIT_JOB_LIST_COMMANDS = (
-    "browse jobs",
-    "browse roles",
-    "explore jobs",
-    "explore roles",
-    "find jobs",
-    "find roles",
-    "job opportunities",
-    "job search",
-    "open positions",
-    "open roles",
-    "search jobs",
-    "search all jobs",
-    "search roles",
-    "staff careers",
-    "view jobs",
-    "view open jobs",
-    "view roles",
-)
 
 ATS_AUXILIARY_PATH_PARTS = {
     "introduceyourself",
@@ -191,6 +177,7 @@ _UUID_DETAIL_ID = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 )
 _OPAQUE_DETAIL_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._~-]{5,127}")
+_KEYWORD_TOKEN = re.compile(r"[a-z0-9]+")
 
 
 def is_ats_url(url: str) -> bool:
@@ -279,7 +266,9 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
     elif any(token in path for token in ("/jobs/", "/job/", "/positions/", "/openings/", "/job-openings/")):
         score += 60
         reasons.append("job-detail path pattern")
-    elif "/careers/" in path and any(keyword in text for keyword in JOB_TITLE_KEYWORDS):
+    elif "/careers/" in path and any(
+        _contains_keyword_phrase(text, keyword) for keyword in JOB_TITLE_KEYWORDS
+    ):
         score += 60
         reasons.append("job-detail path pattern")
     elif leaf == "search" and any(
@@ -296,7 +285,7 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
         reasons.append("explicit job-list command")
 
     for keyword, weight in JOB_TITLE_KEYWORDS.items():
-        if keyword in haystack:
+        if _contains_keyword_phrase(haystack, keyword):
             score += weight
             reasons.append(f"title keyword '{keyword}'")
 
@@ -311,12 +300,26 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
         score += 10
         reasons.append("specific URL depth")
 
+    if explicit_job_list_command and score < 55:
+        score = 55
+        reasons.append("explicit job-list traversal floor")
+
     return LinkCandidate(link.url, link.text, link.source_url, score, reasons, link.origin)
 
 
 def is_explicit_job_list_command(text: str) -> bool:
     normalized_text = " ".join(text.casefold().split())
     return any(phrase in normalized_text for phrase in EXPLICIT_JOB_LIST_COMMANDS)
+
+
+def _contains_keyword_phrase(text: str, keyword: str) -> bool:
+    tokens = _KEYWORD_TOKEN.findall(text.casefold())
+    keyword_tokens = _KEYWORD_TOKEN.findall(keyword.casefold())
+    phrase_length = len(keyword_tokens)
+    return any(
+        tokens[index : index + phrase_length] == keyword_tokens
+        for index in range(len(tokens) - phrase_length + 1)
+    )
 
 
 def is_likely_job_detail(candidate: LinkCandidate) -> bool:
@@ -370,6 +373,7 @@ def is_likely_job_listing_page(candidate: LinkCandidate) -> bool:
             or "job-listing path pattern" in reason_text
             or "job-listing route name" in reason_text
             or "explicit all-jobs route" in reason_text
+            or "explicit job-list command" in reason_text
             or (path_parts and _looks_like_generic_listing_leaf(path_parts[-1]))
             or "open roles" in text
             or "open positions" in text

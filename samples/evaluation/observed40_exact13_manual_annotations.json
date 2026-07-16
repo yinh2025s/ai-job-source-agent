@@ -1,0 +1,900 @@
+{
+  "manifest": {
+    "annotation_record_count": 27,
+    "cohort_record_count": 40,
+    "companies_sha256": "1250d5ffe92f424fe1a9399a253fe917e4208e0b82505e799c9fe51436d9ba49",
+    "reviewed_at": "2026-07-17T02:52:54+08:00",
+    "run_configuration_digest": "2fdc706a387845a161dde2808c6c008e4b8f51e9c89a3542e6102bd346e3d895",
+    "source_annotation_sha256": "5a75b2aebfd5a4c5100718445e0e7a2f061d17105d857c3506e43e85cd4f23fa",
+    "source_results_sha256": "3fa443fc7cb2b3af85fe659943188b64a50dd592f62dadabaed4bc05703f39c1",
+    "source_summary_sha256": "b7aa41657ff98c0017ece356a8c558e3b47389e09f09bb08cf52b4b701f4fcb0",
+    "source_trace_sha256": "dd1ae16e045a74afefe8ae86b420f50d6f335084fa64eb28e36e6815f327def0"
+  },
+  "records": [
+    {
+      "company_name": "Resonate AI",
+      "eligible_exact_opening": false,
+      "evidence": [
+        {
+          "finding": "S2 verified the website; S4 exhausted all 32 transport calls without a verified Career or ATS destination.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "the homepage labels `/resources` as Careers, but that route is also used for Events and News and does not verify a public hiring destination.",
+          "source": "targeted_follow_up",
+          "urls": []
+        },
+        {
+          "finding": "\u5b98\u7f51\u6ca1\u6709 Career page\uff0c\u4e0d\u5c5e\u4e8e\u7cfb\u7edf\u9057\u6f0f\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "no_public_opening",
+      "expected_opening_url": null,
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-%24125k-%24200k-0-2%25-to-1%25-at-resonate-ai-4436043581",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "https://www.resonateapp.com/",
+        "error_code": "FETCH_BUDGET_EXHAUSTED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u5b98\u7f51\u5c31\u6ca1\u6709careerpage\uff0c\u4e0d\u662f\u4f60\u7684\u95ee\u9898",
+      "root_cause": "FETCH_BUDGET_EXHAUSTED",
+      "target_location": "San Francisco, CA",
+      "target_title": "Software Engineer ($125k-$200k, 0.2% to 1%)"
+    },
+    {
+      "company_name": "Solace",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "the selected same-name website/Career surface did not yield a verified Job Board.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "`solace.com` appears to be a technology company; restoring the old result could create a wrong-company exact.",
+          "source": "review_warning",
+          "urls": []
+        },
+        {
+          "finding": "\u7cfb\u7edf\u9009\u62e9\u4e86\u9519\u8bef\u7684\u540c\u540d\u516c\u53f8\u7f51\u7ad9\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "identity_rejected",
+      "expected_opening_url": null,
+      "failure_stage": "job_board_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-healthcare-advocate-remote-1099-rn-at-solace-4430828700",
+      "observed_result": {
+        "career_page_url": "https://solace.com/careers/",
+        "company_website_url": "https://solace.com/",
+        "error_code": "JOB_BOARD_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4ed6\u5988\u7684\u516c\u53f8\u627e\u9519\u4e86\uff0c\u627e\u4e86\u4e2a\u540c\u540d\u516c\u53f8\uff0c\u5f53\u7136\u627e\u4e0d\u5230",
+      "root_cause": "JOB_BOARD_NOT_FOUND",
+      "target_location": "United States",
+      "target_title": "Registered Nurse Healthcare Advocate (Remote 1099) - RN"
+    },
+    {
+      "company_name": "Northwell Health",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "official Job List verified; inventory traversal did not establish a complete target-opening result.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "official Job List recovered again, but no exact opening was confirmed.",
+          "source": "targeted_follow_up",
+          "urls": []
+        },
+        {
+          "finding": "Job List \u7684\u641c\u7d22\u529f\u80fd\u53ef\u4ee5\u627e\u5230\u76ee\u6807\u5c97\u4f4d\uff1b\u7cfb\u7edf\u6ca1\u6709\u5b8c\u6210\u6700\u540e\u4e00\u6b65\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": null,
+      "failure_stage": "opening_match",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-ambulatory-ob-gyn-at-northwell-health-4439580063",
+      "observed_result": {
+        "career_page_url": "https://jobs.northwell.edu/",
+        "company_website_url": "https://www.northwell.edu/",
+        "error_code": null,
+        "job_list_page_url": "https://jobs.northwell.edu/job-search-results/",
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u5df2\u7ecf\u8fdb\u5165joblist\u4e86\u53ea\u9700\u8981\u518d\u505a\u4e00\u6b65\uff0c\u7528\u7f51\u9875\u4e0a\u63d0\u4f9b\u7684\u641c\u7d22\u5c31\u53ef\u4ee5\u627e\u5230",
+      "root_cause": "OPENING_DISCOVERY_INCOMPLETE",
+      "target_location": "Lake Success, NY",
+      "target_title": "Registered Nurse - Ambulatory (OB/GYN)"
+    },
+    {
+      "company_name": "Hugh Chatham Health",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "website resolved; no Career page passed verification.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u5b98\u7f51\u65e0\u6cd5\u6253\u5f00\uff0c\u4f46 Workday \u4e0a\u5b58\u5728\u76ee\u6807\u5c97\u4f4d\uff1b\u7cfb\u7edf\u4ecd\u5e94\u901a\u8fc7 ATS \u5019\u9009\u8def\u5f84\u6062\u590d\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": null,
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-hugh-chatham-health-4439383470",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "http://www.hughchatham.org",
+        "error_code": "CAREER_PAGE_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u5b98\u7f51\u6211\u6253\u4e0d\u5f00\uff0c\u4f46\u662fworkday\u4e0a\u9762\u6709\u8fd9\u4e2a\u5c97\u4f4d",
+      "root_cause": "CAREER_PAGE_NOT_FOUND",
+      "target_location": "Monroe, NC",
+      "target_title": "Registered Nurse (RN) Weekender - LDRP"
+    },
+    {
+      "company_name": "Incredible Health",
+      "eligible_exact_opening": false,
+      "evidence": [
+        {
+          "finding": "website verified; S4 transport budget exhausted before a Career page was verified.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "LinkedIn \u663e\u793a `No longer accepting applications`\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "verified_closed",
+      "expected_opening_url": null,
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-pediatric-ambulatory-care-at-incredible-health-4440558383",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "http://www.incrediblehealth.com",
+        "error_code": "FETCH_BUDGET_EXHAUSTED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "No longer accepting applications\uff0c\u4e0d\u662f\u4f60\u7684\u95ee\u9898",
+      "root_cause": "FETCH_BUDGET_EXHAUSTED",
+      "target_location": "Atlanta, GA",
+      "target_title": "Registered Nurse - Pediatric Ambulatory Care"
+    },
+    {
+      "company_name": "Texas Children's Hospital",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "S2 did not verify a company website strongly enough to start the hiring identity chain.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u5b98\u65b9 Oracle opening \u5b58\u5728\uff1a[job 425798](https://eohh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/425798?utm_medium=jobshare)\u3002\u7cfb\u7edf\u672a\u6062\u590d\u5df2\u77e5\u5b98\u7f51/ATS \u8eab\u4efd\u94fe\u3002",
+          "source": "manual_review",
+          "urls": [
+            "https://eohh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/425798?utm_medium=jobshare"
+          ]
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": "https://eohh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/425798?utm_medium=jobshare",
+      "failure_stage": "website_resolution",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-ldrp-at-texas-children-s-hospital-4439315467",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "",
+        "error_code": "WEBSITE_NOT_RESOLVED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u4e3a\u5565\u627e\u4e0d\u5230\uff0c\u4e4b\u524d\u4e0d\u662f\u6210\u529f\u627e\u5230\u7f51\u7ad9\u4e86\u5417\uff0c[eohh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/425798?utm_medium=jobshare](https://eohh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/425798?utm_medium=jobshare)\u662f\u76ee\u6807\u5c97\u4f4d",
+      "root_cause": "WEBSITE_NOT_RESOLVED",
+      "target_location": "Austin, TX",
+      "target_title": "Registered Nurse (RN) - LDRP"
+    },
+    {
+      "company_name": "Roper St. Francis Healthcare",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "website resolved; no Career page passed verification.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u5b98\u7f51\u540c\u6837\u65e0\u6cd5\u6253\u5f00\uff0c\u5f53\u524d\u8bc1\u636e\u4e0d\u8db3\u4ee5\u5224\u65ad\u662f\u5426\u5b58\u5728\u516c\u5f00\u76ee\u6807 opening\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "external_blocked",
+      "expected_opening_url": null,
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-full-time-at-roper-st-francis-healthcare-4436643921",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "https://www.rsfh.com",
+        "error_code": "CAREER_PAGE_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u5b98\u7f51\u6211\u4e5f\u6253\u4e0d\u5f00",
+      "root_cause": "CAREER_PAGE_NOT_FOUND",
+      "target_location": "Hayward, CA",
+      "target_title": "Registered Nurse (RN) - Full Time"
+    },
+    {
+      "company_name": "Atrium Health",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "website verified; S4 transport budget exhausted before a Career page was verified.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u5fc5\u987b\u5148\u521b\u5efa\u8d26\u6237\uff1b\u4ea7\u54c1\u5e94\u5411\u7528\u6237\u660e\u786e\u8bf4\u660e\u8fd9\u79cd\u5916\u90e8\u9650\u5236\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "external_blocked",
+      "expected_opening_url": null,
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-atrium-health-4438801210",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "https://atriumhealth.org",
+        "error_code": "FETCH_BUDGET_EXHAUSTED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "\u5fc5\u987b\u8981\u5148\u521b\u5efa\u8d26\u6237\uff0c\u4e0d\u662f\u4f60\u7684\u95ee\u9898\uff0c\u4e0d\u8fc7\u540e\u9762\u6700\u597d\u7528\u7075\u6d3b\u7684\u8bed\u8a00\u544a\u8bc9\u7528\u6237\u4e3a\u4ec0\u4e48\uff0c\u50cf\u8fd9\u79cd\u5916\u529b\u7684\u60c5\u51b5\u8981\u8ba9\u7528\u6237\u77e5\u9053",
+      "root_cause": "FETCH_BUDGET_EXHAUSTED",
+      "target_location": "Monroe, NC",
+      "target_title": "Registered Nurse (RN) Weekender - LDRP"
+    },
+    {
+      "company_name": "Community Health Center of Snohomish County (CHC)",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "the frozen run lost valid homepage navigation evidence across apex/`www` normalization.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "verified UltiPro board and [exact opening](https://recruiting2.ultipro.com/COM1101CMHS/JobBoard/8de41890-2fe6-4347-b1ad-f3043de88a1a/OpportunityDetail?opportunityId=7905b0d4-e183-4125-b3f6-fc6044809d7d).",
+          "source": "targeted_follow_up",
+          "urls": [
+            "https://recruiting2.ultipro.com/COM1101CMHS/JobBoard/8de41890-2fe6-4347-b1ad-f3043de88a1a/OpportunityDetail?opportunityId=7905b0d4-e183-4125-b3f6-fc6044809d7d"
+          ]
+        },
+        {
+          "finding": "`Open Positions` \u540e\u5373\u53ef\u8fdb\u5165 Job List\uff1b\u51bb\u7ed3\u8fd0\u884c\u5b58\u5728\u7cfb\u7edf\u7f3a\u53e3\uff0c\u540e\u7eed\u5df2\u6062\u590d exact\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": "https://recruiting2.ultipro.com/COM1101CMHS/JobBoard/8de41890-2fe6-4347-b1ad-f3043de88a1a/OpportunityDetail?opportunityId=7905b0d4-e183-4125-b3f6-fc6044809d7d",
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-clinical-at-community-health-center-of-snohomish-county-chc-4439063616",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "https://chcsno.org",
+        "error_code": "CAREER_PAGE_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u4e34\u95e8\u4e00\u811a\u6ca1\u6709\u70b9\u5f00\uff0copen position\u5c31\u80fd\u770b\u5230job list\u7136\u540e\u5c31\u53ef\u4ee5\u627e\u5230\u4e86\uff0c\u8001\u95ee\u9898",
+      "root_cause": "CAREER_PAGE_NOT_FOUND",
+      "target_location": "Lynnwood, WA",
+      "target_title": "Registered Nurse - Clinical"
+    },
+    {
+      "company_name": "Aarris Healthcare",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "the Career page exposed ApplicantStack detail links, but this frozen run did not yet support ApplicantStack.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "verified [ApplicantStack board](https://aarris.applicantstack.com/x/openings) and [exact opening](https://aarris.applicantstack.com/x/detail/a27xztr5mziq).",
+          "source": "targeted_follow_up",
+          "urls": [
+            "https://aarris.applicantstack.com/x/openings",
+            "https://aarris.applicantstack.com/x/detail/a27xztr5mziq"
+          ]
+        },
+        {
+          "finding": "\u76ee\u6807\u804c\u4f4d\u5df2\u7ecf\u5728\u9875\u9762\u4e0a\uff0c\u5386\u53f2\u8fd0\u884c\u6ca1\u6709\u8fdb\u5165 detail\uff1b\u5c5e\u4e8e\u7cfb\u7edf\u7f3a\u53e3\uff0c\u540e\u7eed ApplicantStack adapter \u5df2\u6062\u590d exact\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": "https://aarris.applicantstack.com/x/detail/a27xztr5mziq",
+      "failure_stage": "job_board_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/9a-rn-registered-nurse-per-diem-at-aarris-healthcare-4437952329",
+      "observed_result": {
+        "career_page_url": "https://aarrishealthcare.com/careers/",
+        "company_website_url": "https://aarrishealthcare.com/",
+        "error_code": "JOB_BOARD_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u4e0d\u662f\u4e4b\u524d\u5c31\u6307\u51fa\u95ee\u9898\u4e86\u5417\uff0c\u627e\u5230\u4e86job list\u4e86\uff0c\u76ee\u6807\u804c\u4f4d\u5c31\u5728\u9762\u524d\u4f46\u662f\u6ca1\u6709\u70b9\u8fdb\u53bb\uff0c\u600e\u4e48\u8fd8\u6ca1\u4fee\u597d",
+      "root_cause": "JOB_BOARD_NOT_FOUND",
+      "target_location": "California, United States",
+      "target_title": "(9A) RN (Registered Nurse) Per Diem"
+    },
+    {
+      "company_name": "Gary and Mary West PACE",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "iSolved Job List verified; public inventory could not be read completely enough to publish an exact or verified no-match.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u76ee\u6807\u5c97\u4f4d\u5c31\u5728 Job List \u9996\u9879\uff0c\u7cfb\u7edf\u6ca1\u6709\u8fdb\u5165 detail\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": null,
+      "failure_stage": "opening_match",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-%245-000-00-sign-on-bonus-at-gary-and-mary-west-pace-4439515404",
+      "observed_result": {
+        "career_page_url": "https://westpace.isolvedhire.com/jobs/",
+        "company_website_url": "https://www.westpace.org",
+        "error_code": null,
+        "job_list_page_url": "https://westpace.isolvedhire.com//jobs/",
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u5df2\u7ecf\u627e\u5230joblist\u4e86\u5440\uff0c\u5c31\u5728\u7b2c\u4e00\u4e2a\u4e3a\u4ec0\u4e48\u6ca1\u70b9\u8fdb\u53bb\u5462",
+      "root_cause": "OPENING_DISCOVERY_INCOMPLETE",
+      "target_location": "San Marcos, CA",
+      "target_title": "Registered Nurse - $5,000.00 sign on bonus"
+    },
+    {
+      "company_name": "Focus Health Network",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "Career page verified; no public, provider-verifiable Job Board was found. The visible flow points toward Teams/contact rather than public inventory.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u9700\u8981\u8fdb\u5165 Teams \u624d\u80fd\u67e5\u770b\u804c\u4f4d\uff0c\u4e0d\u662f\u516c\u5f00\u533f\u540d inventory\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "external_blocked",
+      "expected_opening_url": null,
+      "failure_stage": "job_board_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/rn-registered-nurse-offering-%244000-sign-on-bonus-at-focus-health-network-4437923724",
+      "observed_result": {
+        "career_page_url": "https://focushealthnet.com/careers/",
+        "company_website_url": "https://focushealthnet.com",
+        "error_code": "JOB_BOARD_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u8981\u8fdbteam\u91cc\u9762\u770b\u804c\u4f4d\uff0c\u786e\u5b9e\u4e0d\u662f\u4f60\u7684\u95ee\u9898",
+      "root_cause": "JOB_BOARD_NOT_FOUND",
+      "target_location": "Royersford, PA",
+      "target_title": "RN Registered nurse- Offering $4000 sign on bonus"
+    },
+    {
+      "company_name": "Vetted Solutions",
+      "eligible_exact_opening": false,
+      "evidence": [
+        {
+          "finding": "website verified; S4 transport budget exhausted before a Career page was verified.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "LinkedIn \u663e\u793a `No longer accepting applications`\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "verified_closed",
+      "expected_opening_url": null,
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-full-time-at-vetted-solutions-4439784701",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "https://www.vettedsolutions.com",
+        "error_code": "FETCH_BUDGET_EXHAUSTED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "No longer accepting applications\uff0c\u4e0d\u662f\u4f60\u7684\u95ee\u9898",
+      "root_cause": "FETCH_BUDGET_EXHAUSTED",
+      "target_location": "Irving, TX",
+      "target_title": "Registered Nurse - Full Time"
+    },
+    {
+      "company_name": "L'OCCITANE Group (B Corp)",
+      "eligible_exact_opening": false,
+      "evidence": [
+        {
+          "finding": "Career surface verified; a Sol de Janeiro Greenhouse lead lacked sufficient parent/brand hiring-relationship evidence and was rejected.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u6ca1\u6709\u516c\u5f00 Job List\uff0c\u53ea\u80fd\u5728 LinkedIn \u7533\u8bf7\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "no_public_opening",
+      "expected_opening_url": null,
+      "failure_stage": "job_board_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/key-account-manager-%E2%80%93-sephora-at-l-occitane-group-b-corp-4439870928",
+      "observed_result": {
+        "career_page_url": "https://careers.loccitane.com/",
+        "company_website_url": "https://group.loccitane.com",
+        "error_code": "JOB_BOARD_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u597d\u50cf\u5c31\u6ca1\u6709job list\u53ea\u80fd\u5728\u9886\u82f1\u662f\u7533\u8bf7\uff0c\u4e0d\u662f\u4f60\u7684\u95ee\u9898",
+      "root_cause": "JOB_BOARD_NOT_FOUND",
+      "target_location": "New York, NY",
+      "target_title": "Key Account Manager \u2013 Sephora"
+    },
+    {
+      "company_name": "Lacoste",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "Career page verified; no supported and identity-verified Job Board was established.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u70b9\u51fb `Job Offers` \u540e\u53ef\u641c\u7d22\u76ee\u6807\u5c97\u4f4d\uff0c\u5c5e\u4e8e\u7cfb\u7edf\u6ca1\u6709\u7ee7\u7eed\u6267\u884c\u7684\u7f3a\u53e3\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": null,
+      "failure_stage": "job_board_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lacoste-4411244008",
+      "observed_result": {
+        "career_page_url": "https://careers.lacoste.com/en",
+        "company_website_url": "https://corporate.lacoste.com",
+        "error_code": "JOB_BOARD_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u4e5f\u662f\u70b9\u8fdb\u53bb\u201cjob offers\"\u5c31\u53ef\u4ee5\u901a\u8fc7\u641c\u7d22\u76ee\u6807\u5c97\u4f4d\u540d\u79f0\u627e\u5230\uff0c\u8fd9\u4e2a\u95ee\u9898\u5e94\u8be5\u65e9\u5c31\u88ab\u4fee\u590d",
+      "root_cause": "JOB_BOARD_NOT_FOUND",
+      "target_location": "New York, NY",
+      "target_title": "Account Executive"
+    },
+    {
+      "company_name": "Lilly Pulitzer",
+      "eligible_exact_opening": false,
+      "evidence": [
+        {
+          "finding": "official Workday board reached; opening inventory ended with `NETWORK_TIMEOUT`.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "LinkedIn \u663e\u793a `No longer accepting applications`\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "verified_closed",
+      "expected_opening_url": null,
+      "failure_stage": "opening_match",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lilly-pulitzer-4429546241",
+      "observed_result": {
+        "career_page_url": "https://www.lillypulitzer.com/content-pages/dream-jobs-october-update.html",
+        "company_website_url": "https://www.lillypulitzer.com/",
+        "error_code": null,
+        "job_list_page_url": "https://oxford.wd5.myworkdayjobs.com/LillyPulitzer",
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "No longer accepting applications",
+      "root_cause": "NETWORK_TIMEOUT",
+      "target_location": "Greater Philadelphia",
+      "target_title": "Account Executive"
+    },
+    {
+      "company_name": "PUMA Group",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "S2 did not verify a region-compatible official website.",
+          "source": "frozen_runtime",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "unknown",
+      "expected_opening_url": null,
+      "failure_stage": "website_resolution",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-remote-midwest-chicago-at-puma-group-4400268406",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "",
+        "error_code": "WEBSITE_NOT_RESOLVED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "Pending manual review.",
+      "root_cause": "WEBSITE_NOT_RESOLVED",
+      "target_location": "Aurora, CO",
+      "target_title": "Account Executive (Remote - Midwest Chicago)"
+    },
+    {
+      "company_name": "Cassidy",
+      "eligible_exact_opening": false,
+      "evidence": [
+        {
+          "finding": "website verified; S4 transport budget exhausted before a Career page was verified.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u5b98\u7f51\u6ca1\u6709\u72ec\u7acb\u7533\u8bf7\u6e20\u9053\uff0c\u53ea\u80fd\u5728 LinkedIn \u7533\u8bf7\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "no_public_opening",
+      "expected_opening_url": null,
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-cassidy-4431720375",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "https://www.cassidyai.com/",
+        "error_code": "FETCH_BUDGET_EXHAUSTED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u5b98\u7f51\u627e\u5230\u4e86\uff0c\u4e0d\u8fc7\u5b98\u7f51\u6ca1\u6709\u8bbe\u7f6e\u5355\u72ec\u7684\u7533\u8bf7\u6e20\u9053\uff0c\u53cd\u800c\u662f\u53ea\u80fd\u5728linkedin\u4e0a\u7533\u8bf7\uff0c\u8fd9\u4e2a\u4e5f\u4e0d\u662f\u4f60\u7684\u95ee\u9898",
+      "root_cause": "FETCH_BUDGET_EXHAUSTED",
+      "target_location": "New York, NY",
+      "target_title": "Account Executive"
+    },
+    {
+      "company_name": "Parfums Christian Dior",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "S2 did not verify a company website; live attempts included external network/rate-limit instability.",
+          "source": "frozen_runtime",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "unknown",
+      "expected_opening_url": null,
+      "failure_stage": "website_resolution",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-miami-north-at-parfums-christian-dior-4428680533",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "",
+        "error_code": "WEBSITE_NOT_RESOLVED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "Pending manual review.",
+      "root_cause": "WEBSITE_NOT_RESOLVED",
+      "target_location": "Fort Lauderdale, FL",
+      "target_title": "Account Executive, Miami North"
+    },
+    {
+      "company_name": "Tata Technologies",
+      "eligible_exact_opening": false,
+      "evidence": [
+        {
+          "finding": "official Job List reached; opening inventory ended with `BOT_PROTECTION`.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u4eba\u5de5\u68c0\u67e5\u4e5f\u672a\u627e\u5230\u76ee\u6807\u5c97\u4f4d\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "no_public_opening",
+      "expected_opening_url": null,
+      "failure_stage": "opening_match",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-rotating-component-design-at-tata-technologies-4432858143",
+      "observed_result": {
+        "career_page_url": "https://www.tata.com/careers/jobs",
+        "company_website_url": "https://www.tata.com/home-page",
+        "error_code": null,
+        "job_list_page_url": "https://www.tata.com/careers/jobs/joblisting",
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u597d\u50cf\u786e\u5b9e\u6ca1\u6709",
+      "root_cause": "BOT_PROTECTION",
+      "target_location": "Indianapolis, IN",
+      "target_title": "Mechanical Engineer (Rotating component design)"
+    },
+    {
+      "company_name": "System One",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "the frozen run stopped on a first-party article whose path looked like a listing and did not follow its explicit Search Jobs portal.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "verified [Job List](https://jobs.systemone.com/) and [exact opening](https://jobs.systemone.com/job/mechanical-design-engineer-industrial-manufacturing-york-pa-376670/07c3bf4e-7d3a-11f1-9454-02420a6c7775).",
+          "source": "targeted_follow_up",
+          "urls": [
+            "https://jobs.systemone.com/",
+            "https://jobs.systemone.com/job/mechanical-design-engineer-industrial-manufacturing-york-pa-376670/07c3bf4e-7d3a-11f1-9454-02420a6c7775"
+          ]
+        },
+        {
+          "finding": "\u4eba\u5de5\u6700\u521d\u672a\u627e\u5230\uff0c\u4f46\u540e\u7eed targeted live \u5df2\u9a8c\u8bc1\u76ee\u6807 exact opening\uff0c\u8bc1\u660e\u51bb\u7ed3\u8fd0\u884c\u5b58\u5728\u7cfb\u7edf\u7f3a\u53e3\u4e14\u73b0\u5df2\u4fee\u590d\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": "https://jobs.systemone.com/job/mechanical-design-engineer-industrial-manufacturing-york-pa-376670/07c3bf4e-7d3a-11f1-9454-02420a6c7775",
+      "failure_stage": "opening_match",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-system-one-4438887636",
+      "observed_result": {
+        "career_page_url": "https://www.systemone.com/careers/job-search-tips/",
+        "company_website_url": "https://www.systemone.com/",
+        "error_code": null,
+        "job_list_page_url": "https://www.systemone.com/careers/job-search-tips/",
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u6ca1\u627e\u5bf9careerpage\uff0c\u4e0d\u8fc7\u6211\u8fdb\u53bb\u4e5f\u6ca1\u627e\u5230\uff0c\u4e0d\u77e5\u9053\u4ec0\u4e48\u60c5\u51b5\uff0c\u53ef\u80fd\u786e\u5b9e\u6ca1\u6709\u8fd9\u4e2a\u5c97\u4f4d",
+      "root_cause": "OPENING_DISCOVERY_INCOMPLETE",
+      "target_location": "York, PA",
+      "target_title": "Mechanical Design Engineer"
+    },
+    {
+      "company_name": "Avery Dennison",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "Job List surface verified; the scoped SmartRecruiters/public inventory path remained incomplete for this target.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "Job List \u6b63\u786e\uff0c\u4f46\u7cfb\u7edf\u6ca1\u6709\u8fdb\u5165\u76ee\u6807 detail\uff0c\u5c5e\u4e8e\u5c1a\u672a\u5f7b\u5e95\u89e3\u51b3\u7684\u6700\u540e\u4e00\u6b65\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": null,
+      "failure_stage": "opening_match",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-avery-dennison-4439889950",
+      "observed_result": {
+        "career_page_url": "https://www.averydennison.com/en/home/careers/search-jobs.html",
+        "company_website_url": "https://www.averydennison.com/en/home.html",
+        "error_code": null,
+        "job_list_page_url": "https://www.averydennison.com/en/home/careers/search-jobs.html",
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2ajoblist\u627e\u5bf9\u4e86\uff0c\u5c31\u662f\u6ca1\u70b9\u8fdb\u53bb\uff0c\u6211\u53d1\u73b0\u8fd9\u4e2a\u95ee\u9898\u8fd8\u662f\u6ca1\u6709\u5f7b\u5e95\u89e3\u51b3\uff0c\u4e34\u95e8\u4e00\u811a\u4e86\u6ca1\u8fdb\u53bb",
+      "root_cause": "OPENING_DISCOVERY_INCOMPLETE",
+      "target_location": "Azusa, CA",
+      "target_title": "Mechanical Design Engineer"
+    },
+    {
+      "company_name": "Ellaway Blues Consulting",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "first-party jobs surface verified; its Wix Cloud Data inventory transport is unsupported/incomplete.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u4eba\u5de5\u4e5f\u65e0\u6cd5\u641c\u5230\u76ee\u6807\u5c97\u4f4d\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "eligibility_unknown",
+      "expected_opening_url": null,
+      "failure_stage": "opening_match",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/senior-manufacturing-engineer-at-ellaway-blues-consulting-4431243756",
+      "observed_result": {
+        "career_page_url": "https://www.ellawayblues.com/jobs",
+        "company_website_url": "https://www.ellawayblues.com",
+        "error_code": null,
+        "job_list_page_url": "https://www.ellawayblues.com/jobs",
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u6211\u90fd\u641c\u4e0d\u5230\uff0c\u53ef\u80fd\u786e\u5b9e\u6ca1\u6709",
+      "root_cause": "OPENING_DISCOVERY_INCOMPLETE",
+      "target_location": "Dallas-Fort Worth Metroplex",
+      "target_title": "Senior Manufacturing Engineer"
+    },
+    {
+      "company_name": "Electrolux Group",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "S2 did not verify a company website strongly enough to continue.",
+          "source": "frozen_runtime",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "unknown",
+      "expected_opening_url": null,
+      "failure_stage": "website_resolution",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/manufacturing-engineer-at-electrolux-group-4422447041",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "",
+        "error_code": "WEBSITE_NOT_RESOLVED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "Pending manual review.",
+      "root_cause": "WEBSITE_NOT_RESOLVED",
+      "target_location": "Kinston, NC",
+      "target_title": "Manufacturing Engineer"
+    },
+    {
+      "company_name": "Gucci",
+      "eligible_exact_opening": "unknown",
+      "evidence": [
+        {
+          "finding": "S2 did not verify a company website strongly enough to continue.",
+          "source": "frozen_runtime",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "unknown",
+      "expected_opening_url": null,
+      "failure_stage": "website_resolution",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/gucci-financial-analyst-at-gucci-4432834505",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "",
+        "error_code": "WEBSITE_NOT_RESOLVED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "Pending manual review.",
+      "root_cause": "WEBSITE_NOT_RESOLVED",
+      "target_location": "New York, NY",
+      "target_title": "GUCCI Financial Analyst"
+    },
+    {
+      "company_name": "SpaceX",
+      "eligible_exact_opening": true,
+      "evidence": [
+        {
+          "finding": "website verified; S4 transport budget exhausted before a Career page was verified.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u5b98\u7f51\u6b63\u786e\uff1b\u8fdb\u5165 Career page \u540e\u641c\u7d22\u804c\u4f4d\u540d\u79f0\u5373\u53ef\u627e\u5230\uff0c\u5c5e\u4e8e\u7cfb\u7edf\u6ca1\u6709\u7ee7\u7eed\u6267\u884c\u7684\u7f3a\u53e3\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "system_gap",
+      "expected_opening_url": null,
+      "failure_stage": "career_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-spacex-4408086850",
+      "observed_result": {
+        "career_page_url": null,
+        "company_website_url": "https://www.spacex.com/",
+        "error_code": "FETCH_BUDGET_EXHAUSTED",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "failed"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u662f\u4f60\u7684\u95ee\u9898\uff0c\u5b98\u7f51\u627e\u5bf9\u4e86\uff0c\u53ea\u8981\u8fdb\u5165careerpage\u641c\u7d22\u90a3\u4e2a\u804c\u4f4d\u540d\u79f0\u5c31\u80fd\u627e\u5230\uff0c\u4e0d\u77e5\u9053\u4e3a\u4ec0\u4e48\u6ca1\u6709\u505a\u4e0b\u53bb",
+      "root_cause": "FETCH_BUDGET_EXHAUSTED",
+      "target_location": "Hawthorne, CA",
+      "target_title": "Financial Analyst"
+    },
+    {
+      "company_name": "Hoxton Circle",
+      "eligible_exact_opening": false,
+      "evidence": [
+        {
+          "finding": "Career page verified; the public flow appears to collect resumes for recruiter follow-up rather than expose a public Job Board.",
+          "source": "frozen_runtime",
+          "urls": []
+        },
+        {
+          "finding": "\u5fc5\u987b\u5148\u4e0a\u4f20\u7b80\u5386\uff0c\u65e0\u6cd5\u533f\u540d\u6d4f\u89c8\u5c97\u4f4d\u3002",
+          "source": "manual_review",
+          "urls": []
+        }
+      ],
+      "expected_disposition": "no_public_opening",
+      "expected_opening_url": null,
+      "failure_stage": "job_board_discovery",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/fp-a-financial-business-analyst-at-hoxton-circle-4429467989",
+      "observed_result": {
+        "career_page_url": "https://www.hoxtoncircle.com/find-your-career",
+        "company_website_url": "https://www.hoxtoncircle.com",
+        "error_code": "JOB_BOARD_NOT_FOUND",
+        "job_list_page_url": null,
+        "open_position_url": null,
+        "pipeline_status": "partial"
+      },
+      "reviewer_notes": "\u8fd9\u4e2a\u5fc5\u987b\u5148\u4e0a\u4f20\u7b80\u5386\uff0c\u6d41\u7a0b\u6ca1\u529e\u6cd5\u76f4\u63a5\u770b\u5230\u5c97\u4f4d\uff0c\u4e0d\u602a\u4f60",
+      "root_cause": "JOB_BOARD_NOT_FOUND",
+      "target_location": "Melville, NY",
+      "target_title": "FP&A - Financial Business Analyst"
+    }
+  ],
+  "schema_version": "1.0"
+}

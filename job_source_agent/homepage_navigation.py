@@ -69,7 +69,17 @@ class HomepageNavigationEvidence:
         )
 
     def matches(self, homepage_url: str) -> bool:
-        return _public_queryless_https_url(homepage_url) == self.homepage_url
+        normalized = _public_queryless_https_url(homepage_url)
+        if normalized is None:
+            return False
+        expected = urlparse(self.homepage_url)
+        actual = urlparse(normalized)
+        expected_host = (expected.hostname or "").casefold().removeprefix("www.")
+        actual_host = (actual.hostname or "").casefold().removeprefix("www.")
+        return (
+            expected_host == actual_host
+            and expected.path.rstrip("/") == actual.path.rstrip("/")
+        )
 
     def raw_links(self) -> list[RawLink]:
         return [

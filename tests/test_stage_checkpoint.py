@@ -15,6 +15,7 @@ from job_source_agent.homepage_navigation import HomepageNavigationEvidence
 from job_source_agent.identity_continuity import (
     HiringIdentityEvidence,
     OpeningIdentity,
+    OpeningSelectionEvidence,
     ProviderIdentity,
 )
 from job_source_agent.models import PIPELINE_STAGES, StageResult
@@ -47,12 +48,24 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
             canonical_board_url="https://jobs.lever.co/acme",
             canonical_opening_url="https://jobs.lever.co/acme/role-123",
         )
+        selection = OpeningSelectionEvidence(
+            provider="lever",
+            tenant="acme",
+            canonical_board_url="https://jobs.lever.co/acme",
+            canonical_opening_url="https://jobs.lever.co/acme/role-123",
+            title="AI Engineer",
+            location="Remote",
+            inventory_scope="full",
+            inventory_complete=True,
+            candidate_count=2,
+        )
         execution = StageExecution(
             result=StageResult(stage="opening_match", status="success"),
             updates={
                 "hiring_identity_evidence": hiring,
                 "provider_identity": provider,
                 "opening_identity": opening,
+                "opening_selection_evidence": selection,
             },
         )
 
@@ -65,6 +78,7 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.assertEqual(restored.updates["hiring_identity_evidence"], hiring)
         self.assertEqual(restored.updates["provider_identity"], provider)
         self.assertEqual(restored.updates["opening_identity"], opening)
+        self.assertEqual(restored.updates["opening_selection_evidence"], selection)
 
     def test_homepage_navigation_round_trips_as_typed_context_update(self):
         evidence = HomepageNavigationEvidence(

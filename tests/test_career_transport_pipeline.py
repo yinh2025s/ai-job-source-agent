@@ -70,6 +70,59 @@ class CareerTransportPipelineTests(unittest.TestCase):
             {"verified_homepage_navigation_candidates": 1},
         )
 
+    def test_www_equivalent_homepage_navigation_saves_homepage_dispatch(self):
+        homepage = "https://company.example"
+        careers = "https://www.company.example/careers"
+        base = RecordingCareerFetcher(
+            {careers: "<html><body>Open roles and careers</body></html>"}
+        )
+        agent = build_agent(base, limit=1)
+        evidence = HomepageNavigationEvidence(
+            homepage_url="https://www.company.example/",
+            candidate_urls=(careers,),
+        )
+
+        selected, trace = agent.find_career_page(
+            homepage,
+            company_name="Company",
+            homepage_navigation_evidence=evidence,
+        )
+
+        self.assertEqual(selected, careers)
+        self.assertEqual(base.calls, [careers])
+        self.assertEqual(
+            trace["homepage_navigation_evidence"]["status"],
+            "candidate_verification",
+        )
+
+    def test_non_www_subdomain_navigation_evidence_is_not_equivalent(self):
+        homepage = "https://company.example"
+        careers = "https://company.example/careers"
+        base = RecordingCareerFetcher(
+            {
+                homepage: f'<a href="{careers}">Careers</a>',
+                careers: "<html><body>Open roles and careers</body></html>",
+            }
+        )
+        agent = build_agent(base, limit=2)
+        evidence = HomepageNavigationEvidence(
+            homepage_url="https://jobs.company.example",
+            candidate_urls=("https://jobs.company.example/careers",),
+        )
+
+        selected, trace = agent.find_career_page(
+            homepage,
+            company_name="Company",
+            homepage_navigation_evidence=evidence,
+        )
+
+        self.assertEqual(selected, careers)
+        self.assertEqual(base.calls, [homepage, careers])
+        self.assertEqual(
+            trace["homepage_navigation_evidence"]["status"],
+            "homepage_url_mismatch",
+        )
+
     def test_mismatched_homepage_navigation_evidence_uses_homepage_fallback(self):
         homepage = "https://company.example"
         careers = "https://company.example/careers"

@@ -14,7 +14,9 @@ _DETECTION_METHODS = {
     "linked_url_evidence",
     "page_evidence",
     "page_probe",
+    "targeted_search",
     "url_evidence",
+    "verified_declared_inventory",
 }
 _PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_URL_CHARS = 8_192
@@ -25,6 +27,19 @@ _HOSTNAME = re.compile(
 )
 _SEGMENT = re.compile(r"^[A-Za-z0-9_-]{1,80}$")
 _PHENOM_IDENTIFIER = re.compile(r"^[A-Za-z0-9_-]{3,100}$")
+_CWS_ORG_ID = re.compile(
+    r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}"
+    r"(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,79}){0,3}$"
+)
+_CWS_DETAIL_PATH = re.compile(r"/[A-Za-z0-9][A-Za-z0-9/_-]{0,199}")
+_ORACLE_HOST = re.compile(
+    r"^(?P<tenant>[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)"
+    r"\.fa(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?"
+    r"\.oraclecloud\.com$"
+)
+_ORACLE_LOCALE = re.compile(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2})?")
+_ORACLE_SITE = re.compile(r"[A-Za-z0-9_-]{1,100}")
+_ORACLE_OPENING_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
 _SENSITIVE_QUERY_KEYS = {
     "csrf",
     "csrf_token",
@@ -85,6 +100,7 @@ class DiscoveredJobBoard:
     board: JobBoard
     detection_method: str
     evidence_url: str
+    relationship_evidence_url: str | None = None
 
     def to_checkpoint_payload(self) -> dict[str, Any] | None:
         if not self.board.replay_safe:
@@ -208,6 +224,11 @@ def _validate_discovered_board(discovered: DiscoveredJobBoard) -> None:
         raise ValueError("Job board evidence URL must be public HTTPS")
     if not _same_origin(board.url, discovered.evidence_url):
         raise ValueError("Job board evidence URL must match the board origin")
+    if discovered.relationship_evidence_url is not None and (
+        not isinstance(discovered.relationship_evidence_url, str)
+        or not _is_public_https_url(discovered.relationship_evidence_url)
+    ):
+        raise ValueError("Job board relationship evidence URL must be public HTTPS")
     policy = _REPLAY_SAFE_POLICIES.get(board.provider)
     if board.replay_safe and (policy is None or not policy(board)):
         raise ValueError("Job board locator is not replay-safe for this provider")
@@ -386,6 +407,86 @@ def _icims_policy(board: JobBoard) -> bool:
     return _valid_hostname(identifier) and identifier == _host(board.url) and "jobs" in parts
 
 
+def _cws_policy(board: JobBoard) -> bool:
+    identity = _strict_json(board.identifier or "")
+    if identity is None or set(identity) != {
+        "api_url", "board_url", "detail_path", "limit", "org_id"
+    }:
+        return False
+    api_url = identity.get("api_url")
+    detail_path = identity.get("detail_path")
+    limit = identity.get("limit")
+    org_id = identity.get("org_id")
+    if not all(isinstance(value, str) for value in (api_url, detail_path, org_id)):
+        return False
+    parsed_api = urlparse(api_url)
+    parsed_board = urlparse(board.url)
+    return bool(
+        identity.get("board_url") == board.url
+        and not parsed_board.query
+        and not parsed_board.fragment
+        and _is_public_https_url(api_url)
+        and (parsed_api.hostname or "").casefold().endswith(".m-cloud.io")
+        and parsed_api.path == "/api/"
+        and not parsed_api.query
+        and not parsed_api.fragment
+        and _CWS_ORG_ID.fullmatch(org_id)
+        and _CWS_DETAIL_PATH.fullmatch(detail_path)
+        and "//" not in detail_path
+        and all(segment not in {".", ".."} for segment in detail_path.split("/"))
+        and not isinstance(limit, bool)
+        and isinstance(limit, int)
+        and 1 <= limit <= 100
+        and json.dumps(identity, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+        == board.identifier
+    )
+
+
+def _oracle_hcm_policy(board: JobBoard) -> bool:
+    identity = _strict_json(board.identifier or "")
+    required = {"host", "locale", "site", "tenant", "v"}
+    detail = {"detail_url", "opening_id"}
+    if identity is None or set(identity) not in (required, required | detail):
+        return False
+    host = identity.get("host")
+    locale = identity.get("locale")
+    site = identity.get("site")
+    tenant = identity.get("tenant")
+    version = identity.get("v")
+    if not all(isinstance(value, str) for value in (host, locale, site, tenant)):
+        return False
+    host_match = _ORACLE_HOST.fullmatch(host)
+    board_path = f"/hcmUI/CandidateExperience/{locale}/sites/{site}"
+    parsed_board = urlparse(board.url)
+    if not (
+        version == 1
+        and host == host.casefold() == _host(board.url)
+        and host_match is not None
+        and tenant == host_match.group("tenant")
+        and _ORACLE_LOCALE.fullmatch(locale)
+        and _ORACLE_SITE.fullmatch(site)
+        and parsed_board.path == board_path
+        and _no_query(board.url)
+    ):
+        return False
+    if set(identity) == required:
+        return json.dumps(identity, separators=(",", ":"), sort_keys=True) == board.identifier
+    opening_id = identity.get("opening_id")
+    detail_url = identity.get("detail_url")
+    if not isinstance(opening_id, str) or not _ORACLE_OPENING_ID.fullmatch(opening_id):
+        return False
+    parsed_detail = urlparse(detail_url) if isinstance(detail_url, str) else None
+    return bool(
+        parsed_detail is not None
+        and _is_public_https_url(detail_url)
+        and _host(detail_url) == host
+        and parsed_detail.path == f"{board_path}/job/{opening_id}"
+        and _no_query(detail_url)
+        and json.dumps(identity, separators=(",", ":"), sort_keys=True)
+        == board.identifier
+    )
+
+
 def _phenom_policy(board: JobBoard) -> bool:
     parts = [part.casefold() for part in urlparse(board.url).path.split("/") if part]
     return bool(
@@ -524,7 +625,7 @@ def _workday_policy(board: JobBoard) -> bool:
     )
     locale_path = bool(
         len(parts) == 2
-        and re.fullmatch(r"[a-z]{2}-[A-Z]{2}", parts[0])
+        and re.fullmatch(r"[a-z]{2}(?:-[A-Z]{2})?", parts[0])
         and parts[1] == site
     )
     return bool(
@@ -537,9 +638,11 @@ def _workday_policy(board: JobBoard) -> bool:
 
 _REPLAY_SAFE_POLICIES: dict[str, Callable[[JobBoard], bool]] = {
     "avature": _avature_policy,
+    "cws": _cws_policy,
     "eightfold": _eightfold_policy,
     "greenhouse": _greenhouse_policy,
     "icims": _icims_policy,
+    "oracle_hcm": _oracle_hcm_policy,
     "phenom": _phenom_policy,
     "sitecore_next_jobs": _sitecore_policy,
     "smartrecruiters": _smartrecruiters_policy,

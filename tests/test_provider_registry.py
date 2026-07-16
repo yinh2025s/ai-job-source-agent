@@ -36,6 +36,24 @@ class ProviderRegistryTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(registry.detect(url), provider)
 
+    def test_native_adapters_canonicalize_detail_urls_to_tenant_boards(self):
+        registry = build_default_provider_registry()
+        cases = (
+            (
+                "https://jobs.lever.co/acme/role-123",
+                "https://jobs.lever.co/acme",
+            ),
+            (
+                "https://job-boards.greenhouse.io/acme/jobs/123",
+                "https://job-boards.greenhouse.io/acme",
+            ),
+        )
+        for detail_url, expected_board in cases:
+            with self.subTest(detail_url=detail_url):
+                adapter = registry.adapter_for(detail_url)
+                self.assertIsNotNone(adapter)
+                self.assertEqual(adapter.identify_board(detail_url).url, expected_board)
+
     def test_registry_rejects_duplicate_provider_names(self):
         registry = ProviderRegistry([GreenhouseAdapter()])
 

@@ -67,9 +67,14 @@ SCOPED_REPLAY_SOURCE_KINDS = frozenset(
         "input",
         "fixed_input",
         "linkedin_public_jobs",
+        "linkedin_public_jobs_blind_holdout",
         "linkedin_browser_extension",
     }
 )
+SCOPED_REPLAY_PRODUCER_DEPENDENCIES = {
+    "career_discovery": "website_resolution",
+    "job_board_discovery": "career_discovery",
+}
 
 
 class FailureReplayError(ValueError):
@@ -725,9 +730,10 @@ def _scoped_execution_boundary_errors(
     ):
         if plan.evidence_mode != "scoped_outcome_tape":
             continue
-        requested_start = _replay_resume_stage(
+        requested_start = _effective_replay_resume_stage(
             source_record,
-            _first_non_success_stage_name(replay_record),
+            replay_record,
+            plan,
         )
         resumable = (
             requested_start is not None
@@ -809,9 +815,10 @@ def _seed_authoritative_handoffs(
         aligned_plans,
         strict=True,
     ):
-        resume_stage = _replay_resume_stage(
+        resume_stage = _effective_replay_resume_stage(
             source_record,
-            _first_non_success_stage_name(replay_record),
+            replay_record,
+            record_plan,
         )
         executions = _authoritative_upstream_executions(source_record, resume_stage)
         if executions is None:
@@ -875,6 +882,23 @@ def _first_non_success_stage_name(replay_record: dict) -> str | None:
 
 
 def _replay_resume_stage(source_record: dict, failure_stage: str | None) -> str | None:
+    if failure_stage == "result_validation":
+        stages = source_record.get("stages")
+        opening_stage = next(
+            (
+                stage
+                for stage in stages
+                if isinstance(stage, dict)
+                and stage.get("stage") == "opening_match"
+            ),
+            None,
+        ) if isinstance(stages, list) else None
+        if (
+            isinstance(opening_stage, dict)
+            and opening_stage.get("status") == "success"
+            and not source_record.get("open_position_url")
+        ):
+            return "opening_match"
     if failure_stage != "opening_match":
         return failure_stage
     trace = source_record.get("trace")
@@ -899,6 +923,23 @@ def _replay_resume_stage(source_record: dict, failure_stage: str | None) -> str 
     if method is None and _results_require_page_derived_board(source_record):
         return "job_board_discovery"
     return failure_stage
+
+
+def _effective_replay_resume_stage(
+    source_record: dict,
+    replay_record: dict,
+    record_plan: ReplayRecordPlan | None,
+) -> str | None:
+    resume_stage = _replay_resume_stage(
+        source_record,
+        _first_non_success_stage_name(replay_record),
+    )
+    if record_plan is None or record_plan.evidence_mode != "scoped_outcome_tape":
+        return resume_stage
+
+    while resume_stage in SCOPED_REPLAY_PRODUCER_DEPENDENCIES:
+        resume_stage = SCOPED_REPLAY_PRODUCER_DEPENDENCIES[resume_stage]
+    return resume_stage
 
 
 def _results_require_page_derived_board(source_record: dict) -> bool:
@@ -926,6 +967,18 @@ def _results_require_page_derived_board(source_record: dict) -> bool:
         None,
     )
     provider = job_board_result.get("provider") if isinstance(job_board_result, dict) else None
+    trace = source_record.get("trace")
+    stage_traces = trace.get("stages") if isinstance(trace, dict) else None
+    job_board_trace = (
+        stage_traces.get("job_board_discovery")
+        if isinstance(stage_traces, dict)
+        else None
+    )
+    if isinstance(job_board_trace, dict) and (
+        job_board_trace.get("pages_visited")
+        or job_board_trace.get("selected_page_source")
+    ):
+        return True
     if not isinstance(provider, str) or not provider:
         return False
     adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(provider)

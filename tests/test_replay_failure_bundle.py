@@ -16,8 +16,10 @@ from scripts.replay_failure_bundle import (
     FailureReplayError,
     _build_outcome_gate,
     _build_record_integrity,
+    _effective_replay_resume_stage,
     _export_replay_records_with_sources,
     _replay_resume_stage,
+    _scoped_execution_boundary_errors,
     _scoped_execution_company,
     main,
     replay_failure_bundle,
@@ -113,6 +115,35 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertIs(execution_company, company)
         self.assertEqual(execution_company.source, "replay_input")
         self.assertIn("replay", execution_company.source_trace)
+
+    def test_scoped_execution_normalizes_blind_holdout_source_without_derived_website(self):
+        company = CompanyInput(
+            company_name="Example",
+            company_website_url="https://derived.example.test",
+            source="replay_input",
+            source_trace={"replay": {"record_id": "record-1"}},
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "linkedin_discovery": {
+                        "source": "linkedin_public_jobs_blind_holdout"
+                    },
+                    "website_resolution": {"preferred_url": ""},
+                    "hiring_identity_resolution": {"matched_rule": None},
+                    "career_discovery": {},
+                }
+            }
+        }
+
+        execution_company = _scoped_execution_company(company, source_record)
+
+        self.assertEqual(
+            execution_company.source,
+            "linkedin_public_jobs_blind_holdout",
+        )
+        self.assertEqual(execution_company.company_website_url, "")
+        self.assertNotIn("replay", execution_company.source_trace)
 
     def _args(self, root: Path, **overrides):
         values = {
@@ -367,6 +398,61 @@ class FailureReplayBundleTests(unittest.TestCase):
         )
         self.assertEqual(manifest["snapshot_summary"]["scope_count"], 3)
 
+    def test_scoped_career_replay_executes_website_evidence_producer(self):
+        company = CompanyInput(
+            company_name="Localized",
+            company_website_url="https://localized.example",
+            job_title="Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            application = build_application(
+                FetcherConfig(
+                    fixtures_dir=Path(__file__).resolve().parents[1] / "samples" / "sites",
+                    offline=True,
+                    snapshot_dir=root / "snapshots",
+                )
+            )
+            source = application.pipeline.discover(
+                company,
+                capture_attempt_id="capture-career-producer-replay",
+            )
+            self.assertEqual(source.stage_status("website_resolution"), "success")
+            self.assertEqual(source.stage_status("career_discovery"), "failed")
+            (root / "results.json").write_text(
+                json.dumps([dataclass_to_dict(source.trace_record())]),
+                encoding="utf-8",
+            )
+
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    pipeline_status=None,
+                    stage=None,
+                    stage_status=None,
+                    reason_code=None,
+                    legacy_run_config=None,
+                )
+            )
+            replay_trace = json.loads(
+                (root / "bundle" / "replay-trace.json").read_text(encoding="utf-8")
+            )[0]
+
+        checkpoint_events = replay_trace["trace"]["checkpoint_events"]
+        website_actions = [
+            event["action"]
+            for event in checkpoint_events
+            if event["stage"] == "website_resolution"
+        ]
+        self.assertEqual(manifest["status"], "success")
+        self.assertEqual(manifest["outcome_gate"]["status"], "passed")
+        self.assertEqual(
+            manifest["outcome_gate"]["classification_counts"]["reproduced"],
+            1,
+        )
+        self.assertIn("save", website_actions)
+        self.assertNotIn("restore", website_actions)
+
     def test_scoped_timeout_without_failure_stage_boundary_writes_failed_manifest(self):
         company = CompanyInput(
             company_name="Aurora Data",
@@ -542,6 +628,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                     if key not in {
                         "max_career_discovery_transport_calls",
                         "max_job_board_attempts",
+                        "enable_parallel_candidate_discovery",
                     }
                 },
             }
@@ -606,6 +693,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                     if key not in {
                         "max_career_discovery_transport_calls",
                         "max_job_board_attempts",
+                        "enable_parallel_candidate_discovery",
                     }
                 },
             }
@@ -831,6 +919,30 @@ class FailureReplayBundleTests(unittest.TestCase):
                     "job_board_discovery",
                 )
 
+    def test_generic_page_inventory_resumes_at_job_board_discovery(self):
+        source_record = {
+            "job_list_page_url": "https://careers.example.com/search-jobs",
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "careers.example.com",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "pages_visited": [{
+                    "url": "https://careers.example.com/search-jobs",
+                    "source": "live|snapshot:sites/careers.example.com/index.html",
+                }],
+                "selected_page_source": (
+                    "live|snapshot:sites/careers.example.com/index.html"
+                ),
+            }}},
+        }
+
+        self.assertEqual(
+            _replay_resume_stage(source_record, "opening_match"),
+            "job_board_discovery",
+        )
+
     def test_results_only_url_native_provider_resumes_at_opening_match(self):
         source_record = {
             "job_list_page_url": "https://boards.greenhouse.io/example/jobs/123",
@@ -843,6 +955,24 @@ class FailureReplayBundleTests(unittest.TestCase):
 
         self.assertEqual(
             _replay_resume_stage(source_record, "opening_match"),
+            "opening_match",
+        )
+
+    def test_result_validation_rejection_replays_opening_when_s7_cleared_output(self):
+        source_record = {
+            "open_position_url": None,
+            "stages": [
+                {"stage": "opening_match", "status": "success"},
+                {
+                    "stage": "result_validation",
+                    "status": "failed",
+                    "reason_code": "RESULT_IDENTITY_MISMATCH",
+                },
+            ],
+        }
+
+        self.assertEqual(
+            _replay_resume_stage(source_record, "result_validation"),
             "opening_match",
         )
 
@@ -897,6 +1027,93 @@ class FailureReplayBundleTests(unittest.TestCase):
             _replay_resume_stage(source_record, "job_board_discovery"),
             "job_board_discovery",
         )
+
+    def test_scoped_career_replay_resumes_at_navigation_evidence_producer(self):
+        replay_record = {
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "career_discovery",
+            }}},
+        }
+        scoped_plan = SimpleNamespace(evidence_mode="scoped_outcome_tape")
+        legacy_plan = SimpleNamespace(evidence_mode="legacy_global_latest")
+
+        self.assertEqual(
+            _effective_replay_resume_stage({}, replay_record, scoped_plan),
+            "website_resolution",
+        )
+        self.assertEqual(
+            _effective_replay_resume_stage({}, replay_record, legacy_plan),
+            "career_discovery",
+        )
+
+    def test_scoped_page_derived_board_replays_full_producer_chain(self):
+        source_record = {
+            "job_list_page_url": "https://careers.example.com/search-jobs",
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "careers.example.com",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "pages_visited": [{
+                    "url": "https://careers.example.com/search-jobs",
+                }],
+            }}},
+        }
+        replay_record = {
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "opening_match",
+            }}},
+        }
+        scoped_plan = SimpleNamespace(evidence_mode="scoped_outcome_tape")
+
+        self.assertEqual(
+            _effective_replay_resume_stage(
+                source_record,
+                replay_record,
+                scoped_plan,
+            ),
+            "website_resolution",
+        )
+
+    def test_scoped_preflight_requires_producer_tape_for_career_replay(self):
+        replay_record = {
+            "company_name": "Example",
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "career_discovery",
+            }}},
+        }
+        source_record = {
+            "company_name": "Example",
+            "company_website_url": "https://example.test",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "CAREER_PAGE_NOT_FOUND",
+                },
+            ],
+        }
+        plan = SimpleNamespace(
+            evidence_mode="scoped_outcome_tape",
+            record_id="a" * 64,
+            stage_evidence_lineage=(
+                SimpleNamespace(stage="hiring_identity_resolution"),
+                SimpleNamespace(stage="career_discovery"),
+            ),
+        )
+
+        errors = _scoped_execution_boundary_errors(
+            [source_record],
+            [replay_record],
+            (plan,),
+        )
+
+        self.assertEqual(errors[0]["start_stage"], "website_resolution")
+        self.assertEqual(errors[0]["missing_stages"], ["website_resolution"])
 
     def test_improved_replay_is_mismatch_and_cli_exits_nonzero(self):
         with tempfile.TemporaryDirectory() as directory:

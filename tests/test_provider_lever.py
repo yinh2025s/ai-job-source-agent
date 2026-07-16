@@ -41,7 +41,7 @@ class LeverAdapterTests(unittest.TestCase):
 
         self.assertEqual(
             JobBoard(
-                url="https://jobs.lever.co/acme/abc-123",
+                url="https://jobs.lever.co/acme",
                 provider="lever",
                 identifier="acme",
             ),

@@ -237,7 +237,17 @@ class OutcomeTapeFetcher:
     def finish(self) -> None:
         with self._lock:
             if not all(self._consumed):
-                raise _divergence("outcome tape has unconsumed entries")
+                remaining = [
+                    entry.request
+                    for index, entry in enumerate(self._tape.entries)
+                    if not self._consumed[index]
+                ]
+                first = remaining[0]
+                raise _divergence(
+                    "outcome tape has "
+                    f"{len(remaining)} unconsumed entries; first remaining request: "
+                    f"{first.method} {first.sanitized_url}"
+                )
 
     def remaining_fetch_seconds(self) -> float | None:
         return None

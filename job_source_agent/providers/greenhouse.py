@@ -15,6 +15,22 @@ _NUXT_PREFIX = "nuxt:"
 _GREENHOUSE_RECORD_MARKERS = {"data_compliance", "requisition_id", "first_published"}
 _JS_STRING = r'"(?:\\.|[^"\\])*"'
 _MAX_NUXT_PAYLOAD_CHARS = 5_000_000
+_MAX_INLINE_SCRIPT_CHARS = 5_000_000
+_MAX_INLINE_ASSIGNMENTS = 10_000
+_MAX_INLINE_RECORDS = 1_000
+_MAX_INLINE_RECORD_SPAN = 16_000
+_JS_IDENTIFIER = r"[A-Za-z_$][A-Za-z0-9_$]*"
+_INLINE_FIELDS = {
+    "absolute_url",
+    "boardToken",
+    "company_name",
+    "data_compliance",
+    "first_published",
+    "id",
+    "requisition_id",
+    "title",
+}
+_INLINE_REQUIRED_FIELDS = {"absolute_url", "boardToken", "company_name", "id", "title"}
 
 
 class GreenhouseAdapter:
@@ -37,7 +53,12 @@ class GreenhouseAdapter:
         parts = [part for part in urlparse(url).path.split("/") if part]
         if not parts:
             return None
-        return JobBoard(url=url, provider=self.name, identifier=parts[0])
+        parsed = urlparse(url)
+        return JobBoard(
+            url=f"https://{parsed.hostname}/{parts[0]}",
+            provider=self.name,
+            identifier=parts[0],
+        )
 
     def identify_board_from_page(self, page: Page) -> JobBoard | None:
         page_url = page.final_url or page.url
@@ -45,7 +66,7 @@ class GreenhouseAdapter:
             parsed = urlparse(page_url)
         except (TypeError, ValueError):
             return None
-        if not _is_safe_web_origin(parsed) or not _greenhouse_records(page.html):
+        if not _is_safe_web_origin(parsed) or not _greenhouse_records(page.html, page_url):
             return None
         return JobBoard(
             url=page_url,
@@ -195,7 +216,7 @@ class GreenhouseAdapter:
                 trace={"adapter": self.name, "variant": "custom_frontend", "error": "board redirected outside origin"},
             )
         candidates = []
-        for record in _greenhouse_records(page.html):
+        for record in _greenhouse_records(page.html, final_url):
             title = str(record.get("title") or "").strip()
             detail_url = _safe_custom_url(record.get("absolute_url"), final_url)
             if not title or not detail_url or not _same_safe_host(detail_url, expected_host):
@@ -221,6 +242,7 @@ class GreenhouseAdapter:
                 "board_urls": [final_url],
                 "response_source": page.source,
                 "candidate_count": len(candidates),
+                "inventory_scope": "full",
             },
         )
 
@@ -243,9 +265,17 @@ class _NextDataParser(HTMLParser):
         self._capturing = False
         self._content: list[str] = []
         self.nuxt_payload_hrefs: list[str] = []
+        self.script_contents: list[str] = []
+        self.hrefs: list[str] = []
+        self._in_script = False
+        self._script_content: list[str] = []
+        self._script_chars = 0
+        self._script_overflow = False
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attributes = {key.casefold(): value or "" for key, value in attrs}
+        if tag.casefold() == "a" and attributes.get("href"):
+            self.hrefs.append(attributes["href"])
         if (
             tag.casefold() == "link"
             and attributes.get("rel", "").casefold() == "preload"
@@ -260,19 +290,34 @@ class _NextDataParser(HTMLParser):
         ):
             self._capturing = True
             self._content = []
+        if tag.casefold() == "script":
+            self._in_script = True
+            self._script_content = []
+            self._script_chars = 0
+            self._script_overflow = False
 
     def handle_data(self, data: str) -> None:
         if self._capturing:
             self._content.append(data)
+        if self._in_script and not self._script_overflow:
+            remaining = _MAX_INLINE_SCRIPT_CHARS + 1 - self._script_chars
+            self._script_content.append(data[:remaining])
+            self._script_chars += min(len(data), remaining)
+            self._script_overflow = self._script_chars > _MAX_INLINE_SCRIPT_CHARS
 
     def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "script" and self._in_script:
+            if not self._script_overflow:
+                self.script_contents.append("".join(self._script_content))
+            self._in_script = False
+            self._script_content = []
         if tag.casefold() == "script" and self._capturing:
             self.payloads.append("".join(self._content))
             self._capturing = False
             self._content = []
 
 
-def _greenhouse_records(html: str) -> list[dict[str, Any]]:
+def _greenhouse_records(html: str, page_url: str | None = None) -> list[dict[str, Any]]:
     parser = _NextDataParser()
     try:
         parser.feed(html)
@@ -285,7 +330,152 @@ def _greenhouse_records(html: str) -> list[dict[str, Any]]:
         except (json.JSONDecodeError, TypeError):
             continue
         records.extend(_walk_greenhouse_records(payload))
+    if page_url:
+        records.extend(_inline_assignment_greenhouse_records(parser, page_url))
     return _dedupe_records(records)
+
+
+def _inline_assignment_greenhouse_records(
+    parser: _NextDataParser,
+    page_url: str,
+) -> list[dict[str, Any]]:
+    first_party_routes = _stable_first_party_detail_routes(parser.hrefs, page_url)
+    records: list[dict[str, Any]] = []
+    assignment_pattern = re.compile(
+        rf"(?<![A-Za-z0-9_$])(?P<variable>{_JS_IDENTIFIER})\."
+        rf"(?P<field>{'|'.join(sorted(_INLINE_FIELDS))})\s*=\s*"
+        rf"(?P<value>{_JS_STRING}|[0-9]+|[\[{{])"
+    )
+    assignment_count = 0
+    for script in parser.script_contents:
+        if len(script) > _MAX_INLINE_SCRIPT_CHARS:
+            continue
+        states: dict[str, dict[str, Any]] = {}
+        for match in assignment_pattern.finditer(script):
+            assignment_count += 1
+            if assignment_count > _MAX_INLINE_ASSIGNMENTS:
+                return []
+            variable = match.group("variable")
+            field = match.group("field")
+            state = states.setdefault(
+                variable,
+                {"fields": {}, "markers": set(), "first": match.start(), "last": match.end(), "invalid": False},
+            )
+            state["last"] = match.end()
+            if field in state["fields"]:
+                state["invalid"] = True
+                continue
+            if field in _GREENHOUSE_RECORD_MARKERS:
+                state["markers"].add(field)
+            value = match.group("value")
+            if field == "id":
+                state["fields"][field] = int(value) if value.isdigit() else None
+            elif field in _INLINE_REQUIRED_FIELDS:
+                try:
+                    state["fields"][field] = json.loads(value)
+                except (json.JSONDecodeError, TypeError):
+                    state["invalid"] = True
+            else:
+                state["fields"][field] = True
+
+        for state in states.values():
+            fields = state["fields"]
+            if (
+                state["invalid"]
+                or state["last"] - state["first"] > _MAX_INLINE_RECORD_SPAN
+                or not _INLINE_REQUIRED_FIELDS.issubset(fields)
+                or not state["markers"]
+                or not isinstance(fields.get("id"), int)
+                or not str(fields.get("title") or "").strip()
+                or not str(fields.get("company_name") or "").strip()
+                or not str(fields.get("boardToken") or "").strip()
+            ):
+                continue
+            detail_url = _inline_record_detail_url(fields, page_url, first_party_routes)
+            if not detail_url:
+                continue
+            records.append(
+                {
+                    "id": fields["id"],
+                    "title": str(fields["title"]).strip(),
+                    "absolute_url": detail_url,
+                    "company_name": str(fields["company_name"]).strip(),
+                    "boardToken": str(fields["boardToken"]).strip(),
+                }
+            )
+            if len(records) > _MAX_INLINE_RECORDS:
+                return []
+    return records
+
+
+def _stable_first_party_detail_routes(hrefs: list[str], page_url: str) -> dict[int, str]:
+    expected_host = (urlparse(page_url).hostname or "").casefold()
+    templates: dict[tuple[str, str], dict[int, str]] = {}
+    conflicts: set[tuple[tuple[str, str], int]] = set()
+    route_pattern = re.compile(r"^(?P<prefix>/(?:[^/]+/)*jobs/)(?P<id>[0-9]+)(?P<suffix>/?)$")
+    for href in hrefs:
+        normalized = _safe_custom_url(href, page_url)
+        if not normalized or not _same_safe_host(normalized, expected_host):
+            continue
+        parsed = urlparse(normalized)
+        if parsed.query or parsed.fragment:
+            continue
+        match = route_pattern.fullmatch(parsed.path)
+        if match is None:
+            continue
+        job_id = int(match.group("id"))
+        template = (match.group("prefix"), match.group("suffix"))
+        routes = templates.setdefault(template, {})
+        if job_id in routes and routes[job_id] != normalized:
+            conflicts.add((template, job_id))
+        routes[job_id] = normalized
+
+    stable_templates: list[dict[int, str]] = []
+    for template, routes in templates.items():
+        usable = {job_id: url for job_id, url in routes.items() if (template, job_id) not in conflicts}
+        if len(usable) >= 2:
+            stable_templates.append(usable)
+    return stable_templates[0] if len(stable_templates) == 1 else {}
+
+
+def _inline_record_detail_url(
+    record: dict[str, Any],
+    page_url: str,
+    first_party_routes: dict[int, str],
+) -> str | None:
+    detail_url = _safe_custom_url(record.get("absolute_url"), page_url)
+    if not detail_url:
+        return None
+    page_host = (urlparse(page_url).hostname or "").casefold()
+    job_id = record.get("id")
+    if _same_safe_host(detail_url, page_host):
+        parsed = urlparse(detail_url)
+        query_ids = parse_qs(parsed.query).get("gh_jid") or []
+        path_ids = [part for part in parsed.path.split("/") if part == str(job_id)]
+        if path_ids or query_ids == [str(job_id)]:
+            return detail_url
+        return None
+
+    identity = _canonical_greenhouse_job_identity(detail_url)
+    if identity != (str(record.get("boardToken") or "").casefold(), job_id):
+        return None
+    return first_party_routes.get(job_id)
+
+
+def _canonical_greenhouse_job_identity(url: str) -> tuple[str, int] | None:
+    try:
+        parsed = urlparse(url)
+    except (TypeError, ValueError):
+        return None
+    if not _is_safe_web_origin(parsed) or (parsed.hostname or "").casefold() not in {
+        "boards.greenhouse.io",
+        "job-boards.greenhouse.io",
+    }:
+        return None
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) != 3 or parts[1].casefold() != "jobs" or not parts[2].isdigit():
+        return None
+    return parts[0].casefold(), int(parts[2])
 
 
 def _nuxt_payload_url(html: str, page_url: str) -> str | None:

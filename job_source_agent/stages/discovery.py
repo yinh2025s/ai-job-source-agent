@@ -8,7 +8,17 @@ from urllib.parse import urlsplit
 from ..contracts import PipelineContext, StageExecution
 from ..errors import DiscoveryError
 from ..homepage_navigation import HomepageNavigationEvidence
-from ..identity_continuity import OpeningIdentity, ProviderIdentity
+from ..candidate_portfolio import (
+    CompositeCandidateDiscovery,
+    ProviderCandidatePortfolioBuilder,
+)
+from ..identity_continuity import (
+    HiringIdentityEvidence,
+    HiringRelationshipEvidence,
+    OpeningIdentity,
+    OpeningSelectionEvidence,
+    ProviderIdentity,
+)
 from ..job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from ..models import (
     STAGE_CAREER_DISCOVERY,
@@ -18,6 +28,7 @@ from ..models import (
 )
 from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
+from ..provider_candidates import CandidateDiscoveryRequest, VerifiedProviderCandidate
 from ..reasons import canonical_reason_code, make_stage_result
 from ..result_identity import canonicalize_identity_url, tenant_locator
 from ..source_posting import trusted_linkedin_native_posting
@@ -192,11 +203,33 @@ class JobBoardDiscoveryStage:
         self,
         service: JobBoardDiscoveryService,
         provider_registry: ProviderRegistry | None = None,
+        *,
+        candidate_discovery: CompositeCandidateDiscovery | None = None,
+        enable_parallel_candidate_discovery: bool = False,
     ) -> None:
         self.service = service
         self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
+        self.candidate_discovery = candidate_discovery
+        self.enable_parallel_candidate_discovery = enable_parallel_candidate_discovery
 
     def run(self, context: PipelineContext) -> StageExecution:
+        if self.enable_parallel_candidate_discovery and self.candidate_discovery is not None:
+            candidate_execution, candidate_trace = self._from_candidate_portfolio(context)
+            if candidate_execution is not None:
+                return candidate_execution
+            legacy_execution = self._run_legacy(context)
+            return StageExecution(
+                result=legacy_execution.result,
+                updates=legacy_execution.updates,
+                trace={
+                    **legacy_execution.trace,
+                    "parallel_candidate_fallback": candidate_trace,
+                },
+                evidence_lineage=legacy_execution.evidence_lineage,
+            )
+        return self._run_legacy(context)
+
+    def _run_legacy(self, context: PipelineContext) -> StageExecution:
         if not context.career_page_url:
             if context.company.external_apply_url:
                 return self._from_external_apply(context)
@@ -325,6 +358,118 @@ class JobBoardDiscoveryStage:
             updates=updates,
             trace=trace,
         )
+
+    def _from_candidate_portfolio(
+        self,
+        context: PipelineContext,
+    ) -> tuple[StageExecution | None, dict]:
+        started = time.perf_counter()
+        request = CandidateDiscoveryRequest(
+            company_name=context.hiring_entity_name or context.company.company_name,
+            target_title=context.company.job_title,
+            target_location=context.company.job_location,
+            company_website_url=context.company_website_url or None,
+            career_page_url=context.career_page_url,
+            external_apply_url=context.company.external_apply_url,
+        )
+        pool, discovery_trace = self.candidate_discovery.discover(request)
+        built = ProviderCandidatePortfolioBuilder(self.provider_registry).build(pool)
+        if built.portfolio is None:
+            return None, {
+                "candidate_discovery": discovery_trace,
+                "candidate_verification": built.trace,
+            }
+
+        evaluated = tuple(
+            (item, relationship)
+            for item in built.verified
+            if (relationship := _candidate_hiring_relationship(context, item))
+            is not None
+        )
+        if not evaluated:
+            return None, {
+                "candidate_discovery": discovery_trace,
+                "candidate_verification": built.trace,
+                "relationship_verification": {
+                    "status": "rejected",
+                    "reason": "candidate_evidence_url_invalid",
+                },
+            }
+        selected, relationship_evidence = next(
+            (item for item in evaluated if item[1].verified),
+            evaluated[0],
+        )
+        ordered_verified = (
+            selected,
+            *(item for item in built.verified if item is not selected),
+        )
+        portfolio = JobBoardPortfolio(
+            boards=tuple(item.discovered_board for item in ordered_verified),
+            eligible_set_complete=built.portfolio.eligible_set_complete,
+        )
+        discovered = selected.discovered_board
+        hiring_evidence = _candidate_hiring_evidence(
+            context,
+            relationship_evidence,
+        )
+        provider_identity = _provider_identity(
+            context,
+            discovered.board.url,
+            discovered,
+            self.provider_registry,
+            candidate=selected,
+            hiring_evidence=hiring_evidence,
+            relationship_evidence=relationship_evidence,
+        )
+        updates: dict[str, object] = {
+            "job_list_page_url": discovered.board.url,
+            "provider": discovered.board.provider,
+            "discovered_job_board": discovered,
+            "provider_identity": provider_identity,
+        }
+        if (
+            hiring_evidence is not None
+            and hiring_evidence != context.hiring_identity_evidence
+        ):
+            updates["hiring_identity_evidence"] = hiring_evidence
+            updates["hiring_entity_name"] = hiring_evidence.hiring_entity_name
+        if (
+            len(portfolio.boards) > 1
+            or not portfolio.eligible_set_complete
+        ):
+            updates["job_board_portfolio"] = portfolio
+        trace = {
+            "method": "parallel_candidate_discovery",
+            "candidate_discovery": discovery_trace,
+            "candidate_verification": built.trace,
+            "selected": selected.candidate.to_trace_payload(),
+            "provider": discovered.board.provider,
+            "job_list_page_url": discovered.board.url,
+            "relationship_verified": provider_identity.relationship_verified,
+            "relationship_method": provider_identity.verification_method,
+            "relationship_evidence": relationship_evidence.to_trace_payload(),
+        }
+        execution = StageExecution(
+            result=make_stage_result(
+                self.name,
+                "success",
+                provider=discovered.board.provider,
+                duration_ms=_elapsed_ms(started),
+                input_count=len(pool.candidates),
+                output_count=1,
+                evidence=[
+                    {"field": "job_list_page_url", "url": discovered.board.url},
+                    {
+                        "field": "candidate_source",
+                        "value": selected.candidate.source_kind,
+                    },
+                ],
+                detail="Provider board selected from the merged candidate portfolio.",
+            ),
+            updates=updates,
+            trace=trace,
+        )
+        return execution, trace
 
     def _from_linkedin_native_source(
         self,
@@ -532,14 +677,37 @@ class OpeningMatchStage:
         updates = {"job_list_page_url": job_list_url}
         if opening_url:
             updates["open_position_url"] = opening_url
+            inventory_hiring = _provider_inventory_hiring_evidence(
+                context,
+                trace,
+                opening_url,
+            )
+            if inventory_hiring is not None:
+                updates["hiring_identity_evidence"] = inventory_hiring
+                updates["hiring_entity_name"] = inventory_hiring.hiring_entity_name
+            provider_identity = _provider_identity(
+                context,
+                job_list_url,
+                context.discovered_job_board,
+                self.provider_registry,
+                hiring_evidence=inventory_hiring,
+            )
+            updates["provider_identity"] = provider_identity
             opening_identity = _opening_identity(
                 context,
                 opening_url,
                 self.provider_registry,
                 trace,
+                provider_identity=provider_identity,
             )
             if opening_identity is not None:
                 updates["opening_identity"] = opening_identity
+                selection_evidence = _opening_selection_evidence(
+                    opening_identity,
+                    trace,
+                )
+                if selection_evidence is not None:
+                    updates["opening_selection_evidence"] = selection_evidence
             return StageExecution(
                 result=make_stage_result(
                     self.name,
@@ -656,6 +824,43 @@ class OpeningMatchStage:
                 continue
 
             if opening_url:
+                inventory_hiring = _provider_inventory_hiring_evidence(
+                    context,
+                    trace,
+                    opening_url,
+                )
+                provider_identity = _provider_identity(
+                    context,
+                    job_list_url,
+                    discovered,
+                    self.provider_registry,
+                    hiring_evidence=inventory_hiring,
+                )
+                opening_identity = _opening_identity(
+                    context,
+                    opening_url,
+                    self.provider_registry,
+                    trace,
+                    provider_identity=provider_identity,
+                )
+                identity_updates: dict[str, object] = {
+                    "provider_identity": provider_identity,
+                }
+                if inventory_hiring is not None:
+                    identity_updates["hiring_identity_evidence"] = inventory_hiring
+                    identity_updates["hiring_entity_name"] = (
+                        inventory_hiring.hiring_entity_name
+                    )
+                if opening_identity is not None:
+                    identity_updates["opening_identity"] = opening_identity
+                    selection_evidence = _opening_selection_evidence(
+                        opening_identity,
+                        trace,
+                    )
+                    if selection_evidence is not None:
+                        identity_updates["opening_selection_evidence"] = (
+                            selection_evidence
+                        )
                 attempts.append(
                     {
                         "position": position,
@@ -681,12 +886,7 @@ class OpeningMatchStage:
                         "discovered_job_board": discovered,
                         "provider": board.provider,
                         "open_position_url": opening_url,
-                        **_opening_identity_update(
-                            context,
-                            opening_url,
-                            self.provider_registry,
-                            trace,
-                        ),
+                        **identity_updates,
                     },
                     trace=portfolio_trace,
                 )
@@ -891,6 +1091,10 @@ def _provider_identity(
     job_list_url: str,
     discovered: DiscoveredJobBoard | None,
     registry: ProviderRegistry,
+    *,
+    candidate: VerifiedProviderCandidate | None = None,
+    hiring_evidence: HiringIdentityEvidence | None = None,
+    relationship_evidence: HiringRelationshipEvidence | None = None,
 ) -> ProviderIdentity:
     board = discovered.board if discovered is not None else None
     adapter = registry.adapter_for(job_list_url)
@@ -905,17 +1109,36 @@ def _provider_identity(
         canonical_board = canonicalize_identity_url(board.url)
         provider = board.provider
         tenant = board.identifier or tenant_locator(canonical_board)
-        evidence_url = discovered.evidence_url if discovered is not None else job_list_url
+        evidence_url = (
+            discovered.relationship_evidence_url
+            or discovered.evidence_url
+            if discovered is not None
+            else job_list_url
+        )
     verified, method = _authorize_provider_board(
         context,
         provider,
         tenant,
         canonical_board,
+        discovered=discovered,
     )
+    effective_hiring = hiring_evidence or context.hiring_identity_evidence
+    if (
+        hiring_evidence is not None
+        and hiring_evidence.verified
+        and hiring_evidence.verification_method == "provider_inventory"
+    ):
+        verified, method = True, "provider_inventory"
+    if not verified and candidate is not None:
+        verified, method = _authorize_candidate_relationship(
+            candidate,
+            tenant,
+            relationship_evidence,
+        )
     return ProviderIdentity(
         hiring_entity_name=(
-            context.hiring_identity_evidence.hiring_entity_name
-            if context.hiring_identity_evidence is not None
+            effective_hiring.hiring_entity_name
+            if effective_hiring is not None
             else context.hiring_entity_name or context.company.company_name
         ),
         provider=provider,
@@ -932,19 +1155,210 @@ def _authorize_provider_board(
     provider: str,
     tenant: str,
     canonical_board: str,
+    *,
+    discovered: DiscoveredJobBoard | None = None,
 ) -> tuple[bool, str]:
     hiring = context.hiring_identity_evidence
     if hiring is None or not hiring.verified:
         return False, "linked_url_only"
     if context.career_root_url and _same_url(context.career_root_url, canonical_board):
         return True, "identity_career_root"
+    if (
+        provider == "generic"
+        and discovered is not None
+        and discovered.detection_method == "verified_declared_inventory"
+        and context.career_page_url
+        and _same_url(discovered.evidence_url, canonical_board)
+        and _same_url(context.career_page_url, canonical_board)
+    ):
+        return True, "verified_declared_inventory"
     if _identity_aliases(hiring.hiring_entity_name) & _identity_aliases(tenant):
         return True, "tenant_name_match"
     if provider == "generic" and context.career_page_url and _same_site(
         context.career_page_url, canonical_board
     ):
         return True, "first_party_same_site"
+    if (
+        provider != "generic"
+        and discovered is not None
+        and discovered.detection_method == "page_evidence"
+        and context.career_page_url
+        and _same_url(discovered.evidence_url, canonical_board)
+        and (
+            _same_url(context.career_page_url, canonical_board)
+            or (
+                discovered.relationship_evidence_url is not None
+                and _same_url(
+                    discovered.relationship_evidence_url,
+                    context.career_page_url,
+                )
+            )
+        )
+    ):
+        return True, "verified_first_party_provider_page"
+    if (
+        provider != "generic"
+        and discovered is not None
+        and discovered.detection_method == "linked_url_evidence"
+        and context.career_page_url
+        and _same_url(discovered.evidence_url, canonical_board)
+        and discovered.relationship_evidence_url is not None
+        and _same_url(
+            discovered.relationship_evidence_url,
+            context.career_page_url,
+        )
+    ):
+        return True, "verified_first_party_handoff"
     return False, "linked_url_only"
+
+
+def _candidate_hiring_relationship(
+    context: PipelineContext,
+    selected: VerifiedProviderCandidate,
+) -> HiringRelationshipEvidence | None:
+    candidate = selected.candidate
+    try:
+        evidence_url = canonicalize_identity_url(candidate.url)
+    except (TypeError, ValueError):
+        return None
+    tenant = selected.discovered_board.board.identifier or ""
+    provider = selected.discovered_board.board.provider
+    company_name = context.hiring_entity_name or context.company.company_name
+    if candidate.source_kind == "external_apply" and _same_url(
+        candidate.url,
+        context.company.external_apply_url or "",
+    ):
+        evidence_type = "linkedin_external_apply"
+        strength = 100
+    elif (
+        candidate.source_kind == "first_party_ats_link"
+        and context.hiring_identity_evidence is not None
+        and context.hiring_identity_evidence.verified
+        and context.career_page_url
+        and _same_url(candidate.url, context.career_page_url)
+    ):
+        evidence_type = "first_party_handoff"
+        strength = 95
+    elif tenant and _strict_entity_key(company_name) == _strict_entity_key(tenant):
+        evidence_type = "provider_tenant_match"
+        strength = 80
+    else:
+        evidence_type = "unverified_candidate"
+        strength = 0
+    return HiringRelationshipEvidence(
+        source_company_name=context.company.company_name,
+        hiring_entity_name=company_name,
+        provider=provider,
+        tenant=tenant,
+        evidence_type=evidence_type,
+        evidence_url=evidence_url,
+        strength=strength,
+        verified=strength >= 80,
+    )
+
+
+def _candidate_hiring_evidence(
+    context: PipelineContext,
+    relationship: HiringRelationshipEvidence,
+) -> HiringIdentityEvidence | None:
+    if not relationship.verified:
+        return context.hiring_identity_evidence
+    if (
+        context.hiring_identity_evidence is not None
+        and context.hiring_identity_evidence.verified
+    ):
+        return context.hiring_identity_evidence
+    return HiringIdentityEvidence(
+        source_company_name=context.company.company_name,
+        hiring_entity_name=relationship.hiring_entity_name,
+        relationship_type=(
+            "same_entity"
+            if _strict_entity_key(context.company.company_name)
+            == _strict_entity_key(relationship.hiring_entity_name)
+            else "input_asserted"
+        ),
+        verification_method=relationship.evidence_type,
+        verified=True,
+        evidence_url=relationship.evidence_url,
+    )
+
+
+def _authorize_candidate_relationship(
+    selected: VerifiedProviderCandidate,
+    tenant: str,
+    relationship: HiringRelationshipEvidence | None,
+) -> tuple[bool, str]:
+    if relationship is None or not relationship.verified:
+        return False, "linked_url_only"
+    board = selected.discovered_board.board
+    if board.provider != relationship.provider or tenant != relationship.tenant:
+        return False, "linked_url_only"
+    return True, relationship.evidence_type
+
+
+def _strict_entity_key(value: str) -> str:
+    ignored = {
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "inc",
+        "incorporated",
+        "limited",
+        "llc",
+        "ltd",
+        "plc",
+        "the",
+    }
+    tokens = [
+        token
+        for token in re.findall(r"[a-z0-9]+", value.casefold())
+        if token not in ignored
+    ]
+    return "".join(tokens)
+
+
+def _provider_inventory_hiring_evidence(
+    context: PipelineContext,
+    trace: dict,
+    opening_url: str,
+) -> HiringIdentityEvidence | None:
+    """Promote only same-entity organization evidence from verified native inventory."""
+
+    if not isinstance(trace, dict):
+        return None
+    selected = trace.get("selected")
+    provider_api = trace.get("provider_api")
+    inventory = provider_api.get("inventory") if isinstance(provider_api, dict) else None
+    if (
+        not isinstance(selected, dict)
+        or not isinstance(inventory, dict)
+        or inventory.get("source") != "native_adapter"
+        or inventory.get("complete") is not True
+        or not _same_url(str(selected.get("url") or ""), opening_url)
+    ):
+        return None
+    organization = selected.get("hiring_organization_name")
+    expected = context.hiring_entity_name or context.company.company_name
+    if (
+        not isinstance(organization, str)
+        or not _strict_entity_key(organization)
+        or _strict_entity_key(organization) != _strict_entity_key(expected)
+    ):
+        return None
+    relationship_type = (
+        context.hiring_identity_evidence.relationship_type
+        if context.hiring_identity_evidence is not None
+        else "same_entity"
+    )
+    return HiringIdentityEvidence(
+        source_company_name=context.company.company_name,
+        hiring_entity_name=expected,
+        relationship_type=relationship_type,
+        verification_method="provider_inventory",
+        verified=True,
+        evidence_url=opening_url,
+    )
 
 
 def _opening_identity(
@@ -952,13 +1366,23 @@ def _opening_identity(
     opening_url: str,
     registry: ProviderRegistry,
     match_trace: dict | None = None,
+    *,
+    provider_identity: ProviderIdentity | None = None,
 ) -> OpeningIdentity | None:
-    provider_identity = context.provider_identity
+    provider_identity = provider_identity or context.provider_identity
     if provider_identity is None:
         return None
     canonical_opening = canonicalize_identity_url(opening_url)
     if provider_identity.provider == "generic":
-        if not _same_site(provider_identity.canonical_board_url, canonical_opening):
+        if not (
+            _same_site(provider_identity.canonical_board_url, canonical_opening)
+            or _trace_binds_declared_inventory(
+                match_trace,
+                opening_url,
+                provider_identity,
+                context.discovered_job_board,
+            )
+        ):
             return None
         return OpeningIdentity(
             hiring_entity_name=provider_identity.hiring_entity_name,
@@ -970,7 +1394,15 @@ def _opening_identity(
     adapter = registry.adapter_named(provider_identity.provider)
     board = adapter.identify_board(opening_url) if adapter is not None else None
     if board is None:
-        if not _same_site(provider_identity.canonical_board_url, canonical_opening):
+        if not (
+            _same_site(provider_identity.canonical_board_url, canonical_opening)
+            or _trace_binds_opening_to_provider_board(
+                match_trace,
+                opening_url,
+                provider_identity,
+                context.discovered_job_board,
+            )
+        ):
             return None
         tenant = provider_identity.tenant
     else:
@@ -1002,14 +1434,102 @@ def _opening_identity(
     )
 
 
-def _opening_identity_update(
-    context: PipelineContext,
+def _trace_binds_declared_inventory(
+    match_trace: dict | None,
     opening_url: str,
-    registry: ProviderRegistry,
-    match_trace: dict | None = None,
-) -> dict[str, OpeningIdentity]:
-    identity = _opening_identity(context, opening_url, registry, match_trace)
-    return {"opening_identity": identity} if identity is not None else {}
+    provider_identity: ProviderIdentity,
+    discovered: DiscoveredJobBoard | None,
+) -> bool:
+    if (
+        provider_identity.verification_method != "verified_declared_inventory"
+        or discovered is None
+        or discovered.detection_method != "verified_declared_inventory"
+        or not isinstance(match_trace, dict)
+    ):
+        return False
+    provider_api = match_trace.get("provider_api")
+    detection = (
+        provider_api.get("provider_detection")
+        if isinstance(provider_api, dict)
+        else None
+    )
+    selected = match_trace.get("selected")
+    reasons = selected.get("reasons") if isinstance(selected, dict) else None
+    return bool(
+        isinstance(detection, dict)
+        and detection.get("method") == "verified_declared_inventory"
+        and detection.get("inventory_complete") is True
+        and _same_url(
+            str(detection.get("url") or ""),
+            provider_identity.canonical_board_url,
+        )
+        and isinstance(detection.get("endpoint_url"), str)
+        and isinstance(selected, dict)
+        and _same_url(str(selected.get("url") or ""), opening_url)
+        and isinstance(reasons, list)
+        and "listing origin: verified_declared_inventory" in reasons
+    )
+
+
+def _opening_selection_evidence(
+    opening_identity: OpeningIdentity,
+    trace: dict | None,
+) -> OpeningSelectionEvidence | None:
+    if not isinstance(trace, dict):
+        return None
+    selected = trace.get("selected")
+    if not isinstance(selected, dict):
+        return None
+    selected_url = selected.get("url")
+    title = selected.get("title")
+    if (
+        not isinstance(selected_url, str)
+        or not _same_url(selected_url, opening_identity.canonical_opening_url)
+        or not isinstance(title, str)
+        or not title.strip()
+    ):
+        return None
+    location = selected.get("location")
+    if not isinstance(location, str) or not location.strip():
+        location = None
+    provider_api = trace.get("provider_api")
+    provider_api = provider_api if isinstance(provider_api, dict) else {}
+    inventory = provider_api.get("inventory") or trace.get("inventory")
+    inventory = inventory if isinstance(inventory, dict) else {}
+    detection = provider_api.get("provider_detection")
+    if (
+        not inventory
+        and isinstance(detection, dict)
+        and detection.get("method") == "verified_declared_inventory"
+        and detection.get("inventory_complete") is True
+    ):
+        inventory = {
+            "complete": True,
+            "scope": "unknown",
+            "candidate_count": detection.get("inventory_count"),
+        }
+    scope = inventory.get("scope")
+    if scope not in {"full", "title_filtered"}:
+        scope = "unknown"
+    complete = inventory.get("complete")
+    candidate_count = inventory.get("candidate_count")
+    if isinstance(candidate_count, bool) or not isinstance(candidate_count, int):
+        candidates = trace.get("candidates")
+        candidate_count = len(candidates) if isinstance(candidates, list) else 1
+    try:
+        return OpeningSelectionEvidence(
+            provider=opening_identity.provider,
+            tenant=opening_identity.tenant,
+            canonical_board_url=opening_identity.canonical_board_url,
+            canonical_opening_url=opening_identity.canonical_opening_url,
+            title=" ".join(title.split()),
+            location=" ".join(location.split()) if location else None,
+            inventory_scope=scope,
+            inventory_complete=complete is True,
+            candidate_count=max(0, candidate_count),
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _same_url(left: str, right: str) -> bool:

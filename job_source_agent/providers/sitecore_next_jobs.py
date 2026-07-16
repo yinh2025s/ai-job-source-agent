@@ -157,6 +157,7 @@ class SitecoreNextJobsAdapter:
                 break
 
             invalid_record = False
+            validated_page_records = 0
             for record in jobs:
                 candidate = _candidate(record, board, identity)
                 if candidate is None:
@@ -168,6 +169,7 @@ class SitecoreNextJobsAdapter:
                     continue
                 candidates.append(candidate)
                 candidate_ids.add(job_id)
+                validated_page_records += 1
                 if query.title and _same_title(candidate.title, query.title):
                     stopped_on_exact_title = True
                     break
@@ -181,6 +183,10 @@ class SitecoreNextJobsAdapter:
                 )
                 break
             if stopped_on_exact_title:
+                inventory_complete = bool(
+                    records_seen == expected_total
+                    and validated_page_records == len(jobs)
+                )
                 break
             if records_seen >= expected_total:
                 inventory_complete = True
@@ -200,8 +206,6 @@ class SitecoreNextJobsAdapter:
             failure_retryable = True
             errors.append({"range": current_range, "error": "pagination cap reached"})
 
-        if stopped_on_exact_title:
-            inventory_complete = False
         if failure_reason:
             reason_code = failure_reason
         elif not candidates and inventory_complete:

@@ -26,7 +26,7 @@ from .content_probe import (
 from .contracts import FetchClient, PipelineContext
 from .errors import DiscoveryError
 from .homepage_navigation import HomepageNavigationEvidence
-from .job_board import DiscoveredJobBoard, JobBoardPortfolio
+from .job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from .listing_extraction import (
     explicit_empty_inventory_evidence,
     extract_listing_candidates,
@@ -214,6 +214,7 @@ class JobSourceAgent:
         max_ats_board_fetches: int = 5,
         enable_sitemap_discovery: bool = True,
         enable_career_search: bool = True,
+        enable_parallel_candidate_discovery: bool = False,
         career_search_timeout: float | None = None,
         run_configuration: DeterministicRunConfig | None = None,
     ) -> None:
@@ -230,6 +231,7 @@ class JobSourceAgent:
         self.max_ats_board_fetches = max(0, max_ats_board_fetches)
         self.enable_sitemap_discovery = enable_sitemap_discovery
         self.enable_career_search = enable_career_search
+        self.enable_parallel_candidate_discovery = enable_parallel_candidate_discovery
         self.career_search_timeout = career_search_timeout
         self._career_transport_scope_active = False
         effective_agent_config = AgentConfig(
@@ -244,6 +246,7 @@ class JobSourceAgent:
             max_ats_board_fetches=self.max_ats_board_fetches,
             enable_sitemap_discovery=enable_sitemap_discovery,
             enable_career_search=enable_career_search,
+            enable_parallel_candidate_discovery=enable_parallel_candidate_discovery,
             career_search_timeout=career_search_timeout,
         )
         if (
@@ -520,7 +523,7 @@ class JobSourceAgent:
         trace["homepage_navigation_evidence"] = evidence_trace
         if homepage_navigation_evidence is None:
             evidence_trace["status"] = "absent"
-        elif homepage_navigation_evidence.homepage_url != homepage_url:
+        elif not homepage_navigation_evidence.matches(homepage_url):
             evidence_trace["status"] = "homepage_url_mismatch"
         else:
             attempted_candidate_urls = set()
@@ -1254,7 +1257,7 @@ class JobSourceAgent:
         *,
         discovered_board: DiscoveredJobBoard | None,
     ) -> tuple[str | None, str, dict]:
-        if self._looks_like_job_detail_url(job_list_url):
+        if self._looks_like_job_detail_url(job_list_url) and not target_title:
             return job_list_url, job_list_url, {
                 "job_list_page_url": job_list_url,
                 "selected": {
@@ -1282,6 +1285,8 @@ class JobSourceAgent:
                 "title": match.title,
                 "score": match.score,
                 "provider": match.provider,
+                "location": match.location,
+                "hiring_organization_name": match.hiring_organization_name,
                 "reasons": match.reasons,
             }
             return match.url, match.job_list_page_url or job_list_url, trace
@@ -1384,6 +1389,7 @@ class JobSourceAgent:
                     self._regional_exclusion(page_url, target_region)
                 )
                 continue
+            direct_embedded_provider_urls: set[str] = set()
             if deferred_page is not None:
                 page = deferred_page
             elif pages_checked >= self.max_job_pages:
@@ -1430,6 +1436,15 @@ class JobSourceAgent:
                         )
                     trace["fetch_errors"].append(failure)
                     continue
+                direct_embedded_provider_urls = {
+                    link.url.rstrip("/")
+                    for link in extract_links(page)
+                    if link.origin in {
+                        "data_attribute",
+                        "embedded_url",
+                        "script_src",
+                    }
+                }
                 page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
                 if content_probe:
                     trace.setdefault("content_payload_probes", []).append(content_probe)
@@ -1468,7 +1483,12 @@ class JobSourceAgent:
                     DiscoveredJobBoard(
                         board=board,
                         detection_method="page_evidence",
-                        evidence_url=actual_page_url,
+                        evidence_url=board.url,
+                        relationship_evidence_url=(
+                            incoming_candidate.source_url
+                            if incoming_candidate is not None
+                            else actual_page_url
+                        ),
                     ),
                 )
 
@@ -1523,8 +1543,9 @@ class JobSourceAgent:
                         trace,
                         DiscoveredJobBoard(
                             board=requested_board,
-                            detection_method="redirected_linked_url_evidence",
-                            evidence_url=incoming_candidate.source_url,
+                            detection_method="linked_url_evidence",
+                            evidence_url=canonical_board_url,
+                            relationship_evidence_url=incoming_candidate.source_url,
                         ),
                     )
                 continue
@@ -1559,8 +1580,15 @@ class JobSourceAgent:
                 visible_provider_board = self._visible_canonical_provider_board(
                     priority_compatible
                 )
-                if visible_provider_board is not None:
-                    adapter, board, candidate = visible_provider_board
+                embedded_provider_board = self._embedded_canonical_provider_board(
+                    priority_compatible,
+                    direct_embedded_provider_urls,
+                )
+                linked_provider_candidate = (
+                    visible_provider_board or embedded_provider_board
+                )
+                if linked_provider_candidate is not None:
+                    adapter, board, candidate = linked_provider_candidate
                     trace["pages_visited"].append(
                         {
                             "url": actual_page_url,
@@ -1572,7 +1600,11 @@ class JobSourceAgent:
                     trace["selected"] = dataclass_to_dict(candidate)
                     trace["provider"] = adapter.name
                     trace["provider_detection"] = {
-                        "method": "linked_url_evidence",
+                        "method": (
+                            "linked_url_evidence"
+                            if visible_provider_board is not None
+                            else "embedded_provider_url_evidence"
+                        ),
                         "provider": adapter.name,
                         "url": board.url,
                     }
@@ -1582,7 +1614,17 @@ class JobSourceAgent:
                         board.identifier,
                     )
                     trace["job_list_page_url"] = canonical_board_url
-                    return None, canonical_board_url, trace, None
+                    return (
+                        None,
+                        canonical_board_url,
+                        trace,
+                        DiscoveredJobBoard(
+                            board=board,
+                            detection_method="linked_url_evidence",
+                            evidence_url=canonical_board_url,
+                            relationship_evidence_url=actual_page_url,
+                        ),
+                    )
 
             if can_prioritize_page_links and pages_checked < self.max_job_pages:
                 priority_candidate = self._strong_same_site_listing_candidate(
@@ -1619,7 +1661,7 @@ class JobSourceAgent:
             page, provider_asset_probe = probe_first_party_provider_assets(
                 self.fetcher,
                 page,
-                self._is_provider_job_board_url,
+                lambda url: self._provider_board_identity(url) is not None,
                 self._provider_board_identity,
             )
             if provider_asset_probe:
@@ -1653,6 +1695,84 @@ class JobSourceAgent:
                             **fetch_error,
                         }
                     )
+                if (
+                    provider_asset_probe.get("method")
+                    == "first_party_declared_inventory"
+                    and provider_asset_probe.get("status") == "verified"
+                    and provider_asset_probe.get("inventory_complete") is True
+                    and isinstance(provider_asset_probe.get("endpoint_url"), str)
+                ):
+                    trace["provider"] = "generic"
+                    trace["provider_detection"] = {
+                        "method": "verified_declared_inventory",
+                        "provider": "generic",
+                        "url": actual_page_url,
+                        "evidence_url": provider_asset_probe["endpoint_url"],
+                    }
+                    trace["job_list_page_url"] = actual_page_url
+                    trace["selected_page_source"] = (
+                        "first_party_declared_inventory"
+                    )
+                    return (
+                        None,
+                        actual_page_url,
+                        trace,
+                        DiscoveredJobBoard(
+                            board=JobBoard(
+                                url=actual_page_url,
+                                provider="generic",
+                            ),
+                            detection_method="verified_declared_inventory",
+                            evidence_url=actual_page_url,
+                        ),
+                    )
+                if (
+                    provider_asset_probe.get("method")
+                    == "first_party_dynamic_inventory"
+                    and provider_asset_probe.get("status") == "verified"
+                    and isinstance(provider_asset_probe.get("board_url"), str)
+                ):
+                    verified_board_url = provider_asset_probe["board_url"]
+                    verified_adapter = self.provider_registry.adapter_for(
+                        verified_board_url
+                    )
+                    verified_board = (
+                        verified_adapter.identify_board(verified_board_url)
+                        if verified_adapter is not None
+                        else None
+                    )
+                    if (
+                        verified_adapter is not None
+                        and verified_adapter.supports_listing
+                        and verified_board is not None
+                    ):
+                        canonical_board_url = self._canonical_provider_board_url(
+                            verified_adapter.name,
+                            verified_board.url,
+                            verified_board.identifier,
+                        )
+                        trace["provider"] = verified_adapter.name
+                        trace["provider_detection"] = {
+                            "method": "verified_first_party_dynamic_inventory",
+                            "provider": verified_adapter.name,
+                            "url": canonical_board_url,
+                            "evidence_url": actual_page_url,
+                        }
+                        trace["job_list_page_url"] = canonical_board_url
+                        trace["selected_page_source"] = (
+                            "first_party_dynamic_inventory"
+                        )
+                        return (
+                            None,
+                            canonical_board_url,
+                            trace,
+                            DiscoveredJobBoard(
+                                board=verified_board,
+                                detection_method="page_evidence",
+                                evidence_url=canonical_board_url,
+                                relationship_evidence_url=actual_page_url,
+                            ),
+                        )
             actual_page_url = page.final_url or page.url
             normalized_actual_url = actual_page_url.rstrip("/")
             actual_page_compatible = self._url_matches_target_region(
@@ -1663,24 +1783,40 @@ class JobSourceAgent:
             page_board = self.provider_registry.board_for_page(page, self.fetcher)
             if page_board is not None and actual_page_compatible:
                 adapter, board = page_board
+                canonical_board_url = self._canonical_provider_board_url(
+                    adapter.name,
+                    board.url,
+                    board.identifier,
+                )
+                canonical_board = JobBoard(
+                    url=canonical_board_url,
+                    provider=board.provider,
+                    identifier=board.identifier,
+                    replay_safe=board.replay_safe,
+                )
                 trace["provider"] = adapter.name
                 trace["provider_detection"] = {
                     "method": "page_evidence",
                     "provider": adapter.name,
-                    "url": board.url,
+                    "url": canonical_board_url,
                 }
-                trace["job_list_page_url"] = board.url
+                trace["job_list_page_url"] = canonical_board_url
                 trace["pages_visited"].append(
                     {"url": actual_page_url, "source": page.source, "top_candidates": []}
                 )
                 return (
                     None,
-                    board.url,
+                    canonical_board_url,
                     trace,
                     DiscoveredJobBoard(
-                        board=board,
+                        board=canonical_board,
                         detection_method="page_evidence",
-                        evidence_url=actual_page_url,
+                        evidence_url=canonical_board_url,
+                        relationship_evidence_url=(
+                            incoming_candidate.source_url
+                            if incoming_candidate is not None
+                            else actual_page_url
+                        ),
                     ),
                 )
             url_adapter = self.provider_registry.adapter_for(actual_page_url)
@@ -1699,11 +1835,38 @@ class JobSourceAgent:
                     "url": canonical_board_url,
                 }
                 trace["job_list_page_url"] = canonical_board_url
+                detection_method = (
+                    "linked_url_evidence"
+                    if incoming_candidate is not None
+                    and incoming_candidate.source_url
+                    else "url_evidence"
+                )
+                return (
+                    None,
+                    canonical_board_url,
+                    trace,
+                    DiscoveredJobBoard(
+                        board=url_board,
+                        detection_method=detection_method,
+                        evidence_url=canonical_board_url,
+                        relationship_evidence_url=(
+                            incoming_candidate.source_url
+                            if detection_method == "linked_url_evidence"
+                            else None
+                        ),
+                    ),
+                )
             elif actual_page_compatible and self._is_provider_job_board_url(actual_page_url):
                 trace["job_list_page_url"] = actual_page_url
-            elif not self._same_site_host(
-                urlparse(actual_page_url).hostname or "",
-                urlparse(career_page_url).hostname or "",
+            elif (
+                not self._same_site_host(
+                    urlparse(actual_page_url).hostname or "",
+                    urlparse(career_page_url).hostname or "",
+                )
+                and not (
+                    incoming_candidate is not None
+                    and self._is_explicit_cross_site_job_portal(incoming_candidate)
+                )
             ):
                 trace["pages_visited"].append(
                     {
@@ -1837,26 +2000,21 @@ class JobSourceAgent:
                 ] = serialized_candidates
             else:
                 trace["candidates"].extend(serialized_candidates)
-            if actual_page_compatible and verified_generic_listing:
-                trace["selected_from"] = "explicit_first_party_listing_route"
-                trace["selected_page_source"] = page.source
-                return None, actual_page_url, trace, None
-
             visible_linked_provider_board = self._visible_canonical_provider_board(
                 compatible_candidates
             )
-            linked_provider_board = visible_linked_provider_board or next(
-                (
-                    (adapter, board, candidate)
-                    for candidate in compatible_candidates
-                    if url_adapter is None or url_board is None
-                    if not candidate.text
-                    and is_likely_job_detail(candidate)
-                    if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
-                    and adapter.supports_listing
-                    and (board := adapter.identify_board(candidate.url)) is not None
-                ),
-                None,
+            linked_provider_board = (
+                visible_linked_provider_board
+                or self._visible_provider_detail_board(compatible_candidates)
+                or self._embedded_canonical_provider_board(
+                    compatible_candidates,
+                    direct_embedded_provider_urls,
+                )
+                or self._embedded_provider_detail_board(
+                    compatible_candidates,
+                    direct_embedded_provider_urls,
+                    asset_backed_provider_targets,
+                )
             )
             if linked_provider_board is not None:
                 adapter, board, candidate = linked_provider_board
@@ -1873,7 +2031,17 @@ class JobSourceAgent:
                     board.identifier,
                 )
                 trace["job_list_page_url"] = canonical_board_url
-                return None, canonical_board_url, trace, None
+                return (
+                    None,
+                    canonical_board_url,
+                    trace,
+                    DiscoveredJobBoard(
+                        board=board,
+                        detection_method="linked_url_evidence",
+                        evidence_url=canonical_board_url,
+                        relationship_evidence_url=actual_page_url,
+                    ),
+                )
 
             official_portal = next(
                 (
@@ -1888,6 +2056,11 @@ class JobSourceAgent:
                 trace["selected_page_source"] = "first_party_portal_link"
                 trace["job_list_page_url"] = official_portal.url
                 return None, official_portal.url, trace, None
+
+            if actual_page_compatible and verified_generic_listing:
+                trace["selected_from"] = "explicit_first_party_listing_route"
+                trace["selected_page_source"] = page.source
+                return None, actual_page_url, trace, None
 
             traversal_candidates = sorted(
                 compatible_candidates[: self.max_candidates],
@@ -1905,6 +2078,8 @@ class JobSourceAgent:
             )
             for candidate in traversal_candidates:
                 if candidate.score < 55:
+                    continue
+                if "explicit job-list command" in candidate.reasons:
                     continue
                 if (
                     (url_adapter is None or url_board is None)
@@ -1937,6 +2112,7 @@ class JobSourceAgent:
                             actual_page_url,
                             career_page_url,
                         )
+                        or self._is_explicit_cross_site_job_portal(candidate)
                     )
                     and self._is_safe_traversal_target(candidate, actual_page_url)
                     and candidate.url.rstrip("/") not in visited
@@ -1959,6 +2135,7 @@ class JobSourceAgent:
             bounded,
             key=lambda candidate: (
                 self._target_region_priority(candidate.url, target_region),
+                self._explicit_listing_command_priority(candidate),
                 candidate.score,
                 self._career_category_priority(
                     candidate,
@@ -1974,12 +2151,42 @@ class JobSourceAgent:
             if (
                 target_host
                 and self._same_site_host(target_host, source_host)
-                and self._looks_like_generic_job_list_route(candidate.url)
-                and is_likely_job_listing_page(candidate)
+                and (
+                    (
+                        self._looks_like_generic_job_list_route(candidate.url)
+                        and is_likely_job_listing_page(candidate)
+                    )
+                    or (
+                        candidate.origin == "page_link"
+                        and "explicit job-list command" in candidate.reasons
+                        and (
+                            self._shared_path_prefix(candidate.url, source_url) > 0
+                            or self._looks_like_generic_job_list_route(candidate.url)
+                        )
+                    )
+                )
                 and self._is_safe_traversal_target(candidate, source_url)
             ):
                 return candidate
         return None
+
+    @staticmethod
+    def _explicit_listing_command_priority(candidate: LinkCandidate) -> int:
+        normalized = " ".join(candidate.text.casefold().split()).strip(".!:")
+        return 1 if normalized in {
+            "all jobs",
+            "browse jobs",
+            "job offers",
+            "open positions",
+            "our job offers",
+            "search jobs",
+            "search now",
+            "view job offers",
+            "view jobs",
+            "view all current openings",
+            "view open jobs",
+            "view roles",
+        } else 0
 
     @staticmethod
     def _target_region_priority(url: str, target_region: str | None) -> int:
@@ -2059,6 +2266,102 @@ class JobSourceAgent:
                         board.identifier,
                     ),
                 )
+            ),
+            None,
+        )
+
+    def _embedded_canonical_provider_board(
+        self,
+        candidates: list[LinkCandidate],
+        direct_urls: set[str],
+    ) -> tuple[ProviderAdapter, JobBoard, LinkCandidate] | None:
+        return next(
+            (
+                (adapter, board, candidate)
+                for candidate in candidates
+                if candidate.origin in {
+                    "data_attribute",
+                    "embedded_url",
+                    "script_src",
+                }
+                if candidate.url.rstrip("/") in direct_urls
+                if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
+                and adapter.supports_listing
+                and (board := adapter.identify_board(candidate.url)) is not None
+                and self._visible_url_matches_canonical_board(
+                    candidate.url,
+                    self._canonical_provider_board_url(
+                        adapter.name,
+                        board.url,
+                        board.identifier,
+                    ),
+                )
+            ),
+            None,
+        )
+
+    def _visible_provider_detail_board(
+        self,
+        candidates: list[LinkCandidate],
+    ) -> tuple[ProviderAdapter, JobBoard, LinkCandidate] | None:
+        matches: list[tuple[ProviderAdapter, JobBoard, LinkCandidate]] = []
+        identities: set[tuple[str, str, str]] = set()
+        detail_urls: set[str] = set()
+        for candidate in candidates:
+            if (
+                candidate.origin != "page_link"
+                or not candidate.text.strip()
+                or not is_likely_job_detail(candidate)
+            ):
+                continue
+            adapter = self.provider_registry.adapter_for(candidate.url)
+            if adapter is None or not adapter.supports_listing:
+                continue
+            board = adapter.identify_board(candidate.url)
+            if board is None:
+                continue
+            canonical_board_url = self._canonical_provider_board_url(
+                adapter.name,
+                board.url,
+                board.identifier,
+            )
+            identities.add(
+                (adapter.name, board.identifier or "", canonical_board_url)
+            )
+            detail_urls.add(candidate.url.rstrip("/"))
+            matches.append((adapter, board, candidate))
+
+        # A visible list of multiple openings from one tenant is first-party
+        # board evidence. A lone detail link is too ambiguous to promote.
+        if len(detail_urls) < 2 or len(identities) != 1:
+            return None
+        return matches[0]
+
+    def _embedded_provider_detail_board(
+        self,
+        candidates: list[LinkCandidate],
+        direct_urls: set[str],
+        asset_backed_urls: set[str],
+    ) -> tuple[ProviderAdapter, JobBoard, LinkCandidate] | None:
+        return next(
+            (
+                (adapter, board, candidate)
+                for candidate in candidates
+                if (
+                    (
+                        candidate.origin in {
+                            "data_attribute",
+                            "embedded_url",
+                            "script_src",
+                        }
+                        and candidate.url.rstrip("/") in direct_urls
+                    )
+                    or candidate.url.rstrip("/") in asset_backed_urls
+                )
+                if not candidate.text and is_likely_job_detail(candidate)
+                if (adapter := self.provider_registry.adapter_for(candidate.url)) is not None
+                and adapter.supports_listing
+                and (board := adapter.identify_board(candidate.url)) is not None
             ),
             None,
         )
@@ -2262,12 +2565,29 @@ class JobSourceAgent:
     def _is_explicit_cross_site_job_portal(self, candidate: LinkCandidate) -> bool:
         parsed = urlparse(candidate.url)
         path_parts = [part.casefold() for part in parsed.path.split("/") if part]
+        action = " ".join(candidate.text.casefold().split()).rstrip(".!:")
         return (
-            parsed.scheme == "https"
+            candidate.origin == "page_link"
+            and parsed.scheme == "https"
+            and bool(parsed.hostname)
             and bool(path_parts)
-            and path_parts[-1] in {"careers", "jobs", "openings", "positions", "search-results"}
             and "explicit job-list command" in candidate.reasons
-            and is_likely_job_listing_page(candidate)
+            and (
+                is_ats_url(candidate.url)
+                or action in {
+                    "open positions",
+                    "view jobs",
+                    "view open jobs",
+                    "view roles",
+                }
+                or (
+                    action in {"search jobs", "all jobs", "search all jobs"}
+                    and self._same_site_host(
+                        parsed.hostname or "",
+                        urlparse(candidate.source_url).hostname or "",
+                    )
+                )
+            )
         )
 
     def _same_site_host(self, first: str, second: str) -> bool:
@@ -2286,7 +2606,12 @@ class JobSourceAgent:
     def _has_job_list_evidence(self, page_url: str, candidates: list[LinkCandidate]) -> bool:
         if self._is_provider_job_board_url(page_url):
             return True
-        return any(is_likely_job_detail(candidate) for candidate in candidates)
+        return any(
+            candidate.text.strip()
+            and "explicit job-list command" not in candidate.reasons
+            and is_likely_job_detail(candidate)
+            for candidate in candidates
+        )
 
     def _provider_asset_confirms_candidate(
         self,
@@ -2332,9 +2657,11 @@ class JobSourceAgent:
         leaf = parts[-1]
         if leaf in {
             "jobs",
+            "joblisting",
             "positions",
             "openings",
             "job-openings",
+            "career-openings",
             "job-results",
             "search-results",
         }:
@@ -2883,6 +3210,20 @@ class JobSourceAgent:
                     }
                 )
                 continue
+            if (
+                candidate.origin == "first_party_bundle_navigation"
+                and actual_url.rstrip("/") == candidate.url.rstrip("/")
+            ):
+                # The route and human career label were extracted together
+                # from a bounded, same-site public bundle. A successful
+                # same-route response is sufficient to identify a client-side
+                # Career root; it does not establish a Job Board or opening.
+                trace["selected"] = dataclass_to_dict(candidate)
+                trace["selected_page_source"] = page.source
+                trace["selected_route_evidence"] = (
+                    "first_party_bundle_navigation"
+                )
+                return actual_url
             page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
             if content_probe:
                 trace.setdefault("content_payload_probes", []).append(content_probe)

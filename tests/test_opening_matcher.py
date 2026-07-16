@@ -26,6 +26,199 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OpeningMatcherTests(unittest.TestCase):
+    def test_uses_declared_anonymous_js_post_inventory_after_html_inventory(self):
+        job_list_url = "https://careers.example.com/search"
+        asset_url = "https://careers.example.com/assets/job-search.js"
+        endpoint_url = "https://careers.example.com/bin/public/jobs"
+        job_url = "https://careers.example.com/jobs/42/ai-engineer"
+
+        class RecordingFetcher:
+            def __init__(self):
+                self.requests = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requests.append((url, data, headers))
+                if url == job_list_url:
+                    return Page(url, f'<script src="{asset_url}"></script>')
+                if url == asset_url:
+                    return Page(
+                        url,
+                        '''
+                        const pageLimit = 25;
+                        $.ajax({
+                            url: "/bin/public/jobs",
+                            type: "POST",
+                            data: {
+                                searchMode: "search",
+                                searchTerm: requestedTitle,
+                                paginationStart: 0,
+                                paginationLimit: pageLimit
+                            },
+                            success: response => render(response.jobPostings)
+                        });
+                        ''',
+                    )
+                if url == endpoint_url:
+                    self.assert_request(data, headers)
+                    return Page(
+                        url,
+                        json.dumps({"jobPostings": [{
+                            "title": "AI Engineer",
+                            "location": "Austin, TX",
+                            "url": job_url,
+                        }]}),
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+            @staticmethod
+            def assert_request(data, headers):
+                assert b"searchTerm=AI+Engineer" in data
+                assert "Content-Type" in headers
+
+        match, trace = JobOpeningMatcher(RecordingFetcher()).match(
+            job_list_url,
+            "AI Engineer",
+            "Austin, TX",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, job_url)
+        self.assertEqual(match.location, "Austin, TX")
+        self.assertEqual(trace["js_declared_inventory"][0]["status"], "verified")
+
+    def test_generic_inventory_does_not_fetch_next_page_when_initial_page_matches(self):
+        job_list_url = "https://careers.example.com/jobs"
+        second_url = job_list_url + "?page=2"
+        job_url = "https://careers.example.com/jobs/42/ai-engineer"
+
+        class RecordingFetcher:
+            def __init__(self):
+                self.requested = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested.append(url)
+                if url != job_list_url:
+                    raise FetchError(f"unexpected URL: {url}")
+                return Page(
+                    url=url,
+                    html=(
+                        '<article class="job-card"><h3>AI Engineer</h3>'
+                        f'<a href="{job_url}">View job</a></article>'
+                        f'<a href="{second_url}">Next page</a>'
+                    ),
+                )
+
+        fetcher = RecordingFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(job_list_url, "AI Engineer")
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, job_url)
+        self.assertEqual(fetcher.requested, [job_list_url])
+        self.assertNotIn("generic_inventory", trace)
+
+    def test_structured_same_title_candidates_are_ranked_by_location(self):
+        job_list_url = "https://careers.example.com/jobs"
+        oxnard_url = "https://recruiting.paylocity.com/Recruiting/Jobs/Details/4324729"
+        anaheim_url = "https://recruiting.paylocity.com/Recruiting/Jobs/Details/4336893"
+        payload = json.dumps(
+            {
+                "first_party_declared_inventory": {
+                    "endpoint_url": "https://inventory.example.net/api/jobs",
+                    "jobs": [
+                        {
+                            "title": "Registered Nurse (RN) - Full-Time",
+                            "location": "Anaheim Hills, CA",
+                            "url": anaheim_url,
+                        },
+                        {
+                            "title": "Registered Nurse (RN) - Full-Time",
+                            "location": "Oxnard, CA",
+                            "url": oxnard_url,
+                        },
+                    ],
+                }
+            }
+        )
+
+        class StaticFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    html=f'<script type="application/json">{payload}</script>',
+                    source="fixture|first_party_declared_inventory",
+                )
+
+        match, trace = JobOpeningMatcher(StaticFetcher()).match(
+            job_list_url,
+            "Registered Nurse (RN) - Full-Time",
+            "Oxnard, CA",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, oxnard_url)
+        self.assertEqual(match.location, "Oxnard, CA")
+        self.assertEqual(trace["selected"]["location"], "Oxnard, CA")
+
+    def test_generic_inventory_follows_bounded_next_page_to_exact_opening(self):
+        job_list_url = "https://careers.example.com/jobs"
+        second_url = job_list_url + "?page=2"
+        job_url = "https://careers.example.com/jobs/42/ai-engineer"
+
+        class MappingFetcher:
+            def __init__(self):
+                self.requested = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested.append(url)
+                if url == job_list_url:
+                    return Page(
+                        url=url,
+                        html=f'<a href="{second_url}">Next page</a>',
+                    )
+                if url == second_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<article class="job-card"><h3>AI Engineer</h3>'
+                            f'<a href="{job_url}">View job</a></article>'
+                        ),
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        fetcher = MappingFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(
+            job_list_url,
+            "AI Engineer",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, job_url)
+        self.assertEqual(fetcher.requested, [job_list_url, second_url])
+        self.assertTrue(trace["provider_api"]["inventory"]["complete"])
+        self.assertEqual(trace["generic_inventory"][0]["pages_fetched"], 2)
+
+    def test_single_generic_page_does_not_claim_complete_inventory(self):
+        job_list_url = "https://careers.example.com/jobs"
+
+        class StaticFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(url=url, html="<main>Open roles</main>")
+
+        _match, trace = JobOpeningMatcher(StaticFetcher()).match(
+            job_list_url,
+            "AI Engineer",
+        )
+
+        self.assertNotIn("inventory", trace["provider_api"])
+        self.assertEqual(
+            trace["generic_inventory"][0]["stop_reason"],
+            "single_page_unbounded",
+        )
+
     def test_first_party_all_jobs_numeric_route_matches_exact_opening(self):
         job_list_url = "https://careers.example.com/en/all-jobs/"
         job_url = job_list_url + "8036603/product-manager/?gh_jid=8036603"
@@ -97,7 +290,7 @@ class OpeningMatcherTests(unittest.TestCase):
 
         self.assertIsNotNone(match)
         self.assertEqual(match.url, job_url)
-        self.assertEqual(match.title, "AI Developer Remote")
+        self.assertEqual(match.title, "AI Developer")
 
     def test_title_match_scores_relevant_title_higher(self):
         good_score, _ = score_title_match("Product Manager, Ads", "Product Manager, Ads")
@@ -494,7 +687,10 @@ class OpeningMatcherTests(unittest.TestCase):
             "incomplete",
         )
         self.assertFalse(missing_trace["provider_api"]["inventory"]["complete"])
-        self.assertNotIn("search_skipped", missing_trace)
+        self.assertNotEqual(
+            missing_trace.get("search_skipped"),
+            "verified_native_inventory_no_match",
+        )
 
     def test_acquired_brand_handoff_requires_exact_normalized_title(self):
         class ParentInventoryAdapter:
@@ -851,6 +1047,48 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertEqual(
             validate_output_url("https://jobs.ashbyhq.com/snowflake/8c54a6d7", source),
             "https://jobs.ashbyhq.com/snowflake/8c54a6d7",
+        )
+
+    def test_output_url_validation_accepts_title_bound_same_origin_career_detail(self):
+        source = "https://goguava.ai/careers"
+        opening = "https://goguava.ai/careers/mid-market-account-executive"
+
+        self.assertEqual(
+            validate_output_url(
+                opening,
+                source,
+                title="Mid-Market Account Executive",
+            ),
+            opening,
+        )
+        self.assertIsNone(
+            validate_output_url(opening, source, title="Privacy Policy")
+        )
+        self.assertIsNone(
+            validate_output_url(
+                "https://evil.example/careers/mid-market-account-executive",
+                source,
+                title="Mid-Market Account Executive",
+            )
+        )
+
+    def test_declared_get_search_form_accepts_term_field(self):
+        page = Page(
+            url="https://careers.example.com/jobs/results",
+            html=(
+                '<form method="get" action="/jobs/search-action">'
+                '<input name="term" type="text">'
+                '<input name="location" value="">'
+                '</form>'
+            ),
+        )
+
+        self.assertEqual(
+            build_search_form_urls(page, "Senior Manufacturing Engineer"),
+            [
+                "https://careers.example.com/jobs/search-action"
+                "?term=Senior+Manufacturing+Engineer"
+            ],
         )
 
     def test_nested_cards_do_not_broadcast_child_title_to_parent_links(self):

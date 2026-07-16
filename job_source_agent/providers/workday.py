@@ -9,7 +9,7 @@ from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _WORKDAY_HOST_SUFFIXES = (".myworkdayjobs.com", ".workdayjobs.com")
-_LOCALE_PATTERN = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+_LOCALE_PATTERN = re.compile(r"^[a-z]{2}(?:-[A-Z]{2})?$")
 _AUXILIARY_ROUTE_PARTS = frozenset(
     {"introduceyourself", "login", "sign-in", "my-profile", "talent-community"}
 )

@@ -11,6 +11,33 @@ from job_source_agent.web import FetchError, Fetcher, Page
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def widget_html(
+    company_code: str = "AcmeApi",
+    *,
+    script_url: str = "https://static.smartrecruiters.com/job-widget/1.6.1/script/smart_widget.js",
+    api_url: str = "https://api.smartrecruiters.com/v1/companies/",
+    job_ad_url: str = "https://jobs.smartrecruiters.com/",
+) -> str:
+    return (
+        f'<script src="{script_url}"></script>'
+        "<script>SmartRecruitersWidget.init({"
+        f'company_code: "{company_code}", api_url: "{api_url}", '
+        f'job_ad_url: "{job_ad_url}"'
+        "});</script>"
+    )
+
+
+def legacy_widget_config(company_code: str, *, job_ad_url: str | None = None) -> str:
+    job_ad_field = f', job_ad_url: "{job_ad_url}"' if job_ad_url is not None else ""
+    return (
+        "<script>SmartRecruitersWidget.init({"
+        f'company_code: "{company_code}", '
+        'api_url: "https://www.smartrecruiters.com"'
+        f"{job_ad_field}"
+        "});</script>"
+    )
+
+
 class _StaticFetcher:
     def __init__(self, html: str) -> None:
         self.html = html
@@ -20,6 +47,175 @@ class _StaticFetcher:
 
 
 class SmartRecruitersAdapterTests(unittest.TestCase):
+    def test_identifies_static_widget_config_on_public_first_party_page(self):
+        adapter = SmartRecruitersAdapter()
+        page = Page(
+            url="https://careers.example.com/open-positions?source=site",
+            html=widget_html(),
+        )
+
+        board = adapter.identify_board_from_page(page)
+
+        self.assertIsNotNone(board)
+        self.assertEqual(board.url, "https://jobs.smartrecruiters.com/AcmeApi")
+        self.assertEqual(board.identifier, "AcmeApi")
+        self.assertEqual(board.provider, "smartrecruiters")
+        self.assertTrue(board.replay_safe)
+
+    def test_identifies_static_widget_assignment_config(self):
+        adapter = SmartRecruitersAdapter()
+        html = (
+            '<script src="https://static.smartrecruiters.com/job-widget/widget.js"></script>'
+            "<script>"
+            "var company_code = 'AcmeApi';"
+            "var api_url = 'https://api.smartrecruiters.com/v1/companies/';"
+            "var job_ad_url = 'https://jobs.smartrecruiters.com/';"
+            "</script>"
+        )
+
+        board = adapter.identify_board_from_page(
+            Page("https://careers.example.com/open-positions", html)
+        )
+
+        self.assertIsNotNone(board)
+        self.assertEqual(board.identifier, "AcmeApi")
+
+    def test_identifies_multiple_legacy_widget_configs_with_optional_job_ad_url(self):
+        adapter = SmartRecruitersAdapter()
+        html = (
+            '<script src="https://static.smartrecruiters.com/job-widget/widget.js"></script>'
+            + legacy_widget_config("ExampleTenant")
+            + legacy_widget_config(
+                "exampletenant",
+                job_ad_url="https://jobs.smartrecruiters.com/ExampleTenant",
+            )
+        )
+
+        board = adapter.identify_board_from_page(
+            Page("https://careers.example.com/open-positions", html)
+        )
+
+        self.assertIsNotNone(board)
+        self.assertEqual(board.identifier, "ExampleTenant")
+        self.assertEqual(
+            board.url,
+            "https://jobs.smartrecruiters.com/ExampleTenant",
+        )
+
+    def test_rejects_any_widget_config_missing_or_invalid_api_url(self):
+        adapter = SmartRecruitersAdapter()
+        marker = (
+            '<script src="https://static.smartrecruiters.com/job-widget/widget.js"></script>'
+        )
+        cases = (
+            marker
+            + legacy_widget_config("ExampleTenant")
+            + '<script>company_code: "ExampleTenant"</script>',
+            marker
+            + legacy_widget_config("ExampleTenant")
+            + (
+                '<script>company_code: "ExampleTenant", '
+                'api_url: "https://evil.example/v1/companies/"</script>'
+            ),
+            marker
+            + (
+                '<script>company_code: "ExampleTenant", '
+                'api_url: "https://www.smartrecruiters.com/jobs"</script>'
+            ),
+            marker
+            + (
+                "<script>"
+                "SmartRecruitersWidget.init({"
+                'company_code: "ExampleTenant", '
+                'api_url: "https://www.smartrecruiters.com"});'
+                'SmartRecruitersWidget.init({company_code: "ExampleTenant"});'
+                "</script>"
+            ),
+        )
+
+        for html in cases:
+            with self.subTest(html=html):
+                self.assertIsNone(
+                    adapter.identify_board_from_page(
+                        Page("https://careers.example.com/open-positions", html)
+                    )
+                )
+
+    def test_rejects_conflicting_company_codes(self):
+        adapter = SmartRecruitersAdapter()
+        page = Page(
+            url="https://careers.example.com/open-positions",
+            html=widget_html() + widget_html("OtherTenant"),
+        )
+
+        self.assertIsNone(adapter.identify_board_from_page(page))
+
+    def test_rejects_missing_or_forged_widget_script_marker(self):
+        adapter = SmartRecruitersAdapter()
+        pages = (
+            Page(
+                url="https://careers.example.com/open-positions",
+                html=widget_html(script_url="https://evil.example/job-widget/widget.js"),
+            ),
+            Page(
+                url="https://careers.example.com/open-positions",
+                html=(
+                    "<!-- <script src=\"https://static.smartrecruiters.com/"
+                    "job-widget/widget.js\"></script> -->"
+                    '<script>company_code: "AcmeApi", '
+                    'api_url: "https://api.smartrecruiters.com/v1/companies/", '
+                    'job_ad_url: "https://jobs.smartrecruiters.com/"</script>'
+                ),
+            ),
+        )
+
+        for page in pages:
+            with self.subTest(html=page.html):
+                self.assertIsNone(adapter.identify_board_from_page(page))
+
+    def test_rejects_cross_tenant_config_urls(self):
+        adapter = SmartRecruitersAdapter()
+        pages = (
+            Page(
+                url="https://careers.example.com/open-positions",
+                html=widget_html(
+                    api_url="https://api.smartrecruiters.com/v1/companies/OtherTenant/postings"
+                ),
+            ),
+            Page(
+                url="https://careers.example.com/open-positions",
+                html=widget_html(job_ad_url="https://jobs.smartrecruiters.com/OtherTenant"),
+            ),
+        )
+
+        for page in pages:
+            with self.subTest(html=page.html):
+                self.assertIsNone(adapter.identify_board_from_page(page))
+
+    def test_rejects_unsafe_page_and_widget_config_urls(self):
+        adapter = SmartRecruitersAdapter()
+        cases = (
+            Page("http://careers.example.com/jobs", widget_html()),
+            Page("https://user@careers.example.com/jobs", widget_html()),
+            Page("https://127.0.0.1/jobs", widget_html()),
+            Page(
+                "https://careers.example.com/jobs",
+                widget_html(script_url="https://user@static.smartrecruiters.com/job-widget/widget.js"),
+            ),
+            Page(
+                "https://careers.example.com/jobs",
+                widget_html(api_url="https://api.smartrecruiters.com.evil.example/v1/companies/"),
+            ),
+            Page(
+                "https://careers.example.com/jobs",
+                widget_html(job_ad_url="http://jobs.smartrecruiters.com/"),
+            ),
+        )
+
+        for page in cases:
+            with self.subTest(url=page.url, html=page.html):
+                self.assertIsNone(adapter.identify_board_from_page(page))
+
     def test_recognizes_only_public_job_board_host(self):
         adapter = SmartRecruitersAdapter()
 
@@ -60,7 +256,9 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
             "https://jobs.smartrecruiters.com/AcmeApi/743999222222222-sales-manager",
         )
         self.assertEqual(result.trace["candidate_count"], 2)
+        self.assertEqual(result.trace["exposed_candidate_count"], 2)
         self.assertFalse(result.trace["tenant_identity_verified"])
+        self.assertFalse(result.trace["tenant_identity_conflict"])
 
     def test_marks_matching_record_company_identity_as_verified_tenant(self):
         adapter = SmartRecruitersAdapter()
@@ -104,6 +302,7 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
                         {
                             "name": "Data Analyst" if offset == 0 else "Senior Data Analyst",
                             "id": f"job-{offset}",
+                            "company": {"identifier": "AcmeApi"},
                         }
                     ],
                 }
@@ -124,7 +323,7 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
         self.assertTrue(result.inventory_complete)
         self.assertEqual(result.trace["inventory_complete"], result.inventory_complete)
 
-    def test_stops_pagination_after_exact_normalized_title(self):
+    def test_exact_normalized_title_does_not_bypass_inventory_completeness(self):
         adapter = SmartRecruitersAdapter()
         board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
 
@@ -141,19 +340,23 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
                         "totalFound": 300,
                         "limit": 100,
                         "offset": 0,
-                        "content": [{"name": "  Data   Analyst ", "id": "job-1"}],
+                        "content": [{
+                            "name": "  Data   Analyst ",
+                            "id": "job-1",
+                            "company": {"identifier": "AcmeApi"},
+                        }],
                     }),
                 )
 
         fetcher = ExactFetcher()
         result = adapter.list_jobs(fetcher, board, JobQuery(title="data analyst"))
 
-        self.assertEqual(len(fetcher.requested_urls), 1)
+        self.assertEqual(len(fetcher.requested_urls), 5)
         self.assertTrue(result.trace["exact_title_found"])
-        self.assertEqual(result.candidates[0].title, "Data   Analyst")
+        self.assertEqual(result.candidates, [])
         self.assertFalse(result.inventory_complete)
 
-    def test_later_fetch_failure_keeps_candidate_and_is_incomplete(self):
+    def test_later_fetch_failure_hides_candidate_and_is_incomplete(self):
         adapter = SmartRecruitersAdapter()
         board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
 
@@ -172,13 +375,17 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
                         "totalFound": 2,
                         "limit": 1,
                         "offset": 0,
-                        "content": [{"name": "First Role", "id": "job-1"}],
+                        "content": [{
+                            "name": "First Role",
+                            "id": "job-1",
+                            "company": {"identifier": "AcmeApi"},
+                        }],
                     }),
                 )
 
         result = adapter.list_jobs(PartialFetcher(), board, JobQuery(title="Missing Role"))
 
-        self.assertEqual([candidate.title for candidate in result.candidates], ["First Role"])
+        self.assertEqual(result.candidates, [])
         self.assertIsNone(result.reason_code)
         self.assertFalse(result.inventory_complete)
         self.assertFalse(result.trace["inventory_complete"])
@@ -197,14 +404,19 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
                         "totalFound": 6,
                         "limit": 1,
                         "offset": offset,
-                        "content": [{"name": f"Role {offset}", "id": f"job-{offset}"}],
+                        "content": [{
+                            "name": f"Role {offset}",
+                            "id": f"job-{offset}",
+                            "company": {"identifier": "AcmeApi"},
+                        }],
                     }),
                 )
 
         result = adapter.list_jobs(CappedFetcher(), board, JobQuery())
 
         self.assertEqual(result.trace["page_count"], 5)
-        self.assertEqual(len(result.candidates), 5)
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(result.trace["candidate_count"], 5)
         self.assertFalse(result.inventory_complete)
         self.assertFalse(result.trace["inventory_complete"])
 
@@ -243,6 +455,7 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
         board = adapter.identify_board("https://jobs.smartrecruiters.com/AcmeApi")
         fetcher = _StaticFetcher(
             '{"content":[{"name":"ML Engineer","id":"job-1",'
+            '"company":{"identifier":"AcmeApi"},'
             '"location":{"city":"Paris","region":"Ile-de-France","country":"FR"},'
             '"actions":{"details":"/AcmeApi/job-1"}}]}'
         )

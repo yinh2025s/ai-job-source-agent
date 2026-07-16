@@ -50,7 +50,7 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertIn("d9d64766", result.open_position_url)
         self.assertEqual(result.result_record()["output_validation_status"], "success")
         self.assertEqual(result.result_schema_version, "2.2")
-        self.assertEqual(result.run_configuration["schema_version"], "1.2")
+        self.assertEqual(result.run_configuration["schema_version"], "1.3")
         self.assertEqual(
             result.run_configuration["agent"]["max_job_board_attempts"],
             3,
@@ -183,7 +183,7 @@ class PipelineApplicationTests(unittest.TestCase):
 
         self.assertEqual(statuses[STAGE_WEBSITE_RESOLUTION], "failed")
         self.assertEqual(statuses[STAGE_CAREER_DISCOVERY], "not_run")
-        self.assertEqual(result.job_list_page_url, "https://company.wd5.myworkdayjobs.com/en-US/acme")
+        self.assertIsNone(result.job_list_page_url)
         self.assertIsNone(result.open_position_url)
         self.assertEqual(result.pipeline_status, "failed")
         self.assertEqual(result.identity_assertion["verdict"], "rejected")

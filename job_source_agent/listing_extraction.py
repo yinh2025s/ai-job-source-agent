@@ -171,12 +171,46 @@ def validate_output_url(url: str, source_url: str, *, title: str = "") -> str | 
         return None
     link = RawLink(normalized, title, source_url)
     scored = score_job_link(link, source_url)
-    if not is_likely_job_detail(scored):
+    if not is_likely_job_detail(scored) and not _title_bound_same_origin_detail(
+        parsed,
+        source,
+        title,
+    ):
         return None
     same_origin = parsed.hostname == source.hostname and parsed.port == source.port
     if same_origin or is_ats_url(normalized):
         return normalized
     return None
+
+
+def _title_bound_same_origin_detail(parsed, source, title: str) -> bool:
+    if (
+        parsed.scheme.casefold() != "https"
+        or parsed.hostname != source.hostname
+        or parsed.port != source.port
+    ):
+        return False
+    path_words = {
+        word
+        for word in re.findall(r"[a-z0-9]+", parsed.path.casefold())
+        if word not in {"career", "careers", "job", "jobs", "role", "roles"}
+        and len(word) > 1
+    }
+    title_words = {
+        word
+        for word in re.findall(r"[a-z0-9]+", title.casefold())
+        if word not in {"a", "an", "and", "at", "for", "in", "of", "on", "the", "to"}
+        and len(word) > 1
+    }
+    path_parts = [part for part in parsed.path.split("/") if part]
+    return (
+        len(path_parts) >= 2
+        and bool({"career", "careers", "job", "jobs", "role", "roles"} & {
+            word for word in re.findall(r"[a-z0-9]+", parsed.path.casefold())
+        })
+        and bool(path_words)
+        and bool(path_words & title_words)
+    )
 
 
 def extract_listing_candidates(html: str, source_url: str) -> list[ListingCandidate]:

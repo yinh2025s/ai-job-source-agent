@@ -290,6 +290,7 @@ def _reset_checkpoint_context(context: PipelineContext) -> None:
     context.job_board_portfolio = None
     context.open_position_url = None
     context.opening_identity = None
+    context.opening_selection_evidence = None
     context.provider = None
     context.stage_results = []
     context.stage_evidence_lineage = {}

@@ -4,15 +4,23 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from .application_runner import ApplicationRunner
+from .candidate_portfolio import CompositeCandidateDiscovery
+from .career_search import CareerSearchResolver
 from .career_transport_budget import CareerTransportBudgetFetcher
 from .company_identity import CompanyIdentityResolver
 from .contracts import EvidenceCaptureCoordinator, FetchClient
 from .identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
+from .direct_candidate_discovery import (
+    ExternalApplyDiscovery,
+    WebsiteCareerDiscovery,
+)
 from .page_cache import PageCacheFetcher
 from .pipeline import JobSourceAgent
 from .pipeline_application import PipelineApplication
 from .posting_identity import LinkedInPostingIdentityProbe
 from .providers import ProviderRegistry, build_default_provider_registry
+from .provider_search_discovery import ProviderSearchCandidateDiscovery
+from .provider_candidates import MAX_PROVIDER_CANDIDATES
 from .rendered_fetcher import RenderedFetcher, SmartRenderedFetcher
 from .retrying_fetcher import RetryingFetcher
 from .run_configuration import AgentConfig, DeterministicRunConfig
@@ -126,6 +134,9 @@ def build_agent(
         max_ats_board_fetches=settings.max_ats_board_fetches,
         enable_sitemap_discovery=settings.enable_sitemap_discovery,
         enable_career_search=settings.enable_career_search,
+        enable_parallel_candidate_discovery=(
+            settings.enable_parallel_candidate_discovery
+        ),
         career_search_timeout=settings.career_search_timeout,
         run_configuration=run_configuration,
     )
@@ -203,6 +214,22 @@ def build_application_from_fetcher(
             else None
         ),
     )
+    candidate_discovery = CompositeCandidateDiscovery(
+        (
+            ExternalApplyDiscovery(registry),
+            WebsiteCareerDiscovery(registry),
+            ProviderSearchCandidateDiscovery(
+                CareerSearchResolver(
+                    fetcher,
+                    max_results=min(settings.max_candidates, MAX_PROVIDER_CANDIDATES),
+                    max_queries=settings.max_career_search_queries,
+                ),
+                provider_registry=registry,
+                max_candidates=min(settings.max_candidates, MAX_PROVIDER_CANDIDATES),
+            ),
+        ),
+        limit=min(settings.max_candidates, MAX_PROVIDER_CANDIDATES),
+    )
     runner = ApplicationRunner(
         (
             InputDiscoveryStage(),
@@ -214,7 +241,14 @@ def build_application_from_fetcher(
                 )
             ),
             CareerDiscoveryStage(agent),
-            JobBoardDiscoveryStage(agent, registry),
+            JobBoardDiscoveryStage(
+                agent,
+                registry,
+                candidate_discovery=candidate_discovery,
+                enable_parallel_candidate_discovery=(
+                    settings.enable_parallel_candidate_discovery
+                ),
+            ),
             OpeningMatchStage(
                 agent,
                 registry,

@@ -10,12 +10,13 @@ from .models import CompanyInput, StageResult
 from .identity_continuity import (
     HiringIdentityEvidence,
     OpeningIdentity,
+    OpeningSelectionEvidence,
     ProviderIdentity,
 )
 from .web import Page
 
 
-CONTRACT_SCHEMA_VERSION = "1.5"
+CONTRACT_SCHEMA_VERSION = "1.6"
 
 
 @runtime_checkable
@@ -77,6 +78,7 @@ class PipelineContext:
     job_board_portfolio: JobBoardPortfolio | None = None
     open_position_url: str | None = None
     opening_identity: OpeningIdentity | None = None
+    opening_selection_evidence: OpeningSelectionEvidence | None = None
     provider: str | None = None
     stage_results: list[StageResult] = field(default_factory=list)
     stage_evidence_lineage: dict[str, StageEvidenceLineage] = field(default_factory=dict)
@@ -130,6 +132,12 @@ class PipelineContext:
                 value, OpeningIdentity
             ):
                 raise TypeError("opening_identity update must use OpeningIdentity")
+            if field_name == "opening_selection_evidence" and not isinstance(
+                value, OpeningSelectionEvidence
+            ):
+                raise TypeError(
+                    "opening_selection_evidence update must use OpeningSelectionEvidence"
+                )
             setattr(self, field_name, value)
         self.stage_results.append(execution.result)
         self.trace.setdefault("stages", {})[execution.result.stage] = execution.trace
@@ -183,5 +191,6 @@ _CONTEXT_UPDATE_FIELDS = {
     "job_board_portfolio",
     "open_position_url",
     "opening_identity",
+    "opening_selection_evidence",
     "provider",
 }

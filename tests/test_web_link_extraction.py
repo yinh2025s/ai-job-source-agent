@@ -156,6 +156,83 @@ class LinkExtractionTests(unittest.TestCase):
         self.assertEqual(len(links), MAX_EXTRACTED_LINKS)
         self.assertEqual(links[0].url, "https://job-boards.greenhouse.io/acme")
 
+    def test_retains_late_workday_and_explicit_current_openings_within_cap(self):
+        ordinary_anchors = "".join(
+            f'<a href="/about/{index}">About {index}</a>'
+            for index in range(MAX_EXTRACTED_LINKS + 20)
+        )
+        workday = "https://bbva.wd3.myworkdayjobs.com/BBVA"
+        openings = "https://www.connoisseurmedia.com/careers/current-openings/"
+        html = ordinary_anchors + (
+            f'<a href="{workday}">Careers</a>'
+            f'<a href="{openings}">View all current openings</a>'
+        )
+
+        links = extract_links(Page(url="https://www.connoisseurmedia.com/careers/", html=html))
+        urls = [link.url for link in links]
+
+        self.assertEqual(len(links), MAX_EXTRACTED_LINKS)
+        self.assertEqual(urls[:2], [workday, openings])
+        self.assertNotIn(f"https://www.connoisseurmedia.com/about/{MAX_EXTRACTED_LINKS - 1}", urls)
+
+    def test_retains_late_job_offers_command_within_cap(self):
+        ordinary_anchors = "".join(
+            f'<a href="/about/{index}">About {index}</a>'
+            for index in range(MAX_EXTRACTED_LINKS + 20)
+        )
+        offers = "https://careers.example.com/en/annonces"
+        html = ordinary_anchors + f'<a href="{offers}">Our job offers</a>'
+
+        links = extract_links(
+            Page(url="https://careers.example.com/en/index.html", html=html)
+        )
+
+        self.assertEqual(len(links), MAX_EXTRACTED_LINKS)
+        self.assertEqual(links[0].url, offers)
+
+    def test_high_value_merge_is_stable_and_deduplicates_normalized_urls(self):
+        provider = "https://jobs.lever.co/acme"
+        anchors = (
+            f'<a href="{provider}?utm_source=nav">Careers</a>'
+            + "".join(
+                f'<a href="/docs/{index}">Doc {index}</a>'
+                for index in range(MAX_EXTRACTED_LINKS)
+            )
+            + f'<a href="{provider}">View jobs</a>'
+            + '<a href="/jobs">Open positions</a>'
+        )
+
+        links = extract_links(Page(url="https://example.com/careers", html=anchors))
+
+        self.assertEqual(len(links), MAX_EXTRACTED_LINKS)
+        self.assertEqual(
+            [link.url for link in links[:2]],
+            [provider, "https://example.com/jobs"],
+        )
+        self.assertEqual([link.url for link in links].count(provider), 1)
+
+    def test_invalid_and_disguised_provider_urls_are_not_promoted_after_cap(self):
+        anchors = "".join(
+            f'<a href="/docs/{index}">Doc {index}</a>'
+            for index in range(MAX_EXTRACTED_LINKS)
+        )
+        html = anchors + """
+            <a href="https://jobs.lever.co.evil.example/acme">Careers</a>
+            <a href="https://evil.example@jobs.lever.co/acme">View jobs</a>
+            <a href="http://[invalid">Open positions</a>
+            <a href="javascript:https://jobs.lever.co/acme">View jobs</a>
+        """
+
+        urls = [
+            link.url
+            for link in extract_links(Page(url="https://example.com/careers", html=html))
+        ]
+
+        self.assertNotIn("https://jobs.lever.co.evil.example/acme", urls)
+        self.assertNotIn("https://evil.example@jobs.lever.co/acme", urls)
+        self.assertNotIn("https://jobs.lever.co/acme", urls)
+        self.assertTrue(all(url.startswith(("http://", "https://")) for url in urls))
+
 
 if __name__ == "__main__":
     unittest.main()

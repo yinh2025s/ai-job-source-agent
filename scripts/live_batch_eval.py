@@ -92,6 +92,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-job-pages", type=int, default=3)
     parser.add_argument("--max-job-board-attempts", type=int, default=3)
     parser.add_argument(
+        "--enable-parallel-candidate-discovery",
+        action="store_true",
+        help="Enable the merged S5 candidate portfolio behind its deterministic flag.",
+    )
+    parser.add_argument(
         "--company-time-budget",
         type=float,
         default=45,
@@ -1039,6 +1044,9 @@ def _agent_config(args: argparse.Namespace) -> AgentConfig:
         max_ats_board_fetches=int(getattr(args, "max_ats_board_fetches", 5)),
         enable_sitemap_discovery=not bool(getattr(args, "skip_sitemap", False)),
         enable_career_search=True,
+        enable_parallel_candidate_discovery=bool(
+            getattr(args, "enable_parallel_candidate_discovery", False)
+        ),
         career_search_timeout=(
             None if career_search_timeout is None else float(career_search_timeout)
         ),

@@ -412,6 +412,56 @@ class OfflinePipelineTests(unittest.TestCase):
             [career],
         )
 
+    def test_labeled_bundle_route_verifies_client_rendered_career_shell(self):
+        homepage = "https://spa.example"
+        asset = homepage + "/main.js"
+        career = homepage + "/careers"
+
+        class BundleShellFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=f'<script type="module" src="{asset}"></script>',
+                    )
+                if url == asset:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            'const attrs=["routerLink","/careers",'
+                            '"aria-label","Go to careers page"];'
+                        ),
+                        source="public-js",
+                    )
+                if url.rstrip("/") == career:
+                    return Page(
+                        url=url,
+                        final_url=career,
+                        html=(
+                            '<base href="/"><app-root></app-root>'
+                            f'<script type="module" src="{asset}"></script>'
+                        ),
+                        source="client-shell",
+                    )
+                raise FetchError(f"not available: {url}")
+
+        career_url, trace = JobSourceAgent(
+            BundleShellFetcher(offline=True),
+            max_career_candidate_fetches=2,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        ).find_career_page(homepage, company_name="SPA")
+
+        self.assertEqual(career_url, career)
+        self.assertEqual(trace["selected_from"], "bundle_navigation_discovery")
+        self.assertEqual(
+            trace["selected_route_evidence"],
+            "first_party_bundle_navigation",
+        )
+
     def test_bundle_navigation_requires_labeled_same_origin_career_route(self):
         homepage = "https://bundle.example"
         asset = homepage + "/assets/index.js"

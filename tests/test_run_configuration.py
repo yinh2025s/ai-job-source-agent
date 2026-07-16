@@ -19,7 +19,20 @@ class DeterministicRunConfigTests(unittest.TestCase):
 
         self.assertEqual(implicit.to_payload(), explicit.to_payload())
         self.assertEqual(implicit.digest, explicit.digest)
-        self.assertEqual(implicit.to_payload()["schema_version"], "1.2")
+        self.assertEqual(implicit.to_payload()["schema_version"], "1.3")
+
+    def test_parallel_candidate_discovery_is_explicit_and_deterministic(self):
+        disabled = DeterministicRunConfig.from_agent_config(AgentConfig())
+        enabled = DeterministicRunConfig.from_agent_config(
+            AgentConfig(enable_parallel_candidate_discovery=True)
+        )
+
+        self.assertFalse(disabled.enable_parallel_candidate_discovery)
+        self.assertTrue(enabled.enable_parallel_candidate_discovery)
+        self.assertNotEqual(disabled.digest, enabled.digest)
+        self.assertTrue(
+            enabled.to_payload()["agent"]["enable_parallel_candidate_discovery"]
+        )
 
     def test_round_trip_faithfully_rebuilds_agent_config(self):
         expected = AgentConfig(

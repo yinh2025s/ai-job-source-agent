@@ -8,6 +8,7 @@ from job_source_agent.first_party_inventory import (
     probe_first_party_job_inventory,
 )
 from job_source_agent.pipeline import JobSourceAgent
+from job_source_agent.opening_matcher import structured_job_links
 from job_source_agent.snapshot import sanitize_snapshot_body
 from job_source_agent.web import FetchError, Page
 
@@ -337,6 +338,218 @@ class FirstPartyInventoryProbeTests(unittest.TestCase):
         self.assertTrue(probe.trace["fetch_error"]["retryable"])
 
 
+class DeclaredCrossOriginInventoryTests(unittest.TestCase):
+    page_url = "https://careers.example.com/jobs"
+    asset_url = "https://careers.example.com/assets/jobs.js?v=1"
+    endpoint = "https://public-api.example.net/openings"
+
+    def page(self, endpoint=None, attribute="data-public-jobs-url"):
+        endpoint = endpoint or self.endpoint
+        return Page(
+            url=self.page_url,
+            html=f'<main {attribute}="{endpoint}">Open roles</main>',
+        )
+
+    def asset(self, body=None):
+        return AssetSource(
+            self.asset_url,
+            body
+            or (
+                "const inventoryUrl = root.dataset.publicJobsUrl;"
+                "fetch(inventoryUrl).then(renderJobs);"
+            ),
+        )
+
+    def response(self, jobs, *, final_url=None, body=None):
+        return Page(
+            url=self.endpoint,
+            final_url=final_url or self.endpoint,
+            html=body if body is not None else json.dumps({"jobs": jobs}),
+        )
+
+    def probe(self, fetcher, *, page=None, assets=None):
+        return probe_first_party_job_inventory(
+            fetcher,
+            page or self.page(),
+            assets or [self.asset()],
+            ashby_identity,
+        )
+
+    def test_verifies_declared_cross_origin_inventory_with_anonymous_fetch(self):
+        openings = [
+            "https://openings.example.org/jobs/role-1",
+            "https://openings.example.org/jobs/role-2",
+        ]
+        fetcher = RecordingFetcher(
+            {
+                self.endpoint: self.response(
+                    [
+                        {"title": "Platform Engineer", "url": openings[0]},
+                        {
+                            "title": "Data Engineer",
+                            "url": openings[1],
+                            "location": "Remote",
+                        },
+                    ]
+                )
+            }
+        )
+
+        probe = self.probe(fetcher)
+
+        self.assertIsNotNone(probe)
+        assert probe is not None
+        self.assertEqual(probe.trace["method"], "first_party_declared_inventory")
+        self.assertEqual(probe.trace["status"], "verified")
+        self.assertTrue(probe.trace["inventory_complete"])
+        self.assertEqual(probe.trace["inventory_count"], 2)
+        self.assertEqual(fetcher.requests, [(self.endpoint, None, None)])
+        for opening in openings:
+            self.assertIn(opening, probe.page.html)
+
+    def test_accepts_get_attribute_evidence_for_the_same_data_attribute(self):
+        asset = self.asset(
+            'let url=node.getAttribute("data-public-jobs-url");window.fetch(url)'
+        )
+        opening = "https://openings.example.org/jobs/role-1"
+        fetcher = RecordingFetcher(
+            {self.endpoint: self.response([{"title": "Engineer", "url": opening}])}
+        )
+
+        probe = self.probe(fetcher, assets=[asset])
+
+        self.assertIsNotNone(probe)
+        assert probe is not None
+        self.assertEqual(probe.trace["status"], "verified")
+
+    def test_accepts_pascal_case_rows_and_explicit_cors_get(self):
+        asset = self.asset(
+            'const url=root.getAttribute("data-public-jobs-url");'
+            'fetch(url,{mode:"cors",method:"GET",credentials:"omit"})'
+        )
+        opening = "https://openings.example.org/jobs/role-1"
+        fetcher = RecordingFetcher(
+            {
+                self.endpoint: self.response(
+                    [{"Title": "Registered Nurse", "Url": opening, "Location": "Oxnard, CA"}]
+                )
+            }
+        )
+
+        probe = self.probe(fetcher, assets=[asset])
+
+        self.assertIsNotNone(probe)
+        assert probe is not None
+        self.assertEqual(probe.trace["status"], "verified")
+        self.assertIn("Registered Nurse", probe.page.html)
+        self.assertEqual(
+            [(link.text, link.url) for link in structured_job_links(probe.page.html, self.page_url)],
+            [("Registered Nurse", opening)],
+        )
+
+    def test_requires_matching_first_party_js_anonymous_fetch_evidence(self):
+        cases = {
+            "cross_origin_asset": AssetSource(
+                "https://cdn.example.net/jobs.js",
+                "const u=root.dataset.publicJobsUrl;fetch(u)",
+            ),
+            "different_attribute": self.asset(
+                "const u=root.dataset.privateJobsUrl;fetch(u)"
+            ),
+            "literal_fetch": self.asset(f'fetch("{self.endpoint}")'),
+            "credentials": self.asset(
+                'const u=root.dataset.publicJobsUrl;fetch(u,{credentials:"include"})'
+            ),
+            "reassigned": self.asset(
+                "let u=root.dataset.publicJobsUrl;u=other;fetch(u)"
+            ),
+        }
+        for name, asset in cases.items():
+            with self.subTest(name=name):
+                fetcher = RecordingFetcher({})
+                self.assertIsNone(self.probe(fetcher, assets=[asset]))
+                self.assertEqual(fetcher.requests, [])
+
+    def test_rejects_unsafe_or_non_cross_origin_declared_endpoint(self):
+        endpoints = [
+            "http://public-api.example.net/openings",
+            "https://public-api.example.net:8443/openings",
+            "https://user@public-api.example.net/openings",
+            "https://public-api.example.net/openings?tenant=example",
+            "https://public-api.example.net/openings#jobs",
+            "https://careers.example.com/openings",
+            "https://127.0.0.1/openings",
+        ]
+        for endpoint in endpoints:
+            with self.subTest(endpoint=endpoint):
+                fetcher = RecordingFetcher({})
+                self.assertIsNone(self.probe(fetcher, page=self.page(endpoint)))
+                self.assertEqual(fetcher.requests, [])
+
+    def test_rejects_redirect_payload_shape_size_and_row_cap(self):
+        opening = "https://openings.example.org/jobs/role-1"
+        invalid_responses = {
+            "redirect": self.response(
+                [{"title": "Engineer", "url": opening}],
+                final_url=self.endpoint + "/redirected",
+            ),
+            "wrong_root": self.response([], body=json.dumps({"data": []})),
+            "extra_root": self.response([], body=json.dumps({"jobs": [], "total": 0})),
+            "oversized": self.response([], body=" " * (MAX_INVENTORY_BYTES + 1)),
+            "too_many_rows": self.response([], body=json.dumps({"jobs": [{}] * 5001})),
+        }
+        for name, response in invalid_responses.items():
+            with self.subTest(name=name):
+                fetcher = RecordingFetcher({self.endpoint: response})
+                probe = self.probe(fetcher)
+                self.assertIsNotNone(probe)
+                assert probe is not None
+                self.assertFalse(probe.trace["inventory_complete"])
+                self.assertNotIn("verified_job_urls", probe.page.html)
+
+    def test_rejects_mixed_or_unsafe_opening_url_family(self):
+        cases = {
+            "origin": [
+                "https://openings.example.org/jobs/role-1",
+                "https://other.example.org/jobs/role-2",
+            ],
+            "path": [
+                "https://openings.example.org/jobs/role-1",
+                "https://openings.example.org/careers/role-2",
+            ],
+            "query": ["https://openings.example.org/jobs/role-1?token=x"],
+            "fragment": ["https://openings.example.org/jobs/role-1#apply"],
+            "port": ["https://openings.example.org:444/jobs/role-1"],
+            "auth": ["https://user@openings.example.org/jobs/role-1"],
+        }
+        for name, urls in cases.items():
+            with self.subTest(name=name):
+                jobs = [
+                    {"title": f"Engineer {index}", "url": url}
+                    for index, url in enumerate(urls)
+                ]
+                fetcher = RecordingFetcher({self.endpoint: self.response(jobs)})
+                probe = self.probe(fetcher)
+                self.assertIsNotNone(probe)
+                assert probe is not None
+                self.assertEqual(probe.trace["status"], "invalid_inventory_payload")
+                self.assertFalse(probe.trace["inventory_complete"])
+
+    def test_empty_and_fetch_failure_never_claim_completeness(self):
+        responses = [
+            self.response([]),
+            FetchError("timeout", reason_code="NETWORK_TIMEOUT", retryable=True),
+        ]
+        for response in responses:
+            with self.subTest(response=response):
+                fetcher = RecordingFetcher({self.endpoint: response})
+                probe = self.probe(fetcher)
+                self.assertIsNotNone(probe)
+                assert probe is not None
+                self.assertFalse(probe.trace["inventory_complete"])
+                self.assertNotIn("verified_job_urls", probe.page.html)
+
+
 class FirstPartyInventoryPipelineTests(unittest.TestCase):
     career = "https://www.example.com/career"
     route_asset = "https://www.example.com/_nuxt/career.js"
@@ -375,11 +588,19 @@ class FirstPartyInventoryPipelineTests(unittest.TestCase):
             self.pages([{"title": "AI Engineer", "url": opening}])
         )
 
-        job_list, trace = JobSourceAgent(fetcher, max_job_pages=1).find_job_board(
-            self.career
-        )
+        job_list, trace, portfolio = JobSourceAgent(
+            fetcher,
+            max_job_pages=1,
+        ).find_job_board_portfolio(self.career)
 
         self.assertEqual(job_list, "https://jobs.ashbyhq.com/example")
+        self.assertIsNotNone(portfolio)
+        self.assertEqual(portfolio.primary.detection_method, "page_evidence")
+        self.assertEqual(
+            portfolio.primary.evidence_url,
+            "https://jobs.ashbyhq.com/example",
+        )
+        self.assertEqual(portfolio.primary.relationship_evidence_url, self.career)
         self.assertEqual(trace["provider"], "ashby")
         probe = trace["content_payload_probes"][0]
         self.assertEqual(probe["method"], "first_party_dynamic_inventory")

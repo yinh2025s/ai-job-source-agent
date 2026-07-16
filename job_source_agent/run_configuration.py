@@ -7,10 +7,11 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RUN_CONFIGURATION_SCHEMA_VERSION = "1.2"
+RUN_CONFIGURATION_SCHEMA_VERSION = "1.3"
 BATCH_EXECUTION_SCHEMA_VERSION = "1.0"
 _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION = "1.0"
 _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION = "1.1"
+_JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION = "1.2"
 _MAX_BUDGET = 1_000
 _MAX_TIMEOUT_SECONDS = 300.0
 
@@ -27,6 +28,7 @@ class AgentConfig:
     enable_career_search: bool = True
     career_search_timeout: float | None = None
     max_career_discovery_transport_calls: int | None = None
+    enable_parallel_candidate_discovery: bool = False
 
 
 @dataclass(frozen=True)
@@ -43,6 +45,7 @@ class DeterministicRunConfig:
     enable_career_search: bool
     career_search_timeout: float | None
     max_career_discovery_transport_calls: int | None = None
+    enable_parallel_candidate_discovery: bool = False
     _schema_version: str = field(
         default=RUN_CONFIGURATION_SCHEMA_VERSION,
         repr=False,
@@ -72,6 +75,7 @@ class DeterministicRunConfig:
         if schema_version not in {
             _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION,
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             raise ValueError("Run configuration schema version is incompatible")
@@ -88,11 +92,17 @@ class DeterministicRunConfig:
         }
         if schema_version in {
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_career_discovery_transport_calls")
-        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+        if schema_version in {
+            _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             expected_fields.add("max_job_board_attempts")
+        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            expected_fields.add("enable_parallel_candidate_discovery")
         if not isinstance(agent, dict) or set(agent) != expected_fields:
             raise ValueError("Run configuration agent fields are incomplete or unsupported")
 
@@ -105,7 +115,11 @@ class DeterministicRunConfig:
                 minimum=1,
                 maximum=8,
             )
-            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            if schema_version
+            in {
+                _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+                RUN_CONFIGURATION_SCHEMA_VERSION,
+            }
             else 1
         )
         max_career_candidate_fetches = _bounded_integer(
@@ -122,6 +136,7 @@ class DeterministicRunConfig:
             if schema_version
             in {
                 _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else None
@@ -140,6 +155,14 @@ class DeterministicRunConfig:
             agent["enable_sitemap_discovery"], "enable_sitemap_discovery"
         )
         enable_career_search = _boolean(agent["enable_career_search"], "enable_career_search")
+        enable_parallel_candidate_discovery = (
+            _boolean(
+                agent["enable_parallel_candidate_discovery"],
+                "enable_parallel_candidate_discovery",
+            )
+            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            else False
+        )
         career_search_timeout = _optional_timeout(agent["career_search_timeout"])
         return cls(
             max_candidates=max_candidates,
@@ -152,6 +175,7 @@ class DeterministicRunConfig:
             enable_sitemap_discovery=enable_sitemap_discovery,
             enable_career_search=enable_career_search,
             career_search_timeout=career_search_timeout,
+            enable_parallel_candidate_discovery=enable_parallel_candidate_discovery,
             _schema_version=schema_version,
         )
 
@@ -168,13 +192,21 @@ class DeterministicRunConfig:
         }
         if self._schema_version in {
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_career_discovery_transport_calls"] = (
                 self.max_career_discovery_transport_calls
             )
-        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+        if self._schema_version in {
+            _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             agent["max_job_board_attempts"] = self.max_job_board_attempts
+        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            agent["enable_parallel_candidate_discovery"] = (
+                self.enable_parallel_candidate_discovery
+            )
         return {"schema_version": self._schema_version, "agent": agent}
 
     def to_agent_config(self) -> AgentConfig:
@@ -189,6 +221,7 @@ class DeterministicRunConfig:
             enable_sitemap_discovery=self.enable_sitemap_discovery,
             enable_career_search=self.enable_career_search,
             career_search_timeout=self.career_search_timeout,
+            enable_parallel_candidate_discovery=self.enable_parallel_candidate_discovery,
         )
 
     @property

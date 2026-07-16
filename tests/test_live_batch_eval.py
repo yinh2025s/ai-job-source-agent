@@ -1559,13 +1559,15 @@ class LiveBatchEvalTests(unittest.TestCase):
 
         self.assertEqual(result.stage_status("website_resolution"), "failed")
         self.assertEqual(result.stage_status("career_discovery"), "not_run")
-        self.assertEqual(
-            result.job_list_page_url,
-            "https://company.wd5.myworkdayjobs.com/en-US/acme",
-        )
+        self.assertIsNone(result.job_list_page_url)
         self.assertIsNone(result.open_position_url)
         self.assertEqual(result.pipeline_status, "failed")
+        self.assertEqual(result.status, "failed")
         self.assertEqual(result.identity_assertion["verdict"], "rejected")
+        self.assertIn(
+            "PROVIDER_RELATIONSHIP_UNVERIFIED",
+            result.identity_assertion["failure_codes"],
+        )
         self.assertIsNone(result.error_code)
 
     def test_external_apply_allows_resume_fallback_without_website(self):

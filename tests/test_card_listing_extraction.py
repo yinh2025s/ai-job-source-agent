@@ -76,6 +76,80 @@ class CardListingExtractionTests(unittest.TestCase):
             [("AI/ML Developer", "https://careers.example.com/career/ai-ml-developer")],
         )
 
+    def test_extracts_heading_from_guava_style_anchor_card(self):
+        html = """
+            <a class="careers-card group" href="/careers/senior-cloud-engineer">
+              <h2>Senior Cloud Engineer</h2>
+              <p>
+                Build reliable cloud systems across a large distributed platform.
+                You will collaborate closely with the Product Manager and security team
+                while owning delivery, observability, and operational improvements.
+              </p>
+            </a>
+            <a href="https://jobs.ashbyhq.com/acme/abc123">
+              <div class="job-title">Data Platform Engineer</div>
+              <p>Lead the design and operation of our analytics platform.</p>
+            </a>
+            <a class="careers-card" href="/careers/mid-market-account-executive">
+              <h4>Mid-Market Account Executive</h4>
+              <p>Own the full sales cycle for mid-market customers.</p>
+            </a>
+        """
+
+        candidates = extract_card_listing_candidates(html, SOURCE_URL)
+
+        self.assertEqual(
+            [(item.title, item.url) for item in candidates],
+            [
+                ("Senior Cloud Engineer", "https://careers.example.com/careers/senior-cloud-engineer"),
+                ("Data Platform Engineer", "https://jobs.ashbyhq.com/acme/abc123"),
+                (
+                    "Mid-Market Account Executive",
+                    "https://careers.example.com/careers/mid-market-account-executive",
+                ),
+            ],
+        )
+
+    def test_anchor_card_rejects_ambiguous_or_description_only_titles(self):
+        cases = (
+            """
+                <a href="/jobs/1/data-engineer">
+                  <h2>Data Engineer</h2><h3>Platform Engineer</h3>
+                  <p>Choose the role that fits your experience.</p>
+                </a>
+            """,
+            """
+                <a href="/jobs/2/data-engineer">
+                  <p>Our Data Engineer will build dependable pipelines for customers.</p>
+                </a>
+            """,
+            """
+                <a href="/jobs/3/engineering-roles">
+                  <h2>Engineering roles</h2><p>Explore the team.</p>
+                </a>
+            """,
+        )
+
+        for html in cases:
+            with self.subTest(html=html):
+                self.assertEqual(extract_card_listing_candidates(html, SOURCE_URL), [])
+
+    def test_anchor_card_keeps_navigation_hidden_and_url_safety_boundaries(self):
+        cases = (
+            '<nav><a href="/jobs/1/data-engineer"><h2>Data Engineer</h2></a></nav>',
+            '<footer><a href="/jobs/1/data-engineer"><h2>Data Engineer</h2></a></footer>',
+            '<a href="/jobs/1/data-engineer" hidden><h2>Data Engineer</h2></a>',
+            '<template><a href="/jobs/1/data-engineer"><h2>Data Engineer</h2></a></template>',
+            '<script><a href="/jobs/1/data-engineer"><h2>Data Engineer</h2></a></script>',
+            '<a href="https://evil.example/jobs/1/data-engineer"><h2>Data Engineer</h2></a>',
+            '<a href="https://user:secret@jobs.ashbyhq.com/acme/abc123"><h2>Data Engineer</h2></a>',
+            '<a href="https://jobs.ashbyhq.com:443/acme/abc123"><h2>Data Engineer</h2></a>',
+        )
+
+        for html in cases:
+            with self.subTest(html=html):
+                self.assertEqual(extract_card_listing_candidates(html, SOURCE_URL), [])
+
     def test_rejects_cross_card_pairing(self):
         html = """
             <div class="job-card"><h3>Data Engineer</h3></div>

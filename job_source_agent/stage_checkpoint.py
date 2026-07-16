@@ -19,6 +19,7 @@ from .job_board import DiscoveredJobBoard, JobBoardPortfolio
 from .identity_continuity import (
     HiringIdentityEvidence,
     OpeningIdentity,
+    OpeningSelectionEvidence,
     ProviderIdentity,
 )
 from .models import PIPELINE_STAGES, StageResult
@@ -85,6 +86,7 @@ class FilesystemCheckpointStore:
                 ("hiring_identity_evidence", HiringIdentityEvidence),
                 ("provider_identity", ProviderIdentity),
                 ("opening_identity", OpeningIdentity),
+                ("opening_selection_evidence", OpeningSelectionEvidence),
             ):
                 identity = execution.updates.get(field_name)
                 if field_name in execution.updates and not isinstance(
@@ -273,6 +275,7 @@ def _deserialize_checkpoint(
         ("hiring_identity_evidence", HiringIdentityEvidence),
         ("provider_identity", ProviderIdentity),
         ("opening_identity", OpeningIdentity),
+        ("opening_selection_evidence", OpeningSelectionEvidence),
     ):
         if field_name in updates:
             updates = dict(updates)

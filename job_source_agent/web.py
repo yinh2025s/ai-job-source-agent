@@ -49,6 +49,58 @@ _URL_DATA_ATTRIBUTES = {
     "data-src",
     "data-url",
 }
+_PROVIDER_DOMAINS = (
+    "ashbyhq.com",
+    "ats.rippling.com",
+    "bamboohr.com",
+    "boards.greenhouse.io",
+    "careers.oracle.com",
+    "eightfold.ai",
+    "icims.com",
+    "job-boards.greenhouse.io",
+    "jobs.ashbyhq.com",
+    "jobs.lever.co",
+    "jobs.smartrecruiters.com",
+    "jobvite.com",
+    "myworkdayjobs.com",
+    "oraclecloud.com",
+    "recruitee.com",
+    "sapsf.com",
+    "smartrecruiters.com",
+    "successfactors.com",
+    "ultipro.com",
+    "whitecarrot.ai",
+    "whitecarrot.io",
+    "workable.com",
+    "workdayjobs.com",
+)
+EXPLICIT_JOB_LIST_COMMANDS = (
+    "all current openings",
+    "all jobs",
+    "browse job opportunities",
+    "browse jobs",
+    "browse roles",
+    "current openings",
+    "explore jobs",
+    "explore roles",
+    "find jobs",
+    "find roles",
+    "job offers",
+    "job opportunities",
+    "job search",
+    "list all jobs",
+    "open positions",
+    "open roles",
+    "search all jobs",
+    "search jobs",
+    "search now",
+    "search roles",
+    "staff careers",
+    "view job offers",
+    "view jobs",
+    "view open jobs",
+    "view roles",
+)
 
 
 @dataclass
@@ -57,6 +109,7 @@ class RawLink:
     text: str
     source_url: str
     origin: str = "page_link"
+    location: str | None = None
 
 
 @dataclass
@@ -141,7 +194,13 @@ def safe_normalize_url(url: str, base_url: str | None = None) -> str | None:
     try:
         normalized = normalize_url(url, base_url)
         parsed = urlparse(normalized)
-        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        _ = parsed.port
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username
+            or parsed.password
+        ):
             return None
         return normalized
     except (TypeError, ValueError):
@@ -161,17 +220,26 @@ class _LinkParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.source_url = source_url
         self.links: list[RawLink] = []
+        self.provider_links: list[RawLink] = []
+        self.command_links: list[RawLink] = []
+        self.embedded_text: list[str] = []
+        self._embedded_text_chars = 0
         self.base_url = source_url
         self._active_href: str | None = None
         self._active_text: list[str] = []
 
     def _append_attribute_link(self, value: str, origin: str) -> None:
-        if len(self.links) >= MAX_EXTRACTED_LINKS:
-            return
         normalized = safe_normalize_url(value, self.base_url)
         normalized = _canonical_navigation_url(normalized) if normalized else None
         if normalized:
-            self.links.append(RawLink(normalized, "", self.source_url, origin))
+            link = RawLink(normalized, "", self.source_url, origin)
+            self._append_provider_link(link)
+            if len(self.links) < MAX_EXTRACTED_LINKS:
+                self.links.append(link)
+
+    def _append_provider_link(self, link: RawLink) -> None:
+        if _is_provider_url(link.url) and len(self.provider_links) < MAX_EXTRACTED_LINKS:
+            self.provider_links.append(link)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag_name = tag.lower()
@@ -183,6 +251,8 @@ class _LinkParser(HTMLParser):
             return
         if tag_name == "iframe" and attrs_dict.get("src"):
             self._append_attribute_link(attrs_dict["src"] or "", "iframe_src")
+        if tag_name == "script" and attrs_dict.get("src"):
+            self._append_attribute_link(attrs_dict["src"] or "", "script_src")
         if tag_name == "form" and attrs_dict.get("action"):
             self._append_attribute_link(attrs_dict["action"] or "", "form_action")
         for name, value in attrs_dict.items():
@@ -196,6 +266,11 @@ class _LinkParser(HTMLParser):
             self._active_text = []
 
     def handle_data(self, data: str) -> None:
+        remaining = MAX_EMBEDDED_SCAN_CHARS - self._embedded_text_chars
+        if remaining > 0:
+            chunk = data[:remaining]
+            self.embedded_text.append(chunk)
+            self._embedded_text_chars += len(chunk)
         if self._active_href is not None:
             self._active_text.append(data)
 
@@ -204,15 +279,18 @@ class _LinkParser(HTMLParser):
             return
         text = " ".join(" ".join(self._active_text).split())
         normalized_href = safe_normalize_url(self._active_href, self.base_url)
-        if normalized_href and len(self.links) < MAX_EXTRACTED_LINKS:
-            self.links.append(
-                RawLink(
-                    url=normalized_href,
-                    text=text,
-                    source_url=self.source_url,
-                    origin="page_link",
-                )
+        if normalized_href:
+            link = RawLink(
+                url=normalized_href,
+                text=text,
+                source_url=self.source_url,
+                origin="page_link",
             )
+            self._append_provider_link(link)
+            if _is_explicit_job_list_command(text) and len(self.command_links) < MAX_EXTRACTED_LINKS:
+                self.command_links.append(link)
+            if len(self.links) < MAX_EXTRACTED_LINKS:
+                self.links.append(link)
         self._active_href = None
         self._active_text = []
 
@@ -220,14 +298,14 @@ class _LinkParser(HTMLParser):
 def extract_links(page: Page) -> list[RawLink]:
     parser = _LinkParser(page.final_url or page.url)
     parser.feed(page.html)
-    links = parser.links
+    ordinary_links = parser.links
     source_url = page.final_url or page.url
     if (
-        len(links) < MAX_EXTRACTED_LINKS
+        len(ordinary_links) < MAX_EXTRACTED_LINKS
         and page.final_url
         and normalize_url(page.final_url) != normalize_url(page.url)
     ):
-        links.append(RawLink(normalize_url(page.final_url), "", page.url, "redirect_final_url"))
+        ordinary_links.append(RawLink(normalize_url(page.final_url), "", page.url, "redirect_final_url"))
 
     # Script and JSON payloads commonly slash- or unicode-escape ATS URLs.
     embedded = page.html[:MAX_EMBEDDED_SCAN_CHARS]
@@ -248,28 +326,67 @@ def extract_links(page: Page) -> list[RawLink]:
         )
         for board_url in dict.fromkeys(configured_board_urls)
     ]
-    if provider_config_links:
-        configured_urls = {link.url for link in provider_config_links}
-        links = provider_config_links + [link for link in links if link.url not in configured_urls]
-        links = links[:MAX_EXTRACTED_LINKS]
-    for url in re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", embedded):
-        if len(links) >= MAX_EXTRACTED_LINKS:
-            break
+    embedded_provider_links: list[RawLink] = []
+    embedded_links: list[RawLink] = []
+    embedded_payload = "".join(parser.embedded_text)
+    embedded_payload = re.sub(r"\\u00(?:2f|2F)", "/", embedded_payload)
+    embedded_payload = embedded_payload.replace(r"\/", "/")
+    embedded_payload = unescape(embedded_payload)
+    for url in re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", embedded_payload):
         normalized_url = safe_normalize_url(url.rstrip("'\"),.;"))
         normalized_url = _canonical_navigation_url(normalized_url) if normalized_url else None
         if not normalized_url:
             continue
-        if any(existing.url == normalized_url for existing in links):
-            continue
-        links.append(
-            RawLink(
-                url=normalized_url,
-                text="",
-                source_url=source_url,
-                origin="embedded_url",
-            )
+        link = RawLink(
+            url=normalized_url,
+            text="",
+            source_url=source_url,
+            origin="embedded_url",
         )
+        if _is_provider_url(normalized_url) and len(embedded_provider_links) < MAX_EXTRACTED_LINKS:
+            embedded_provider_links.append(link)
+        if len(embedded_links) < MAX_EXTRACTED_LINKS:
+            embedded_links.append(link)
+
+    return _stable_bounded_links(
+        provider_config_links,
+        parser.provider_links,
+        embedded_provider_links,
+        parser.command_links,
+        ordinary_links,
+        embedded_links,
+    )
+
+
+def _stable_bounded_links(*groups: list[RawLink]) -> list[RawLink]:
+    links: list[RawLink] = []
+    seen_urls: set[str] = set()
+    for group in groups:
+        for link in group:
+            if link.url in seen_urls:
+                continue
+            seen_urls.add(link.url)
+            links.append(link)
+            if len(links) >= MAX_EXTRACTED_LINKS:
+                return links
     return links
+
+
+def _is_explicit_job_list_command(text: str) -> bool:
+    normalized_text = " ".join(text.casefold().split())
+    return any(command in normalized_text for command in EXPLICIT_JOB_LIST_COMMANDS)
+
+
+def _is_provider_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        host = (parsed.hostname or "").casefold()
+        port = parsed.port
+    except ValueError:
+        return False
+    if parsed.username or parsed.password or port not in {None, 80, 443}:
+        return False
+    return any(host == domain or host.endswith("." + domain) for domain in _PROVIDER_DOMAINS)
 
 
 def _canonical_navigation_url(url: str) -> str:

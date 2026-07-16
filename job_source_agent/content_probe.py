@@ -32,6 +32,12 @@ _LABEL_THEN_ROUTE = re.compile(
     rf"[^{{}}]{{0,180}}?(?:href|path|value)\s*:\s*[\"'](?P<route>{_ROOT_ROUTE})[\"']",
     flags=re.I,
 )
+_ANGULAR_ROUTE_LABEL = re.compile(
+    rf'''["']routerLink["']\s*,\s*["'](?P<route>{_ROOT_ROUTE})["']'''
+    rf'''[^\]\[]{{0,220}}?["']aria-label["']\s*,\s*["']'''
+    rf'''(?P<label>[^"']*\b(?:careers?|jobs?|open\s+positions)\b[^"']*)["']''',
+    flags=re.I,
+)
 
 
 def discover_first_party_career_navigation(
@@ -74,6 +80,23 @@ def discover_first_party_career_navigation(
                     match.group("label"),
                     page_url,
                 )
+        for match in _ANGULAR_ROUTE_LABEL.finditer(bundle):
+            route = match.group("route")
+            if not _career_route(route):
+                continue
+            try:
+                candidate_url = normalize_url(route, page_url)
+            except (TypeError, ValueError):
+                continue
+            if not _is_safe_same_site_navigation(candidate_url, page_url):
+                continue
+            _append_navigation_candidate(
+                candidates,
+                seen,
+                candidate_url,
+                match.group("label"),
+                page_url,
+            )
         parser = _CareerAnchorParser()
         try:
             parser.feed(bundle)

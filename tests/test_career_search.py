@@ -70,6 +70,41 @@ class CareerSearchTests(unittest.TestCase):
         )
         self.assertTrue(result.trace["ats_only"])
 
+    def test_title_targeted_queries_are_provider_bounded_without_or_bundle(self):
+        queries = build_ats_search_queries(
+            "Texas Children's Hospital",
+            "RN - LDRP",
+        )
+
+        self.assertEqual(
+            queries[:3],
+            [
+                '"texas children hospital" "RN - LDRP" jobs',
+                'site:myworkdayjobs.com "texas children hospital" "RN - LDRP"',
+                'site:oraclecloud.com "texas children hospital" "RN - LDRP"',
+            ],
+        )
+        self.assertTrue(all(" OR " not in query for query in queries))
+
+    def test_title_targeted_search_keeps_opaque_ats_url_as_untrusted_lead(self):
+        opaque = (
+            "https://eohh.fa.us2.oraclecloud.com/hcmUI/"
+            "CandidateExperience/en/sites/CX/job/425798"
+        )
+        rss = f"<rss><channel><item><link>{opaque}</link></item></channel></rss>"
+
+        result = CareerSearchResolver(
+            MappingFetcher(lambda url: Page(url, rss, final_url=url)),
+            max_queries=1,
+        ).search(
+            "Texas Children's Hospital",
+            "",
+            target_title="Registered Nurse LDRP",
+            ats_only=True,
+        )
+
+        self.assertEqual([item.url for item in result.candidates], [opaque])
+
     def test_ats_only_search_gives_each_provider_query_a_bounded_rss_attempt(self):
         fetcher = MappingFetcher(
             lambda url: Page(url, "<rss><channel /></rss>", final_url=url)

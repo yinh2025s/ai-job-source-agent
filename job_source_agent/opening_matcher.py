@@ -8,6 +8,9 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qs, quote_plus, urlencode, urlparse, urlunparse
 
 from .job_board import DiscoveredJobBoard
+from .content_probe import probe_first_party_provider_assets
+from .generic_opening_inventory import collect_generic_opening_inventory
+from .js_declared_inventory import discover_js_declared_inventory
 from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
 from .listing_extraction import extract_listing_candidates, validate_output_url
 from .scoring import is_likely_job_detail, score_job_link
@@ -32,7 +35,15 @@ STOPWORDS = {
 
 MIN_TITLE_MATCH_SCORE = 45
 MIN_PROVIDER_TITLE_MATCH_SCORE = 65
-SEARCH_FIELD_NAMES = {"q", "query", "keyword", "keywords", "search", "searchkeyword"}
+SEARCH_FIELD_NAMES = {
+    "q",
+    "query",
+    "keyword",
+    "keywords",
+    "search",
+    "searchkeyword",
+    "term",
+}
 MAX_DISCOVERED_SEARCH_FORMS = 4
 SENSITIVE_FORM_QUERY_NAMES = {
     "access_token",
@@ -56,6 +67,8 @@ class OpeningMatch:
     reasons: list[str]
     job_list_page_url: str | None = None
     location_score: int = 0
+    location: str | None = None
+    hiring_organization_name: str | None = None
 
 
 @dataclass
@@ -102,6 +115,8 @@ class JobOpeningMatcher:
             trace["selected"] = {
                 "url": api_match.url,
                 "title": api_match.title,
+                "location": api_match.location,
+                "hiring_organization_name": api_match.hiring_organization_name,
                 "score": api_match.score,
                 "reasons": api_match.reasons,
             }
@@ -131,7 +146,7 @@ class JobOpeningMatcher:
             {"url": search_url, "source": source}
             for search_url, _page, source in search_plan
         ]
-        for search_url, reusable_page, _source in search_plan:
+        for search_url, reusable_page, search_source in search_plan:
             trace["searched_urls"].append(search_url)
             if reusable_page is not None:
                 page = reusable_page
@@ -143,57 +158,159 @@ class JobOpeningMatcher:
                     continue
 
             page_url = page.final_url or page.url
-            candidates = []
-            links = extract_links(page) + structured_job_links(page.html, page_url)
-            for link in dedupe_raw_links(links):
-                validated_url = validate_output_url(link.url, page_url, title=link.text)
-                if not validated_url:
-                    continue
-                link = RawLink(validated_url, link.text, link.source_url, link.origin)
-                scored = score_job_link(link, page_url)
-                title_score, title_reasons = score_title_match(link.text, target_title)
-                if (
-                    title_score < MIN_TITLE_MATCH_SCORE
-                    or not title_identity_matches(link.text, target_title)
-                ):
-                    continue
-                total_score = scored.score + title_score
-                reasons = scored.reasons + title_reasons + [f"listing origin: {link.origin}"]
-                if not is_likely_job_detail(scored) and title_score < 60:
-                    continue
-                if total_score < 70:
-                    continue
-                candidates.append(
-                    OpeningMatch(
-                        url=link.url,
-                        title=link.text,
-                        score=total_score,
-                        provider=trace["provider"],
-                        reasons=reasons,
-                        job_list_page_url=page_url,
-                    )
+            page_links = (
+                extract_links(page)
+                + structured_job_links(
+                    page.html,
+                    page_url,
+                    trusted_declared_inventory=(
+                        "first_party_declared_inventory" in page.source
+                    ),
                 )
-
-            candidates.sort(key=lambda candidate: candidate.score, reverse=True)
-            trace["candidates"].extend(
-                [
-                    {
-                        "url": candidate.url,
-                        "title": candidate.title,
-                        "score": candidate.score,
-                        "reasons": candidate.reasons,
-                    }
-                    for candidate in candidates[:8]
-                ]
+            )
+            candidates = _opening_candidates_from_links(
+                page_links,
+                page_url=page_url,
+                target_title=target_title,
+                target_location=target_location,
+                provider=trace["provider"],
             )
             if candidates:
-                trace["selected"] = {
-                    "url": candidates[0].url,
-                    "title": candidates[0].title,
-                    "score": candidates[0].score,
-                    "reasons": candidates[0].reasons,
-                }
+                _record_candidates(trace, candidates)
+                trace["selected"] = _selected_candidate_trace(candidates[0])
                 return candidates[0], trace
+
+            inventory_links: list[RawLink] = []
+            if search_source in {"reused_landing_page", "declared_get_form"}:
+                generic_inventory = collect_generic_opening_inventory(
+                    self.fetcher,
+                    page,
+                    max_pages=3,
+                    max_candidates=1_000,
+                )
+                inventory_links = [
+                    candidate.as_raw_link()
+                    for candidate in generic_inventory.candidates
+                ]
+                strongest_title_score = max(
+                    (
+                        score_title_match(candidate.title, target_title)[0]
+                        for candidate in generic_inventory.candidates
+                    ),
+                    default=0,
+                )
+                inventory_trace = {
+                    "source": search_source,
+                    "start_url": page_url,
+                    "pages_fetched": generic_inventory.pages_fetched,
+                    "candidate_count": len(generic_inventory.candidates),
+                    "complete": generic_inventory.inventory_complete,
+                    "stop_reason": generic_inventory.stop_reason,
+                    "pages": [
+                        {
+                            "url": item.url,
+                            "candidate_count": item.candidate_count,
+                            "reason": item.reason,
+                        }
+                        for item in generic_inventory.trace
+                    ],
+                }
+                trace.setdefault("generic_inventory", []).append(inventory_trace)
+                existing_inventory = api_trace.get("inventory")
+                if generic_inventory.inventory_complete and (
+                    not isinstance(existing_inventory, dict)
+                    or existing_inventory.get("source") != "native_adapter"
+                ):
+                    api_trace["inventory"] = {
+                        "source": "generic_html",
+                        "scope": (
+                            "filtered"
+                            if search_source == "declared_get_form"
+                            else "full"
+                        ),
+                        "status": (
+                            "verified"
+                            if generic_inventory.inventory_complete
+                            and generic_inventory.candidates
+                            else (
+                                "verified_empty"
+                                if generic_inventory.inventory_complete
+                                else "incomplete"
+                            )
+                        ),
+                        "complete": generic_inventory.inventory_complete,
+                        "candidate_count": len(generic_inventory.candidates),
+                        "strongest_title_score": strongest_title_score,
+                        "stop_reason": generic_inventory.stop_reason,
+                    }
+            candidates = _opening_candidates_from_links(
+                inventory_links,
+                page_url=page_url,
+                target_title=target_title,
+                target_location=target_location,
+                provider=trace["provider"],
+            )
+            _record_candidates(trace, candidates)
+            if candidates:
+                trace["selected"] = _selected_candidate_trace(candidates[0])
+                return candidates[0], trace
+
+            if search_source in {"reused_landing_page", "declared_get_form"}:
+                js_inventory = discover_js_declared_inventory(
+                    self.fetcher,
+                    page,
+                    target_title,
+                )
+                js_trace = {
+                    "status": js_inventory.trace.status,
+                    "retryable": js_inventory.trace.retryable,
+                    "blocked": js_inventory.trace.blocked,
+                    "assets_considered": list(js_inventory.trace.assets_considered),
+                    "assets_fetched": list(js_inventory.trace.assets_fetched),
+                    "endpoint_url": js_inventory.trace.endpoint_url,
+                    "request_fields": list(js_inventory.trace.request_fields),
+                    "candidate_count": js_inventory.trace.candidate_count,
+                    "detail": js_inventory.trace.detail,
+                }
+                trace.setdefault("js_declared_inventory", []).append(js_trace)
+                if js_inventory.trace.status in {"verified", "candidate_cap_reached"}:
+                    js_links = [
+                        RawLink(
+                            url=item.url,
+                            text=item.title,
+                            source_url=page_url,
+                            origin="verified_js_declared_inventory",
+                            location=item.location,
+                        )
+                        for item in js_inventory.candidates
+                    ]
+                    candidates = _opening_candidates_from_links(
+                        js_links,
+                        page_url=page_url,
+                        target_title=target_title,
+                        target_location=target_location,
+                        provider=trace["provider"],
+                    )
+                    _record_candidates(trace, candidates)
+                    api_trace["inventory"] = {
+                        "source": "js_declared_inventory",
+                        "scope": "filtered",
+                        "status": js_inventory.trace.status,
+                        "complete": js_inventory.inventory_complete,
+                        "candidate_count": len(js_inventory.candidates),
+                    }
+                    if candidates:
+                        trace["selected"] = _selected_candidate_trace(candidates[0])
+                        return candidates[0], trace
+                elif js_inventory.trace.blocked:
+                    api_trace["inventory"] = {
+                        "source": "js_declared_inventory",
+                        "scope": "filtered",
+                        "status": js_inventory.trace.status,
+                        "complete": False,
+                        "candidate_count": 0,
+                        "reason_code": "BOT_PROTECTION",
+                    }
 
         fallback_url = build_search_result_url(job_list_url, target_title)
         if fallback_url:
@@ -237,6 +354,32 @@ class JobOpeningMatcher:
             except FetchError as exc:
                 page_detection = {"method": "page_evidence", "error": str(exc)}
             else:
+                if (
+                    discovered_board is not None
+                    and discovered_board.detection_method
+                    == "verified_declared_inventory"
+                ):
+                    landing_page, declared_probe = probe_first_party_provider_assets(
+                        self.fetcher,
+                        landing_page,
+                        self._recognizes_listing_provider,
+                        self._provider_board_identity,
+                    )
+                    if (
+                        isinstance(declared_probe, dict)
+                        and declared_probe.get("method")
+                        == "first_party_declared_inventory"
+                        and declared_probe.get("status") == "verified"
+                        and declared_probe.get("inventory_complete") is True
+                    ):
+                        page_detection = {
+                            "method": "verified_declared_inventory",
+                            "provider": "generic",
+                            "url": job_list_url,
+                            "endpoint_url": declared_probe.get("endpoint_url"),
+                            "inventory_complete": True,
+                            "inventory_count": declared_probe.get("inventory_count"),
+                        }
                 identified = self.provider_registry.board_for_page(landing_page, self.fetcher)
                 if identified is not None:
                     adapter, board = identified
@@ -382,6 +525,17 @@ class JobOpeningMatcher:
                                     ),
                                     job_list_page_url=job_list_url,
                                     location_score=location_score,
+                                    location=candidate.location,
+                                    hiring_organization_name=(
+                                        candidate.raw.get("hiring_organization_name")
+                                        if isinstance(
+                                            candidate.raw.get(
+                                                "hiring_organization_name"
+                                            ),
+                                            str,
+                                        )
+                                        else None
+                                    ),
                                 )
                             )
                         scored.sort(
@@ -392,6 +546,10 @@ class JobOpeningMatcher:
                             {
                                 "url": candidate.url,
                                 "title": candidate.title,
+                                "location": candidate.location,
+                                "hiring_organization_name": (
+                                    candidate.hiring_organization_name
+                                ),
                                 "score": candidate.score,
                                 "reasons": candidate.reasons,
                             }
@@ -401,6 +559,8 @@ class JobOpeningMatcher:
 
         api_requests = build_provider_api_requests(job_list_url, target_title)
         trace = {"provider": provider, "api_urls": [request.url for request in api_requests], "candidates": []}
+        if page_detection is not None:
+            trace["provider_detection"] = page_detection
         if page_detection and page_detection.get("error"):
             trace["errors"] = [
                 {
@@ -468,6 +628,21 @@ class JobOpeningMatcher:
                 "strongest_title_score": strongest_title_score,
             }
         return None, trace, landing_page
+
+    def _recognizes_listing_provider(self, url: str) -> bool:
+        adapter = self.provider_registry.adapter_for(url)
+        return bool(
+            adapter is not None
+            and adapter.supports_listing
+            and adapter.identify_board(url) is not None
+        )
+
+    def _provider_board_identity(self, url: str) -> tuple[str, str] | None:
+        adapter = self.provider_registry.adapter_for(url)
+        board = adapter.identify_board(url) if adapter is not None else None
+        if adapter is None or board is None or not adapter.supports_listing:
+            return None
+        return adapter.name, board.url
 
 
 @dataclass(frozen=True)
@@ -757,7 +932,103 @@ def provider_api_candidates(provider: str, body: str, job_list_url: str) -> list
     return []
 
 
-def structured_job_links(html: str, source_url: str) -> list[RawLink]:
+def _opening_candidates_from_links(
+    links: list[RawLink],
+    *,
+    page_url: str,
+    target_title: str,
+    target_location: str | None,
+    provider: str,
+) -> list[OpeningMatch]:
+    candidates: list[OpeningMatch] = []
+    for link in dedupe_raw_links(links):
+        evidence_page_url = link.source_url or page_url
+        validated_url = validate_output_url(
+            link.url,
+            evidence_page_url,
+            title=link.text,
+        )
+        if not validated_url:
+            continue
+        link = RawLink(
+            validated_url,
+            link.text,
+            link.source_url,
+            link.origin,
+            link.location,
+        )
+        scored = score_job_link(link, evidence_page_url)
+        title_score, title_reasons = score_title_match(link.text, target_title)
+        if (
+            title_score < MIN_TITLE_MATCH_SCORE
+            or not title_identity_matches(link.text, target_title)
+        ):
+            continue
+        total_score = scored.score + title_score
+        location_score, location_reasons = score_location_match(
+            link.location,
+            target_location,
+        )
+        reasons = (
+            scored.reasons
+            + title_reasons
+            + location_reasons
+            + [f"listing origin: {link.origin}"]
+        )
+        if not is_likely_job_detail(scored) and title_score < 60:
+            continue
+        if total_score < 70:
+            continue
+        candidates.append(
+            OpeningMatch(
+                url=link.url,
+                title=link.text,
+                score=total_score,
+                provider=provider,
+                reasons=reasons,
+                job_list_page_url=page_url,
+                location_score=location_score,
+                location=link.location,
+            )
+        )
+    candidates.sort(
+        key=lambda candidate: (candidate.score, candidate.location_score),
+        reverse=True,
+    )
+    return candidates
+
+
+def _record_candidates(trace: dict, candidates: list[OpeningMatch]) -> None:
+    trace["candidates"].extend(
+        {
+            "url": candidate.url,
+            "title": candidate.title,
+            "location": candidate.location,
+            "score": candidate.score,
+            "reasons": candidate.reasons,
+            "hiring_organization_name": candidate.hiring_organization_name,
+        }
+        for candidate in candidates[:8]
+    )
+
+
+def _selected_candidate_trace(candidate: OpeningMatch) -> dict:
+    return {
+        "url": candidate.url,
+        "title": candidate.title,
+        "location": candidate.location,
+        "score": candidate.score,
+        "reasons": candidate.reasons,
+        "hiring_organization_name": candidate.hiring_organization_name,
+    }
+
+
+def structured_job_links(
+    html: str,
+    source_url: str,
+    *,
+    trusted_declared_inventory: bool = False,
+) -> list[RawLink]:
     links: list[RawLink] = []
     for script_attrs, script_body in _script_blocks(html):
         if "application/ld+json" not in script_attrs.lower():
@@ -769,17 +1040,53 @@ def structured_job_links(html: str, source_url: str) -> list[RawLink]:
         for job in _walk_json_ld_jobs(data):
             title = str(job.get("title") or job.get("name") or "").strip()
             url = _json_ld_url(job)
+            location = _json_ld_location(job)
             normalized = safe_normalize_url(url, source_url) if url else None
             if title and normalized:
-                links.append(RawLink(url=normalized, text=title, source_url=source_url))
+                links.append(
+                    RawLink(
+                        url=normalized,
+                        text=title,
+                        source_url=source_url,
+                        location=location,
+                    )
+                )
     for script_attrs, script_body in _script_blocks(html):
         if not _looks_like_json_script(script_attrs, script_body):
             continue
         data = _parse_script_json(script_body)
         if data is None:
             continue
-        for title, url in _walk_structured_job_records(data, source_url):
-            links.append(RawLink(url=url, text=title, source_url=source_url))
+        if trusted_declared_inventory:
+            declared = (
+                data.get("first_party_declared_inventory")
+                if isinstance(data, dict)
+                else None
+            )
+            if isinstance(declared, dict) and isinstance(declared.get("jobs"), list):
+                for title, url, location in _walk_structured_job_records(
+                    declared["jobs"],
+                    source_url,
+                ):
+                    links.append(
+                        RawLink(
+                            url=url,
+                            text=title,
+                            source_url=source_url,
+                            origin="verified_declared_inventory",
+                            location=location,
+                        )
+                    )
+                continue
+        for title, url, location in _walk_structured_job_records(data, source_url):
+            links.append(
+                RawLink(
+                    url=url,
+                    text=title,
+                    source_url=source_url,
+                    location=location,
+                )
+            )
     links.extend(candidate.as_raw_link() for candidate in extract_listing_candidates(html, source_url))
     return dedupe_raw_links(links)
 
@@ -835,7 +1142,36 @@ def _json_ld_url(job: dict) -> str:
     return str(raw_url or "")
 
 
+def _json_ld_location(job: dict) -> str | None:
+    locations = job.get("jobLocation")
+    if not isinstance(locations, list):
+        locations = [locations]
+    parts: list[str] = []
+    for location in locations:
+        if not isinstance(location, dict):
+            continue
+        address = location.get("address")
+        if not isinstance(address, dict):
+            continue
+        locality = address.get("addressLocality")
+        region = address.get("addressRegion")
+        value = ", ".join(
+            item.strip()
+            for item in (locality, region)
+            if isinstance(item, str) and item.strip()
+        )
+        if value:
+            parts.append(value)
+    return "; ".join(dict.fromkeys(parts)) or None
+
+
 STRUCTURED_TITLE_FIELDS = ("title", "name", "jobTitle", "job_title", "text")
+STRUCTURED_LOCATION_FIELDS = (
+    "location",
+    "locationName",
+    "jobLocation",
+    "job_location",
+)
 STRUCTURED_URL_FIELDS = (
     "url",
     "absolute_url",
@@ -855,7 +1191,7 @@ def _walk_structured_job_records(value, source_url: str):
         title = _first_text_field(value, STRUCTURED_TITLE_FIELDS)
         url = _structured_record_url(value, source_url, title)
         if title and url and _looks_like_structured_job_record(value, url, source_url, title):
-            yield title, url
+            yield title, url, _first_text_field(value, STRUCTURED_LOCATION_FIELDS) or None
         for child in value.values():
             yield from _walk_structured_job_records(child, source_url)
     elif isinstance(value, list):

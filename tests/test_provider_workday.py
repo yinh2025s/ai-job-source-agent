@@ -52,6 +52,10 @@ class WorkdayAdapterTests(unittest.TestCase):
                 "company/acme",
                 "https://company.wd5.myworkdayjobs.com/acme",
             ),
+            "https://company.wd5.myworkdayjobs.com/es/acme?location=us": (
+                "company/acme",
+                "https://company.wd5.myworkdayjobs.com/es/acme",
+            ),
         }
 
         for url, (identifier, board_url) in cases.items():

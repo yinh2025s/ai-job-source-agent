@@ -28,6 +28,23 @@ def greenhouse_job(job_id, title, url, **extra):
     }
 
 
+def inline_assignment_job(variable, job_id, title, url, board_token="acme"):
+    return (
+        f'{variable}.absolute_url={json.dumps(url)};'
+        f'{variable}.data_compliance=[];'
+        f'{variable}.id={job_id};'
+        f'{variable}.title={json.dumps(title)};'
+        f'{variable}.company_name="Acme";'
+        f'{variable}.first_published="2026-01-01";'
+        f'{variable}.boardToken={json.dumps(board_token)};'
+    )
+
+
+def inline_assignment_page(*records, links=(123, 456)):
+    anchors = "".join(f'<a href="/jobs/{job_id}">Role</a>' for job_id in links)
+    return anchors + "<script>" + "".join(records) + "</script>"
+
+
 class MappingFetcher:
     def __init__(self, board_url, html, final_url=None, pages=None):
         self.board_url = board_url
@@ -159,6 +176,107 @@ class GreenhouseAdapterTests(unittest.TestCase):
         self.assertEqual(match.provider, "greenhouse")
         self.assertEqual(trace["provider"], "greenhouse")
         self.assertEqual(trace["provider_api"]["adapter_trace"]["variant"], "custom_frontend")
+
+    def test_maps_inline_assignment_record_to_observed_first_party_detail_route(self):
+        url = "https://careers.example.org/jobs"
+        title = "Account Executive, Brand Partnerships"
+        html = inline_assignment_page(
+            inline_assignment_job(
+                "a",
+                123,
+                title,
+                "https://job-boards.greenhouse.io/acme/jobs/123",
+            ),
+            inline_assignment_job(
+                "b",
+                456,
+                "Sales Manager",
+                "https://job-boards.greenhouse.io/acme/jobs/456",
+            ),
+        )
+
+        board = self.adapter.identify_board_from_page(Page(url=url, html=html))
+        result = self.adapter.list_jobs(MappingFetcher(url, html), board, JobQuery(title=title))
+
+        self.assertEqual(board.identifier, "custom:careers.example.org")
+        self.assertEqual(result.candidates[0].title, title)
+        self.assertEqual(result.candidates[0].url, "https://careers.example.org/jobs/123")
+        self.assertEqual(result.trace["inventory_scope"], "full")
+
+    def test_inline_assignments_fail_closed_without_same_variable_or_stable_template(self):
+        url = "https://careers.example.org/jobs"
+        split_record = (
+            'a.absolute_url="https://job-boards.greenhouse.io/acme/jobs/123";'
+            "b.data_compliance=[];b.id=123;"
+            'c.title="Data Analyst";c.company_name="Acme";c.boardToken="acme";'
+        )
+        one_link = inline_assignment_page(
+            inline_assignment_job(
+                "d",
+                123,
+                "Data Analyst",
+                "https://job-boards.greenhouse.io/acme/jobs/123",
+            ),
+            links=(123,),
+        )
+
+        self.assertIsNone(
+            self.adapter.identify_board_from_page(
+                Page(url=url, html=inline_assignment_page(split_record))
+            )
+        )
+        self.assertIsNone(self.adapter.identify_board_from_page(Page(url=url, html=one_link)))
+
+        ambiguous_templates = inline_assignment_page(
+            inline_assignment_job(
+                "e",
+                123,
+                "Data Analyst",
+                "https://job-boards.greenhouse.io/acme/jobs/123",
+            ),
+            links=(123, 456),
+        ).replace(
+            "<script>",
+            '<a href="/careers/jobs/123">Role</a><a href="/careers/jobs/456">Role</a><script>',
+        )
+        self.assertIsNone(
+            self.adapter.identify_board_from_page(Page(url=url, html=ambiguous_templates))
+        )
+
+    def test_inline_assignments_reject_cross_tenant_and_evil_urls(self):
+        url = "https://careers.example.org/jobs"
+        html = inline_assignment_page(
+            inline_assignment_job(
+                "a",
+                123,
+                "Wrong Tenant",
+                "https://job-boards.greenhouse.io/other/jobs/123",
+                board_token="acme",
+            ),
+            inline_assignment_job(
+                "b",
+                456,
+                "Evil",
+                "https://evil.example/jobs/456",
+            ),
+        )
+
+        self.assertIsNone(self.adapter.identify_board_from_page(Page(url=url, html=html)))
+
+    def test_inline_assignments_reject_assignment_limit_overflow(self):
+        url = "https://careers.example.org/jobs"
+        overflow = "".join(f"x{index}.id=1;" for index in range(10_001))
+        html = inline_assignment_page(
+            overflow,
+            inline_assignment_job(
+                "valid",
+                123,
+                "Data Analyst",
+                "https://job-boards.greenhouse.io/acme/jobs/123",
+            ),
+        )
+
+        self.assertIsNone(self.adapter.identify_board_from_page(Page(url=url, html=html)))
 
     def test_probes_and_lists_greenhouse_jobs_from_nuxt_static_payload(self):
         board_url = "https://www.example.org/careers"

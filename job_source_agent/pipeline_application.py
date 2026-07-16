@@ -98,12 +98,22 @@ def discovery_result_from_context(
         and isinstance(validation_trace.get("issues", []), list)
         else []
     )
-    identity_rejected = bool(
-        context.open_position_url
-        and validation_result is not None
-        and validation_result.status != "success"
+    validation_failed = bool(
+        validation_result is not None and validation_result.status != "success"
+    )
+    identity_rejected = bool(context.open_position_url and validation_failed)
+    job_list_identity_rejected = bool(
+        context.job_list_page_url
+        and validation_failed
+        and any(
+            issue.startswith(("HIRING_", "PROVIDER_"))
+            for issue in identity_issues
+        )
     )
     public_opening_url = None if identity_rejected else context.open_position_url
+    public_job_list_url = (
+        None if job_list_identity_rejected else context.job_list_page_url
+    )
     identity_assertion = _identity_assertion(context, identity_issues)
     result = DiscoveryResult(
         company_name=company.company_name,
@@ -116,7 +126,7 @@ def discovery_result_from_context(
         linkedin_job_title=company.job_title,
         linkedin_job_location=company.job_location,
         career_page_url=context.career_page_url,
-        job_list_page_url=context.job_list_page_url,
+        job_list_page_url=public_job_list_url,
         open_position_url=public_opening_url,
         identity_assertion=identity_assertion,
         stage_results=list(context.stage_results),
@@ -185,7 +195,7 @@ def discovery_result_from_context(
         result.status = "success"
     elif result.pipeline_status == "partial":
         result.status = "partial"
-    elif result.career_page_url:
+    elif _has_public_upstream_result(result):
         result.status = "partial"
     else:
         result.status = "failed"
@@ -196,6 +206,17 @@ def _pipeline_status(context: PipelineContext) -> str:
     return derive_pipeline_status(context.stage_results)
 
 
+def _has_public_upstream_result(result: DiscoveryResult) -> bool:
+    return any(
+        (
+            result.company_website_url,
+            result.career_root_url,
+            result.career_page_url,
+            result.job_list_page_url,
+        )
+    )
+
+
 def _identity_assertion(
     context: PipelineContext,
     failure_codes: list[str],
@@ -203,6 +224,7 @@ def _identity_assertion(
     hiring = context.hiring_identity_evidence
     provider = context.provider_identity
     opening = context.opening_identity
+    selection = context.opening_selection_evidence
     has_candidate = bool(context.open_position_url)
     if not has_candidate:
         verdict = "not_applicable"
@@ -219,6 +241,10 @@ def _identity_assertion(
         "hiring": asdict(hiring) if hiring is not None else None,
         "provider": asdict(provider) if provider is not None else None,
         "opening": asdict(opening) if opening is not None else None,
+        "selection": asdict(selection) if selection is not None else None,
+        "location_classification": context.trace.get("stages", {})
+        .get(STAGE_RESULT_VALIDATION, {})
+        .get("location_classification"),
         "candidate_opening_url": context.open_position_url,
     }
 

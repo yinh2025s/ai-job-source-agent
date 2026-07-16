@@ -3,9 +3,10 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from .models import LinkCandidate
+from .scoring import is_ats_url
 
 
-SCHEDULE_VERSION = "3"
+SCHEDULE_VERSION = "4"
 
 _LANGUAGE_SEGMENTS = {
     "ar", "cs", "da", "de", "en", "es", "fi", "fr", "he", "id", "it",
@@ -97,6 +98,8 @@ def candidate_evidence_tier(candidate: LinkCandidate) -> int:
         for reason in candidate.reasons
     ):
         return 0
+    if _is_high_evidence_job_list_candidate(candidate):
+        return 1
     if (
         candidate.origin in {
             "page_link",
@@ -205,6 +208,8 @@ def _evidence_priority_boost(candidate: LinkCandidate) -> int:
         for reason in candidate.reasons
     ):
         return 1000
+    if _is_high_evidence_job_list_candidate(candidate):
+        return 750
     if _is_first_party_embedded_job_list(candidate) or (
         (
             candidate.origin in {"page_link", "verified_homepage_navigation"}
@@ -221,6 +226,36 @@ def _evidence_priority_boost(candidate: LinkCandidate) -> int:
     ):
         return 500
     return 0
+
+
+def _is_high_evidence_job_list_candidate(candidate: LinkCandidate) -> bool:
+    if candidate.origin not in {"page_link", "verified_homepage_navigation"}:
+        return False
+    target = urlparse(candidate.url)
+    source = urlparse(candidate.source_url)
+    if (
+        target.scheme.casefold() != "https"
+        or source.scheme.casefold() != "https"
+        or not target.hostname
+        or not source.hostname
+        or target.username
+        or target.password
+    ):
+        return False
+    target_host = candidate_host_family(candidate)
+    source_host = candidate_concrete_host(candidate.source_url).removeprefix("www.")
+    same_site = (
+        target_host == source_host
+        or target_host.endswith("." + source_host)
+        or source_host.endswith("." + target_host)
+    )
+    if same_site and "explicit job-list command" in candidate.reasons:
+        return True
+    return (
+        not same_site
+        and is_ats_url(candidate.url)
+        and "known ATS domain" in candidate.reasons
+    )
 
 
 def _is_first_party_embedded_job_list(candidate: LinkCandidate) -> bool:

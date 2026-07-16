@@ -75,7 +75,7 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
             [item.url for item in scheduled],
             ["https://example.com/jobs", "https://example.com/careers"],
         )
-        self.assertEqual(trace["version"], "3")
+        self.assertEqual(trace["version"], "4")
 
     def test_verified_homepage_navigation_has_page_link_tier_and_boost(self):
         agent = JobSourceAgent(Fetcher(offline=True))
@@ -96,6 +96,92 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
 
         self.assertEqual(candidate_evidence_tier(verified), 1)
         self.assertEqual(scheduled[0].origin, "verified_homepage_navigation")
+
+    def test_small_budget_prioritizes_explicit_job_list_command(self):
+        command = candidate(
+            "https://example.com/careers/search",
+            60,
+            ["explicit job-list command"],
+            text="Search Jobs",
+            origin="page_link",
+        )
+        low_evidence = [
+            candidate(
+                f"https://example.com/{route}",
+                500 - index,
+                ["generated path probe"],
+                origin="path_probe",
+            )
+            for index, route in enumerate(("careers", "jobs", "open-positions"))
+        ]
+
+        scheduled, _trace = schedule_career_candidates(
+            low_evidence + [command],
+            fetch_limit=1,
+        )
+
+        self.assertEqual(scheduled[0].url, command.url)
+        self.assertEqual(candidate_evidence_tier(command), 1)
+
+    def test_small_budget_prioritizes_observed_cross_site_ats_candidate(self):
+        ats_candidate = candidate(
+            "https://boards.greenhouse.io/example",
+            60,
+            ["known ATS domain", "ATS company board URL", "homepage navigation link"],
+            origin="verified_homepage_navigation",
+        )
+        path_probe = candidate(
+            "https://example.com/careers",
+            900,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+
+        scheduled, _trace = schedule_career_candidates(
+            [path_probe, ats_candidate],
+            fetch_limit=1,
+        )
+
+        self.assertEqual(scheduled[0].url, ats_candidate.url)
+        self.assertEqual(candidate_evidence_tier(ats_candidate), 1)
+
+    def test_blind_or_unsafe_job_list_candidates_are_not_promoted(self):
+        path_probe = candidate(
+            "https://example.com/careers",
+            300,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+        blind_ats = candidate(
+            "https://boards.greenhouse.io/example",
+            200,
+            ["known ATS domain", "ATS company board URL"],
+            origin="blind_ats_probe",
+        )
+        unsafe_command = candidate(
+            "https://user:secret@example.net/jobs",
+            950,
+            ["explicit job-list command"],
+            text="All Jobs",
+            origin="page_link",
+        )
+        unrelated_command = candidate(
+            "https://unrelated.example.net/jobs",
+            940,
+            ["explicit job-list command"],
+            text="Open Positions",
+            origin="page_link",
+        )
+
+        scheduled, _trace = schedule_career_candidates(
+            [blind_ats, unsafe_command, unrelated_command, path_probe],
+            fetch_limit=1,
+        )
+
+        self.assertEqual(scheduled[0].url, path_probe.url)
+        self.assertEqual(candidate_evidence_tier(blind_ats), 3)
+        self.assertGreater(candidate_evidence_tier(unsafe_command), 1)
+        self.assertGreater(candidate_evidence_tier(unrelated_command), 1)
 
     def test_cross_host_embedded_explicit_job_list_stays_in_lower_tier(self):
         agent = JobSourceAgent(Fetcher(offline=True))

@@ -115,6 +115,7 @@ _ROLE_TITLE_WORDS = {
     "developer",
     "director",
     "engineer",
+    "executive",
     "lead",
     "manager",
     "officer",
@@ -153,6 +154,8 @@ class _Card:
     titles: list[str] = field(default_factory=list)
     fallback_titles: list[str] = field(default_factory=list)
     anchors: list[tuple[str, str]] = field(default_factory=list)
+    anchor_as_card: bool = False
+    explicit_title_nodes: int = 0
     has_nested_card: bool = False
     title_overflow: bool = False
 
@@ -193,17 +196,28 @@ class _CardParser(HTMLParser):
         marker = _attribute_marker(values)
         navigation = self._inside_navigation() or _is_navigation(tag, values)
         card = None
-        if not blocked and not navigation and _is_semantic_card(tag, values, self.stack):
-            parent = self._current_card()
-            if parent is not None:
-                parent.has_nested_card = True
-            card = _Card()
+        parent = self._current_card()
+        anchor_as_card = (
+            tag == "a"
+            and bool(values.get("href"))
+            and parent is None
+            and _could_be_anchor_card(values["href"], self.source_url)
+        )
+        if not blocked and not navigation:
+            if anchor_as_card:
+                card = _Card(anchor_as_card=True)
+            elif parent is None or not parent.anchor_as_card:
+                if _is_semantic_card(tag, values, self.stack):
+                    if parent is not None:
+                        parent.has_nested_card = True
+                    card = _Card()
 
         element = _Element(tag=tag, blocked=blocked, marker=marker, navigation=navigation, card=card)
         if not blocked:
             owner = card or self._current_card()
             if owner is not None and (
                 tag in _TITLE_TAGS
+                or (owner.anchor_as_card and tag == "h1")
                 or tag == "p"
                 or _TITLE_MARKER.search(marker)
             ):
@@ -259,6 +273,8 @@ class _CardParser(HTMLParser):
                     if element.title_capture.fallback
                     else element.title_capture.card.titles
                 )
+                if not element.title_capture.fallback:
+                    element.title_capture.card.explicit_title_nodes += 1
                 if len(destination) < MAX_CARD_TITLES:
                     destination.append(title)
                 else:
@@ -314,11 +330,12 @@ def _candidate_from_card(card: _Card, source_url: str) -> CardListingCandidate |
         or card.title_overflow
         or not card.anchors
         or len(card.anchors) >= MAX_CARD_LINKS
+        or (card.anchor_as_card and card.explicit_title_nodes != 1)
     ):
         return None
 
     titles = list(dict.fromkeys(title for title in card.titles if _plausible_title(title)))
-    if not titles:
+    if not titles and not card.anchor_as_card:
         titles = list(
             dict.fromkeys(
                 title
@@ -343,7 +360,7 @@ def _candidate_from_card(card: _Card, source_url: str) -> CardListingCandidate |
         return None
     url = unique_urls[0]
 
-    if not titles:
+    if not titles and not card.anchor_as_card:
         titles = list(
             dict.fromkeys(
                 text for candidate_url, text in detail_links
@@ -395,6 +412,36 @@ def _validated_detail_url(
     ):
         return normalized
     return None
+
+
+def _could_be_anchor_card(href: str, source_url: str) -> bool:
+    """Admit a bounded anchor container before its heading has been parsed."""
+
+    normalized = safe_normalize_url(href, source_url)
+    if not normalized:
+        return False
+    parsed = urlparse(normalized)
+    source = urlparse(source_url)
+    if parsed.username or parsed.password:
+        return False
+    try:
+        if parsed.port not in {None, 80, 443}:
+            return False
+    except ValueError:
+        return False
+    if is_ats_url(normalized):
+        return True
+    same_origin = (
+        parsed.scheme.casefold() == source.scheme.casefold()
+        and (parsed.hostname or "").casefold() == (source.hostname or "").casefold()
+    )
+    path_parts = [part for part in parsed.path.split("/") if part]
+    return (
+        same_origin
+        and parsed.scheme.casefold() == "https"
+        and len(path_parts) >= 2
+        and bool(set(_words(parsed.path)).intersection(_DETAIL_PATH_WORDS))
+    )
 
 
 def _is_explicit_query_detail(parsed) -> bool:

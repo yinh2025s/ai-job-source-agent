@@ -19,6 +19,10 @@ class ScoringTests(unittest.TestCase):
             "View open jobs",
             "Browse job opportunities",
             "Search All Jobs",
+            "Search Now",
+            "All Jobs",
+            "List All Jobs",
+            "Our job offers",
         ):
             with self.subTest(text=text):
                 self.assertTrue(is_explicit_job_list_command(text))
@@ -53,9 +57,43 @@ class ScoringTests(unittest.TestCase):
         self.assertNotIn("negative keyword 'all jobs'", candidate.reasons)
         self.assertGreaterEqual(candidate.score, 30)
 
+    def test_job_offers_command_is_a_traversable_listing_candidate(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://careers.example.com/en/annonces",
+                text="Our job offers",
+                source_url="https://careers.example.com/en/index.html",
+            ),
+            career_page_url="https://careers.example.com/en/index.html",
+        )
+
+        self.assertIn("explicit job-list command", candidate.reasons)
+        self.assertGreaterEqual(candidate.score, 55)
+        self.assertTrue(is_likely_job_listing_page(candidate))
+
+    def test_registered_nurse_card_has_job_detail_evidence(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://recruiting.example.com/jobs/123/registered-nurse",
+                text="Registered Nurse",
+                source_url="https://recruiting.example.com/job-board/",
+            ),
+            career_page_url="https://recruiting.example.com/job-board/",
+        )
+
+        self.assertTrue(is_likely_job_detail(candidate))
+
     def test_whitecarrot_hosts_are_known_ats_domains(self):
         self.assertTrue(is_ats_url("https://app.whitecarrot.io/careers/acme"))
         self.assertTrue(is_ats_url("https://acme.whitecarrot.ai/jobs"))
+
+    def test_applicantstack_tenant_is_a_known_ats_domain(self):
+        self.assertTrue(
+            is_ats_url("https://acme.applicantstack.com/x/openings")
+        )
+        self.assertFalse(
+            is_ats_url("https://applicantstack.com.evil.example/x/openings")
+        )
         self.assertFalse(is_ats_url("https://whitecarrot.ai.example.com/jobs"))
 
     def test_career_link_prefers_careers_keyword(self):
@@ -91,6 +129,40 @@ class ScoringTests(unittest.TestCase):
         )
         self.assertGreaterEqual(candidate.score, 200)
         self.assertTrue(is_likely_job_detail(candidate))
+
+    def test_title_keyword_does_not_match_inside_larger_token(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://example.com/careers/internet-access",
+                text="Internet Access",
+                source_url="https://example.com/careers",
+            ),
+            career_page_url="https://example.com/careers",
+        )
+
+        self.assertNotIn("title keyword 'intern'", candidate.reasons)
+        self.assertNotIn("job-detail path pattern", candidate.reasons)
+
+    def test_title_keywords_match_complete_tokens_and_controlled_phrases(self):
+        for text, expected_keyword in (
+            ("Engineering Intern", "intern"),
+            ("Machine-Learning Engineer", "machine learning"),
+        ):
+            with self.subTest(text=text):
+                candidate = score_job_link(
+                    RawLink(
+                        url="https://example.com/careers/opening-123",
+                        text=text,
+                        source_url="https://example.com/careers",
+                    ),
+                    career_page_url="https://example.com/careers",
+                )
+
+                self.assertIn(
+                    f"title keyword '{expected_keyword}'",
+                    candidate.reasons,
+                )
+                self.assertIn("job-detail path pattern", candidate.reasons)
 
     def test_generic_jobs_page_is_listing_not_detail(self):
         candidate = score_job_link(

@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from job_source_agent.cli import main
+from job_source_agent.cli import build_parser, main
 from job_source_agent.composition import build_application
 
 
@@ -12,6 +12,16 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CliTests(unittest.TestCase):
+    def test_parallel_candidate_discovery_requires_explicit_cli_flag(self):
+        parser = build_parser()
+
+        self.assertFalse(parser.parse_args([]).enable_parallel_candidate_discovery)
+        self.assertTrue(
+            parser.parse_args(
+                ["--enable-parallel-candidate-discovery"]
+            ).enable_parallel_candidate_discovery
+        )
+
     def test_offline_cli_uses_pipeline_application_and_writes_checkpoints(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "results.json"

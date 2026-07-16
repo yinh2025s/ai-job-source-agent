@@ -3,6 +3,7 @@ import unittest
 from job_source_agent.contracts import PipelineContext
 from job_source_agent.identity_continuity import (
     HiringIdentityEvidence,
+    HiringRelationshipEvidence,
     OpeningIdentity,
     ProviderIdentity,
     validate_opening_identity_chain,
@@ -48,6 +49,40 @@ class OpeningIdentityContinuityTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_relationship_contract_rejects_strength_verification_conflict(self):
+        with self.assertRaisesRegex(ValueError, "strength conflicts"):
+            HiringRelationshipEvidence(
+                source_company_name="Acme",
+                hiring_entity_name="Acme",
+                provider="ashby",
+                tenant="acme",
+                evidence_type="provider_tenant_match",
+                evidence_url="https://jobs.ashbyhq.com/acme",
+                strength=20,
+                verified=True,
+            )
+
+    def test_unverified_board_relationship_fails_without_an_opening(self):
+        provider = ProviderIdentity(
+            hiring_entity_name="Acme",
+            provider="ashby",
+            tenant="notion",
+            canonical_board_url="https://jobs.ashbyhq.com/notion",
+            evidence_url="https://jobs.ashbyhq.com/notion",
+            verification_method="linked_url_only",
+            relationship_verified=False,
+        )
+
+        failures = validate_opening_identity_chain(
+            hiring=self.hiring,
+            provider=provider,
+            opening=None,
+            open_position_url=None,
+            job_list_page_url=provider.canonical_board_url,
+        )
+
+        self.assertEqual(failures, ["PROVIDER_RELATIONSHIP_UNVERIFIED"])
 
     def test_same_title_on_different_tenant_is_rejected(self):
         wrong_opening = OpeningIdentity(

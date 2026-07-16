@@ -1,16 +1,28 @@
 from __future__ import annotations
 
+from html.parser import HTMLParser
+import ipaddress
 import json
+import re
 from urllib.parse import quote, urlencode, urljoin, urlparse, urlunparse
 
-from ..web import FetchError
+from ..web import FetchError, Page
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _API_HOST = "api.smartrecruiters.com"
 _PUBLIC_HOST = "jobs.smartrecruiters.com"
+_LEGACY_API_HOST = "www.smartrecruiters.com"
 _PAGE_SIZE = 100
 _MAX_PAGES = 5
+_MAX_HTML_CHARS = 2_000_000
+_TENANT = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,126}[A-Za-z0-9])?$")
+_CONFIG_VALUE = re.compile(
+    r'''(?<![A-Za-z0-9_$])["']?(company_code|api_url|job_ad_url)["']?'''
+    r'''\s*[:=]\s*(["'])(.*?)(?<!\\)\2''',
+    re.IGNORECASE | re.DOTALL,
+)
+_STATIC_HOST = "static.smartrecruiters.com"
 
 
 class SmartRecruitersAdapter:
@@ -43,6 +55,19 @@ class SmartRecruitersAdapter:
             url=f"https://{_PUBLIC_HOST}/{quote(identifier, safe='-._~')}",
             provider=self.name,
             identifier=identifier,
+            replay_safe=True,
+        )
+
+    def identify_board_from_page(self, page: Page) -> JobBoard | None:
+        if _safe_public_page_url(page.final_url or page.url) is None:
+            return None
+        tenant = _widget_tenant(page.html)
+        if tenant is None:
+            return None
+        return JobBoard(
+            url=f"https://{_PUBLIC_HOST}/{quote(tenant, safe='-._~')}",
+            provider=self.name,
+            identifier=tenant,
             replay_safe=True,
         )
 
@@ -140,7 +165,7 @@ class SmartRecruitersAdapter:
                 or (total_found is None and len(postings) < response_limit)
                 or (total_found is not None and next_offset >= total_found)
             )
-            if exact_title_found or inventory_complete:
+            if inventory_complete:
                 break
             offset = next_offset
 
@@ -149,13 +174,29 @@ class SmartRecruitersAdapter:
             == board.identifier.casefold()
             for candidate in candidates
         )
-        reason_code = None if candidates else (
-            "PROVIDER_FETCH_FAILED" if errors else "EMPTY_PROVIDER_RESPONSE"
+        tenant_identity_conflict = any(
+            isinstance(candidate.raw.get("company_identifier"), str)
+            and bool(candidate.raw["company_identifier"].strip())
+            and candidate.raw["company_identifier"].casefold()
+            != board.identifier.casefold()
+            for candidate in candidates
+        )
+        if tenant_identity_conflict:
+            inventory_complete = False
+            reason_code = "INVALID_STRUCTURED_DATA"
+        else:
+            reason_code = None if candidates else (
+                "PROVIDER_FETCH_FAILED" if errors else "EMPTY_PROVIDER_RESPONSE"
+            )
+        exposed_candidates = (
+            candidates
+            if inventory_complete and not tenant_identity_conflict
+            else []
         )
         return AdapterResult(
             provider=self.name,
             board=board,
-            candidates=candidates,
+            candidates=exposed_candidates,
             reason_code=reason_code,
             retryable=reason_code == "PROVIDER_FETCH_FAILED",
             inventory_scope=inventory_scope,
@@ -164,10 +205,12 @@ class SmartRecruitersAdapter:
                 "adapter": self.name,
                 "api_urls": api_urls,
                 "candidate_count": len(candidates),
+                "exposed_candidate_count": len(exposed_candidates),
                 "page_count": len(api_urls) - len(errors),
                 "total_found": total_found,
                 "exact_title_found": exact_title_found,
                 "tenant_identity_verified": tenant_identity_verified,
+                "tenant_identity_conflict": tenant_identity_conflict,
                 "errors": errors,
                 "inventory_scope": inventory_scope,
                 "inventory_complete": inventory_complete,
@@ -184,14 +227,15 @@ class SmartRecruitersAdapter:
         return AdapterResult(
             provider=self.name,
             board=board,
-            candidates=candidates,
-            reason_code=None if candidates else "INVALID_STRUCTURED_DATA",
+            candidates=[],
+            reason_code="INVALID_STRUCTURED_DATA",
             inventory_scope=inventory_scope,
             inventory_complete=False,
             trace={
                 "adapter": self.name,
                 "api_urls": api_urls,
                 "candidate_count": len(candidates),
+                "exposed_candidate_count": 0,
                 "inventory_scope": inventory_scope,
                 "inventory_complete": False,
             },
@@ -210,6 +254,277 @@ class SmartRecruitersAdapter:
         if query and query.title:
             params.append(("q", query.title))
         return f"https://{_API_HOST}/v1/companies/{company}/postings?{urlencode(params)}"
+
+
+class _WidgetParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.has_widget_script = False
+        self.inline_scripts: list[str] = []
+        self._inline_data: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.casefold() != "script":
+            return
+        attributes = {key.casefold(): value or "" for key, value in attrs}
+        source = attributes.get("src", "").strip()
+        if source:
+            if _is_widget_script_url(source):
+                self.has_widget_script = True
+            self._inline_data = None
+        else:
+            self._inline_data = []
+
+    def handle_data(self, data: str) -> None:
+        if self._inline_data is not None:
+            self._inline_data.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "script" and self._inline_data is not None:
+            self.inline_scripts.append("".join(self._inline_data))
+            self._inline_data = None
+
+
+def _widget_tenant(html: str) -> str | None:
+    if not isinstance(html, str) or len(html) > _MAX_HTML_CHARS:
+        return None
+    parser = _WidgetParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    if not parser.has_widget_script:
+        return None
+
+    tenants: dict[str, str] = {}
+    saw_config = False
+    for script in parser.inline_scripts:
+        configs = _script_configs(script)
+        if configs is None:
+            return None
+        for fields in configs:
+            saw_config = True
+            company_codes = {
+                company_code.casefold(): company_code
+                for company_code in fields["company_code"]
+            }
+            api_urls = set(fields.get("api_url", ()))
+            job_ad_urls = set(fields.get("job_ad_url", ()))
+            if len(company_codes) != 1 or len(api_urls) != 1 or len(job_ad_urls) > 1:
+                return None
+            tenant = next(iter(company_codes.values()))
+            if not _TENANT.fullmatch(tenant):
+                return None
+            api_tenant = _config_api_tenant(next(iter(api_urls)))
+            job_ad_tenant = (
+                _config_job_ad_tenant(next(iter(job_ad_urls))) if job_ad_urls else None
+            )
+            if api_tenant is False or job_ad_tenant is False:
+                return None
+            if any(
+                url_tenant is not None and url_tenant.casefold() != tenant.casefold()
+                for url_tenant in (api_tenant, job_ad_tenant)
+            ):
+                return None
+            tenants.setdefault(tenant.casefold(), tenant)
+    if not saw_config or len(tenants) != 1:
+        return None
+    return next(iter(tenants.values()))
+
+
+def _decode_script_string(value: str, quote_character: str) -> str:
+    if quote_character == '"':
+        try:
+            decoded = json.loads(f'"{value}"')
+            return decoded.strip() if isinstance(decoded, str) else ""
+        except json.JSONDecodeError:
+            return ""
+    return value.replace(r"\/", "/").replace(r"\'", "'").replace(r"\\", "\\").strip()
+
+
+def _script_configs(script: str) -> list[dict[str, list[str]]] | None:
+    source = _without_js_comments(script)
+    matches = list(_CONFIG_VALUE.finditer(source))
+    company_matches = [match for match in matches if match.group(1).casefold() == "company_code"]
+    if not company_matches:
+        return []
+
+    spans = _object_spans(source)
+    config_spans: set[tuple[int, int]] = set()
+    unscoped = []
+    for match in company_matches:
+        containing = [span for span in spans if span[0] < match.start() < span[1]]
+        if containing:
+            config_spans.add(min(containing, key=lambda span: span[1] - span[0]))
+        else:
+            unscoped.append(match)
+    if unscoped:
+        if config_spans or len(unscoped) != 1:
+            return None
+        config_spans.add((0, len(source)))
+
+    configs = []
+    for start, end in sorted(config_spans):
+        fields: dict[str, list[str]] = {}
+        for match in matches:
+            if start <= match.start() < end:
+                fields.setdefault(match.group(1).casefold(), []).append(
+                    _decode_script_string(match.group(3), match.group(2))
+                )
+        configs.append(fields)
+    return configs
+
+
+def _without_js_comments(source: str) -> str:
+    characters = list(source)
+    quote_character: str | None = None
+    index = 0
+    while index < len(characters):
+        character = characters[index]
+        if quote_character is not None:
+            if character == "\\":
+                index += 2
+                continue
+            if character == quote_character:
+                quote_character = None
+            index += 1
+            continue
+        if character in {'"', "'", "`"}:
+            quote_character = character
+            index += 1
+            continue
+        if character == "/" and index + 1 < len(characters):
+            next_character = characters[index + 1]
+            if next_character == "/":
+                end = source.find("\n", index + 2)
+                end = len(characters) if end < 0 else end
+                characters[index:end] = " " * (end - index)
+                index = end
+                continue
+            if next_character == "*":
+                end = source.find("*/", index + 2)
+                end = len(characters) if end < 0 else end + 2
+                characters[index:end] = " " * (end - index)
+                index = end
+                continue
+        index += 1
+    return "".join(characters)
+
+
+def _object_spans(source: str) -> list[tuple[int, int]]:
+    spans = []
+    starts = []
+    quote_character: str | None = None
+    index = 0
+    while index < len(source):
+        character = source[index]
+        if quote_character is not None:
+            if character == "\\":
+                index += 2
+                continue
+            if character == quote_character:
+                quote_character = None
+        elif character in {'"', "'", "`"}:
+            quote_character = character
+        elif character == "{":
+            starts.append(index)
+        elif character == "}" and starts:
+            spans.append((starts.pop(), index + 1))
+        index += 1
+    return spans
+
+
+def _is_widget_script_url(url: str) -> bool:
+    parsed = _safe_official_url(url, _STATIC_HOST)
+    if parsed is None or parsed.query or parsed.fragment:
+        return False
+    parts = [part for part in parsed.path.split("/") if part]
+    return bool(
+        len(parts) >= 2
+        and parts[0].casefold() == "job-widget"
+        and parts[-1].casefold().endswith(".js")
+    )
+
+
+def _config_api_tenant(url: str) -> str | None | bool:
+    try:
+        host = (urlparse(url).hostname or "").casefold()
+    except (TypeError, ValueError):
+        return False
+    if host == _LEGACY_API_HOST:
+        parsed = _safe_official_url(url, _LEGACY_API_HOST)
+        if (
+            parsed is not None
+            and parsed.path in {"", "/"}
+            and not parsed.query
+            and not parsed.fragment
+        ):
+            return None
+        return False
+    parsed = _safe_official_url(url, _API_HOST)
+    if parsed is None or parsed.query or parsed.fragment:
+        return False
+    parts = [part for part in parsed.path.split("/") if part]
+    if len(parts) < 2 or [part.casefold() for part in parts[:2]] != ["v1", "companies"]:
+        return False
+    if len(parts) == 2:
+        return None
+    if len(parts) not in {3, 4} or (len(parts) == 4 and parts[3] != "postings"):
+        return False
+    return parts[2] if _TENANT.fullmatch(parts[2]) else False
+
+
+def _config_job_ad_tenant(url: str) -> str | None | bool:
+    parsed = _safe_official_url(url, _PUBLIC_HOST)
+    if parsed is None or parsed.query or parsed.fragment:
+        return False
+    parts = [part for part in parsed.path.split("/") if part]
+    if not parts:
+        return None
+    return parts[0] if len(parts) == 1 and _TENANT.fullmatch(parts[0]) else False
+
+
+def _safe_official_url(url: str, host: str):
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return None
+    if (
+        parsed.scheme.casefold() != "https"
+        or (parsed.hostname or "").casefold() != host
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443}
+    ):
+        return None
+    return parsed
+
+
+def _safe_public_page_url(url: str):
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return None
+    host = (parsed.hostname or "").casefold()
+    if (
+        parsed.scheme.casefold() != "https"
+        or not host
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443}
+        or host == "localhost"
+        or host.endswith(".localhost")
+    ):
+        return None
+    try:
+        if not ipaddress.ip_address(host).is_global:
+            return None
+    except ValueError:
+        pass
+    return parsed
 
 
 def _detail_url(posting: dict, board: JobBoard) -> str:

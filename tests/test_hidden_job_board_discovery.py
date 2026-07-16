@@ -29,6 +29,33 @@ class MappingFetcher:
 
 
 class HiddenJobBoardDiscoveryTests(unittest.TestCase):
+    def test_follows_explicit_same_site_job_offers_listing(self):
+        career = "https://careers.example.com/en/index.html"
+        listing = "https://careers.example.com/en/annonces"
+        opening = "https://careers.example.com/en/annonces/job/123/software-engineer"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                final_url=career,
+                html=f'<a href="{listing}">Our job offers</a>',
+            ),
+            listing: Page(
+                url=listing,
+                final_url=listing,
+                html=f'<a href="{opening}">Software Engineer</a>',
+            ),
+        })
+
+        job_list, trace, _discovered = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_with_evidence(career)
+
+        self.assertEqual(job_list, listing)
+        self.assertEqual(fetcher.requested[:2], [career, listing])
+        selected_pages = [item["url"] for item in trace["pages_visited"]]
+        self.assertIn(listing, selected_pages)
+
     def test_scoped_workday_board_builds_replay_safe_general_portfolio(self):
         early = "https://visa.wd1.myworkdayjobs.com/en-US/Visa_Early_Careers"
         general = "https://visa.wd1.myworkdayjobs.com/en-US/Visa_Careers"
@@ -199,7 +226,10 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
             board: Page(url=board, html="<html>Ashby job board</html>"),
         })
 
-        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+        job_list, trace, discovered = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_with_evidence(career)
 
         self.assertEqual(job_list, board)
         probe = trace["content_payload_probes"][0]
@@ -258,6 +288,31 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(trace["provider_detection"]["method"], "page_evidence")
         self.assertIsNotNone(discovered)
 
+    def test_follows_explicit_current_openings_across_sibling_career_route(self):
+        career = "https://www.example.com/careers"
+        listing = "https://www.example.com/career-openings"
+        board = "https://recruitingbypaycor.com/career/iframe.action?clientId=ABC"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<a href="{listing}">View All Current Openings</a>',
+            ),
+            listing: Page(
+                url=listing,
+                html=f'<iframe src="{board}"></iframe>',
+            ),
+            board: Page(url=board, html="<title>Current openings</title>"),
+        })
+
+        job_list, _trace, discovered = JobSourceAgent(
+            fetcher,
+            max_job_pages=3,
+        ).find_job_board_with_evidence(career)
+
+        self.assertEqual(job_list, listing)
+        self.assertIsNone(discovered)
+        self.assertIn(listing, fetcher.requested)
+
     def test_visible_canonical_provider_board_precedes_same_site_listing_route(self):
         career = "https://www.example.com/careers"
         generic_listing = "https://www.example.com/jobs"
@@ -272,11 +327,21 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
             ),
         })
 
-        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+        job_list, trace, discovered = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_with_evidence(career)
 
         self.assertEqual(job_list, board)
         self.assertEqual(fetcher.requested, [career])
-        self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
+        self.assertEqual(
+            trace["provider_detection"]["method"],
+            "linked_url_evidence",
+        )
+        self.assertIsNotNone(discovered)
+        self.assertEqual(discovered.detection_method, "linked_url_evidence")
+        self.assertEqual(discovered.evidence_url, board)
+        self.assertEqual(discovered.relationship_evidence_url, career)
 
     def test_visible_canonical_provider_board_accepts_presentation_query(self):
         career = "https://www.example.com/careers"
@@ -294,6 +359,95 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         self.assertEqual(job_list, canonical_board)
         self.assertEqual(fetcher.requested, [career])
         self.assertEqual(trace["provider_detection"]["method"], "linked_url_evidence")
+
+    def test_multiple_visible_provider_details_establish_one_tenant_board(self):
+        career = "https://www.example.com/careers"
+        first = "https://acme.applicantstack.com/x/detail/abc12345"
+        second = "https://acme.applicantstack.com/x/detail/def67890"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    f'<a href="{first}">Registered Nurse</a>'
+                    f'<a href="{second}">Nurse Manager</a>'
+                ),
+            ),
+        })
+
+        job_list, trace, discovered = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_with_evidence(career)
+
+        self.assertEqual(
+            job_list,
+            "https://acme.applicantstack.com/x/openings",
+        )
+        self.assertEqual(trace["provider"], "applicantstack")
+        self.assertIsNotNone(discovered)
+        self.assertEqual(discovered.relationship_evidence_url, career)
+
+    def test_visible_provider_details_from_multiple_tenants_are_ambiguous(self):
+        career = "https://www.example.com/careers"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=(
+                    '<a href="https://one.applicantstack.com/x/detail/abc12345">'
+                    'Registered Nurse</a>'
+                    '<a href="https://two.applicantstack.com/x/detail/def67890">'
+                    'Nurse Manager</a>'
+                ),
+            ),
+        })
+
+        job_list, _trace, discovered = JobSourceAgent(
+            fetcher, max_job_pages=1
+        ).find_job_board_with_evidence(career)
+
+        self.assertEqual(job_list, career)
+        self.assertIsNone(discovered)
+        self.assertEqual(fetcher.requested[0], career)
+
+    def test_embedded_canonical_provider_board_is_a_typed_handoff_candidate(self):
+        career = "https://www.example.com/careers"
+        board = "https://job-boards.greenhouse.io/example"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<section data-job-board-url="{board}">Open roles</section>',
+            ),
+        })
+
+        job_list, trace, portfolio = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_portfolio(career)
+
+        self.assertEqual(job_list, board)
+        self.assertIsNotNone(portfolio)
+        self.assertEqual(portfolio.primary.detection_method, "linked_url_evidence")
+        self.assertEqual(fetcher.requested, [career])
+        self.assertEqual(
+            trace["provider_detection"]["method"],
+            "embedded_provider_url_evidence",
+        )
+
+    def test_embedded_provider_detail_is_only_promoted_to_tenant_board(self):
+        career = "https://www.example.com/careers"
+        detail = "https://jobs.ashbyhq.com/example/06d5624e-d35c-41b1-a091-edfc79c10dba"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<section data-example-url="{detail}">Our culture</section>',
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, "https://jobs.ashbyhq.com/example")
+        self.assertEqual(trace["provider"], "ashby")
+        self.assertEqual(fetcher.requested, [career])
 
     def test_visible_provider_detail_with_query_is_not_promoted_as_board(self):
         career = "https://www.example.com/careers"
@@ -368,9 +522,16 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
             board: Page(url=board, html="<main>Ashby job board</main>"),
         })
 
-        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+        job_list, trace, portfolio = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_portfolio(career)
 
         self.assertEqual(job_list, board)
+        self.assertIsNotNone(portfolio)
+        self.assertEqual(portfolio.primary.detection_method, "linked_url_evidence")
+        self.assertEqual(portfolio.primary.evidence_url, board)
+        self.assertEqual(portfolio.primary.relationship_evidence_url, career)
         self.assertEqual(fetcher.requested, [career, listing, asset, board])
         self.assertEqual(fetcher.requested.count(asset), 1)
         provider_asset_probes = [
@@ -405,6 +566,28 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         )
         self.assertTrue(trace["pages_visited"][1]["provider_handoff_preserved"])
 
+    def test_preserves_direct_provider_embed_when_board_redirects_to_career(self):
+        career = "https://www.example.com/careers/"
+        embed = "https://boards.greenhouse.io/embed/job_board/js?for=example"
+        board = "https://job-boards.greenhouse.io/example"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<script src="{embed}"></script>'),
+            board: Page(url=board, final_url=career, html="<main>Open positions</main>"),
+        })
+
+        job_list, trace, portfolio = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_portfolio(career)
+
+        self.assertEqual(job_list, board)
+        self.assertIsNotNone(portfolio)
+        self.assertEqual(portfolio.primary.detection_method, "linked_url_evidence")
+        self.assertEqual(
+            trace["provider_detection"]["method"],
+            "embedded_provider_url_evidence",
+        )
+
     def test_traverses_explicit_same_site_all_jobs_route(self):
         career = "https://careers.example.com/en/"
         all_jobs = "https://careers.example.com/en/all-jobs/"
@@ -417,6 +600,108 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
 
         self.assertEqual(job_list, all_jobs)
         self.assertEqual(trace["selected_from"], "explicit_first_party_listing_route")
+
+    def test_traverses_visible_cross_site_job_board_command_before_publishing(self):
+        career = "https://www.example.com/careers"
+        board = "https://recruiting2.ultipro.com/EXAMPLE/JobBoard/board-id/"
+        detail = "https://recruiting2.ultipro.com/jobs/123/registered-nurse"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<a href="{board}">Open Positions</a>'),
+            board: Page(
+                url=board,
+                html=(
+                    '<article class="job-card"><h3>Registered Nurse</h3>'
+                    f'<a href="{detail}">View job</a></article>'
+                ),
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(fetcher.requested, [career, board])
+        self.assertEqual(
+            trace["selected_from"],
+            "verified_first_party_listing_inventory",
+        )
+
+    def test_rejects_cross_site_job_command_without_recruiting_host_or_path(self):
+        career = "https://www.example.com/careers"
+        unrelated = "https://unrelated.example.net/products/board-id"
+        fetcher = MappingFetcher({
+            career: Page(url=career, html=f'<a href="{unrelated}">Open Positions</a>'),
+            unrelated: Page(url=unrelated, html="<main>Unverified page</main>"),
+        })
+
+        with self.assertRaises(DiscoveryError) as raised:
+            JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
+
+        self.assertEqual(raised.exception.code, "job_board_not_found")
+        self.assertEqual(fetcher.requested, [career, unrelated])
+
+    def test_explicit_deeper_search_command_precedes_generic_jobs_root(self):
+        root = "https://www.example.com/careers/jobs"
+        listing = "https://www.example.com/careers/jobs/joblisting"
+        detail = "https://www.example.com/careers/jobs/joblisting/42/mechanical-engineer"
+        fetcher = MappingFetcher({
+            root: Page(url=root, html=f'<a href="{listing}">Search Now</a>'),
+            listing: Page(
+                url=listing,
+                html=(
+                    '<article class="job-card"><h3>Mechanical Engineer</h3>'
+                    f'<a href="{detail}">View job</a></article>'
+                ),
+            ),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(root)
+
+        self.assertEqual(job_list, listing)
+        self.assertEqual(fetcher.requested, [root, listing])
+        self.assertEqual(
+            trace["selected_from"],
+            "verified_first_party_listing_inventory",
+        )
+
+    def test_explicit_deeper_joblisting_route_is_inventory_start_without_static_cards(self):
+        root = "https://www.example.com/careers/jobs"
+        listing = "https://www.example.com/careers/jobs/joblisting"
+        fetcher = MappingFetcher({
+            root: Page(url=root, html=f'<a href="{listing}">Search Now</a>'),
+            listing: Page(url=listing, html="<main>Search available jobs</main>"),
+        })
+
+        job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(root)
+
+        self.assertEqual(job_list, listing)
+        self.assertEqual(fetcher.requested, [root, listing])
+        self.assertEqual(trace["selected_from"], "explicit_first_party_listing_route")
+
+    def test_exact_all_jobs_command_precedes_decorated_summary_link(self):
+        root = "https://www.example.com/jobs"
+        summary = "https://www.example.com/jobs/all-jobs"
+        results = "https://www.example.com/jobs/results"
+        fetcher = MappingFetcher({
+            root: Page(
+                url=root,
+                html=(
+                    f'<a href="{summary}">All Jobs 680</a>'
+                    f'<a href="{results}">All Jobs</a>'
+                ),
+            ),
+            results: Page(
+                url=results,
+                html=(
+                    '<article class="job-card"><h3>Software Engineer</h3>'
+                    '<a href="/jobs/42/software-engineer">View job</a></article>'
+                ),
+            ),
+        })
+
+        job_list, _trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(root)
+
+        self.assertEqual(job_list, results)
+        self.assertEqual(fetcher.requested, [root, results])
 
     def test_does_not_traverse_unlabeled_or_cross_site_all_jobs_route(self):
         career = "https://careers.example.com/en/"
@@ -435,6 +720,28 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         with self.assertRaises(DiscoveryError):
             JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
 
+        self.assertEqual(fetcher.requested, [career])
+
+    def test_traverses_same_site_search_jobs_subdomain(self):
+        career = "https://www.example.com/careers/job-search-tips"
+        jobs = "https://jobs.example.com/"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<a href="{jobs}">Search Jobs</a>',
+            ),
+            jobs: Page(
+                url=jobs,
+                html='<a href="/jobs/12345/mechanical-design-engineer">Mechanical Design Engineer</a>',
+            ),
+        })
+
+        job_list, _trace = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board(career)
+
+        self.assertEqual(job_list, jobs)
         self.assertEqual(fetcher.requested, [career])
 
     def test_provider_asset_probe_rejects_credentials_and_cross_site_assets(self):
@@ -527,7 +834,7 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
 
         self.assertIn(generated, fetcher.requested)
 
-    def test_follows_hidden_oracle_list_root(self):
+    def test_discovers_hidden_oracle_list_root_from_official_link(self):
         career = "https://example.com/careers"
         board = "https://acme.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1"
         fetcher = MappingFetcher({
@@ -538,7 +845,13 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
         job_list, trace = JobSourceAgent(fetcher, max_job_pages=2).find_job_board(career)
 
         self.assertEqual(job_list, board)
-        self.assertEqual([item["url"] for item in trace["pages_visited"]], [career, board])
+        self.assertEqual(fetcher.requested, [career])
+        self.assertEqual(trace["provider"], "oracle_hcm")
+        self.assertEqual(
+            trace["provider_detection"]["method"],
+            "embedded_provider_url_evidence",
+        )
+        self.assertEqual(trace["provider_detection"]["url"], board)
 
     def test_follows_escaped_eightfold_root_but_not_untrusted_job_url(self):
         career = "https://example.com/careers"

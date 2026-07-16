@@ -44,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum underlying fetch dispatches during career discovery per company.",
     )
     parser.add_argument("--max-job-board-attempts", type=int, default=3)
+    parser.add_argument(
+        "--enable-parallel-candidate-discovery",
+        action="store_true",
+        help="Merge External Apply, provider search, and website ATS candidates in S5.",
+    )
     parser.add_argument("--limit", type=int, help="Optional limit for quick demo runs.")
     parser.add_argument(
         "--checkpoint-dir",
@@ -88,6 +93,9 @@ def main(argv: list[str] | None = None) -> None:
         AgentConfig(
             max_career_discovery_transport_calls=args.max_career_transport_calls,
             max_job_board_attempts=args.max_job_board_attempts,
+            enable_parallel_candidate_discovery=(
+                args.enable_parallel_candidate_discovery
+            ),
         ),
         checkpoint_dir=args.checkpoint_dir,
         website_overrides=args.website_overrides,
