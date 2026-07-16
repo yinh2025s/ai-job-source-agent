@@ -7,7 +7,7 @@ logged-in Chrome session.
 ## Preconditions
 
 - Chrome is logged into LinkedIn and the AI Job Source Agent unpacked extension is installed.
-- The extension card in `chrome://extensions` shows version `0.2.2` after **Reload**.
+- The extension card in `chrome://extensions` shows version `0.3.1` after **Reload**.
 - The local bridge is running with an explicit token:
 
 ```bash
@@ -28,14 +28,19 @@ artifact.
    without waiting for backend verification. If LinkedIn is still hydrating, one bounded retry may occur.
 4. Compare the first scanned selected job with the visible LinkedIn detail: company, title and job
    identity must refer to the same posting. An External Apply count may be zero.
-5. Select optional **Verify source** once. A run must be queued without duplicate submissions; the
+5. Select **Scan page**. Progress must advance over the current loaded batch, footer/filter controls
+   must not become jobs, cancellation must recover the controls, and completion must restore the
+   originally selected job. Jobs whose matching detail exposes an external Apply must each retain their
+   own URL; native Apply and bounded hydration timeouts may honestly have none. The result count is
+   bounded at 30 and is not the total LinkedIn search count.
+6. Select optional **Verify source** once. A run must be queued without duplicate submissions; the
    immediate Apply link remains the primary path and verification may continue in the background.
-6. Close and reopen the popup while the run is queued or running. The saved run must resume polling
+7. Close and reopen the popup while the run is queued or running. The saved run must resume polling
    or allow **Refresh**; it must not create a new run.
-7. When complete, verify rates are between 0% and 100%. Open one displayed **Exact opening** or
+8. When complete, verify rates are between 0% and 100%. Open one displayed **Exact opening** or
    **Job list** link and confirm it is a public HTTPS page for the same company or verified hiring
    entity. A reason code instead of a link is an acceptable typed failure.
-8. Record only the run ID, final status, counts, and artifact directory. Do not commit the generated
+9. Record only the run ID, final status, counts, and artifact directory. Do not commit the generated
    run directory, cache, token, authenticated page, or browser storage.
 
 ## Pass Criteria

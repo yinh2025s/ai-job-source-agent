@@ -3,7 +3,7 @@ const POLL_DELAY_MS = 2000;
 const SCAN_RETRY_DELAY_MS = 350;
 const MAX_SCAN_RETRIES = 2;
 const MAX_POLL_RETRIES = 2;
-const PAGE_SCAN_WATCHDOG_MS = 45000;
+const PAGE_SCAN_WATCHDOG_MS = 60000;
 
 const state = {
   records: [],

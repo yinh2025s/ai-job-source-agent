@@ -160,6 +160,85 @@ class ExtensionContentTests(unittest.TestCase):
         self.assertEqual(self._collect("empty_jobs")["state"], "not_ready")
         self.assertEqual(self._collect("empty_non_jobs")["state"], "ready")
 
+    def test_page_scan_collects_cards_deduplicates_urls_and_skips_footer_controls(self):
+        response = self._collect("page_success_dedupe")
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["scan_version"], "3")
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(response["candidate_count"], 3)
+        self.assertEqual(response["scanned_count"], 3)
+        self.assertEqual(response["failure_count"], 0)
+        self.assertEqual(response["progress_count"], 3)
+        self.assertEqual(
+            [record["linkedin_job_url"] for record in response["records"]],
+            [
+                "https://www.linkedin.com/jobs/view/101",
+                "https://www.linkedin.com/jobs/view/102",
+            ],
+        )
+        self.assertEqual(response["records"][0]["job_title"], "Role 101")
+        self.assertEqual(response["records"][0]["company_name"], "Company 101")
+
+    def test_page_scan_navigation_timeout_returns_partial(self):
+        response = self._collect("page_timeout")
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "partial")
+        self.assertEqual(response["scanned_count"], 2)
+        self.assertEqual(response["failure_count"], 1)
+        self.assertEqual(
+            [record["linkedin_job_url"] for record in response["records"]],
+            ["https://www.linkedin.com/jobs/view/201"],
+        )
+
+    def test_page_scan_cancellation_stops_after_current_card(self):
+        response = self._collect("page_cancel")
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["state"], "cancelled")
+        self.assertEqual(response["scanned_count"], 1)
+        self.assertEqual(response["progress_count"], 1)
+        self.assertEqual(response["cancel_response"], {"ok": True, "cancelled": True})
+        self.assertEqual(response["page_url"], "https://www.linkedin.com/jobs/search/?currentJobId=302")
+
+    def test_page_scan_accepts_already_selected_first_card_without_timeout(self):
+        response = self._collect("page_selected_first")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(response["failure_count"], 0)
+        self.assertEqual(response["records"][0]["linkedin_job_url"], "https://www.linkedin.com/jobs/view/601")
+
+    def test_page_scan_limits_candidates_to_thirty_cards(self):
+        response = self._collect("page_max_30")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(response["candidate_count"], 30)
+        self.assertEqual(response["scanned_count"], 30)
+        self.assertEqual(len(response["records"]), 30)
+
+    def test_page_scan_restores_original_selected_job(self):
+        response = self._collect("page_restore")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(response["page_url"], "https://www.linkedin.com/jobs/search/?currentJobId=502")
+
+    def test_page_scan_waits_for_each_jobs_delayed_external_apply(self):
+        response = self._collect("page_delayed_external")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(
+            [record["external_apply_url"] for record in response["records"]],
+            [
+                "https://careers.example/jobs/701",
+                "https://careers.example/jobs/702",
+            ],
+        )
+        self.assertTrue(all(
+            record["source_trace"]["linkedin_posting"]["apply_mode"] == "external"
+            for record in response["records"]
+        ))
+
     def _collect(self, scenario: str) -> dict:
         completed = subprocess.run(
             ["node", str(HARNESS), str(CONTENT_SCRIPT), scenario],

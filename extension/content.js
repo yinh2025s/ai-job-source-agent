@@ -408,6 +408,180 @@
     }).slice(0, 30);
   };
 
+  const PAGE_CARD_SELECTOR = "[data-testid='lazy-column'] [role='button'][tabindex='0']";
+  const PAGE_SCAN_LIMIT = 30;
+  const PAGE_NAVIGATION_POLLS = 12;
+  const PAGE_DETAIL_POLLS = 24;
+  const PAGE_POLL_INTERVAL_MS = 50;
+  let activePageScan = null;
+
+  const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
+  const pageCards = () => visibleMatches(document, PAGE_CARD_SELECTOR).filter((card) => (
+    isEnabled(card) && visibleMatches(card, "p").filter((paragraph) => text(paragraph)).length >= 3
+  ));
+  const firstDescendantText = (root, selectors) => {
+    for (const selector of selectors) {
+      for (const node of Array.from(root.querySelectorAll(selector))) {
+        const value = text(node);
+        if (value) return value;
+      }
+    }
+    return "";
+  };
+  const frozenCardMetadata = (card) => {
+    const paragraphs = visibleMatches(card, "p").filter((paragraph) => text(paragraph));
+    const titleParagraph = paragraphs[0];
+    const title = firstDescendantText(titleParagraph, ["[aria-hidden='true']", "span"])
+      || text(titleParagraph);
+    return {
+      card,
+      selected: /^selected\s*,/i.test(text(titleParagraph)),
+      job_title: title,
+      company_name: text(paragraphs[1]),
+      job_location: text(paragraphs[2])
+    };
+  };
+  const listedPageRecord = (metadata, jobUrl) => ({
+    linkedin_job_url: jobUrl,
+    external_apply_url: null,
+    linkedin_company_url: null,
+    company_name: metadata.company_name,
+    job_title: metadata.job_title,
+    job_location: metadata.job_location,
+    source: "linkedin_browser_extension",
+    source_trace: {
+      linkedin_posting: {
+        availability: "listed",
+        apply_mode: "unknown",
+        evidence_source: "authenticated_search_card",
+        job_url: jobUrl
+      },
+      dom: {
+        scope: "authenticated_search_card",
+        root_selector: "linkedin_lazy_column_card",
+        identity_source: "selected_current_job_id"
+      }
+    }
+  });
+  const completeDetailFor = (jobUrl) => {
+    const record = detailRecord();
+    return record.linkedin_job_url === jobUrl && record.company_name && record.job_title ? record : null;
+  };
+  const detailApplyResolved = (record) => (
+    Boolean(record)
+    && record.source_trace?.linkedin_posting?.availability !== "unknown"
+  );
+  const mergeRecord = (record, detail) => Object.fromEntries(
+    Object.entries({ ...record, ...detail }).map(([key, value]) => [
+      key,
+      value || record[key] || null
+    ])
+  );
+  const waitForSelectedJob = async (expectedId, previousId, polls = PAGE_NAVIGATION_POLLS) => {
+    for (let attempt = 0; attempt < polls; attempt += 1) {
+      const currentId = selectedJobId();
+      if (currentId === expectedId && currentId !== previousId) return true;
+      await pause(PAGE_POLL_INTERVAL_MS);
+    }
+    return false;
+  };
+  const waitForChangedJob = async (previousId, polls = PAGE_NAVIGATION_POLLS) => {
+    for (let attempt = 0; attempt < polls; attempt += 1) {
+      const currentId = selectedJobId();
+      if (currentId && currentId !== previousId) return currentId;
+      await pause(PAGE_POLL_INTERVAL_MS);
+    }
+    return "";
+  };
+  const settleDetailFor = async (jobUrl, scan) => {
+    let latestDetail = null;
+    for (let attempt = 0; attempt < PAGE_DETAIL_POLLS; attempt += 1) {
+      const detail = completeDetailFor(jobUrl);
+      if (detail) latestDetail = detail;
+      if (detailApplyResolved(detail) || scan.cancelled) return detail;
+      await pause(PAGE_POLL_INTERVAL_MS);
+    }
+    return latestDetail;
+  };
+  const pageScanResponse = (scan, state) => ({
+    ok: true,
+    records: scan.records,
+    page_url: location.href,
+    scan_version: "3",
+    state,
+    scanned_count: scan.scannedCount,
+    candidate_count: scan.candidateCount,
+    failure_count: scan.failureCount
+  });
+  const collectPage = async () => {
+    const originalJobId = selectedJobId();
+    const candidates = pageCards().slice(0, PAGE_SCAN_LIMIT).map(frozenCardMetadata);
+    const scan = {
+      cancelled: false,
+      candidateCount: candidates.length,
+      failureCount: 0,
+      records: [],
+      scannedCount: 0
+    };
+    activePageScan = scan;
+    const cardsByJobId = new Map();
+    const originalCandidate = candidates.find((candidate) => candidate.selected);
+    if (originalJobId && originalCandidate) cardsByJobId.set(originalJobId, originalCandidate.card);
+    try {
+      for (const candidate of candidates) {
+        if (scan.cancelled) break;
+        const previousId = selectedJobId();
+        scan.scannedCount += 1;
+        let currentId = "";
+        try {
+          if (candidate.selected && previousId) {
+            currentId = previousId;
+          } else {
+            candidate.card.click();
+            currentId = await waitForChangedJob(previousId);
+          }
+        } catch {
+          currentId = "";
+        }
+        if (!currentId) {
+          scan.failureCount += 1;
+        } else {
+          cardsByJobId.set(currentId, candidate.card);
+          const jobUrl = `https://www.linkedin.com/jobs/view/${currentId}`;
+          let record = listedPageRecord(candidate, jobUrl);
+          const detail = await settleDetailFor(jobUrl, scan);
+          if (detail) record = mergeRecord(record, detail);
+          if (!scan.records.some((existing) => existing.linkedin_job_url === jobUrl)) {
+            scan.records.push(record);
+          }
+        }
+        try {
+          const progress = chrome.runtime.sendMessage?.({
+            type: "job_source_page_progress",
+            scanned_count: scan.scannedCount,
+            candidate_count: scan.candidateCount
+          });
+          progress?.catch?.(() => {});
+        } catch {
+          // The popup may close while the content scan continues.
+        }
+      }
+      if (originalJobId && selectedJobId() !== originalJobId) {
+        const originalCard = cardsByJobId.get(originalJobId);
+        if (originalCard) {
+          const previousId = selectedJobId();
+          originalCard.click();
+          await waitForSelectedJob(originalJobId, previousId);
+        }
+      }
+      if (scan.cancelled) return pageScanResponse(scan, "cancelled");
+      if (!scan.candidateCount) return pageScanResponse(scan, "not_ready");
+      return pageScanResponse(scan, scan.failureCount ? "partial" : "ready");
+    } finally {
+      if (activePageScan === scan) activePageScan = null;
+    }
+  };
+
   const isLinkedinJobsRoute = () => {
     try {
       const url = new URL(location.href);
@@ -419,6 +593,41 @@
   };
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "cancel_job_source_page") {
+      const cancelled = Boolean(activePageScan && !activePageScan.cancelled);
+      if (activePageScan) activePageScan.cancelled = true;
+      sendResponse({ ok: true, cancelled });
+      return false;
+    }
+    if (message?.type === "collect_job_source_page") {
+      if (activePageScan) {
+        sendResponse({
+          ok: false,
+          records: [],
+          page_url: location.href,
+          scan_version: "3",
+          state: "partial",
+          scanned_count: 0,
+          candidate_count: 0,
+          failure_count: 0
+        });
+        return false;
+      }
+      collectPage().then(sendResponse).catch((error) => {
+        sendResponse({
+          ok: false,
+          records: [],
+          page_url: location.href,
+          scan_version: "3",
+          state: "partial",
+          scanned_count: 0,
+          candidate_count: 0,
+          failure_count: 1,
+          error: String(error)
+        });
+      });
+      return true;
+    }
     if (message?.type !== "collect_job_source_records") return false;
     try {
       const records = collect();

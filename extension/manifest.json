@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "AI Job Source Agent",
-  "version": "0.2.2",
+  "version": "0.3.1",
   "description": "Send visible LinkedIn jobs to the local AI Job Source Agent pipeline.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [

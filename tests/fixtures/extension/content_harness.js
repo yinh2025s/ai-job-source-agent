@@ -16,6 +16,7 @@ class FakeElement {
     this.tagName = tagName;
     this.children = [];
     this.matchesBySelector = new Map();
+    this.onClick = null;
     if (parent) parent.children.push(this);
   }
 
@@ -50,11 +51,16 @@ class FakeElement {
   getBoundingClientRect() {
     return { top: 100000, bottom: 100100, left: 0, right: 100 };
   }
+
+  click() {
+    if (this.onClick) this.onClick();
+  }
 }
 
 const CARD_SELECTOR = (
   "li.jobs-search-results__list-item, [data-occludable-job-id], .job-card-container, .base-card"
 );
+const PAGE_CARD_SELECTOR = "[data-testid='lazy-column'] [role='button'][tabindex='0']";
 const DETAIL_ROOT_SELECTORS = [
   ".jobs-search__job-details--container",
   ".job-view-layout",
@@ -394,6 +400,92 @@ function emptyScenario(href) {
   return { document, href };
 }
 
+function pageCard(id, company, title, location, properties = {}) {
+  const root = new FakeElement({
+    attrs: { role: "button", tabindex: "0", ...properties.attrs },
+    hidden: properties.hidden,
+    disabled: properties.disabled,
+    style: properties.style,
+  });
+  const titleParagraph = leaf({
+    text: properties.selected ? `Selected, ${title}` : title,
+    tagName: "P",
+  }, root);
+  const titleText = leaf({ text: title, attrs: { "aria-hidden": "true" }, tagName: "SPAN" }, titleParagraph);
+  const companyParagraph = leaf({ text: company, tagName: "P" }, root);
+  const locationParagraph = leaf({ text: location, tagName: "P" }, root);
+  root.setMatches("p", [titleParagraph, companyParagraph, locationParagraph]);
+  titleParagraph.setMatches("[aria-hidden='true']", [titleText]);
+  titleParagraph.setMatches("span", [titleText]);
+  root.pageJobId = String(id);
+  return root;
+}
+
+function pageFooterControl() {
+  const root = new FakeElement({ attrs: { role: "button", tabindex: "0" } });
+  const paragraph = leaf({ text: "Show more", tagName: "P" }, root);
+  root.setMatches("p", [paragraph]);
+  return root;
+}
+
+function pageScanScenario({
+  ids = [101, 102, 103], startId = "", timeoutIds = [], cancelAfterProgress = 0,
+  externalApplyIds = [], detailDelayTicks = 0,
+} = {}) {
+  const document = new FakeElement();
+  const cards = ids.map((id, index) => pageCard(
+    id,
+    `Company ${id}`,
+    `Role ${id}`,
+    `Location ${id}`,
+    { selected: Boolean(startId && String(id) === String(startId)) },
+  ));
+  const footerControls = [pageFooterControl(), pageFooterControl()];
+  document.setMatches(PAGE_CARD_SELECTOR, [...cards, ...footerControls]);
+  document.setMatches(CARD_SELECTOR, []);
+  setDetailRoots(document, {});
+  let pendingDetail = null;
+  const showDetail = (id) => {
+    const root = detailRoot(id, `Company ${id}`, `Role ${id}`, { location: `Location ${id}` });
+    if (externalApplyIds.map(String).includes(String(id))) {
+      root.setMatches(EXTERNAL_APPLY_SELECTOR, [leaf({
+        text: "Apply on company website",
+        href: `https://careers.example/jobs/${id}`,
+      }, root)]);
+    }
+    setDetailRoots(document, { ".jobs-search__job-details--container": [root] });
+  };
+  return {
+    document,
+    href: `https://www.linkedin.com/jobs/search/${startId ? `?currentJobId=${startId}` : ""}`,
+    messageType: "collect_job_source_page",
+    cancelAfterProgress,
+    bindLocation(location) {
+      for (const cardNode of cards) {
+        cardNode.onClick = () => {
+          if (!timeoutIds.map(String).includes(cardNode.pageJobId)) {
+            location.href = `https://www.linkedin.com/jobs/search/?currentJobId=${cardNode.pageJobId}`;
+            if (detailDelayTicks > 0) {
+              pendingDetail = { id: cardNode.pageJobId, remaining: detailDelayTicks };
+              setDetailRoots(document, {});
+            } else {
+              showDetail(cardNode.pageJobId);
+            }
+          }
+        };
+      }
+    },
+    onTimer() {
+      if (!pendingDetail) return;
+      pendingDetail.remaining -= 1;
+      if (pendingDetail.remaining <= 0) {
+        showDetail(pendingDetail.id);
+        pendingDetail = null;
+      }
+    },
+  };
+}
+
 const scenarios = {
   hidden_cards: hiddenCardsScenario,
   selector_fallback: selectorFallbackScenario,
@@ -410,6 +502,15 @@ const scenarios = {
   forged_identity: forgedIdentityScenario,
   empty_jobs: () => emptyScenario("https://www.linkedin.com/jobs/search/"),
   empty_non_jobs: () => emptyScenario("https://www.linkedin.com/feed/"),
+  page_success_dedupe: () => pageScanScenario({ ids: [101, 102, 101] }),
+  page_timeout: () => pageScanScenario({ ids: [201, 202], timeoutIds: [202] }),
+  page_cancel: () => pageScanScenario({ ids: [301, 302, 303], startId: "302", cancelAfterProgress: 1 }),
+  page_selected_first: () => pageScanScenario({ ids: [601, 602], startId: "601" }),
+  page_max_30: () => pageScanScenario({ ids: Array.from({ length: 35 }, (_, index) => 400 + index) }),
+  page_restore: () => pageScanScenario({ ids: [501, 502, 503], startId: "502" }),
+  page_delayed_external: () => pageScanScenario({
+    ids: [701, 702], externalApplyIds: [701, 702], detailDelayTicks: 2,
+  }),
 };
 
 const contentPath = process.argv[2];
@@ -418,13 +519,31 @@ const scenario = scenarios[scenarioName]?.();
 if (!scenario) throw new Error(`Unknown scenario: ${scenarioName}`);
 
 let listener;
+let progressCount = 0;
+let response;
+let cancelResponse;
 const sandbox = {
   URL,
   document: scenario.document,
   location: { href: scenario.href },
   getComputedStyle: (node) => node.style,
+  setTimeout: (callback) => {
+    scenario.onTimer?.();
+    Promise.resolve().then(callback);
+    return 0;
+  },
   chrome: {
     runtime: {
+      sendMessage: (message) => {
+        if (message?.type === "job_source_page_progress") {
+          progressCount += 1;
+          if (scenario.cancelAfterProgress && progressCount === scenario.cancelAfterProgress) {
+            listener({ type: "cancel_job_source_page" }, {}, (value) => {
+              cancelResponse = value;
+            });
+          }
+        }
+      },
       onMessage: {
         addListener: (callback) => {
           listener = callback;
@@ -435,9 +554,28 @@ const sandbox = {
 };
 sandbox.globalThis = sandbox;
 vm.runInNewContext(fs.readFileSync(contentPath, "utf8"), sandbox, { filename: contentPath });
+scenario.bindLocation?.(sandbox.location);
 
-let response;
-listener({ type: "collect_job_source_records" }, {}, (value) => {
+listener({ type: scenario.messageType || "collect_job_source_records" }, {}, (value) => {
   response = value;
 });
-process.stdout.write(JSON.stringify(response));
+
+async function finish() {
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    if (response) {
+      process.stdout.write(JSON.stringify({
+        ...response,
+        progress_count: progressCount,
+        cancel_response: cancelResponse,
+      }));
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 0));
+  }
+  throw new Error("Content script did not respond");
+}
+
+finish().catch((error) => {
+  process.stderr.write(String(error));
+  process.exitCode = 1;
+});

@@ -19,6 +19,7 @@ Public LinkedIn guest pages can expose company and job metadata but do not relia
 8. Treat content-script scan responses as contract version `2`, with `ready` or `not_ready` state. The popup may perform only a small bounded readiness retry and must ask the user to retry after that budget.
 9. Validate the bridge endpoint in the extension before attaching credentials: only `http://127.0.0.1:<port>` with no credentials, path, query, or fragment is accepted. Popup requests use a bounded timeout, prevent duplicate operations, validate response shapes, and clear stale run IDs after authentication or not-found responses.
 10. Render result links only when they are public HTTPS URLs. DOM evidence must reject credentials, fragments, local/private hosts, LinkedIn/lookalike hosts, and sensitive query keys; it never records raw HTML, cookies, browser storage, or page snapshots.
+11. Separate instant selected-detail scan v2 from bounded current-batch page scan v3. Because the obfuscated LinkedIn card does not expose a job URL, page scan may serially select up to 30 structurally valid cards and accept only a newly observed `currentJobId`; it freezes visible card metadata first, reports progress, supports cancellation, deduplicates job URLs, and restores the original selection. It does not call authenticated LinkedIn APIs, inspect application internals, paginate, or imply complete search coverage.
 
 ## Consequences
 
