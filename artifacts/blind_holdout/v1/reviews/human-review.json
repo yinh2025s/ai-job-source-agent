@@ -19,24 +19,40 @@
       "linkedin_job_location": "San Francisco, CA",
       "expected_open_position_url": null,
       "expected_candidate_opening_url": null,
-      "hiring_entity_name": null,
-      "hiring_relationship": null,
-      "hiring_relationship_verdict": null,
-      "provider": null,
-      "provider_tenant": null,
+      "hiring_entity_name": "Resonate AI",
+      "hiring_relationship": "same_entity",
+      "hiring_relationship_verdict": "verified",
+      "provider": "greenhouse",
+      "provider_tenant": "resonate",
       "canonical_board_url": "https://job-boards.greenhouse.io/resonate",
-      "provider_tenant_verdict": null,
-      "observed_opening_title": null,
-      "title_verdict": null,
-      "observed_opening_location": null,
-      "location_verdict": null,
-      "accessibility_verdict": null,
-      "accessibility_checked_at": null,
-      "record_disposition": null,
-      "eligible_exact_opening": null,
-      "identity_verdict": null,
-      "evidence": [],
-      "review_notes": null
+      "provider_tenant_verdict": "rejected",
+      "observed_opening_title": "not_applicable",
+      "title_verdict": "not_applicable",
+      "observed_opening_location": "not_applicable",
+      "location_verdict": "not_applicable",
+      "accessibility_verdict": "not_applicable",
+      "accessibility_checked_at": "2026-07-15T10:04:26+08:00",
+      "record_disposition": "system_gap",
+      "eligible_exact_opening": "unknown",
+      "identity_verdict": "rejected",
+      "evidence": [
+        {
+          "kind": "hiring_entity_identity",
+          "url": "https://www.resonateapp.com/",
+          "finding": "The target company Resonate AI uses resonateapp.com as its official website."
+        },
+        {
+          "kind": "rejected_job_board_identity",
+          "url": "https://www.resonate.com/careers/",
+          "finding": "The discovered Greenhouse board belongs to the unrelated company at resonate.com, not Resonate AI."
+        },
+        {
+          "kind": "source_posting_status",
+          "url": "https://www.linkedin.com/jobs/view/software-engineer-%24125k-%24200k-0-2%25-to-1%25-at-resonate-ai-4436043581",
+          "finding": "The human reviewer observed that the LinkedIn source posting remained open."
+        }
+      ],
+      "review_notes": "LinkedIn source posting remains open. The target company is Resonate AI at resonateapp.com, but the discovered Greenhouse tenant belongs to the unrelated company at resonate.com. No official external opening was located during manual review, so exact-opening eligibility remains unknown."
     },
     {
       "company_name": "Solace",

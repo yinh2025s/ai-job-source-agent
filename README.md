@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-14.86`. The registry auto-discovers 24 adapter modules: 23 provide native inventory or constrained positive evidence, while only Talemetry remains detection-only. ADR-0018 keeps bounded first-party dynamic inventory and strict title identity; ADR-0019 makes scoped replay preserve an upstream terminal boundary instead of requiring invented downstream scopes. The frozen unfamiliar cohort now reaches 13/15 websites, 12/15 career pages, 11/15 verified job lists, 7/15 current title-matched openings, and 7/15 pre-frozen exact opening identities. Its complete capture replays 15/15 outcomes with zero fixture gaps or mismatches. S4 also falls back from nonempty but invalid Bing RSS results to bounded Bing HTML when budget remains. Authenticated LinkedIn extension Scan/Run remains a manual acceptance gate; the user performs the Chrome clicks and the backend validates bridge artifacts and logs.
+Current adapter iteration: `2026-07-17.94`. The registry auto-discovers 32 native adapter modules. External Apply, bounded provider-targeted search, and official Website/Career traversal now feed one untrusted candidate portfolio; native adapter, hiring relationship, tenant, title/location, active-opening and S7 identity checks still decide publication. The single final **observed development** 40-company run reaches 38 websites, 29 career pages, 22 verified job lists and 18 exact openings, up from 35/26/20/13. Among ten manually confirmed eligible system gaps, four recover exact openings and six remain defects; three frozen expected URLs match, with zero known wrong or unsafe exact URLs. Whole-output exact precision is not claimed because most exact records lack independent frozen URL labels. Scoped replay reproduces every replayable final-live record at 39/39 with zero mismatches; one live worker crashed before finalizing its S5 tape, and that missing boundary remains explicitly failed rather than fabricated. Authenticated LinkedIn extension Scan/Run remains a manual acceptance gate; the user performs the Chrome clicks and the backend validates bridge artifacts and logs.
 
 ## What It Returns
 
@@ -124,12 +124,18 @@ This mode starts from public LinkedIn job search results:
 python3 -m job_source_agent \
   --linkedin-keywords "AI Engineer" \
   --linkedin-location "United States" \
+  --enable-parallel-candidate-discovery \
   --limit 3 \
   --linkedin-pages 1 \
   --fetch-timeout 5 \
   --output linkedin-results.json \
   --trace-output linkedin-trace.json
 ```
+
+`--enable-parallel-candidate-discovery` enables ADR-0025's merged S5 portfolio: LinkedIn
+External Apply, explicit website/career ATS links, and bounded provider-targeted search all
+produce untrusted leads before adapter and identity verification. The flag is off by default
+until the same frozen live cohort passes the old/new comparison gate.
 
 Example live output from July 10, 2026:
 
@@ -178,7 +184,7 @@ JOB_SOURCE_BRIDGE_TOKEN="replace-with-a-local-secret" \
   --fetch-timeout 8
 ```
 
-In `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the repository's `extension/` directory. After updating the repository, use **Reload** on the extension card so Chrome loads manifest version `0.2.2`. Open the extension's **Connection** section, keep `http://127.0.0.1:8765`, enter the same token, and save. Only the exact loopback form `http://127.0.0.1:<port>` is accepted. On a LinkedIn Jobs detail or search-results page, **Scan page** immediately shows the selected job and any DOM-observed **LinkedIn Apply** URL. Optional **Verify source** submits an asynchronous strict pipeline run and reports verified job-list and opening rates; the Apply link remains usable while it runs. Closing and reopening the popup does not cancel a bridge-owned run. Results, trace, and summary files are stored under `~/.ai-job-source-agent/runs/<run-id>/`.
+In `chrome://extensions`, enable Developer mode, choose **Load unpacked**, and select the repository's `extension/` directory. After updating the repository, use **Reload** on the extension card so Chrome loads manifest version `0.3.1`. Open the extension's **Connection** section, keep `http://127.0.0.1:8765`, enter the same token, and save. Only the exact loopback form `http://127.0.0.1:<port>` is accepted. On LinkedIn Jobs, **Scan selected** immediately shows the current job and any DOM-observed **LinkedIn Apply** URL. **Scan page** walks the currently loaded result batch, waits within a bounded budget for each matching detail's Apply state, reports progress, can be cancelled, and returns at most 30 job records before restoring the original selection. External Apply URLs are emitted directly; Easy Apply and unresolved records remain available for optional backend handling. It does not mean every result across LinkedIn pagination. Optional **Verify source** submits the collected records to the strict pipeline; it is never started automatically. Closing and reopening the popup does not cancel a bridge-owned verification run. Results, trace, and summary files are stored under `~/.ai-job-source-agent/runs/<run-id>/`.
 
 Automated DOM and popup workflow tests cover selected-job binding, loading readiness, unsafe URL rejection, duplicate actions, malformed bridge responses, timeout/retry recovery, stale run cleanup, and safe clickable results. Authenticated LinkedIn **Scan page** / **Run discovery** acceptance remains a separate manual gate; follow [the extension acceptance checklist](docs/EXTENSION_ACCEPTANCE.md). Automated fixtures and loopback smoke do not replace that one real logged-in Chrome run.
 

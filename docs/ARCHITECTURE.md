@@ -92,6 +92,73 @@ S6 的职责进一步拆成三层：provider/matcher 记录官方库存读取状
 
 S5 不把 generic career landing page 自动视作 job list。成功必须来自已知 provider、页面中的具体 job-detail evidence，或经过有界 traversal 后抵达的明确 first-party listing/search route；仅链接到下游搜索页的导航页面不能继承该搜索页的证据。
 
+### Parallel Provider Candidate Discovery
+
+ADR-0025 在不改变 S1-S7 顺序的前提下，把 S5 的入口从单一 career handoff 扩展为三个
+逻辑并行的候选源：LinkedIn External Apply、官网/Career 中的显式 ATS URL、provider-targeted
+search。它们只产生 `ProviderCandidate`，统一进入最多 12 条的 immutable candidate pool；排序
+只控制检查顺序，不产生验证结论。Search 使用现有 Bing/DuckDuckGo transport 的 exhaustive
+bounded 模式，多组 provider 查询共享预算，snippet 永远不能成为 success 或 relationship evidence。
+`ProviderCandidate` 在 contract 边界使用与 identity chain 相同的 strict canonical URL；可归一化
+的 trailing/tracking 形式先规范化，control、credential、private host 或其他非 identity-safe URL
+在进入 portfolio 前拒绝，不能把下游 contract exception 变成 company worker crash。
+
+候选池之后必须经过 provider registry：只有 listing-capable adapter 能识别 canonical tenant board
+的候选才进入最多 8 个 board 的 `JobBoardPortfolio`。搜索 provenance 保留在 trace，但 typed
+`DiscoveredJobBoard.evidence_url` 必须与 provider board 同 origin。External Apply 或严格相等的
+company/provider tenant 可以建立招聘关系；模糊 token、substring、title 相似和搜索排名不能。
+S6 在 portfolio 后续 board 命中时切换到真实命中 board 的 provider identity，并发布 typed
+`OpeningSelectionEvidence`。S7 除原有 company/provider/tenant/board/opening URL 连续性外，还
+验证 selected title，公开 location classification，并对新候选路径的明确 location mismatch
+fail closed。该路径由 deterministic schema 1.3 的 `enable_parallel_candidate_discovery` 控制，
+默认关闭；旧路径和 1.0-1.2 replay 配置保持兼容。
+
+Scoped full-outcome replay 必须从产生下游证据的最早 producer stage 开始。Career evidence 依赖
+website resolution；page-derived generic board evidence 继续依赖 Career producer，因此 replay
+链为 `website_resolution -> career_discovery -> job_board_discovery`，不能只把最终 URL seed 成
+中间 checkpoint。Trace 中明确的 `pages_visited`/`selected_page_source` 与 native page-aware
+adapter provenance 都属于 page-derived evidence；缺少任一 required scope 时 preflight fail closed，
+不得从 global latest snapshot 猜测或补造空 tape。
+
+### Career Inventory Following
+
+[ADR-0026](adr/0026-follow-career-inventory.md) 将 S5 的官网 Career 消费拆成“导航候选、库存
+证据、provider 验真”三层。已验证 Career root 可以在既有 page/fetch budget 内跟随显式的
+`Search Jobs`、`Current Openings`、`All Jobs` 等深层 command；无标签链接、跨站普通链接和仅由
+路径猜出的 route 不能继承 Career root 的官方性或 inventory 证据。页面链接、data attribute、
+iframe、embedded URL、`script-src` 和静态 provider config 都只产生有 provenance 的候选。
+候选必须由 registry 中 listing-capable adapter 识别并规范化为 canonical tenant board，才能
+形成 `DiscoveredJobBoard`；任意脚本 URL 或通用招聘文字本身都不是 board evidence。
+
+First-party inventory 有三个保守入口。静态 HTML 只消费严格岗位卡，并仅沿显式 `rel=next` 或
+`Next`/`Load More` 分页；无分页的单页、循环、cap、跨站 next、redirect 或 fetch failure 都保持
+`inventory_complete=false`。Page-declared JSON 只在页面 data attribute 与同源资产共同声明同一
+anonymous GET 时执行；JS-declared transport 只检查最多三个同站脚本，要求唯一 same-origin public
+HTTPS endpoint、字面量字段和受支持的 anonymous request。Native XHR 仅支持明确的 form-encoded
+POST、`searchTerm`/`searchMode` 以及可选页面声明 format；运行时注入目标 title，不执行任意脚本，
+也不复制动态 header、cookie、credential 或未知字段。Payload、页数、candidate 数和解析深度均有
+上限；空、歧义、畸形、redirect、mixed-origin/tenant 或截断结果不能证明 no-match。
+
+Provider adapter 继续拥有 URL recognition、tenant isolation、canonical board、request shape、
+pagination continuity、detail URL 和 `inventory_complete`。Paycor 与 UltiPro 通过各自 adapter 接入；
+Greenhouse、JazzHR、Lever、Workday 等变体仍通过相同 registry contract，而不是中央
+`if company == ...`。官网脚本声明 native XHR form transport以及官网 `script-src` 暴露
+Greenhouse board 都属于通用证据形状；Tata Technologies 和 Banks Power 只是对应 live 样本，
+不会进入生产分支、provider locator 或持久化 identity。
+
+所有 URL 必须是无 credential、无敏感 query/fragment、非 private host 的 public HTTPS；asset、
+endpoint 和 response redirect 必须满足各自 same-origin/tenant contract。Trace 只保存受限 URL、
+字段名、计数、状态和 typed fetch classification，不保存 payload rows、HTML、cookies、tokens、
+Authorization 或 browser state。403/429、bot protection、transport failure、ambiguous declaration、
+schema/identity mismatch 和 bounded truncation 保持 blocked/retryable/incomplete；只有完整、已验真的
+inventory 才能支持 `OPENING_NOT_FOUND` 或 `NO_PUBLIC_OPENINGS`。
+
+冻结 observed 10-company live gate 的 raw funnel 是 website 10/10、career 10/10、job list 10/10、
+exact 9/10；Tata 保留 verified job list，但 opening match 因 `BOT_PROTECTION` 为 partial，不能计作
+exact。Full-outcome replay 对 10/10 matched/selected/exported
+records 全部 reproduced，outcome gate passed。该 cohort 没有 evaluation annotation，因此这些数字
+不构成 exact precision、conditional exact recall 或 system-defect-rate 声明。
+
 JavaScript-only career page 可以通过 ADR-0018 的 first-party dynamic inventory probe 产生 S5 provider evidence。Probe 只扫描最多三个同源 page asset 和一个静态 import dependency；opaque hash chunk 按页面声明尾部优先，命名 route chunk 保持最高优先。接口必须是字面量 job-list GET 和 exact-origin HTTPS `api`/`api-proxy` base。Payload 上限为 5 MB / 5,000 rows，每条 URL 都必须由 listing-capable native adapter 绑定到同一个 canonical board；坏行、mixed tenant、redirect、跨源、超限和不完整 fetch 全部 fail closed。`api-proxy` 只发送由 page hostname 合成的公开 marker，不读取 bundle Authorization。Trace 不保存 opening rows，snapshot 按普通 request-aware GET 记录并可在清洗后 replay。
 
 S6 的 title score 只负责排序，不能单独建立岗位身份。候选还必须保留 target token 顺序，或在 level alias 规范化后具有相同 token multiset；单 token target 只接受规范化同一标题。这样允许 `AI Algorithm Engineer Intern` 对 `AI Engineer` 的有序细化，但拒绝先出现 `Engineer`、后出现 `AI` 的另一角色描述。完整 provider inventory 中没有通过 identity gate 的候选时，输出 verified no-match，不选择最高模糊分作为 opening。
@@ -108,11 +175,25 @@ S4 将候选验证与候选调度分开。纯调度策略位于 `job_source_agen
 
 Trace 记录 schedule policy/version、origin、evidence tier、score、canonical/concrete host、locale、route family、family role、eligible/bounded/truncated 数量以及预算耗尽后仍未尝试的候选数。Checkpoint adapter version 在调度 contract 改变时失效，避免旧 S4 成功或失败掩盖新顺序。
 
+Homepage navigation evidence 的 source identity 对 HTTPS apex 与 `www` 仅在规范化 path 相同
+时等价，这允许 S2 已验证首页证据在 S4 省去重复 homepage dispatch；任意其他子域、路径、端口或
+scheme 变化都不继承该证据。Candidate scheduler 把 identity/provider handoff、明确 first-party
+navigation 和显式 same-site job portal 放在 speculative route family 之前。同层仍按 score、region
+和 concrete-host fallback 排序；优先级只控制有限预算，不建立 website、career 或 board 身份。
+
 ## Browser Extension Boundary
 
 `extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。Search SPA 的详情证据必须绑定当前 `currentJobId` 或 detail root 的明确 job identity，不能把竞争 card 或 stale root 的 company/title/apply 组合到当前职位。Content response 使用 scan contract v2 的 `ready/not_ready`，popup 只进行有界 readiness retry。
 
 `scripts/extension_bridge.py` 只绑定 loopback，使用 bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。Popup 只接受无 path/query/fragment/credential 的 `http://127.0.0.1:<port>`，请求有超时、重复操作保护、有限 polling recovery 和 stale-run 清理；展示层只链接 public HTTPS 结果。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
+
+Extension scan v3 将即时 selected-detail 与当前批次 page scan 分开。Page scan 只消费
+`data-testid=lazy-column` 内 visible/enabled、具有至少三项可见 card metadata 的 job-card，先冻结
+title/company/location，再串行触发站内选择并观察新的 `currentJobId`；没有 observed job ID 就不生成
+record。每轮最多 30 条，支持 progress/cancel、去重与原选择恢复。它不读取 cookie、LinkedIn API、
+React internals、raw HTML 或 browser storage，也不翻页并声称覆盖全部搜索结果。Detail 已在小预算内
+完成时可以合并同 identity Apply evidence。每个 identity 最多等待约 1.2 秒，直到 external、native 或
+closed 状态明确；超时保留 listed/unknown，由 Selected scan 或后端继续处理。
 
 ## Source Posting Availability
 
@@ -156,6 +237,17 @@ class ProviderAdapter:
 ```
 
 Registry 负责选择 adapter。原生 provider module 导出一个 `ADAPTER` 实例后会被自动发现；新增 provider 不需要修改中央 registry 或 stage 条件分支。
+
+ApplicantStack adapter 只识别 public HTTPS `<tenant>.applicantstack.com/x/openings` 与同 tenant
+`/x/detail/<id>`。Board fetch 必须保留 canonical tenant/path 且页面同时具有 openings form、公开
+data table 和 branding fingerprint；跨 tenant/route redirect、malformed row、重复或非 canonical
+detail 都 fail closed。拒绝任何 row 时 inventory 保持 partial，只有全部公开 rows 验证通过才是
+complete；空的 complete inventory 与 fetch/parse failure 不得混同。
+
+页面上的 provider detail link 只有在至少两个不同、可见、有文本的 detail URL 全部归一到同一个
+provider、tenant 和 canonical board 时，才构成 single-tenant visible-detail board evidence。单一
+detail、mixed tenant、隐藏/embedded-only link 不能走该提升。显式 label 的 same-site job portal 在
+generic traversal 前消费，但仍必须通过 public HTTPS、same-site、region 和 safe traversal gate。
 
 对 customer-owned career domain，adapter 可以选择实现 `PageAwareProviderAdapter.identify_board_from_page(Page)`。Registry 只负责依次询问实现该扩展的 adapter；ATS 指纹、tenant isolation 和 board 构造仍封装在 provider module 内。URL host 识别优先，只有 URL 不透明时才使用已抓取页面证据。
 
