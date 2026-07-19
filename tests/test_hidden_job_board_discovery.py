@@ -733,6 +733,33 @@ class HiddenJobBoardDiscoveryTests(unittest.TestCase):
             "embedded_provider_url_evidence",
         )
 
+    def test_iframe_provider_board_is_a_typed_first_party_handoff(self):
+        career = "https://www.example.com/careers"
+        board = "https://example-search.app.loxo.co/example-search"
+        fetcher = MappingFetcher({
+            career: Page(
+                url=career,
+                html=f'<iframe src="{board}?disable_addthis=true"></iframe>',
+            ),
+        })
+
+        job_list, trace, portfolio = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_portfolio(career)
+
+        self.assertEqual(job_list, board)
+        self.assertIsNotNone(portfolio)
+        assert portfolio is not None
+        self.assertEqual(portfolio.primary.board.provider, "loxo")
+        self.assertEqual(portfolio.primary.board.url, board)
+        self.assertEqual(portfolio.primary.relationship_evidence_url, career)
+        self.assertEqual(fetcher.requested, [career])
+        self.assertEqual(
+            trace["provider_detection"]["method"],
+            "embedded_provider_url_evidence",
+        )
+
     def test_embedded_provider_details_preserve_multiple_first_party_tenants(self):
         career = "https://careers.example.com/jobs"
         haven = "https://job-boards.greenhouse.io/haven/jobs/123"

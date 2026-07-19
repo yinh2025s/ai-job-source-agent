@@ -1740,6 +1740,8 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
         if isinstance(provider_detection, dict)
         else None
     )
+    if detection_method == "embedded_provider_url_evidence":
+        detection_method = "linked_url_evidence"
     result = next(
         (
             item

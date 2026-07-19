@@ -23,7 +23,61 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-19，`.172`）
+## 当前执行轮次（2026-07-19，`.178`）
+
+### `.174-.178` Phase B/C：嵌入式 Job List 与 WordPress 分页（已通过）
+
+本簇只处理 `.173` ledger 中两个“已到官方 Job List、但库存不完整”的 SYSTEM_GAP：
+Leadenhall 和 EVONA。EVONA 的真实 WordPress 标记同时包含数字页码、损坏的
+`?paged=?paged=N` 参数，以及查询分页到 `/page/N/` 的同页 canonical redirect；旧实现只增加
+`paged` key，没有让纯数字链接进入 next-page 控制流，因此 live 仍停在第一页。`.176` 现在仅在
+同 origin、同 base path、连续页码、相同非分页参数时接受该链接和等价重定向，跨路径或跨页码仍
+fail closed。Focused live 读取当前完整两页 38 条 inventory，返回 `OPENING_NOT_FOUND`；replay
+`1/1` 通过。
+
+Leadenhall 的官方 Career 通过 first-party iframe 嵌入 Loxo。原始链接抽取已保留 `iframe_src`，
+但 S5 embedded-provider 白名单漏掉该 provenance，导致新 adapter 无法执行。`.178` 将 iframe
+作为受限的 first-party embedded handoff，新增 tenant/path 绑定、query echo、same-tenant detail
+和完整空结果验证的 Loxo adapter，并补齐 replay-safe locator policy 与 trace method contract。
+Focused live 返回完整 title-filtered `OPENING_NOT_FOUND`，replay `1/1` 通过。相关局部门禁
+`326/326` 通过，错误 URL、跨 tenant 和 fixture gap 均为零。最终离线门禁为 2389 tests
+（3 skipped）、25/25 provider benchmark、6/6 resolver benchmark，以及 44 native adapters /
+0 architecture issues。
+
+本簇将 ledger 更新为
+`68 EXACT / 21 VERIFIED_NOT_FOUND / 4 EXTERNAL_BLOCKED / 7 SYSTEM_GAP`。下一簇是 Tata
+Technologies 两条 parent-career/RippleHire handoff；在其 Phase A 证据审计完成前不修改代码。
+
+### `.173` Phase A：剩余 14 条终态闭环（当前活动簇）
+
+`.172` checkpoint `9f54143` 已推送后，剩余 ledger 冻结为 14 条 SYSTEM_GAP，输入为
+`/private/tmp/frozen100-v172-next14-input.json`。本轮不再重跑已关闭的 86 条，也不把 manual
+observation 直接升级为产品终态。14 条按证据缺口分为：访问受阻/外部承载 5 条，Career/库存
+不完整 5 条，身份/标题/输入关系 4 条；完整 live 仍由主线串行运行，调查和局部测试可按互斥
+写集并行。
+
+第一项通用缺陷来自 Meta Sunnyvale：官方完整库存中存在多个 exact-title opening，location 为
+`Sunnyvale, CA + Redmond, WA ...`，但 S6 未拆分空格包围的 ` + ` 多地点分隔符，错误拒绝 exact
+title 后选择 Battery 专业岗位，最终被 S7 正确拒绝。`.173` 统一多地点解析仅接受 `;`、`|`、
+换行和两侧有空格的 ` + `，同时用于严格地点匹配与显式冲突判断；不能误拆 `C++`，全部地点均
+冲突时仍拒绝。旧 `.172` snapshot 的预回放恢复 exact-title multi-location opening后，`.173`
+新 live 已达到 Intuit 加三条 Meta controls `4/4 Exact`；同版本 replay `4/4 reproduced`、
+0 mismatch、0 fixture gap，131 条相关测试通过。Meta Sunnyvale 因而从 SYSTEM_GAP 关闭为
+Exact，ledger 更新为 `68 EXACT / 19 VERIFIED_NOT_FOUND / 13 SYSTEM_GAP`。
+
+随后 `.173` 对其余冻结 13 条执行统一 live（615.6 秒）和自动 full replay。live 为 3 条已验证
+Job List、0 Exact、13/13 完成；replay 为 13/13 reproduced、0 mismatch、0 fixture gap。West Oaks、
+Tidelands、Aveanna、Dior 均在已验证官方链上得到非重试 `HTTP_FORBIDDEN`，按现有产品终态统一关闭为
+EXTERNAL_BLOCKED，且没有发布 URL。ledger 因而进一步更新为
+`68 EXACT / 19 VERIFIED_NOT_FOUND / 4 EXTERNAL_BLOCKED / 9 SYSTEM_GAP`。剩余 9 条分为两个 Job List
+库存缺口（Leadenhall、EVONA，已由 `.178` 关闭）、两个 Tata parent-career handoff、Riverview 第三方招聘关系，以及
+四个无 Career/无可验证外部 handoff（Panacea、Southeastern、Garan、Great Value）。
+
+其余三组的 Phase B contract 在读取历史 trace 后冻结：第三方 recruiter/Adzuna 不建立第一方
+招聘关系；HTTP 403/TLS/bot protection 只有可重复的官方 handoff 与结构化 posting disposition
+才能成为 EXTERNAL_BLOCKED；完整官方库存才能宣布 VERIFIED_NOT_FOUND；Career 页面、搜索摘要、
+人工未找到均不够。下一次 14 条 gate 必须 14/14 产生结构化终态、full replay 14/14、0 wrong URL、
+0 cross-tenant、0 fixture gap、0 mismatch，并逐条审计所有新增 Exact。
 
 ### `.172` Phase C：S2 22+6 关闭（已通过）
 

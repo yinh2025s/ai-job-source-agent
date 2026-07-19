@@ -596,6 +596,76 @@ class GenericOpeningInventoryTests(unittest.TestCase):
         self.assertEqual(fetcher.requests[0][0], second_url)
         self.assertTrue(result.inventory_complete)
 
+    def test_follows_consecutive_wordpress_paged_links_with_duplicate_marker(self):
+        second_url = f"{BASE_URL}?paged=2"
+        third_url = f"{BASE_URL}?paged=3"
+        initial = page(
+            BASE_URL,
+            '<a class="next page-numbers" href="?paged=?paged=2">Next</a>',
+        )
+        second = page(
+            second_url,
+            '<a class="next page-numbers" href="?paged=?paged=3">Next</a>',
+        )
+
+        result, fetcher = self.collect(
+            initial,
+            {second_url: second, third_url: page(third_url, "")},
+        )
+
+        self.assertEqual(
+            fetcher.requests,
+            [(second_url, None, None), (third_url, None, None)],
+        )
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.stop_reason, "complete")
+
+    def test_follows_numeric_wordpress_paged_link_without_next_label(self):
+        second_url = f"{BASE_URL}?paged=2"
+        initial = page(
+            BASE_URL,
+            '<a class="page-numbers" href="?paged=?paged=2">2</a>',
+        )
+
+        result, fetcher = self.collect(
+            initial,
+            {second_url: page(second_url, "")},
+        )
+
+        self.assertEqual(fetcher.requests, [(second_url, None, None)])
+        self.assertEqual(result.pages_fetched, 2)
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.stop_reason, "complete")
+
+    def test_accepts_equivalent_wordpress_query_to_path_redirect(self):
+        second_query_url = f"{BASE_URL}?paged=2"
+        second_path_url = f"{BASE_URL}/page/2/"
+        third_query_url = f"{BASE_URL}?paged=3"
+        third_path_url = f"{BASE_URL}/page/3/"
+        initial = page(
+            BASE_URL,
+            '<a class="page-numbers" href="?paged=?paged=2">2</a>',
+        )
+        second = page(
+            second_query_url,
+            f'<a class="page-numbers" href="{BASE_URL}?paged=?paged=3">3</a>',
+            final_url=second_path_url,
+        )
+        third = page(third_query_url, "", final_url=third_path_url)
+
+        result, fetcher = self.collect(
+            initial,
+            {second_query_url: second, third_query_url: third},
+        )
+
+        self.assertEqual(
+            fetcher.requests,
+            [(second_query_url, None, None), (third_query_url, None, None)],
+        )
+        self.assertEqual(result.pages_fetched, 3)
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.stop_reason, "complete")
+
     def test_follows_ssr_page_route_despite_large_hydration_script(self):
         second_url = f"{BASE_URL}/page-2/"
         hydration = "x" * 2_100_000

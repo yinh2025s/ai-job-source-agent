@@ -617,6 +617,56 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(portfolio.primary.board.identifier, identifier)
         self.assertTrue(portfolio.primary.board.replay_safe)
 
+    def test_scoped_s5_seed_normalizes_embedded_provider_trace_method(self):
+        board_url = "https://example-search.app.loxo.co/example-search"
+        identifier = (
+            '{"path":"/example-search","tenant":"example-search","v":1}'
+        )
+        source_record = {
+            "identity_assertion": {
+                "verdict": "verified",
+                "provider": {
+                    "canonical_board_url": board_url,
+                    "evidence_url": "https://example.test/careers",
+                    "hiring_entity_name": "Example",
+                    "provider": "loxo",
+                    "relationship_verified": True,
+                    "schema_version": "1.1",
+                    "tenant": identifier,
+                    "verification_method": "verified_first_party_handoff",
+                },
+            },
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "loxo",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "loxo",
+                    "primary_url": board_url,
+                },
+                "provider_detection": {
+                    "method": "embedded_provider_url_evidence",
+                    "provider": "loxo",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        portfolio = _scoped_job_board_portfolio(source_record)
+
+        self.assertIsNotNone(portfolio)
+        assert portfolio is not None
+        self.assertEqual(
+            portfolio.primary.detection_method,
+            "linked_url_evidence",
+        )
+        self.assertEqual(portfolio.primary.board.identifier, identifier)
+        self.assertTrue(portfolio.primary.board.replay_safe)
+
     def test_scoped_s5_seed_preserves_custom_singleton_checkpoint_boundary(self):
         board_url = "https://careers.example.test/search/"
         source_record = {

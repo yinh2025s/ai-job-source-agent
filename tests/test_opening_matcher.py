@@ -11,6 +11,7 @@ from job_source_agent.opening_matcher import (
     detect_provider,
     _opening_candidates_from_links,
     _is_explicit_location_mismatch,
+    _strict_location_identity_matches,
     score_title_match,
     title_identity_matches,
     structured_job_links,
@@ -1848,6 +1849,22 @@ class OpeningMatcherTests(unittest.TestCase):
     def test_location_identity_rejects_explicit_conflicting_state(self):
         self.assertTrue(
             _is_explicit_location_mismatch("Houston, CA", "Houston, TX")
+        )
+
+    def test_location_identity_accepts_target_inside_plus_delimited_locations(self):
+        candidate = "Sunnyvale, CA + Redmond, WA + New York, NY"
+
+        self.assertFalse(
+            _is_explicit_location_mismatch(candidate, "Sunnyvale, CA")
+        )
+        self.assertFalse(
+            _is_explicit_location_mismatch(candidate, "Redmond, WA")
+        )
+        self.assertTrue(
+            _strict_location_identity_matches(candidate, "Redmond, WA")
+        )
+        self.assertTrue(
+            _is_explicit_location_mismatch(candidate, "Austin, TX")
         )
 
     def test_location_filter_keeps_remote_and_multiple_location_candidates(self):

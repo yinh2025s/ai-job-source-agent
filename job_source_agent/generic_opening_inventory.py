@@ -28,6 +28,10 @@ MAX_FINGERPRINT_SOURCE_CHARS = 5_000_000
 
 _NEXT_LABEL = re.compile(r"^(?:next(?:\s+page)?|load\s+more)$", re.IGNORECASE)
 _PAGE_ROUTE = re.compile(r"^(?P<prefix>.*)/page-(?P<number>[1-9]\d*)/?$")
+_WORDPRESS_PAGE_ROUTE = re.compile(
+    r"^(?P<prefix>.*)/page/(?P<number>[1-9]\d*)/?$"
+)
+_PAGE_QUERY_KEYS = {"page", "paged"}
 _PAGINATION_EXCLUDED_TAGS = {"script", "style", "template", "noscript"}
 _HOSTNAME = re.compile(
     r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$",
@@ -342,8 +346,13 @@ class _PaginationParser(HTMLParser):
         output: list[str] = []
         for link in self.links:
             text = " ".join(" ".join(link.text_parts).split())
-            target = urljoin(self.base_url, link.href)
-            strict_route = _is_consecutive_page_route(source_url, target)
+            target = _normalize_duplicate_page_query(
+                urljoin(self.base_url, link.href)
+            )
+            strict_route = bool(
+                _is_consecutive_page_route(source_url, target)
+                or _is_consecutive_numbered_pagination_route(source_url, target)
+            )
             marked = bool(link.rel_next or _NEXT_LABEL.fullmatch(text) or strict_route)
             if marked and not link.closed:
                 self.malformed = True
@@ -985,7 +994,9 @@ def collect_generic_opening_inventory(
             stop_reason = "pagination_cycle"
             traces.append(InventoryTraceEntry(response_url, 0, stop_reason))
             break
-        if response_url != next_url:
+        if response_url != next_url and not _is_equivalent_pagination_url(
+            next_url, response_url
+        ):
             stop_reason = "unsafe_response_url"
             traces.append(InventoryTraceEntry(response_url, 0, stop_reason))
             break
@@ -1083,6 +1094,8 @@ def _is_continuous_pagination_url(source_url: str, target_url: str) -> bool:
     if not _same_url_origin(source, target):
         # Preserve the unsafe-URL classification for explicitly marked links.
         return True
+    if _is_consecutive_numbered_pagination_route(source_url, target_url):
+        return True
 
     target_route = _PAGE_ROUTE.fullmatch(target.path)
     if target_route is not None:
@@ -1126,11 +1139,65 @@ def _is_consecutive_page_route(source_url: str, target_url: str) -> bool:
     )
 
 
+def _numbered_pagination_identity(url: str) -> tuple[str, int, list[tuple[str, str]]] | None:
+    parsed = urlparse(url)
+    query_number = _query_page_number(parsed.query)
+    if _has_page_query(parsed.query) and query_number is None:
+        return None
+    if query_number is not None:
+        return parsed.path.rstrip("/"), query_number, _query_without_page(parsed.query)
+    for pattern in (_PAGE_ROUTE, _WORDPRESS_PAGE_ROUTE):
+        match = pattern.fullmatch(parsed.path)
+        if match is not None:
+            return (
+                match.group("prefix").rstrip("/"),
+                int(match.group("number")),
+                _query_without_page(parsed.query),
+            )
+    return parsed.path.rstrip("/"), 1, _query_without_page(parsed.query)
+
+
+def _is_consecutive_numbered_pagination_route(
+    source_url: str, target_url: str
+) -> bool:
+    source = urlparse(source_url)
+    target = urlparse(target_url)
+    if not _same_url_origin(source, target):
+        return False
+    source_identity = _numbered_pagination_identity(source_url)
+    target_identity = _numbered_pagination_identity(target_url)
+    if source_identity is None or target_identity is None:
+        return False
+    source_path, source_number, source_query = source_identity
+    target_path, target_number, target_query = target_identity
+    if target_number <= 1:
+        return False
+    return bool(
+        source_path == target_path
+        and target_number == source_number + 1
+        and source_query == target_query
+    )
+
+
+def _is_equivalent_pagination_url(request_url: str, response_url: str) -> bool:
+    request = urlparse(request_url)
+    response = urlparse(response_url)
+    if not _same_url_origin(request, response):
+        return False
+    request_identity = _numbered_pagination_identity(request_url)
+    response_identity = _numbered_pagination_identity(response_url)
+    return bool(
+        request_identity is not None
+        and request_identity == response_identity
+        and request_identity[1] > 1
+    )
+
+
 def _query_page_number(query: str) -> int | None:
     values = [
         value
         for key, value in parse_qsl(query, keep_blank_values=True)
-        if key == "page"
+        if key in _PAGE_QUERY_KEYS
     ]
     if len(values) != 1 or not re.fullmatch(r"[1-9]\d*", values[0]):
         return None
@@ -1139,7 +1206,7 @@ def _query_page_number(query: str) -> int | None:
 
 def _has_page_query(query: str) -> bool:
     return any(
-        key == "page"
+        key in _PAGE_QUERY_KEYS
         for key, _value in parse_qsl(query, keep_blank_values=True)
     )
 
@@ -1148,8 +1215,22 @@ def _query_without_page(query: str) -> list[tuple[str, str]]:
     return sorted(
         (key, value)
         for key, value in parse_qsl(query, keep_blank_values=True)
-        if key != "page"
+        if key not in _PAGE_QUERY_KEYS
     )
+
+
+def _normalize_duplicate_page_query(url: str) -> str:
+    """Repair a bounded WordPress `?paged=?paged=N` next-link defect."""
+
+    parsed = urlparse(url)
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    if len(pairs) != 1 or pairs[0][0] not in _PAGE_QUERY_KEYS:
+        return url
+    key, value = pairs[0]
+    match = re.fullmatch(r"\?(page|paged)=([1-9]\d*)", value)
+    if match is None or match.group(1) != key:
+        return url
+    return urlunparse(parsed._replace(query=f"{key}={match.group(2)}"))
 
 
 def _same_url_origin(source, target) -> bool:

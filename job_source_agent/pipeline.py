@@ -1965,6 +1965,7 @@ class JobSourceAgent:
                         "data_attribute",
                         "derived_provider_config",
                         "embedded_url",
+                        "iframe_src",
                         "script_src",
                         "structured_component_attribute",
                     }
@@ -3441,6 +3442,7 @@ class JobSourceAgent:
                     "data_attribute",
                     "derived_provider_config",
                     "embedded_url",
+                    "iframe_src",
                     "script_src",
                     "structured_component_attribute",
                 }

@@ -10,6 +10,32 @@
 
 ### Added
 
+- `.174-.178` closes two frozen-100 inventory gaps without guessing an opening URL. Generic
+  WordPress pagination now recognizes `paged`, repairs the bounded `?paged=?paged=N` defect, follows
+  unlabeled numeric next pages, and accepts only same-origin canonical query-to-`/page/N/` redirects
+  with identical base path, page number, and non-pagination scope. EVONA consequently reads its
+  complete current two-page, 38-opening inventory and returns replayed `OPENING_NOT_FOUND`. S5 now
+  also admits an iframe URL as first-party embedded provider evidence only when a strict registered
+  adapter binds the tenant. The new Loxo adapter validates HTTPS tenant/path identity, server-side
+  query echo, explicit empty results, same-tenant detail URLs, and replay-safe checkpoint locators;
+  Leadenhall returns replayed `OPENING_NOT_FOUND` from its official embedded Loxo board. Focused live
+  and replay pass 1/1 for each record, the related 326-test gate passes, and the conservative ledger
+  is now 68 Exact, 21 Verified Not Found, 4 External Blocked, and 7 System Gaps.
+  Final offline gates pass 2389 tests (3 skipped), 25/25 provider cases, 6/6 resolver cases, and
+  44 native adapters with zero architecture issues. `ADAPTER_VERSION` is `2026-07-19.178`.
+
+- `.173` closes a multi-location identity defect without weakening the title gate. Explicit job
+  location lists now split on semicolon, pipe, newline, or a whitespace-delimited plus sign before
+  strict matching and conflict detection, while values such as `C++` remain intact. Meta Sunnyvale
+  therefore selects the exact `Product Design Engineer` opening whose official location set includes
+  Sunnyvale, Redmond, and New York instead of falling through to the rejected Battery specialty role.
+  The Intuit plus three-Meta focused live gate is 4/4 Exact and the same-version replay is 4/4 with
+  zero mismatch or fixture gap. A subsequent frozen 13-record live/replay gate reproduces all 13
+  outcomes with zero mismatch or fixture gap. West Oaks, Tidelands, Aveanna, and Dior now close as
+  structured `EXTERNAL_BLOCKED` after non-retryable HTTP denial on revalidated official chains;
+  none publishes an opening URL. The conservative ledger is now 68 Exact, 19 Verified Not Found,
+  4 External Blocked, and 9 System Gaps. `ADAPTER_VERSION` is `2026-07-19.173`.
+
 - `.159-.172` continues evidence-led closure of the frozen 100 while keeping focused results
   separate from the formal unified benchmark. A governance audit restores 13 `.162` live/replay
   closures that were already evidenced but missing from the matrix, initially producing a

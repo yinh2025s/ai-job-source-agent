@@ -199,6 +199,13 @@ class DiscoveredJobBoardTests(unittest.TestCase):
                 "identifier": "tenant_123",
             },
             {
+                "url": "https://example-search.app.loxo.co/example-search",
+                "provider": "loxo",
+                "identifier": (
+                    '{"path":"/example-search","tenant":"example-search","v":1}'
+                ),
+            },
+            {
                 "url": "https://careers.example.test/jobs",
                 "provider": "sitecore_next_jobs",
                 "identifier": json.dumps(
@@ -267,6 +274,13 @@ class DiscoveredJobBoardTests(unittest.TestCase):
                 "url": "https://jobs.smartrecruiters.com/Other",
                 "provider": "smartrecruiters",
                 "identifier": "Visa",
+            },
+            {
+                "url": "https://other.app.loxo.co/example-search",
+                "provider": "loxo",
+                "identifier": (
+                    '{"path":"/example-search","tenant":"example-search","v":1}'
+                ),
             },
             {
                 "url": "https://attacker.wd1.myworkdayjobs.com/Visa_Careers",

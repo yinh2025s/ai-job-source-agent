@@ -2040,7 +2040,7 @@ def _strict_location_identity_matches(
     target_parts = [part for part in target_parts if part]
     if not target_parts:
         return False
-    for option in candidate_location.split(";"):
+    for option in _location_options(candidate_location):
         candidate_parts = [
             set(re.findall(r"[a-z0-9]+", part.casefold()))
             for part in option.split(",")
@@ -2111,11 +2111,7 @@ def _is_explicit_location_mismatch(
         )
     ):
         return False
-    options = [
-        option.strip()
-        for option in re.split(r"\s*(?:;|\||\n)\s*", candidate_location)
-        if option.strip()
-    ]
+    options = _location_options(candidate_location)
     if len(options) > 1:
         return all(
             _is_explicit_location_mismatch(option, target_location)
@@ -2156,6 +2152,14 @@ def _is_explicit_location_mismatch(
         (candidate_state and target_state)
         or ("," in candidate_location and "," in target_location)
     )
+
+
+def _location_options(location: str) -> list[str]:
+    return [
+        option.strip()
+        for option in re.split(r"(?:\s*[;|\n]\s*|\s+\+\s+)", location)
+        if option.strip()
+    ]
 
 
 def _location_city_tokens(location: str, state_code: str | None) -> set[str]:

@@ -884,6 +884,27 @@ def _digitalrecruiters_policy(board: JobBoard) -> bool:
     )
 
 
+def _loxo_policy(board: JobBoard) -> bool:
+    identity = _strict_json(board.identifier or "")
+    if identity is None or set(identity) != {"path", "tenant", "v"}:
+        return False
+    tenant = identity.get("tenant")
+    path = identity.get("path")
+    parsed = urlparse(board.url)
+    return bool(
+        identity.get("v") == 1
+        and isinstance(tenant, str)
+        and re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", tenant)
+        and isinstance(path, str)
+        and re.fullmatch(r"/[a-z0-9](?:[a-z0-9-]{0,199}[a-z0-9])?", path)
+        and parsed.hostname == f"{tenant}.app.loxo.co"
+        and parsed.path == path
+        and _no_query(board.url)
+        and json.dumps(identity, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+        == board.identifier
+    )
+
+
 def _workday_policy(board: JobBoard) -> bool:
     identifier = board.identifier or ""
     if identifier.count("/") != 1:
@@ -922,6 +943,7 @@ _REPLAY_SAFE_POLICIES: dict[str, Callable[[JobBoard], bool]] = {
     "greenhouse": _greenhouse_policy,
     "healthcaresource": _healthcaresource_policy,
     "icims": _icims_policy,
+    "loxo": _loxo_policy,
     "oracle_hcm": _oracle_hcm_policy,
     "peoplesoft": _peoplesoft_policy,
     "pinpoint": _pinpoint_policy,
