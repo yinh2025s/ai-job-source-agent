@@ -1,0 +1,3609 @@
+{
+  "schema_version": "1.0",
+  "observed_at": "2026-07-18",
+  "purpose": "fresh disjoint 100-posting three-route live evaluation",
+  "prior_cohort_job_id_overlap": 0,
+  "record_count": 100,
+  "postings": [
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-loveland-innovations-4424981543",
+      "external_apply_url": null,
+      "company_name": "Loveland Innovations",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/loveland-innovations",
+      "job_title": "DevOps Engineer",
+      "job_location": "Pleasant Grove, UT",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 0,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-loveland-innovations-4424981543",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-loveland-innovations-4424981543"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-iclasspro-class-management-software-4441446072",
+      "external_apply_url": null,
+      "company_name": "iClassPro - Class Management Software",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/iclasspro-inc-",
+      "job_title": "DevOps Engineer",
+      "job_location": "Longview, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 1,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-iclasspro-class-management-software-4441446072",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-iclasspro-class-management-software-4441446072"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-indica-labs-4438426469",
+      "external_apply_url": null,
+      "company_name": "Indica Labs",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/indica-labs",
+      "job_title": "DevOps Engineer",
+      "job_location": "Albuquerque, NM",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 2,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-indica-labs-4438426469",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-indica-labs-4438426469"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-walkme-4427575841",
+      "external_apply_url": null,
+      "company_name": "WalkMe",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/walkme",
+      "job_title": "DevOps Engineer",
+      "job_location": "Detroit, MI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 3,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-walkme-4427575841",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-walkme-4427575841"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-aperia-4441209886",
+      "external_apply_url": null,
+      "company_name": "Aperia",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/aperia-solutions-inc.",
+      "job_title": "DevOps Engineer",
+      "job_location": "Omaha, NE",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 4,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-aperia-4441209886",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-aperia-4441209886"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-tyler-technologies-4415123997",
+      "external_apply_url": null,
+      "company_name": "Tyler Technologies",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/tyler-technologies",
+      "job_title": "DevOps Engineer",
+      "job_location": "Lubbock, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 5,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-tyler-technologies-4415123997",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-tyler-technologies-4415123997"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-caesars-entertainment-4409111101",
+      "external_apply_url": null,
+      "company_name": "Caesars Entertainment",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/caesars-entertainment-inc",
+      "job_title": "DevOps Engineer",
+      "job_location": "Reno, NV",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 6,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-caesars-entertainment-4409111101",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-caesars-entertainment-4409111101"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-vectra-ai-4430117412",
+      "external_apply_url": null,
+      "company_name": "Vectra AI",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/vectra_ai",
+      "job_title": "DevOps Engineer",
+      "job_location": "Austin, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 7,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-vectra-ai-4430117412",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-vectra-ai-4430117412"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-wolfe-llc-4411757323",
+      "external_apply_url": null,
+      "company_name": "Wolfe, LLC",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/wolfe.com",
+      "job_title": "DevOps Engineer",
+      "job_location": "Pittsburgh, PA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 8,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-wolfe-llc-4411757323",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-wolfe-llc-4411757323"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-lorum-4416280287",
+      "external_apply_url": null,
+      "company_name": "Lorum",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/lorum-finance",
+      "job_title": "DevOps Engineer",
+      "job_location": "New York, NY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 9,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-lorum-4416280287",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-lorum-4416280287"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-statrad-4440260052",
+      "external_apply_url": null,
+      "company_name": "StatRad",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/statrad",
+      "job_title": "DevOps Engineer",
+      "job_location": "San Diego, CA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 10,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-statrad-4440260052",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-statrad-4440260052"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-raleigh-at-versana-4428784625",
+      "external_apply_url": null,
+      "company_name": "Versana",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/versanatech",
+      "job_title": "DevOps Engineer - Raleigh",
+      "job_location": "Raleigh, NC",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 11,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-raleigh-at-versana-4428784625",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-raleigh-at-versana-4428784625"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-altec-4440790313",
+      "external_apply_url": null,
+      "company_name": "Altec",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/altec",
+      "job_title": "DevOps Engineer",
+      "job_location": "Birmingham, AL",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 12,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-altec-4440790313",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-altec-4440790313"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-splashlight-4425533727",
+      "external_apply_url": null,
+      "company_name": "Splashlight",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/splashlight",
+      "job_title": "DevOps Engineer",
+      "job_location": "New York, NY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 13,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-splashlight-4425533727",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-splashlight-4425533727"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-ivo-4401137274",
+      "external_apply_url": null,
+      "company_name": "Ivo",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/ivoai",
+      "job_title": "DevOps Engineer",
+      "job_location": "San Francisco, CA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 14,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-ivo-4401137274",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-ivo-4401137274"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cloud-devops-engineer-chandler-az-at-matlen-silver-4440092339",
+      "external_apply_url": null,
+      "company_name": "Matlen Silver",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/matlen-silver",
+      "job_title": "Cloud DevOps Engineer | Chandler AZ",
+      "job_location": "Chandler, AZ",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 15,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cloud-devops-engineer-chandler-az-at-matlen-silver-4440092339",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cloud-devops-engineer-chandler-az-at-matlen-silver-4440092339"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineernew%0Aomaha-nebraska-united-states-at-investigative-case-management-powered-by-tapestrii-4440240968",
+      "external_apply_url": null,
+      "company_name": "Investigative Case Management powered by Tapestrii",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "",
+      "job_title": "DevOps EngineerNew Omaha, Nebraska, United States",
+      "job_location": "Omaha, NE",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 16,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineernew%0Aomaha-nebraska-united-states-at-investigative-case-management-powered-by-tapestrii-4440240968",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineernew%0Aomaha-nebraska-united-states-at-investigative-case-management-powered-by-tapestrii-4440240968"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-knock-4410293359",
+      "external_apply_url": null,
+      "company_name": "Knock",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/knocklabs",
+      "job_title": "DevOps Engineer",
+      "job_location": "New York, NY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 17,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-knock-4410293359",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-knock-4410293359"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-nyc-department-of-social-services-4425365717",
+      "external_apply_url": null,
+      "company_name": "NYC Department of Social Services",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/nyc-department-of-social-services",
+      "job_title": "DEVOPS ENGINEER",
+      "job_location": "Brooklyn, NY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 18,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-nyc-department-of-social-services-4425365717",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-nyc-department-of-social-services-4425365717"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-local-at-pitch-aeronautics-4438766276",
+      "external_apply_url": null,
+      "company_name": "Pitch Aeronautics",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/pitch-aeronautics",
+      "job_title": "DevOps Engineer (local)",
+      "job_location": "Boise, ID",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 19,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 0,
+          "keywords": "DevOps Engineer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-local-at-pitch-aeronautics-4438766276",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/devops-engineer-local-at-pitch-aeronautics-4438766276"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/information-security-and-compliance-analyst-at-city-of-lubbock-4432727055",
+      "external_apply_url": null,
+      "company_name": "City of Lubbock",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/city-of-lubbock",
+      "job_title": "Information Security and Compliance Analyst",
+      "job_location": "Lubbock, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 20,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/information-security-and-compliance-analyst-at-city-of-lubbock-4432727055",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/information-security-and-compliance-analyst-at-city-of-lubbock-4432727055"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sunwest-bank-4420685217",
+      "external_apply_url": null,
+      "company_name": "Sunwest Bank",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/sunwest-bank",
+      "job_title": "Cybersecurity Analyst",
+      "job_location": "Sandy, UT",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 21,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sunwest-bank-4420685217",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sunwest-bank-4420685217"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-city-of-pharr-tx-4437874960",
+      "external_apply_url": null,
+      "company_name": "City of Pharr, TX",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/pharr-tx",
+      "job_title": "Cybersecurity Analyst",
+      "job_location": "Pharr, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 22,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-city-of-pharr-tx-4437874960",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-city-of-pharr-tx-4437874960"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/information-security-analyst-at-stuller-inc-4424475160",
+      "external_apply_url": null,
+      "company_name": "Stuller, Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/stullerinc",
+      "job_title": "Information Security Analyst",
+      "job_location": "Lafayette, Louisiana Metropolitan Area",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 23,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/information-security-analyst-at-stuller-inc-4424475160",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/information-security-analyst-at-stuller-inc-4424475160"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sds-international-inc-4317924361",
+      "external_apply_url": null,
+      "company_name": "SDS International, Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/atdlink",
+      "job_title": "Cybersecurity Analyst",
+      "job_location": "Omaha, NE",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 24,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sds-international-inc-4317924361",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sds-international-inc-4317924361"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-sunbird-software-4432015135",
+      "external_apply_url": null,
+      "company_name": "Sunbird Software",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/sunbird-software",
+      "job_title": "Cyber Security Analyst",
+      "job_location": "Sioux Falls, SD",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 25,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-sunbird-software-4432015135",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-sunbird-software-4432015135"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-ignite-4441163690",
+      "external_apply_url": null,
+      "company_name": "IGNITE",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/igniteimpossible",
+      "job_title": "CYBER SECURITY ANALYST",
+      "job_location": "Huntsville, AL",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 26,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-ignite-4441163690",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-ignite-4441163690"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/defense-cyber-analyst-at-nisga-a-tek-llc-4409058516",
+      "external_apply_url": null,
+      "company_name": "Nisga'a Tek, LLC",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/nisga-a-tek-llc",
+      "job_title": "Defense Cyber Analyst",
+      "job_location": "Honolulu, HI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 27,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/defense-cyber-analyst-at-nisga-a-tek-llc-4409058516",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/defense-cyber-analyst-at-nisga-a-tek-llc-4409058516"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cyber-operations-analyst-oahu-at-hawaiian-electric-4416993271",
+      "external_apply_url": null,
+      "company_name": "Hawaiian Electric",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/hawaiianelectric",
+      "job_title": "Cyber Operations Analyst - Oahu",
+      "job_location": "Hawaii, United States",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 28,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cyber-operations-analyst-oahu-at-hawaiian-electric-4416993271",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cyber-operations-analyst-oahu-at-hawaiian-electric-4416993271"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/security-analyst-at-target-hospitality-4437076185",
+      "external_apply_url": null,
+      "company_name": "Target Hospitality",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/target-hospitality",
+      "job_title": "Security Analyst",
+      "job_location": "The Woodlands, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 29,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/security-analyst-at-target-hospitality-4437076185",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/security-analyst-at-target-hospitality-4437076185"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/information-security-analyst-is-mod-at-mayo-clinic-4442117657",
+      "external_apply_url": null,
+      "company_name": "Mayo Clinic",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/mayo-clinic",
+      "job_title": "Information Security Analyst - IS-Mod",
+      "job_location": "Rochester, MN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 30,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/information-security-analyst-is-mod-at-mayo-clinic-4442117657",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/information-security-analyst-is-mod-at-mayo-clinic-4442117657"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/exploitation-analyst-ea-level-1-4-at-sentar-inc-4435796041",
+      "external_apply_url": null,
+      "company_name": "Sentar Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/sentar",
+      "job_title": "Exploitation Analyst (EA): Level 1-4",
+      "job_location": "Mahinahina Camp, HI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 31,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/exploitation-analyst-ea-level-1-4-at-sentar-inc-4435796041",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/exploitation-analyst-ea-level-1-4-at-sentar-inc-4435796041"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/vulnerability-analyst-information-technology-services-exempt-at-benefis-health-system-4432838078",
+      "external_apply_url": null,
+      "company_name": "Benefis Health System",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/benefis-health-system",
+      "job_title": "Vulnerability Analyst, Information Technology Services (Exempt)",
+      "job_location": "Great Falls, MT",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 32,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/vulnerability-analyst-information-technology-services-exempt-at-benefis-health-system-4432838078",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/vulnerability-analyst-information-technology-services-exempt-at-benefis-health-system-4432838078"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-diamondback-energy-4432462031",
+      "external_apply_url": null,
+      "company_name": "Diamondback Energy",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/diamondbackenergy",
+      "job_title": "Cybersecurity Analyst",
+      "job_location": "Oklahoma City, OK",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 33,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-diamondback-energy-4432462031",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-diamondback-energy-4432462031"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/it-cyber-security-risk-analyst-at-cretex-companies-inc-4439832665",
+      "external_apply_url": null,
+      "company_name": "Cretex Companies, Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/cretex-companies-inc-",
+      "job_title": "IT Cyber Security Risk Analyst",
+      "job_location": "Elk River, MN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 34,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/it-cyber-security-risk-analyst-at-cretex-companies-inc-4439832665",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/it-cyber-security-risk-analyst-at-cretex-companies-inc-4439832665"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/information-assurance-analyst-oahu-at-hawaiian-electric-4438885728",
+      "external_apply_url": null,
+      "company_name": "Hawaiian Electric",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/hawaiianelectric",
+      "job_title": "Information Assurance Analyst - Oahu",
+      "job_location": "Hawaii, United States",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 35,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/information-assurance-analyst-oahu-at-hawaiian-electric-4438885728",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/information-assurance-analyst-oahu-at-hawaiian-electric-4438885728"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/computer-network-defense-analyst-at-fotomill-studios-limited-4370885298",
+      "external_apply_url": null,
+      "company_name": "FOTOMILL STUDIOS LIMITED",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/fotomill-studios-limited",
+      "job_title": "Computer Network Defense Analyst",
+      "job_location": "Wahiawa, HI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 36,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/computer-network-defense-analyst-at-fotomill-studios-limited-4370885298",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/computer-network-defense-analyst-at-fotomill-studios-limited-4370885298"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/security-analyst-at-pacs-4441642099",
+      "external_apply_url": null,
+      "company_name": "PACS",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/pacsutah",
+      "job_title": "Security Analyst",
+      "job_location": "Salt Lake City, UT",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 37,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/security-analyst-at-pacs-4441642099",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/security-analyst-at-pacs-4441642099"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-north-dakota-information-technology-ndit-4440062680",
+      "external_apply_url": null,
+      "company_name": "North Dakota Information Technology (NDIT)",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/ndit",
+      "job_title": "Cyber Security Analyst",
+      "job_location": "Fargo, ND",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 38,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-north-dakota-information-technology-ndit-4440062680",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-north-dakota-information-technology-ndit-4440062680"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/grc-analyst-intermediate-at-university-of-oklahoma-4430146950",
+      "external_apply_url": null,
+      "company_name": "University of Oklahoma",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "",
+      "job_title": "GRC Analyst Intermediate",
+      "job_location": "Norman, OK",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 39,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/grc-analyst-intermediate-at-university-of-oklahoma-4430146950",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/grc-analyst-intermediate-at-university-of-oklahoma-4430146950"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-designer-at-steame-4426611583",
+      "external_apply_url": null,
+      "company_name": "STEAMe",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/steame-llc",
+      "job_title": "Product Designer",
+      "job_location": "Chicago, IL",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 40,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-steame-4426611583",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-steame-4426611583"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-designer-at-champ-4440077513",
+      "external_apply_url": null,
+      "company_name": "CHAMP",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/champtitles",
+      "job_title": "Product Designer",
+      "job_location": "Cleveland, OH",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 41,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-champ-4440077513",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-champ-4440077513"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-ensodata-4440315938",
+      "external_apply_url": null,
+      "company_name": "EnsoData",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/ensodata",
+      "job_title": "User Experience (UX) Designer",
+      "job_location": "Madison, WI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 42,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-ensodata-4440315938",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-ensodata-4440315938"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-holland-america-line-4441219545",
+      "external_apply_url": null,
+      "company_name": "Holland America Line",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/holland-america-line",
+      "job_title": "UX Designer",
+      "job_location": "Seattle, WA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 43,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-holland-america-line-4441219545",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-holland-america-line-4441219545"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-user-experience-designer-ii-at-arup-laboratories-4441135780",
+      "external_apply_url": null,
+      "company_name": "ARUP Laboratories",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/arup-laboratories",
+      "job_title": "UX (User Experience) Designer II",
+      "job_location": "Salt Lake City, UT",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 44,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-user-experience-designer-ii-at-arup-laboratories-4441135780",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-user-experience-designer-ii-at-arup-laboratories-4441135780"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-img-international-medical-group-4426438449",
+      "external_apply_url": null,
+      "company_name": "IMG (International Medical Group)",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/international-medical-group",
+      "job_title": "UX Designer",
+      "job_location": "Indianapolis, IN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 45,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-img-international-medical-group-4426438449",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-img-international-medical-group-4426438449"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-designer-ii-at-the-home-depot-4434655643",
+      "external_apply_url": null,
+      "company_name": "The Home Depot",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/the-home-depot",
+      "job_title": "UX DESIGNER II",
+      "job_location": "Atlanta, GA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 46,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-ii-at-the-home-depot-4434655643",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-ii-at-the-home-depot-4434655643"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-necessary-ventures-4437656059",
+      "external_apply_url": null,
+      "company_name": "Necessary Ventures",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/necessaryventures",
+      "job_title": "User Experience (UX) Designer",
+      "job_location": "Madison, WI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 47,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-necessary-ventures-4437656059",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-necessary-ventures-4437656059"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-versana-4429309954",
+      "external_apply_url": null,
+      "company_name": "Versana",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/versanatech",
+      "job_title": "UX Designer",
+      "job_location": "Raleigh, NC",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 48,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-versana-4429309954",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-versana-4429309954"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/user-experience-designer-ii-at-frost-4406714624",
+      "external_apply_url": null,
+      "company_name": "Frost",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/frostbank",
+      "job_title": "User Experience Designer II",
+      "job_location": "San Antonio, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 49,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/user-experience-designer-ii-at-frost-4406714624",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/user-experience-designer-ii-at-frost-4406714624"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-designer-portland-metro-at-oneapp-4439365621",
+      "external_apply_url": null,
+      "company_name": "OneApp",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/oneapprentals",
+      "job_title": "Product Designer - Portland Metro",
+      "job_location": "Portland, OR",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 50,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-portland-metro-at-oneapp-4439365621",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-portland-metro-at-oneapp-4439365621"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ui-ux-designer-at-lab37-4427109962",
+      "external_apply_url": null,
+      "company_name": "Lab37",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/lab37us",
+      "job_title": "UI/UX Designer",
+      "job_location": "Pittsburgh, PA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 51,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ui-ux-designer-at-lab37-4427109962",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ui-ux-designer-at-lab37-4427109962"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-equifax-4439438787",
+      "external_apply_url": null,
+      "company_name": "Equifax",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/equifax",
+      "job_title": "User Experience (UX) Designer",
+      "job_location": "Boise, ID",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 52,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-equifax-4439438787",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-equifax-4439438787"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-designer-at-hp-4438838410",
+      "external_apply_url": null,
+      "company_name": "HP",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/hp",
+      "job_title": "Product Designer",
+      "job_location": "Vancouver, WA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 53,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-hp-4438838410",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-hp-4438838410"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-ui-product-designer-at-milwaukee-tool-4434655043",
+      "external_apply_url": null,
+      "company_name": "Milwaukee Tool",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/milwaukee-tool",
+      "job_title": "UX/UI Product Designer",
+      "job_location": "Brookfield, WI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 54,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-ui-product-designer-at-milwaukee-tool-4434655043",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-ui-product-designer-at-milwaukee-tool-4434655043"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-designer-at-fabric-4425643348",
+      "external_apply_url": null,
+      "company_name": "Fabric",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/fabric-hlth",
+      "job_title": "Product Designer",
+      "job_location": "New York, NY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 55,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-fabric-4425643348",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-fabric-4425643348"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-dechert-llp-4438146712",
+      "external_apply_url": null,
+      "company_name": "Dechert LLP",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/dechert-llp",
+      "job_title": "UX Designer",
+      "job_location": "Philadelphia, PA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 56,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-dechert-llp-4438146712",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-dechert-llp-4438146712"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-prophetic-4430273063",
+      "external_apply_url": null,
+      "company_name": "Prophetic",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/propheticsoftware",
+      "job_title": "UX Designer",
+      "job_location": "Portland, OR",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 57,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-prophetic-4430273063",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-prophetic-4430273063"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-designer-at-slant-crm-4335431264",
+      "external_apply_url": null,
+      "company_name": "Slant CRM",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/slantcrmforadvisors",
+      "job_title": "Product Designer",
+      "job_location": "Lehi, UT",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 58,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-slant-crm-4335431264",
+          "status": "unavailable",
+          "reason": "fetch_failed"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-designer-at-slant-crm-4335431264"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ui-ux-designer-at-steampunk-inc-4290752432",
+      "external_apply_url": null,
+      "company_name": "Steampunk, Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/steampunk-inc",
+      "job_title": "UI/UX Designer",
+      "job_location": "McLean, VA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 59,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 2,
+          "keywords": "UX Designer",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ui-ux-designer-at-steampunk-inc-4290752432",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ui-ux-designer-at-steampunk-inc-4290752432"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-brown-and-caldwell-4433489743",
+      "external_apply_url": null,
+      "company_name": "Brown and Caldwell",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/brown-and-caldwell",
+      "job_title": "Project Manager",
+      "job_location": "Wailuku, HI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 60,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-brown-and-caldwell-4433489743",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-brown-and-caldwell-4433489743"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-strike-4420466895",
+      "external_apply_url": null,
+      "company_name": "STRIKE",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/strike-llc",
+      "job_title": "Project Manager",
+      "job_location": "Corpus Christi, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 61,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-strike-4420466895",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-strike-4420466895"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-qxo-4441635475",
+      "external_apply_url": null,
+      "company_name": "QXO",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/qxoinc",
+      "job_title": "Project Manager",
+      "job_location": "Rathdrum, ID",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 62,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-qxo-4441635475",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-qxo-4441635475"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-american-fabrication-inc-4435856709",
+      "external_apply_url": null,
+      "company_name": "American Fabrication Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/american-fabrication-inc-",
+      "job_title": "Project Manager",
+      "job_location": "Idaho Falls, ID",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 63,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-american-fabrication-inc-4435856709",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-american-fabrication-inc-4435856709"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-promach-4437572476",
+      "external_apply_url": null,
+      "company_name": "ProMach",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/pro-mach-inc",
+      "job_title": "Project Manager",
+      "job_location": "Huntington, IN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 64,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-promach-4437572476",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-promach-4437572476"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-system-one-4434872384",
+      "external_apply_url": null,
+      "company_name": "System One",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/system-one",
+      "job_title": "Project Manager",
+      "job_location": "Beaumont-Port Arthur Area",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 65,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-system-one-4434872384",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-system-one-4434872384"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-wendel-companies-4419993513",
+      "external_apply_url": null,
+      "company_name": "WENDEL Companies",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/wendel-companies",
+      "job_title": "Project Manager",
+      "job_location": "Albany, NY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 66,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-wendel-companies-4419993513",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-wendel-companies-4419993513"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-team-royal-4437878290",
+      "external_apply_url": null,
+      "company_name": "Team Royal",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/teamroyalus",
+      "job_title": "Project Manager",
+      "job_location": "Lafayette, LA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 67,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-team-royal-4437878290",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-team-royal-4437878290"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-bwxt-4421960984",
+      "external_apply_url": null,
+      "company_name": "BWXT",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/bwx-technologies",
+      "job_title": "Project Manager",
+      "job_location": "Idaho Falls, ID",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 68,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-bwxt-4421960984",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-bwxt-4421960984"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-crawford-thomas-recruiting-4441119775",
+      "external_apply_url": null,
+      "company_name": "Crawford Thomas Recruiting",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/crawford-thomas-recruiting",
+      "job_title": "Project Manager",
+      "job_location": "Donalsonville, GA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 69,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-crawford-thomas-recruiting-4441119775",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-crawford-thomas-recruiting-4441119775"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-wendel-companies-4433535345",
+      "external_apply_url": null,
+      "company_name": "WENDEL Companies",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/wendel-companies",
+      "job_title": "Project Manager",
+      "job_location": "Williamsville, NY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 70,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-wendel-companies-4433535345",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-wendel-companies-4433535345"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-conrad-consulting-4433266836",
+      "external_apply_url": null,
+      "company_name": "Conrad Consulting",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/conrad-consulting-",
+      "job_title": "Project Manager",
+      "job_location": "Toledo, OH",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 71,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-conrad-consulting-4433266836",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-conrad-consulting-4433266836"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-rider-levett-bucknall-rlb-4403834520",
+      "external_apply_url": null,
+      "company_name": "Rider Levett Bucknall RLB",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/rider-levett-bucknall-3",
+      "job_title": "Project Manager",
+      "job_location": "Honolulu, HI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 72,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-rider-levett-bucknall-rlb-4403834520",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-rider-levett-bucknall-rlb-4403834520"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-nextplay-jobs-4436816565",
+      "external_apply_url": null,
+      "company_name": "NextPlay Jobs",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/next-play-jobs",
+      "job_title": "Project Manager",
+      "job_location": "Wichita, Kansas Metropolitan Area",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 73,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-nextplay-jobs-4436816565",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-nextplay-jobs-4436816565"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-salas-o-brien-4193245312",
+      "external_apply_url": null,
+      "company_name": "Salas O'Brien",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/salasobrien",
+      "job_title": "Project Manager",
+      "job_location": "Evansville, IN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 74,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-salas-o-brien-4193245312",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-salas-o-brien-4193245312"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-%E2%80%93-bloomington%0Afull-time-at-hays-%2B-sons-4405588363",
+      "external_apply_url": null,
+      "company_name": "Hays + Sons",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/hays-and-sons-complete-restoration",
+      "job_title": "Project Manager \u2013 Bloomington Full Time",
+      "job_location": "Bloomington, IN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 75,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-%E2%80%93-bloomington%0Afull-time-at-hays-%2B-sons-4405588363",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-%E2%80%93-bloomington%0Afull-time-at-hays-%2B-sons-4405588363"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-b-d-industries-inc-4440288309",
+      "external_apply_url": null,
+      "company_name": "B&D Industries, Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/b&d-industries",
+      "job_title": "Project Manager",
+      "job_location": "Santa Teresa, NM",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 76,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-b-d-industries-inc-4440288309",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-b-d-industries-inc-4440288309"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-vertiv-4436431063",
+      "external_apply_url": null,
+      "company_name": "Vertiv",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/vertiv",
+      "job_title": "Project Manager",
+      "job_location": "Greenville, SC",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 77,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-vertiv-4436431063",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-vertiv-4436431063"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-northern-clearing-inc-4438894054",
+      "external_apply_url": null,
+      "company_name": "Northern Clearing, Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/northern-clearing",
+      "job_title": "Project Manager",
+      "job_location": "Buffalo, NY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 78,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-northern-clearing-inc-4438894054",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-northern-clearing-inc-4438894054"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-adapture-4440034727",
+      "external_apply_url": null,
+      "company_name": "Adapture",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/adapture",
+      "job_title": "Project Manager",
+      "job_location": "Sebree, KY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 79,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 3,
+          "keywords": "Project Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-adapture-4440034727",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-manager-at-adapture-4440034727"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/talent-manager-at-city-of-sioux-falls-4435941256",
+      "external_apply_url": null,
+      "company_name": "City of Sioux Falls",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/cityofsiouxfalls",
+      "job_title": "Talent Manager",
+      "job_location": "Sioux Falls, SD",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 80,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/talent-manager-at-city-of-sioux-falls-4435941256",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/talent-manager-at-city-of-sioux-falls-4435941256"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/assistant-director-of-human-resources-at-wichita-company-limited-4441608516",
+      "external_apply_url": null,
+      "company_name": "WICHITA COMPANY LIMITED",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/wichita-company-limited",
+      "job_title": "Assistant Director of Human Resources",
+      "job_location": "Wichita, KS",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 81,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/assistant-director-of-human-resources-at-wichita-company-limited-4441608516",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/assistant-director-of-human-resources-at-wichita-company-limited-4441608516"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/hr-operations-and-services-manager-at-city-of-college-station-4426127673",
+      "external_apply_url": null,
+      "company_name": "City of College Station",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/city-of-college-station",
+      "job_title": "HR Operations and Services Manager",
+      "job_location": "College Station, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 82,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-operations-and-services-manager-at-city-of-college-station-4426127673",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-operations-and-services-manager-at-city-of-college-station-4426127673"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-jushi-holdings-inc-4422128904",
+      "external_apply_url": null,
+      "company_name": "Jushi Holdings Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/jushi-inc",
+      "job_title": "Human Resources Manager",
+      "job_location": "Reno, NV",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 83,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-jushi-holdings-inc-4422128904",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-jushi-holdings-inc-4422128904"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-state-of-montana-4439231755",
+      "external_apply_url": null,
+      "company_name": "State of Montana",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/state-of-montana",
+      "job_title": "Human Resources Manager",
+      "job_location": "Townsend, MT",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 84,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-state-of-montana-4439231755",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-state-of-montana-4439231755"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-arkema-4424789545",
+      "external_apply_url": null,
+      "company_name": "Arkema",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/arkema",
+      "job_title": "Human Resources Manager",
+      "job_location": "Beaumont, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 85,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-arkema-4424789545",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-arkema-4424789545"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-job-at-arkema-4421174958",
+      "external_apply_url": null,
+      "company_name": "Arkema",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/arkema",
+      "job_title": "Human Resources Manager Job",
+      "job_location": "Beaumont, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 86,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-job-at-arkema-4421174958",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-job-at-arkema-4421174958"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-treehouse-foods-4436272543",
+      "external_apply_url": null,
+      "company_name": "TreeHouse Foods",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/treehouse-foods",
+      "job_title": "Human Resources Manager",
+      "job_location": "Green Bay, WI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 87,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-treehouse-foods-4436272543",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-treehouse-foods-4436272543"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-ken-garff-automotive-group-4423595647",
+      "external_apply_url": null,
+      "company_name": "Ken Garff Automotive Group",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/ken-garff-automotive-group",
+      "job_title": "Human Resources Manager",
+      "job_location": "Cheyenne, WY",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 88,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-ken-garff-automotive-group-4423595647",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-ken-garff-automotive-group-4423595647"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/hr-manager-multi-site-at-dsv-global-transport-and-logistics-4434690342",
+      "external_apply_url": null,
+      "company_name": "DSV - Global Transport and Logistics",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/dsv",
+      "job_title": "HR Manager (Multi Site)",
+      "job_location": "Carson City, NV",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 89,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-manager-multi-site-at-dsv-global-transport-and-logistics-4434690342",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-manager-multi-site-at-dsv-global-transport-and-logistics-4434690342"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-b-d-industries-inc-4424648213",
+      "external_apply_url": null,
+      "company_name": "B&D Industries, Inc.",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/b&d-industries",
+      "job_title": "Human Resources Manager",
+      "job_location": "Albuquerque, NM",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 90,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-b-d-industries-inc-4424648213",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-b-d-industries-inc-4424648213"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/manager-human-resources-at-alaska-commercial-company-4421650792",
+      "external_apply_url": null,
+      "company_name": "Alaska Commercial Company",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/alaska-commercial-company",
+      "job_title": "Manager, Human Resources",
+      "job_location": "Anchorage, AK",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 91,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/manager-human-resources-at-alaska-commercial-company-4421650792",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/manager-human-resources-at-alaska-commercial-company-4421650792"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/hr-manager-at-focus-4437129020",
+      "external_apply_url": null,
+      "company_name": "Focus",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/focus",
+      "job_title": "HR Manager",
+      "job_location": "Anniston, AL",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 92,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-manager-at-focus-4437129020",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-manager-at-focus-4437129020"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/hr-manager-at-aramark-4432355373",
+      "external_apply_url": null,
+      "company_name": "Aramark",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/aramark",
+      "job_title": "HR Manager",
+      "job_location": "Indianapolis, IN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 93,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-manager-at-aramark-4432355373",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-manager-at-aramark-4432355373"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-kelly-4407059057",
+      "external_apply_url": null,
+      "company_name": "Kelly",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/kellyservices",
+      "job_title": "Human Resources Manager",
+      "job_location": "Rochester, MN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 94,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-kelly-4407059057",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-kelly-4407059057"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-resolute-road-hospitality-4440067584",
+      "external_apply_url": null,
+      "company_name": "Resolute Road Hospitality",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/resolute-road-hospitality",
+      "job_title": "Human Resources Manager",
+      "job_location": "Spokane, WA",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 95,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-resolute-road-hospitality-4440067584",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-resolute-road-hospitality-4440067584"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-ii-at-cintas-4423350020",
+      "external_apply_url": null,
+      "company_name": "Cintas",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/cintas",
+      "job_title": "Human Resources Manager II",
+      "job_location": "Fort Myers, FL",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 96,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-ii-at-cintas-4423350020",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-ii-at-cintas-4423350020"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-systematic-business-consulting-4440044707",
+      "external_apply_url": null,
+      "company_name": "Systematic Business Consulting",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/systematic-business-consulting",
+      "job_title": "Human Resources Manager",
+      "job_location": "Evansville, IN",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 97,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-systematic-business-consulting-4440044707",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-systematic-business-consulting-4440044707"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-crosby-4412151316",
+      "external_apply_url": null,
+      "company_name": "Crosby",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/thecrosbygroup",
+      "job_title": "Human Resources Manager",
+      "job_location": "Longview, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 98,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-crosby-4412151316",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-crosby-4412151316"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/corporate-human-resources-manager-at-heritage-companies-4440274758",
+      "external_apply_url": null,
+      "company_name": "Heritage Companies",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/heritage-hotels-and-resorts",
+      "job_title": "Corporate Human Resources Manager",
+      "job_location": "Santa Fe, NM",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 99,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/corporate-human-resources-manager-at-heritage-companies-4440274758",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/corporate-human-resources-manager-at-heritage-companies-4440274758"
+        }
+      }
+    }
+  ]
+}

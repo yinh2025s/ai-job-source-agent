@@ -110,6 +110,11 @@ def tenant_locator(canonical_job_list_url: str) -> str:
 
 
 def identity_urls_equivalent(actual: str, expected: str, *, allow_www: bool = False) -> bool:
+    try:
+        actual = canonicalize_identity_url(actual)
+        expected = canonicalize_identity_url(expected)
+    except ValueError:
+        return False
     if actual == expected:
         return True
     if not allow_www:

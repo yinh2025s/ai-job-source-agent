@@ -15,6 +15,7 @@ _DOMAIN = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.-]{0,251}[A-Za-z0-9])?$")
 _MAX_STATE_CHARS = 2_000_000
 _MAX_PAGES = 5
 _PAGE_SIZE = 10
+_NON_PRODUCTION_LABELS = {"demo", "sandbox", "staging", "test", "testing"}
 
 
 class EightfoldAdapter:
@@ -74,9 +75,46 @@ class EightfoldAdapter:
 
         state = _smart_apply_state(shell.html)
         state_domain = str(state.get("domain") or "").strip().casefold()
+        if not state:
+            shell_evidence = _non_production_shell_evidence(shell.html, host, domain)
+            if shell_evidence:
+                return _unsupported(
+                    board,
+                    "non-production Eightfold shell has no public inventory",
+                    variant="non_production_shell",
+                    board_urls=board_urls,
+                    response_source=shell.source,
+                    shell_evidence=shell_evidence,
+                    inventory_evidence="missing_smart_apply_data",
+                    production_tenant_verified=False,
+                    canonical_detail_verified=False,
+                )
+            return _unsupported(
+                board,
+                "missing Eightfold smartApplyData; board inventory is not verified",
+                variant="missing_public_inventory",
+                board_urls=board_urls,
+                response_source=shell.source,
+                inventory_evidence="missing_smart_apply_data",
+                production_tenant_verified=False,
+                canonical_detail_verified=False,
+            )
+        if not _is_eightfold_state(state):
+            return _invalid(board, board_urls, api_urls, "invalid Eightfold smartApplyData")
+
         active_domain = _resolved_state_domain(host, domain, state_domain)
-        if not _is_eightfold_state(state) or active_domain is None:
-            return _invalid(board, board_urls, api_urls, "missing or mismatched Eightfold smartApplyData")
+        state_identity_evidence = "board_identifier"
+        if active_domain is None:
+            # Hosted tenants often use a customer domain that differs from the
+            # tenant hostname.  A same-origin canonical opening is the public
+            # evidence that binds that inventory to this particular board.
+            if not _inventory_binds_board(state.get("positions"), board):
+                return _unsupported(
+                    board,
+                    "Eightfold inventory does not verify the board tenant",
+                )
+            active_domain = state_domain
+            state_identity_evidence = "canonical_position_url"
 
         candidates: list[JobCandidate] = []
         seen: set[str] = set()
@@ -143,6 +181,7 @@ class EightfoldAdapter:
                 "board_urls": board_urls,
                 "api_urls": api_urls,
                 "response_source": shell.source,
+                "state_identity_evidence": state_identity_evidence,
                 "candidate_count": len(candidates),
                 "pages_fetched": pages_fetched,
                 "total_found": total_found,
@@ -172,6 +211,39 @@ class _SmartApplyParser(HTMLParser):
             self.parts.append(data)
 
 
+class _ShellEvidenceParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.active_code_id: str | None = None
+        self.code_parts: dict[str, list[str]] = {}
+        self.robots_noindex = False
+        self.demo_asset = False
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = {key.casefold(): value or "" for key, value in attrs}
+        if tag.casefold() == "code":
+            code_id = attributes.get("id", "")
+            if code_id:
+                self.active_code_id = code_id
+                self.code_parts.setdefault(code_id, [])
+        if tag.casefold() == "meta" and attributes.get("name", "").casefold() == "robots":
+            directives = {item.strip().casefold() for item in attributes.get("content", "").split(",")}
+            self.robots_noindex = "noindex" in directives
+        if any("/images/careers/demo/" in value.casefold() for value in attributes.values()):
+            self.demo_asset = True
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag.casefold() == "code":
+            self.active_code_id = None
+
+    def handle_data(self, data: str) -> None:
+        if self.active_code_id is None:
+            return
+        parts = self.code_parts[self.active_code_id]
+        if sum(map(len, parts)) < _MAX_STATE_CHARS:
+            parts.append(data)
+
+
 def _smart_apply_state(html: str) -> dict:
     parser = _SmartApplyParser()
     try:
@@ -181,6 +253,41 @@ def _smart_apply_state(html: str) -> dict:
     except (json.JSONDecodeError, TypeError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
+
+
+def _non_production_shell_evidence(html: str, host: str, identifier: str) -> list[str]:
+    parser = _ShellEvidenceParser()
+    try:
+        parser.feed((html or "")[: _MAX_STATE_CHARS * 2])
+    except (TypeError, ValueError):
+        return []
+
+    markers: list[str] = []
+    if _environment_label(host.removesuffix(".eightfold.ai")):
+        markers.append("host_environment_label")
+    if _environment_label(identifier):
+        markers.append("board_identifier_environment_label")
+
+    pcsx_body = "".join(parser.code_parts.get("pcsx-data", []))
+    try:
+        pcsx_state = json.loads(pcsx_body) if pcsx_body else {}
+    except (json.JSONDecodeError, TypeError, ValueError):
+        pcsx_state = {}
+    pcsx_domain = str(pcsx_state.get("domain") or "") if isinstance(pcsx_state, dict) else ""
+    if _environment_label(pcsx_domain):
+        markers.append("embedded_domain_environment_label")
+    if parser.robots_noindex:
+        markers.append("robots_noindex")
+    if parser.demo_asset:
+        markers.append("demo_asset_path")
+
+    has_environment_identity = any(marker.endswith("environment_label") for marker in markers)
+    return markers if has_environment_identity else []
+
+
+def _environment_label(value: str) -> bool:
+    labels = {part for part in re.split(r"[.-]+", value.casefold()) if part}
+    return bool(labels & _NON_PRODUCTION_LABELS)
 
 
 def _is_eightfold_state(state: dict) -> bool:
@@ -286,6 +393,21 @@ def _resolved_state_domain(host: str, identifier: str, state_domain: str) -> str
     return None
 
 
+def _inventory_binds_board(records, board: JobBoard) -> bool:
+    if not isinstance(records, list):
+        return False
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        detail_url = str(record.get("canonicalPositionUrl") or "").strip()
+        parsed = _safe_url(detail_url)
+        if parsed is None or not _DETAIL_PATH.fullmatch(parsed.path):
+            continue
+        if _same_origin(detail_url, board.url):
+            return True
+    return False
+
+
 def _safe_url(url: str):
     try:
         parsed = urlparse(url)
@@ -322,11 +444,18 @@ def _nonnegative_int(value, fallback=None):
     return parsed if parsed >= 0 else fallback
 
 
-def _unsupported(board, error, rejected_url=None):
+def _unsupported(board, error, rejected_url=None, **trace_fields):
     trace = {"adapter": "eightfold", "error": error}
     if rejected_url:
         trace["rejected_response_url"] = rejected_url
-    return AdapterResult(provider="eightfold", board=board, reason_code="PROVIDER_VARIANT_UNSUPPORTED", trace=trace)
+    trace.update(trace_fields)
+    return AdapterResult(
+        provider="eightfold",
+        board=board,
+        reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+        inventory_complete=False,
+        trace=trace,
+    )
 
 
 def _fetch_failure(board, board_urls, api_urls, error):

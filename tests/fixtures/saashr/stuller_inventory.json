@@ -1,0 +1,31 @@
+{
+  "job_requisitions": [
+    {
+      "id": 990125377,
+      "job_title": "Information Security Analyst",
+      "location": {
+        "address_line_1": "302 Rue Louis XIV",
+        "country": "USA",
+        "city": "Lafayette",
+        "state": "LA",
+        "zip": "70508"
+      },
+      "job_categories": ["Information Technology", "Full-Time"],
+      "is_remote_job": false
+    },
+    {
+      "id": 973391184,
+      "job_title": "IT Project Manager",
+      "location": {
+        "address_line_1": "302 Rue Louis XIV",
+        "country": "USA",
+        "city": "Lafayette",
+        "state": "LA",
+        "zip": "70508"
+      },
+      "job_categories": ["Information Technology", "Full-Time"],
+      "is_remote_job": false
+    }
+  ],
+  "_paging": {"offset": 0, "size": 100, "total": 2}
+}

@@ -1,0 +1,3528 @@
+{
+  "schema_version": "1.0",
+  "observed_at": "2026-07-17",
+  "purpose": "100-posting live three-route evaluation cohort",
+  "companies_sha256": "1626dc8e1f38a18ed01e33f47b89ecfa0df7ea05d016bdde108cb6322206187c",
+  "request": {
+    "enrich_public_external_apply": true,
+    "keywords": [
+      "Software Engineer",
+      "Registered Nurse",
+      "Account Executive",
+      "Mechanical Engineer",
+      "Financial Analyst",
+      "Product Manager",
+      "Data Analyst",
+      "Marketing Manager",
+      "Operations Manager",
+      "Customer Success Manager"
+    ],
+    "limit": 100,
+    "location": "United States",
+    "pages": 2,
+    "per_query_limit": 15,
+    "preserve_job_postings": true
+  },
+  "postings": [
+    {
+      "career_root_url": null,
+      "company_name": "Notion",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Francisco, CA",
+      "job_title": "Software Engineer, Early Career",
+      "linkedin_company_url": "https://www.linkedin.com/company/notionhq",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-early-career-at-notion-4437461678",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 0,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-early-career-at-notion-4437461678",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-early-career-at-notion-4437461678"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Notion",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Francisco, CA",
+      "job_title": "Software Engineer, Early Career (AI)",
+      "linkedin_company_url": "https://www.linkedin.com/company/notionhq",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-early-career-ai-at-notion-4437472369",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 1,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-early-career-ai-at-notion-4437472369",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-early-career-ai-at-notion-4437472369"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Sony Interactive Entertainment",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Los Angeles Metropolitan Area",
+      "job_title": "Software Engineer I",
+      "linkedin_company_url": "https://www.linkedin.com/company/sony-interactive-entertainment-llc",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-i-at-sony-interactive-entertainment-4412034983",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 2,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-i-at-sony-interactive-entertainment-4412034983",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-i-at-sony-interactive-entertainment-4412034983"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Fieldguide",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Francisco, CA",
+      "job_title": "Software Engineer (All Levels)",
+      "linkedin_company_url": "https://www.linkedin.com/company/fieldguide-inc",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-fieldguide-4421235421",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 3,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-fieldguide-4421235421",
+          "reason": "fetch_failed",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-fieldguide-4421235421"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Collective",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Francisco, CA",
+      "job_title": "Software Engineer (New Grad)",
+      "linkedin_company_url": "https://www.linkedin.com/company/collective",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-new-grad-at-collective-4414985647",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 4,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-new-grad-at-collective-4414985647",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-new-grad-at-collective-4414985647"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Hadrian",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Los Angeles, CA",
+      "job_title": "All Levels: Frontend Software Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/hadrianautomation",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/all-levels-frontend-software-engineer-at-hadrian-4285833475",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 5,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/all-levels-frontend-software-engineer-at-hadrian-4285833475",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/all-levels-frontend-software-engineer-at-hadrian-4285833475"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Hadrian",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Los Angeles, CA",
+      "job_title": "Fullstack Software Engineer, New Grad",
+      "linkedin_company_url": "https://www.linkedin.com/company/hadrianautomation",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/fullstack-software-engineer-new-grad-at-hadrian-4427890981",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 6,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/fullstack-software-engineer-new-grad-at-hadrian-4427890981",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/fullstack-software-engineer-new-grad-at-hadrian-4427890981"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Intuit",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Software Engineer 1",
+      "linkedin_company_url": "https://www.linkedin.com/company/intuit",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-1-at-intuit-4401727507",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 7,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-1-at-intuit-4401727507",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-1-at-intuit-4401727507"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Middesk",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, United States",
+      "job_title": "Software Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/middesk",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-middesk-4205003719",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 8,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-middesk-4205003719",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-middesk-4205003719"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Genius AI",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Software Engineer - All Levels",
+      "linkedin_company_url": "https://www.linkedin.com/company/geniusai-",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-genius-ai-4286961888",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 9,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-genius-ai-4286961888",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-genius-ai-4286961888"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Twitch",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Francisco, CA",
+      "job_title": "Software Engineer I, Commerce Engineering",
+      "linkedin_company_url": "https://www.linkedin.com/company/twitch-tv",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-i-commerce-engineering-at-twitch-4390703326",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 10,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-i-commerce-engineering-at-twitch-4390703326",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-i-commerce-engineering-at-twitch-4390703326"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Leadenhall Search & Selection",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York City Metropolitan Area",
+      "job_title": "Software Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/leadenhallsearch",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-leadenhall-search-selection-4437695387",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 11,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-leadenhall-search-selection-4437695387",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-leadenhall-search-selection-4437695387"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Blossom",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Software Engineer (All Levels)",
+      "linkedin_company_url": "https://www.linkedin.com/company/join-blossom-health",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-blossom-4438850133",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 12,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-blossom-4438850133",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-all-levels-at-blossom-4438850133"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Paramount",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Software Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/paramountco",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-paramount-4408291912",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 13,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-paramount-4408291912",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-at-paramount-4408291912"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "hackajob",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Software Engineer - Apollo Platform",
+      "linkedin_company_url": "https://www.linkedin.com/company/hackajob",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/software-engineer-apollo-platform-at-hackajob-4440203478",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 14,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Software Engineer",
+          "location": "United States",
+          "query_index": 0
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-apollo-platform-at-hackajob-4440203478",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/software-engineer-apollo-platform-at-hackajob-4440203478"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "LifeCare",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Carrollton, TX",
+      "job_title": "FT Registered Nurse - AM",
+      "linkedin_company_url": "https://www.linkedin.com/company/lifecare-health",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ft-registered-nurse-am-at-lifecare-4440807088",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 15,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/ft-registered-nurse-am-at-lifecare-4440807088",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/ft-registered-nurse-am-at-lifecare-4440807088"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Redlands Community Hospital",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Redlands, CA",
+      "job_title": "New Graduate Registered Nurse (RN)",
+      "linkedin_company_url": "https://www.linkedin.com/company/redlands-community-hospital",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437655656",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 16,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437655656",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437655656"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Redlands Community Hospital",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Redlands, CA",
+      "job_title": "New Graduate Registered Nurse (RN)",
+      "linkedin_company_url": "https://www.linkedin.com/company/redlands-community-hospital",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437656695",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 17,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437656695",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437656695"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Redlands Community Hospital",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Redlands, CA",
+      "job_title": "New Graduate Registered Nurse (RN)",
+      "linkedin_company_url": "https://www.linkedin.com/company/redlands-community-hospital",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437663361",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 18,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437663361",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/new-graduate-registered-nurse-rn-at-redlands-community-hospital-4437663361"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "hackajob",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "United States",
+      "job_title": "Registered Nurse Healthcare Advocate (Remote 1099) - RN",
+      "linkedin_company_url": "https://www.linkedin.com/company/hackajob",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-healthcare-advocate-remote-1099-rn-at-hackajob-4431491227",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 19,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-healthcare-advocate-remote-1099-rn-at-hackajob-4431491227",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-healthcare-advocate-remote-1099-rn-at-hackajob-4431491227"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "West Oaks Hospital",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Houston, TX",
+      "job_title": "Nurse Manager -Registered Nurse (Full-Time) - Behavioral Health - $7,500 Sign-On Bonus",
+      "linkedin_company_url": "https://www.linkedin.com/company/west-oaks-hospital",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/nurse-manager-registered-nurse-full-time-behavioral-health-%247-500-sign-on-bonus-at-west-oaks-hospital-4440824545",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 20,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/nurse-manager-registered-nurse-full-time-behavioral-health-%247-500-sign-on-bonus-at-west-oaks-hospital-4440824545",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/nurse-manager-registered-nurse-full-time-behavioral-health-%247-500-sign-on-bonus-at-west-oaks-hospital-4440824545"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Tenet Healthcare",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Ramon, CA",
+      "job_title": "Registered Nurse (RN) - Ambulatory",
+      "linkedin_company_url": "https://www.linkedin.com/company/tenet-healthcare",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-ambulatory-at-tenet-healthcare-4440577391",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 21,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-ambulatory-at-tenet-healthcare-4440577391",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-ambulatory-at-tenet-healthcare-4440577391"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Panacea Health Corp",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Chambersburg, PA",
+      "job_title": "Registered Nurse (RN) Unit Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/panaceahealthcorp",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-unit-manager-at-panacea-health-corp-4439893528",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 22,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-unit-manager-at-panacea-health-corp-4439893528",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-unit-manager-at-panacea-health-corp-4439893528"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Horizon Health",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Murray, KY",
+      "job_title": "Registered Nurse (RN)- Behavioral Health",
+      "linkedin_company_url": "https://www.linkedin.com/company/horizon-health-paris-ill",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-behavioral-health-at-horizon-health-4440822674",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 23,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-behavioral-health-at-horizon-health-4440822674",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-behavioral-health-at-horizon-health-4440822674"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Tidelands Health",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Georgetown, SC",
+      "job_title": "Registered Nurse (RN) - Staff/Med Surg",
+      "linkedin_company_url": "https://www.linkedin.com/company/tidelandshealth",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-staff-med-surg-at-tidelands-health-4440340861",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 24,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-staff-med-surg-at-tidelands-health-4440340861",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-staff-med-surg-at-tidelands-health-4440340861"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Riverview School",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "East Sandwich, MA",
+      "job_title": "Registered Nurse - RN- School Nurse",
+      "linkedin_company_url": "",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-school-nurse-at-riverview-school-4441636937",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 25,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-school-nurse-at-riverview-school-4441636937",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-school-nurse-at-riverview-school-4441636937"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Aveanna Healthcare",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Southampton, PA",
+      "job_title": "Registered Nurse (RN)",
+      "linkedin_company_url": "https://www.linkedin.com/company/aveanna-healthcare",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-at-aveanna-healthcare-4439431438",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 26,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-at-aveanna-healthcare-4439431438",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-at-aveanna-healthcare-4439431438"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Elderwood",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Ticonderoga, NY",
+      "job_title": "RN - Registered Nurse",
+      "linkedin_company_url": "https://www.linkedin.com/company/elderwood",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/rn-registered-nurse-at-elderwood-4437294077",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 27,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/rn-registered-nurse-at-elderwood-4437294077",
+          "reason": "fetch_failed",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/rn-registered-nurse-at-elderwood-4437294077"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Southeastern Renal Dialysis",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "West Burlington, IA",
+      "job_title": "Registered Nurse (RN) ($10,000 SIGN ON BONUS)",
+      "linkedin_company_url": "https://www.linkedin.com/company/southeastern-renal-dialysis",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-%2410-000-sign-on-bonus-at-southeastern-renal-dialysis-4440377324",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 28,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-%2410-000-sign-on-bonus-at-southeastern-renal-dialysis-4440377324",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-%2410-000-sign-on-bonus-at-southeastern-renal-dialysis-4440377324"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "NexCare WellBridge Senior Living",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Saginaw, MI",
+      "job_title": "Registered Nurse RN - $40.55 per hour",
+      "linkedin_company_url": "https://www.linkedin.com/company/nexcare-wellbridge-senior-living",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-%2440-55-per-hour-at-nexcare-wellbridge-senior-living-4440360762",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 29,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Registered Nurse",
+          "location": "United States",
+          "query_index": 1
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-%2440-55-per-hour-at-nexcare-wellbridge-senior-living-4440360762",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-rn-%2440-55-per-hour-at-nexcare-wellbridge-senior-living-4440360762"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Lacoste",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Account Executive",
+      "linkedin_company_url": "https://www.linkedin.com/company/lacoste",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lacoste-4411244008",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 30,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lacoste-4411244008",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-lacoste-4411244008"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "MrBeast",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Account Executive, Brand Partnerships (Vyro & MrBeast Ecosystem)",
+      "linkedin_company_url": "https://www.linkedin.com/company/mrbeastyoutube",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-brand-partnerships-vyro-mrbeast-ecosystem-at-mrbeast-4418180820",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 31,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-brand-partnerships-vyro-mrbeast-ecosystem-at-mrbeast-4418180820",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-brand-partnerships-vyro-mrbeast-ecosystem-at-mrbeast-4418180820"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "PUMA Group",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Aurora, CO",
+      "job_title": "Account Executive (Remote - Midwest Chicago)",
+      "linkedin_company_url": "https://www.linkedin.com/company/puma",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-remote-midwest-chicago-at-puma-group-4400268406",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 32,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-remote-midwest-chicago-at-puma-group-4400268406",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-remote-midwest-chicago-at-puma-group-4400268406"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "LinkedIn",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "SMB Account Executive - Search & Staffing, Talent Solutions",
+      "linkedin_company_url": "https://www.linkedin.com/company/linkedin",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-search-staffing-talent-solutions-at-linkedin-4441201517",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 33,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-search-staffing-talent-solutions-at-linkedin-4441201517",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-search-staffing-talent-solutions-at-linkedin-4441201517"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "LinkedIn",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Account Executive 3, Performance & Expansion, Marketing Solutions",
+      "linkedin_company_url": "https://www.linkedin.com/company/linkedin",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-3-performance-expansion-marketing-solutions-at-linkedin-4441269292",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 34,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-3-performance-expansion-marketing-solutions-at-linkedin-4441269292",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-3-performance-expansion-marketing-solutions-at-linkedin-4441269292"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "LinkedIn",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Francisco, CA",
+      "job_title": "Mid-Market Account Executive - Talent & Learning",
+      "linkedin_company_url": "https://www.linkedin.com/company/linkedin",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mid-market-account-executive-talent-learning-at-linkedin-4422966708",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 35,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mid-market-account-executive-talent-learning-at-linkedin-4422966708",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mid-market-account-executive-talent-learning-at-linkedin-4422966708"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "SKIMS",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Los Angeles, CA",
+      "job_title": "Account Executive, Franchise Partnerships",
+      "linkedin_company_url": "https://www.linkedin.com/company/skimsbody",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-franchise-partnerships-at-skims-4429787695",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 36,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-franchise-partnerships-at-skims-4429787695",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-franchise-partnerships-at-skims-4429787695"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "LinkedIn",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Francisco, CA",
+      "job_title": "SMB Account Executive - Talent & Learning",
+      "linkedin_company_url": "https://www.linkedin.com/company/linkedin",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-talent-learning-at-linkedin-4422952933",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 37,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-talent-learning-at-linkedin-4422952933",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-talent-learning-at-linkedin-4422952933"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Parfums Christian Dior",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Chicago, IL",
+      "job_title": "Account Executive, Chicago",
+      "linkedin_company_url": "https://www.linkedin.com/company/parfums-christian-dior",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-chicago-at-parfums-christian-dior-4428662758",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 38,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-chicago-at-parfums-christian-dior-4428662758",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-chicago-at-parfums-christian-dior-4428662758"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Caudalie",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Account Executive",
+      "linkedin_company_url": "https://www.linkedin.com/company/caudalie",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-at-caudalie-4427354704",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 39,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-caudalie-4427354704",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-at-caudalie-4427354704"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "LinkedIn",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Chicago, IL",
+      "job_title": "Manager, Talent Account Directors",
+      "linkedin_company_url": "https://www.linkedin.com/company/linkedin",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/manager-talent-account-directors-at-linkedin-4440030712",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 40,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/manager-talent-account-directors-at-linkedin-4440030712",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/manager-talent-account-directors-at-linkedin-4440030712"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Bacardi",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "National Account Manager - Hotels",
+      "linkedin_company_url": "https://www.linkedin.com/company/bacardi",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/national-account-manager-hotels-at-bacardi-4441657690",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 41,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/national-account-manager-hotels-at-bacardi-4441657690",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/national-account-manager-hotels-at-bacardi-4441657690"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Square",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "SMB Account Executive",
+      "linkedin_company_url": "https://www.linkedin.com/company/joinsquare",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-at-square-4430270488",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 42,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-at-square-4430270488",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/smb-account-executive-at-square-4430270488"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "LinkedIn",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Account Executive, Growth Mid-Market - LinkedIn Marketing Solutions",
+      "linkedin_company_url": "https://www.linkedin.com/company/linkedin",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/account-executive-growth-mid-market-linkedin-marketing-solutions-at-linkedin-4440026968",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 43,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-growth-mid-market-linkedin-marketing-solutions-at-linkedin-4440026968",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/account-executive-growth-mid-market-linkedin-marketing-solutions-at-linkedin-4440026968"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Future Beauty Brands (formerly PPI Beauty)",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York City Metropolitan Area",
+      "job_title": "National Account Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/future-beauty-brands",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/national-account-manager-at-future-beauty-brands-formerly-ppi-beauty-4441236528",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 44,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Account Executive",
+          "location": "United States",
+          "query_index": 2
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/national-account-manager-at-future-beauty-brands-formerly-ppi-beauty-4441236528",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/national-account-manager-at-future-beauty-brands-formerly-ppi-beauty-4441236528"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Product Design Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4434865612",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 45,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4434865612",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4434865612"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Fuse",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Leandro, CA",
+      "job_title": "Mechanical Engineer - San Leandro",
+      "linkedin_company_url": "https://www.linkedin.com/company/fuse-energy-technologies",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-san-leandro-at-fuse-4318506677",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 46,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-san-leandro-at-fuse-4318506677",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-san-leandro-at-fuse-4318506677"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Charge Robotics",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Leandro, CA",
+      "job_title": "Mechanical Engineer (all levels)",
+      "linkedin_company_url": "https://www.linkedin.com/company/charge-robotics",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-all-levels-at-charge-robotics-4331271080",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 47,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-all-levels-at-charge-robotics-4331271080",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-all-levels-at-charge-robotics-4331271080"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Yamaha Motor Corporation, USA",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Kennesaw, GA",
+      "job_title": "Mechanical Engineer I",
+      "linkedin_company_url": "https://www.linkedin.com/company/yamaha-motor-corporation-usa",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-i-at-yamaha-motor-corporation-usa-4388242757",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 48,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-i-at-yamaha-motor-corporation-usa-4388242757",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-i-at-yamaha-motor-corporation-usa-4388242757"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "OrganOx",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Madison, NJ",
+      "job_title": "Mechanical Design Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/organox",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-organox-4440989993",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 49,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-organox-4440989993",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-organox-4440989993"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Sunnyvale, CA",
+      "job_title": "Product Design Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4433807917",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 50,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4433807917",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4433807917"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Tata Technologies",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Hayward, CA",
+      "job_title": "Mechanical Design Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/tata-technologies",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-tata-technologies-4438687607",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 51,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-tata-technologies-4438687607",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-design-engineer-at-tata-technologies-4438687607"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Bose Corporation",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Binghamton, NY",
+      "job_title": "Mechanical Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/bose-corporation",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-bose-corporation-4411509562",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 52,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-bose-corporation-4411509562",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-bose-corporation-4411509562"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Tata Technologies",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Livonia, MI",
+      "job_title": "Mechanical Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/tata-technologies",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-tata-technologies-4410912130",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 53,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-tata-technologies-4410912130",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-tata-technologies-4410912130"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Redmond, WA",
+      "job_title": "Product Design Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4431557512",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 54,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4431557512",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-meta-4431557512"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Snap Inc.",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Los Angeles, CA",
+      "job_title": "Product Design Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/snap-inc-co",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-snap-inc-4436142141",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 55,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-snap-inc-4436142141",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-design-engineer-at-snap-inc-4436142141"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Stark Pharma Solutions Inc",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Chicago, IL",
+      "job_title": "Mechanical Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/stark-pharma-solutions-inc",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-stark-pharma-solutions-inc-4441267536",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 56,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-stark-pharma-solutions-inc-4441267536",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-stark-pharma-solutions-inc-4441267536"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Bastion Technologies, Inc.",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Houston, TX",
+      "job_title": "Mechanical Project Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/bastion-technologies",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-project-engineer-at-bastion-technologies-inc-4439478675",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 57,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-project-engineer-at-bastion-technologies-inc-4439478675",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-project-engineer-at-bastion-technologies-inc-4439478675"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "EVONA",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Colorado, United States",
+      "job_title": "Propulsion Roles (Multiple)",
+      "linkedin_company_url": "https://www.linkedin.com/company/evona-space",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/propulsion-roles-multiple-at-evona-4432708542",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 58,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/propulsion-roles-multiple-at-evona-4432708542",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/propulsion-roles-multiple-at-evona-4432708542"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "United Pharma",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, United States",
+      "job_title": "Mechanical Engineer",
+      "linkedin_company_url": "https://www.linkedin.com/company/unitedpharmainc",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-united-pharma-4435120007",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 59,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Mechanical Engineer",
+          "location": "United States",
+          "query_index": 3
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-united-pharma-4435120007",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/mechanical-engineer-at-united-pharma-4435120007"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Gucci",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "GUCCI Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/gucci",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/gucci-financial-analyst-at-gucci-4432834505",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 60,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/gucci-financial-analyst-at-gucci-4432834505",
+          "reason": "fetch_failed",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/gucci-financial-analyst-at-gucci-4432834505"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Michael Kors",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/michael-kors",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-michael-kors-4432425467",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 61,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-michael-kors-4432425467",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-michael-kors-4432425467"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "BBVA",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Houston, TX",
+      "job_title": "Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/bbva",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-bbva-4435233146",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 62,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-bbva-4435233146",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-bbva-4435233146"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Century Communities, Inc. (NYSE:CCS)",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Greenwood Village, CO",
+      "job_title": "Corporate Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/century-communities",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/corporate-financial-analyst-at-century-communities-inc-nyse-ccs-4440349440",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 63,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/corporate-financial-analyst-at-century-communities-inc-nyse-ccs-4440349440",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/corporate-financial-analyst-at-century-communities-inc-nyse-ccs-4440349440"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "SpaceX",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Hawthorne, CA",
+      "job_title": "Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/spacex",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-spacex-4408086850",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 64,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-spacex-4408086850",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-spacex-4408086850"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "BBVA",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Project Finance Senior Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/bbva",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-finance-senior-analyst-at-bbva-4435237190",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 65,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/project-finance-senior-analyst-at-bbva-4435237190",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/project-finance-senior-analyst-at-bbva-4435237190"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Sezzle",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "United States",
+      "job_title": "Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/sezzle",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-sezzle-4436902271",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 66,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-sezzle-4436902271",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-sezzle-4436902271"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Saint Laurent",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Wayne, NJ",
+      "job_title": "SAINT LAURENT Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/yves-saint-laurent",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/saint-laurent-financial-analyst-at-saint-laurent-4434898301",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 67,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/saint-laurent-financial-analyst-at-saint-laurent-4434898301",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/saint-laurent-financial-analyst-at-saint-laurent-4434898301"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Crayola",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Easton, PA",
+      "job_title": "Sr. Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/crayola",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/sr-financial-analyst-at-crayola-4439457708",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 68,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/sr-financial-analyst-at-crayola-4439457708",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/sr-financial-analyst-at-crayola-4439457708"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Actabl",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "United States",
+      "job_title": "Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/actabl",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-actabl-4433251930",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 69,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-actabl-4433251930",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-actabl-4433251930"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Google",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Sunnyvale, CA",
+      "job_title": "Financial Analyst, Corporate Financial Planning and Analysis",
+      "linkedin_company_url": "https://www.linkedin.com/company/google",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-corporate-financial-planning-and-analysis-at-google-4439452453",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 70,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-corporate-financial-planning-and-analysis-at-google-4439452453",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-corporate-financial-planning-and-analysis-at-google-4439452453"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "L'OCCITANE Group (B Corp)",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Senior Financial Analyst (CONTRACT)",
+      "linkedin_company_url": "https://www.linkedin.com/company/l-occitane-group",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/senior-financial-analyst-contract-at-l-occitane-group-b-corp-4343041480",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 71,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/senior-financial-analyst-contract-at-l-occitane-group-b-corp-4343041480",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/senior-financial-analyst-contract-at-l-occitane-group-b-corp-4343041480"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "adidas",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Portland, OR",
+      "job_title": "Financial Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/adidas",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-adidas-4433034488",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 72,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-adidas-4433034488",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/financial-analyst-at-adidas-4433034488"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Garan, Incorporated",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Junior Financial Operations Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/garan",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/junior-financial-operations-analyst-at-garan-incorporated-4440596578",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 73,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/junior-financial-operations-analyst-at-garan-incorporated-4440596578",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/junior-financial-operations-analyst-at-garan-incorporated-4440596578"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Taskrabbit",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "San Francisco Bay Area",
+      "job_title": "Senior Financial Analyst, FP&A",
+      "linkedin_company_url": "https://www.linkedin.com/company/taskrabbit",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/senior-financial-analyst-fp-a-at-taskrabbit-4393053609",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 74,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Financial Analyst",
+          "location": "United States",
+          "query_index": 4
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/senior-financial-analyst-fp-a-at-taskrabbit-4393053609",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/senior-financial-analyst-fp-a-at-taskrabbit-4393053609"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Instagram",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Menlo Park, CA",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/instagram",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-instagram-4198546605",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 75,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-instagram-4198546605",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-instagram-4198546605"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Netflix",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Los Angeles, CA",
+      "job_title": "Product Manager, Emerging Formats",
+      "linkedin_company_url": "https://www.linkedin.com/company/netflix",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-emerging-formats-at-netflix-4388873840",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 76,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-emerging-formats-at-netflix-4388873840",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-emerging-formats-at-netflix-4388873840"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4432210853",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 77,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4432210853",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4432210853"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Menlo Park, CA",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4198807083",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 78,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4198807083",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4198807083"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Burlingame, CA",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4199409425",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 79,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4199409425",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4199409425"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Sunnyvale, CA",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254370688",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 80,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254370688",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254370688"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Instagram",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Bellevue, WA",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/instagram",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-instagram-4197550638",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 81,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-instagram-4197550638",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-instagram-4197550638"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Netflix",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Los Gatos, CA",
+      "job_title": "Product Manager, Personalization",
+      "linkedin_company_url": "https://www.linkedin.com/company/netflix",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-personalization-at-netflix-4437628351",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 82,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-personalization-at-netflix-4437628351",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-personalization-at-netflix-4437628351"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Menlo Park, CA",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4432205983",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 83,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4432205983",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4432205983"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4314986128",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 84,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4314986128",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4314986128"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "United States",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254366801",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 85,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254366801",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254366801"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Great Value Hiring",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "United States",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/greatvaluehiring",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-great-value-hiring-4439862724",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 86,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-great-value-hiring-4439862724",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-great-value-hiring-4439862724"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Redmond, WA",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254371627",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 87,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254371627",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4254371627"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Product Manager (Leadership)",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-leadership-at-meta-4418315263",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 88,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-leadership-at-meta-4418315263",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-leadership-at-meta-4418315263"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Meta",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Bellevue, WA",
+      "job_title": "Product Manager",
+      "linkedin_company_url": "https://www.linkedin.com/company/meta",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4297751666",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 89,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Product Manager",
+          "location": "United States",
+          "query_index": 5
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4297751666",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/product-manager-at-meta-4297751666"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "ParetoHealth",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Greater Philadelphia",
+      "job_title": "Data Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/pareto-health",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-paretohealth-4436811950",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 90,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-paretohealth-4436811950",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-paretohealth-4436811950"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Haystack",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Greater Tampa Bay Area",
+      "job_title": "Junior Data Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/wearehaystack",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/junior-data-analyst-at-haystack-4439464097",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 91,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/junior-data-analyst-at-haystack-4439464097",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/junior-data-analyst-at-haystack-4439464097"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Haystack",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Greater Tampa Bay Area",
+      "job_title": "Junior Data Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/wearehaystack",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/junior-data-analyst-at-haystack-4439460198",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 92,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/junior-data-analyst-at-haystack-4439460198",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/junior-data-analyst-at-haystack-4439460198"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "TBK Bank, SSB",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Dallas, TX",
+      "job_title": "Data Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/tbk-bank",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-tbk-bank-ssb-4440067936",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 93,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-tbk-bank-ssb-4440067936",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-tbk-bank-ssb-4440067936"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Acorns",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "United States",
+      "job_title": "Data Analyst II",
+      "linkedin_company_url": "https://www.linkedin.com/company/acorns-grow-inc-",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/data-analyst-ii-at-acorns-4439376125",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 94,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-ii-at-acorns-4439376125",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-ii-at-acorns-4439376125"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Steve Madden",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Junior Business Intelligence Analyst- Digital",
+      "linkedin_company_url": "https://www.linkedin.com/company/steve-madden",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/junior-business-intelligence-analyst-digital-at-steve-madden-4432716413",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 95,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/junior-business-intelligence-analyst-digital-at-steve-madden-4432716413",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/junior-business-intelligence-analyst-digital-at-steve-madden-4432716413"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Solomon Page",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Austin, TX",
+      "job_title": "Data Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/solomon-page-group",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-solomon-page-4438018820",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 96,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-solomon-page-4438018820",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-solomon-page-4438018820"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Lyft",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "New York, NY",
+      "job_title": "Data Analyst, Operations Planning",
+      "linkedin_company_url": "https://www.linkedin.com/company/lyft",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/data-analyst-operations-planning-at-lyft-4420633964",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 97,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-operations-planning-at-lyft-4420633964",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-operations-planning-at-lyft-4420633964"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "LTIMindtree",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Jersey City, NJ",
+      "job_title": "Data Analyst/BA",
+      "linkedin_company_url": "https://www.linkedin.com/company/ltimindtree",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/data-analyst-ba-at-ltimindtree-4439886741",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 98,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-ba-at-ltimindtree-4439886741",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-ba-at-ltimindtree-4439886741"
+        }
+      }
+    },
+    {
+      "career_root_url": null,
+      "company_name": "Randstad USA",
+      "company_website_url": "",
+      "external_apply_url": null,
+      "hiring_entity_name": null,
+      "job_location": "Malvern, PA",
+      "job_title": "Data Analyst",
+      "linkedin_company_url": "https://www.linkedin.com/company/randstadusa",
+      "linkedin_html_path": null,
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-randstad-usa-4437690386",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 99,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "keywords": "Data Analyst",
+          "location": "United States",
+          "query_index": 6
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-randstad-usa-4437690386",
+          "reason": "no_visible_external_apply_link",
+          "status": "unavailable"
+        },
+        "linkedin_posting": {
+          "apply_mode": "unknown",
+          "availability": "listed",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/data-analyst-at-randstad-usa-4437690386"
+        }
+      }
+    }
+  ]
+}

@@ -26,6 +26,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--render-js", action="store_true")
     parser.add_argument("--render-budget", type=int, default=3)
     parser.add_argument("--output-dir", default=str(Path.home() / ".ai-job-source-agent" / "runs"))
+    parser.add_argument(
+        "--company-discovery-evidence-store",
+        help=(
+            "Persistent verified company-discovery evidence path; defaults to "
+            "company-discovery-evidence.json in the output directory."
+        ),
+    )
     return parser
 
 
@@ -45,6 +52,11 @@ def main(argv: list[str] | None = None) -> None:
             agent=AgentConfig(),
             workers=args.workers,
             output_dir=Path(args.output_dir),
+            company_discovery_evidence_path=(
+                Path(args.company_discovery_evidence_store)
+                if args.company_discovery_evidence_store
+                else None
+            ),
         )
     )
     server = ExtensionBridgeServer((host, args.port), manager, token)

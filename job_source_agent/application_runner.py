@@ -9,7 +9,11 @@ from .contracts import (
     Stage,
     StageExecution,
 )
-from .checkpoint_prefix import CheckpointPrefixError, inspect_checkpoint_prefix
+from .checkpoint_prefix import (
+    CheckpointPrefixError,
+    inspect_checkpoint_prefix,
+    inspect_finalized_checkpoint_prefix,
+)
 from .evidence_scope import StageEvidenceLineage
 from .models import PIPELINE_STAGES, StageResult
 
@@ -58,6 +62,7 @@ class ApplicationRunner:
         rerun_from: str | None = None,
         execution_fingerprint: str | None = None,
         producer_attempt_id: str | None = None,
+        same_attempt_continuation: bool = False,
     ) -> PipelineContext:
         """Execute an inclusive stage range and return the mutated context.
 
@@ -88,11 +93,20 @@ class ApplicationRunner:
         if self._checkpoint_store is not None:
             assert self._checkpoint_store is not None
             assert input_fingerprint is not None
-            checkpoint_preflight = inspect_checkpoint_prefix(
-                self._checkpoint_store,
-                input_fingerprint,
-                context,
-                start_at,
+            checkpoint_preflight = (
+                inspect_finalized_checkpoint_prefix(
+                    self._checkpoint_store,
+                    input_fingerprint,
+                    context,
+                    start_at,
+                )
+                if same_attempt_continuation
+                else inspect_checkpoint_prefix(
+                    self._checkpoint_store,
+                    input_fingerprint,
+                    context,
+                    start_at,
+                )
             )
             if rerun_from is not None and checkpoint_preflight.defects:
                 raise CheckpointPrefixError(checkpoint_preflight)

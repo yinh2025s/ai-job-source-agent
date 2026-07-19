@@ -12,6 +12,7 @@ from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 _API_HOST = "api.smartrecruiters.com"
 _PUBLIC_HOST = "jobs.smartrecruiters.com"
+_STOREFRONT_HOST = "careers.smartrecruiters.com"
 _LEGACY_API_HOST = "www.smartrecruiters.com"
 _PAGE_SIZE = 100
 _MAX_PAGES = 5
@@ -30,27 +31,12 @@ class SmartRecruitersAdapter:
     supports_listing = True
 
     def recognizes(self, url: str) -> bool:
-        try:
-            parsed = urlparse(url)
-            port = parsed.port
-        except (TypeError, ValueError):
-            return False
-        scheme = parsed.scheme.casefold()
-        return bool(
-            (parsed.hostname or "").casefold() == _PUBLIC_HOST
-            and scheme in {"http", "https"}
-            and not parsed.username
-            and not parsed.password
-            and (port is None or (scheme == "https" and port == 443) or (scheme == "http" and port == 80))
-        )
+        return _board_tenant(url) is not None
 
     def identify_board(self, url: str) -> JobBoard | None:
-        if not self.recognizes(url):
+        identifier = _board_tenant(url)
+        if identifier is None:
             return None
-        parts = [part for part in urlparse(url).path.split("/") if part]
-        if not parts:
-            return None
-        identifier = parts[0]
         return JobBoard(
             url=f"https://{_PUBLIC_HOST}/{quote(identifier, safe='-._~')}",
             provider=self.name,
@@ -59,6 +45,24 @@ class SmartRecruitersAdapter:
         )
 
     def identify_board_from_page(self, page: Page) -> JobBoard | None:
+        source_host = _url_host(page.url)
+        final_url = page.final_url or page.url
+        final_host = _url_host(final_url)
+        if _STOREFRONT_HOST in {source_host, final_host}:
+            source_tenant = _storefront_tenant(page.url)
+            final_tenant = _storefront_tenant(final_url)
+            if (
+                source_tenant is None
+                or final_tenant is None
+                or source_tenant.casefold() != final_tenant.casefold()
+            ):
+                return None
+            return JobBoard(
+                url=f"https://{_PUBLIC_HOST}/{quote(final_tenant, safe='-._~')}",
+                provider=self.name,
+                identifier=final_tenant,
+                replay_safe=True,
+            )
         if _safe_public_page_url(page.final_url or page.url) is None:
             return None
         tenant = _widget_tenant(page.html)
@@ -73,7 +77,7 @@ class SmartRecruitersAdapter:
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
         inventory_scope = "title_filtered" if query.title else "full"
-        if not board.identifier:
+        if not board.identifier or not _TENANT.fullmatch(board.identifier):
             return AdapterResult(
                 provider=self.name,
                 board=board,
@@ -82,7 +86,7 @@ class SmartRecruitersAdapter:
                 inventory_complete=False,
                 trace={
                     "adapter": self.name,
-                    "error": "missing SmartRecruiters company identifier",
+                    "error": "missing or invalid SmartRecruiters company identifier",
                     "inventory_scope": inventory_scope,
                     "inventory_complete": False,
                 },
@@ -283,6 +287,49 @@ class _WidgetParser(HTMLParser):
         if tag.casefold() == "script" and self._inline_data is not None:
             self.inline_scripts.append("".join(self._inline_data))
             self._inline_data = None
+
+
+def _board_tenant(url: str) -> str | None:
+    host = _url_host(url)
+    if host == _STOREFRONT_HOST:
+        return _storefront_tenant(url)
+    if host != _PUBLIC_HOST:
+        return None
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return None
+    scheme = parsed.scheme.casefold()
+    if (
+        scheme not in {"http", "https"}
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443 if scheme == "https" else 80}
+    ):
+        return None
+    return _tenant_from_path(parsed.path)
+
+
+def _storefront_tenant(url: str) -> str | None:
+    parsed = _safe_official_url(url, _STOREFRONT_HOST)
+    if parsed is None:
+        return None
+    return _tenant_from_path(parsed.path)
+
+
+def _tenant_from_path(path: str) -> str | None:
+    parts = [part for part in path.split("/") if part]
+    if not parts or not _TENANT.fullmatch(parts[0]):
+        return None
+    return parts[0]
+
+
+def _url_host(url: str) -> str | None:
+    try:
+        return (urlparse(url).hostname or "").casefold() or None
+    except (TypeError, ValueError):
+        return None
 
 
 def _widget_tenant(html: str) -> str | None:

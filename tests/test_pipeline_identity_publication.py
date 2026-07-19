@@ -52,6 +52,7 @@ class PipelineIdentityPublicationTests(unittest.TestCase):
         self.assertEqual(result.career_page_url, "https://fresh.example/careers")
         self.assertEqual(result.pipeline_status, "failed")
         self.assertEqual(result.status, "partial")
+        self.assertEqual(result.error_code, "RESULT_IDENTITY_MISMATCH")
         self.assertEqual(result.identity_assertion["verdict"], "rejected")
         self.assertEqual(
             result.identity_assertion["candidate_opening_url"],
@@ -83,6 +84,45 @@ class PipelineIdentityPublicationTests(unittest.TestCase):
         self.assertIsNone(result.job_list_page_url)
         self.assertEqual(result.pipeline_status, "failed")
         self.assertEqual(result.status, "failed")
+
+    def test_stored_board_revalidation_failure_preserves_specific_s6_terminal(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Gucci"))
+        context.job_list_page_url = "https://kering.wd3.myworkdayjobs.com/Gucci"
+        context.stage_results = [
+            StageResult(stage=STAGE_JOB_BOARD_DISCOVERY, status="success"),
+            StageResult(
+                stage=STAGE_OPENING_MATCH,
+                status="partial",
+                reason_code="NETWORK_TIMEOUT",
+                detail="Workday inventory timed out.",
+            ),
+            StageResult(
+                stage=STAGE_RESULT_VALIDATION,
+                status="failed",
+                reason_code="RESULT_IDENTITY_MISMATCH",
+            ),
+        ]
+        context.trace["stages"] = {
+            STAGE_JOB_BOARD_DISCOVERY: {
+                "selected": {"source_kind": "stored_verified_provider_board"}
+            },
+            STAGE_OPENING_MATCH: {},
+            STAGE_RESULT_VALIDATION: {
+                "pipeline_status": "partial",
+                "issues": [
+                    "HIRING_IDENTITY_MISSING",
+                    "PROVIDER_RELATIONSHIP_UNVERIFIED",
+                ],
+            },
+        }
+
+        result = discovery_result_from_context(context)
+
+        self.assertIsNone(result.job_list_page_url)
+        self.assertEqual(result.error_code, "NETWORK_TIMEOUT")
+        self.assertEqual(result.error, "fetch_failed")
+        self.assertEqual(result.trace["failure_detail"], "Workday inventory timed out.")
+        self.assertEqual(result.identity_assertion["verdict"], "rejected")
 
     def test_each_public_upstream_result_preserves_partial_status(self):
         public_assets = {
@@ -159,6 +199,7 @@ class PipelineIdentityPublicationTests(unittest.TestCase):
         self.assertEqual(result.job_list_page_url, "https://jobs.example/fresh")
         self.assertEqual(result.pipeline_status, "failed")
         self.assertEqual(result.status, "partial")
+        self.assertEqual(result.error_code, "RESULT_IDENTITY_MISMATCH")
 
     def test_verified_exact_candidate_is_published(self):
         context = PipelineContext.from_company(CompanyInput(company_name="Acme"))

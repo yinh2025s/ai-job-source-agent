@@ -1,0 +1,31 @@
+{
+  "count": 2,
+  "jobRequisitions": [
+    {
+      "reqId": "5001234567890",
+      "publishedJobTitle": "Junior Business Intelligence Analyst- Digital",
+      "requisitionLocations": [
+        {
+          "address": {
+            "cityName": "New York",
+            "countrySubdivisionLevel1": {"codeValue": "NY"},
+            "countryCode": "US"
+          }
+        }
+      ]
+    },
+    {
+      "reqId": "5001234567891",
+      "jobTitle": "Data Engineer",
+      "requisitionLocations": [
+        {
+          "address": {
+            "cityName": "Long Island City",
+            "countrySubdivisionLevel1": {"codeValue": "NY"},
+            "countryCode": "US"
+          }
+        }
+      ]
+    }
+  ]
+}

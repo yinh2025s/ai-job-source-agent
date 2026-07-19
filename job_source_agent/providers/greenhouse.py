@@ -60,6 +60,18 @@ class GreenhouseAdapter:
             identifier=parts[0],
         )
 
+    def canonicalize_board(self, board: JobBoard) -> JobBoard:
+        if board.provider != self.name or not board.identifier:
+            return board
+        if board.identifier.startswith((_CUSTOM_PREFIX, _NUXT_PREFIX)):
+            return board
+        return JobBoard(
+            url=f"https://job-boards.greenhouse.io/{board.identifier}",
+            provider=self.name,
+            identifier=board.identifier,
+            replay_safe=board.replay_safe,
+        )
+
     def identify_board_from_page(self, page: Page) -> JobBoard | None:
         page_url = page.final_url or page.url
         try:

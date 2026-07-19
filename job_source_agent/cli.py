@@ -44,10 +44,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Maximum underlying fetch dispatches during career discovery per company.",
     )
     parser.add_argument("--max-job-board-attempts", type=int, default=3)
-    parser.add_argument(
+    candidate_discovery_group = parser.add_mutually_exclusive_group()
+    candidate_discovery_group.add_argument(
         "--enable-parallel-candidate-discovery",
+        dest="enable_parallel_candidate_discovery",
         action="store_true",
-        help="Merge External Apply, provider search, and website ATS candidates in S5.",
+        default=True,
+        help="Merge External Apply, provider search, and website ATS candidates in S5 (default).",
+    )
+    candidate_discovery_group.add_argument(
+        "--disable-parallel-candidate-discovery",
+        dest="enable_parallel_candidate_discovery",
+        action="store_false",
+        help="Use the legacy website-first S5 path for rollback or comparison.",
     )
     parser.add_argument("--limit", type=int, help="Optional limit for quick demo runs.")
     parser.add_argument(
@@ -57,6 +66,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--linkedin-evidence-cache",
         help="Optional path for reusable LinkedIn official-website evidence.",
+    )
+    parser.add_argument(
+        "--company-discovery-evidence-store",
+        help="Optional path for reusable verified company-discovery evidence.",
     )
     stage_group = parser.add_mutually_exclusive_group()
     stage_group.add_argument(
@@ -100,6 +113,7 @@ def main(argv: list[str] | None = None) -> None:
         checkpoint_dir=args.checkpoint_dir,
         website_overrides=args.website_overrides,
         linkedin_evidence_cache_path=args.linkedin_evidence_cache,
+        company_discovery_evidence_path=args.company_discovery_evidence_store,
     )
     fetcher = application.fetcher
     companies = _load_companies(args, fetcher)

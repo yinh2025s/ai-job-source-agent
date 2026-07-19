@@ -4,14 +4,24 @@ from html import unescape
 from html.parser import HTMLParser
 import json
 import re
-from urllib.parse import quote, unquote, urljoin, urlparse, urlunparse
+from urllib.parse import parse_qsl, quote, unquote, urljoin, urlparse, urlunparse
 
 from ..web import FetchError
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _HOST = "jobs.ashbyhq.com"
-_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+_API_HOST = "api.ashbyhq.com"
+_API_PATH_PREFIX = ("posting-api", "job-board")
+_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$")
+_DETAIL_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{1,127}$")
+_TRACKING_QUERY_KEYS = {
+    "utm_campaign",
+    "utm_content",
+    "utm_medium",
+    "utm_source",
+    "utm_term",
+}
 _URL_FIELDS = ("jobUrl", "jobURL", "job_url", "url", "externalLink")
 _JOB_CONTAINER_KEYS = {"jobs", "jobpostings", "job_postings", "openings"}
 
@@ -21,16 +31,12 @@ class AshbyAdapter:
     supports_listing = True
 
     def recognizes(self, url: str) -> bool:
-        return _parsed_public_url(url) is not None
+        return _board_identifier(url) is not None
 
     def identify_board(self, url: str) -> JobBoard | None:
-        parsed = _parsed_public_url(url)
-        if parsed is None:
+        identifier = _board_identifier(url)
+        if identifier is None:
             return None
-        parts = _path_parts(parsed.path)
-        if not parts or not _IDENTIFIER_PATTERN.fullmatch(parts[0]):
-            return None
-        identifier = parts[0]
         return JobBoard(
             url=_board_url(identifier),
             provider=self.name,
@@ -44,6 +50,7 @@ class AshbyAdapter:
                 provider=self.name,
                 board=board,
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                inventory_complete=False,
                 trace={"adapter": self.name, "error": "missing Ashby board identifier"},
             )
 
@@ -102,6 +109,7 @@ class AshbyAdapter:
                 board=board,
                 reason_code="PROVIDER_FETCH_FAILED",
                 retryable=True,
+                inventory_complete=False,
                 trace=trace,
             )
 
@@ -144,6 +152,7 @@ class AshbyAdapter:
             candidates=candidates,
             reason_code=reason_code,
             retryable=reason_code == "PROVIDER_FETCH_FAILED",
+            inventory_complete=reason_code in {None, "EMPTY_PROVIDER_RESPONSE"},
             trace=trace,
         )
 
@@ -272,7 +281,7 @@ def _candidate(job: object, identifier: str) -> JobCandidate | None:
         title=title.strip(),
         url=job_url,
         provider="ashby",
-        location=_location_name(job.get("location")),
+        location=_location_names(job),
         raw={"id": job.get("id")},
     )
 
@@ -281,13 +290,18 @@ def _job_url(value: object, identifier: str) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        parsed = _parsed_public_url(urljoin(_board_url(identifier), value.strip()))
+        parsed = _safe_ashby_url(urljoin(_board_url(identifier), value.strip()))
     except ValueError:
         return None
-    if parsed is None:
+    if (
+        parsed is None
+        or (parsed.hostname or "").casefold() != _HOST
+        or not _safe_tracking_query(parsed.query)
+        or parsed.fragment
+    ):
         return None
     parts = _path_parts(parsed.path)
-    if len(parts) != 2 or parts[0].casefold() != identifier.casefold():
+    if len(parts) != 2 or parts[0] != identifier:
         return None
     if not parts[1] or parts[1] in {".", ".."}:
         return None
@@ -295,28 +309,105 @@ def _job_url(value: object, identifier: str) -> str | None:
     return urlunparse(("https", _HOST, f"/{path}", "", "", ""))
 
 
-def _parsed_public_url(url: str):
+def _board_identifier(url: str) -> str | None:
+    parsed = _safe_ashby_url(url)
+    if parsed is None or parsed.fragment:
+        return None
+    parts = _path_parts(parsed.path)
+    host = (parsed.hostname or "").casefold()
+    if host == _HOST:
+        if not parts or not _IDENTIFIER_PATTERN.fullmatch(parts[0]):
+            return None
+        if len(parts) == 1:
+            if not _safe_public_query(parsed.query, {"display": {"embedded"}}):
+                return None
+        elif len(parts) == 2 and parts[1] == "embed":
+            if not _safe_public_query(parsed.query, {"version": None}):
+                return None
+        elif len(parts) == 2 and _DETAIL_PATTERN.fullmatch(parts[1]):
+            if not _safe_public_query(parsed.query, {"embed": {"true"}}):
+                return None
+        else:
+            return None
+        return parts[0]
+    elif (
+        host == _API_HOST
+        and not parsed.query
+        and tuple(parts[:2]) == _API_PATH_PREFIX
+    ):
+        tenant_parts = parts[2:]
+    else:
+        return None
+    if len(tenant_parts) != 1 or not _IDENTIFIER_PATTERN.fullmatch(tenant_parts[0]):
+        return None
+    return tenant_parts[0]
+
+
+def _safe_ashby_url(url: str):
     try:
         parsed = urlparse(url)
         port = parsed.port
     except (TypeError, ValueError):
         return None
-    scheme = parsed.scheme.casefold()
-    standard_port = port is None or (scheme == "https" and port == 443) or (
-        scheme == "http" and port == 80
-    )
-    if scheme not in {"http", "https"}:
+    if parsed.scheme.casefold() != "https":
         return None
-    if (parsed.hostname or "").casefold() != _HOST:
+    if (parsed.hostname or "").casefold() not in {_HOST, _API_HOST}:
         return None
-    if parsed.username or parsed.password or not standard_port:
+    if parsed.username or parsed.password or port not in {None, 443}:
         return None
     return parsed
 
 
+def _safe_tracking_query(query: str) -> bool:
+    return _safe_public_query(query, {})
+
+
+def _safe_public_query(
+    query: str,
+    extra_keys: dict[str, set[str] | None],
+) -> bool:
+    if not query:
+        return True
+    if len(query) > 2048:
+        return False
+    try:
+        pairs = parse_qsl(query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return False
+    seen: set[str] = set()
+    for key, value in pairs:
+        normalized_key = key.casefold()
+        if (
+            normalized_key not in _TRACKING_QUERY_KEYS | set(extra_keys)
+            or normalized_key in seen
+            or not value
+            or len(value) > 500
+            or any(ord(character) < 32 or ord(character) == 127 for character in value)
+        ):
+            return False
+        allowed_values = extra_keys.get(normalized_key)
+        if normalized_key in extra_keys:
+            if allowed_values is None:
+                if not value.isdigit() or len(value) > 4:
+                    return False
+            elif value.casefold() not in allowed_values:
+                return False
+        seen.add(normalized_key)
+    return bool(pairs)
+
+
 def _path_parts(path: str) -> list[str]:
-    parts = [unquote(part) for part in path.split("/") if part]
-    if any(not part or "/" in part or "\\" in part or part in {".", ".."} for part in parts):
+    if not path.startswith("/") or "\\" in path:
+        return []
+    normalized = path[1:-1] if path.endswith("/") else path[1:]
+    raw_parts = normalized.split("/") if normalized else []
+    if any(not part for part in raw_parts):
+        return []
+    parts = [unquote(part) for part in raw_parts]
+    if any(
+        not part or "/" in part or "\\" in part or "%" in part or part in {".", ".."}
+        for part in parts
+    ):
         return []
     return parts
 
@@ -325,14 +416,54 @@ def _board_url(identifier: str) -> str:
     return f"https://{_HOST}/{quote(identifier, safe='-_')}"
 
 
+def _location_names(job: dict) -> str | None:
+    locations: list[str] = []
+    primary = _location_name(job.get("location"))
+    if primary:
+        locations.append(primary)
+
+    secondary_locations = job.get("secondaryLocations")
+    if isinstance(secondary_locations, list):
+        locations.extend(
+            location
+            for item in secondary_locations
+            if (location := _location_name(item))
+        )
+
+    unique_locations: list[str] = []
+    seen: set[str] = set()
+    for location in locations:
+        normalized = " ".join(location.split()).casefold()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        unique_locations.append(location)
+    return "; ".join(unique_locations) or None
+
+
 def _location_name(location: object) -> str | None:
-    if isinstance(location, str) and location.strip():
-        return location.strip()
-    if isinstance(location, dict):
-        name = location.get("name")
-        if isinstance(name, str) and name.strip():
-            return name.strip()
-    return None
+    if isinstance(location, str):
+        return _public_text(location)
+    if not isinstance(location, dict):
+        return None
+    for key in ("location", "name"):
+        name = _public_text(location.get(key))
+        if name:
+            return name
+    address = location.get("address")
+    postal_address = address.get("postalAddress") if isinstance(address, dict) else None
+    if not isinstance(postal_address, dict):
+        return None
+    parts = [
+        part
+        for key in ("addressLocality", "addressRegion", "addressCountry")
+        if (part := _public_text(postal_address.get(key)))
+    ]
+    return ", ".join(parts) or None
+
+
+def _public_text(value: object) -> str | None:
+    return " ".join(value.split()) if isinstance(value, str) and value.strip() else None
 
 
 ADAPTER = AshbyAdapter()

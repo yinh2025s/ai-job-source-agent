@@ -15,6 +15,10 @@ _API_PATH_PREFIX = "/api/v3/accounts/"
 _MAX_API_PAGES = 5
 _IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
 _SHORTCODE_PATTERN = re.compile(r"^[A-Za-z0-9_-]+$")
+_ACCOUNT_UID_PATTERN = re.compile(
+    r"^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+    re.IGNORECASE,
+)
 _URL_FIELDS = ("url", "jobUrl", "job_url", "applicationUrl", "application_url", "href")
 _TITLE_FIELDS = ("title", "name", "jobTitle", "job_title")
 _LOCATION_FIELDS = ("location", "workplace", "jobLocation")
@@ -97,8 +101,21 @@ class WorkableAdapter:
                 },
             )
 
+        parser = _WorkableHTMLParser()
+        try:
+            parser.feed(page.html or "")
+        except (TypeError, ValueError):
+            parser = _WorkableHTMLParser()
+
         final_board_url = page.final_url or page.url
+        account_uid: str | None = None
         if not _is_account_board_url(final_board_url, board.identifier):
+            account_uid = _custom_board_account_uid(
+                final_board_url,
+                parser.metadata,
+                board.identifier,
+            )
+        if not _is_account_board_url(final_board_url, board.identifier) and account_uid is None:
             return AdapterResult(
                 provider=self.name,
                 board=board,
@@ -114,12 +131,6 @@ class WorkableAdapter:
                     "inventory_complete": False,
                 },
             )
-
-        parser = _WorkableHTMLParser()
-        try:
-            parser.feed(page.html or "")
-        except (TypeError, ValueError):
-            parser = _WorkableHTMLParser()
 
         payloads = _json_payloads(parser.scripts)
         candidates = _anchor_candidates(parser.links, board.identifier)
@@ -212,6 +223,27 @@ class WorkableAdapter:
                         inventory_scope,
                         candidates,
                     )
+                if account_uid is not None and not _records_match_account_uid(
+                    records,
+                    account_uid,
+                ):
+                    return AdapterResult(
+                        provider=self.name,
+                        board=board,
+                        reason_code="PROVIDER_VARIANT_UNSUPPORTED",
+                        inventory_scope=inventory_scope,
+                        inventory_complete=False,
+                        trace={
+                            "adapter": self.name,
+                            "board_urls": [board_url],
+                            "board_final_url": final_board_url,
+                            "api_urls": api_urls,
+                            "account_uid": account_uid,
+                            "error": "Workable API response did not preserve account identity",
+                            "inventory_scope": inventory_scope,
+                            "inventory_complete": False,
+                        },
+                    )
 
                 api_page_count += 1
                 records_seen += len(records)
@@ -260,7 +292,9 @@ class WorkableAdapter:
             trace={
                 "adapter": self.name,
                 "board_urls": [board_url],
+                "board_final_url": final_board_url,
                 "api_urls": api_urls,
+                "account_uid": account_uid,
                 "response_source": page.source,
                 "payload_count": len(payloads),
                 "public_link_count": len(parser.links),
@@ -304,6 +338,40 @@ def _is_account_board_url(url: str, account: str) -> bool:
         return False
     parts = [unquote(part) for part in parsed.path.split("/") if part]
     return bool(parts and parts[0].casefold() == account.casefold())
+
+
+def _custom_board_account_uid(
+    url: str,
+    metadata: dict[str, str],
+    account: str,
+) -> str | None:
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return None
+    if (
+        parsed.scheme.casefold() != "https"
+        or parsed.username
+        or parsed.password
+        or port not in {None, 443}
+        or not parsed.hostname
+        or metadata.get("domain", "").casefold() != "workable.com"
+        or metadata.get("subdomain", "").casefold() != account.casefold()
+    ):
+        return None
+    account_uid = metadata.get("account", "").strip()
+    return account_uid if _ACCOUNT_UID_PATTERN.fullmatch(account_uid) else None
+
+
+def _records_match_account_uid(records: list[object], account_uid: str) -> bool:
+    for record in records:
+        if not isinstance(record, dict):
+            return False
+        record_uid = record.get("accountUid")
+        if not isinstance(record_uid, str) or record_uid.casefold() != account_uid.casefold():
+            return False
+    return True
 
 
 def _api_url(account: str) -> str:
@@ -392,6 +460,7 @@ class _WorkableHTMLParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.scripts: list[str] = []
         self.links: list[tuple[str, str]] = []
+        self.metadata: dict[str, str] = {}
         self._script_parts: list[str] | None = None
         self._link_href = ""
         self._link_parts: list[str] | None = None
@@ -400,6 +469,11 @@ class _WorkableHTMLParser(HTMLParser):
         attributes = {key.casefold(): value or "" for key, value in attrs}
         if tag.casefold() == "script":
             self._script_parts = []
+        elif tag.casefold() == "meta" and attributes.get("name"):
+            self.metadata.setdefault(
+                attributes["name"].casefold(),
+                attributes.get("content", ""),
+            )
         elif tag.casefold() == "a" and attributes.get("href"):
             self._link_href = attributes["href"]
             self._link_parts = []

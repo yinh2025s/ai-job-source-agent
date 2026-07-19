@@ -1,5 +1,7 @@
 import unittest
 
+from job_source_agent.browser_interaction import JobSearchInteraction
+from job_source_agent.career_transport_budget import CareerTransportBudgetFetcher
 from job_source_agent.retrying_fetcher import RetryingFetcher
 from job_source_agent.web import FetchError, Page
 
@@ -10,10 +12,12 @@ class SequenceFetcher:
     def __init__(self, responses):
         self.responses = list(responses)
         self.calls = 0
+        self.interactions = []
 
-    def fetch(self, url, data=None, headers=None):
+    def fetch(self, url, data=None, headers=None, *, interaction=None):
         response = self.responses[min(self.calls, len(self.responses) - 1)]
         self.calls += 1
+        self.interactions.append(interaction)
         if isinstance(response, Exception):
             raise response
         return response
@@ -103,6 +107,48 @@ class RetryFetcherTests(unittest.TestCase):
         self.assertEqual(base.calls, 2)
         self.assertEqual(fetcher.retry_events[-1]["outcome"], "retry_budget_exhausted")
 
+    def test_transport_budget_rejection_is_terminal_for_current_call(self):
+        base = SequenceFetcher([Page("u", "ok")])
+        budgeted = CareerTransportBudgetFetcher(base)
+        sleeps = []
+        fetcher = RetryingFetcher(
+            budgeted,
+            max_retries=3,
+            base_delay=1,
+            jitter_ratio=0,
+            sleeper=sleeps.append,
+        )
+
+        with budgeted.career_discovery_scope(0) as budget:
+            with self.assertRaises(FetchError) as raised:
+                fetcher.fetch("https://example.test/jobs")
+
+        self.assertEqual(raised.exception.reason_code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertTrue(raised.exception.retryable)
+        self.assertEqual(base.calls, 0)
+        self.assertEqual(sleeps, [])
+        self.assertEqual(budget.snapshot()["rejected"], 1)
+        self.assertEqual(len(fetcher.retry_events), 1)
+        self.assertTrue(fetcher.retry_events[0]["retryable"])
+        self.assertEqual(fetcher.retry_events[0]["outcome"], "retry_deferred")
+
+    def test_retries_forward_the_same_interaction_without_tracing_title(self):
+        page = Page("u", "ok")
+        base = SequenceFetcher([FetchError("timeout"), page])
+        fetcher = RetryingFetcher(base, max_retries=1, base_delay=0)
+        interaction = JobSearchInteraction(
+            form_ordinal=1,
+            query_name="search",
+            target_title="Secret Staff Engineer",
+            submit_text="Find jobs",
+        )
+
+        self.assertIs(fetcher.fetch("u", interaction=interaction), page)
+
+        self.assertEqual(len(base.interactions), 2)
+        self.assertTrue(all(item is interaction for item in base.interactions))
+        self.assertNotIn(interaction.target_title, repr(fetcher.retry_events))
+
     def test_deadline_prevents_sleep_and_next_attempt(self):
         now = [10.0]
         expected = FetchError("timeout")
@@ -148,9 +194,14 @@ class RetryFetcherTests(unittest.TestCase):
                 super().__init__([Page("u", "ok")])
                 self.observed_timeouts = []
 
-            def fetch(self, url, data=None, headers=None):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
                 self.observed_timeouts.append(self.timeout)
-                return super().fetch(url, data=data, headers=headers)
+                return super().fetch(
+                    url,
+                    data=data,
+                    headers=headers,
+                    interaction=interaction,
+                )
 
         base = TimeoutRecordingFetcher()
         fetcher = RetryingFetcher(base, max_retries=0, clock=lambda: 10.0, deadline=12.5)

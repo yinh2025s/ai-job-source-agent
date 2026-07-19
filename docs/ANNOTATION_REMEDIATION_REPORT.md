@@ -1,6 +1,6 @@
 # Annotation Remediation Report
 
-Status: remediation rounds and final live completed; delivery gates in progress  
+Status: manually confirmed simple-path queue completed; product-default observed regression passed
 Cohort classification: observed development cohort, not a blind holdout  
 Baseline run date: 2026-07-16  
 Manual review frozen: 2026-07-17T02:52:54+08:00
@@ -175,17 +175,132 @@ score 55 and fetches it before speculative fallbacks.
 - Added replay-safe CWS and Oracle HCM policies without adding company URL maps
   or runtime annotation overrides.
 
-The six-round resource stop is now reached. No further provider or heuristic
-round is started from this observed cohort.
+The original six-round resource stop was removed by the user on 2026-07-17.
+The observed cohort may now drive additional generic remediation rounds until
+all manually confirmed eligible simple-path failures are recovered or new
+evidence proves that a record is no longer eligible. Company-specific runtime
+overrides and unverified URL publication remain prohibited.
 
-## Final Offline Gates
+There is no replacement numeric round limit for targeted remediation. Full
+cohort live runs remain batched and serial, while targeted fixes continue until
+the manually reviewed simple-path queue is empty or a concrete external,
+identity, privacy, paid-access, or product-contract blocker is documented.
 
-Before the final live run:
+### Unbounded stabilization continuation
 
-- CPython 3.12.6: 1,642 tests passed, 3 skipped.
+- Provider Career URLs retain typed first-party provenance even when the
+  adapter canonicalizes `/jobs` or an old provider host to the tenant board.
+  Texas Children's (Oracle HCM) and Gary and Mary West PACE (iSolved) replay
+  from prior S7 identity failures to exact results.
+- Northwell's CWS page-declared SmartPost organization is validated against the
+  internal public inventory endpoint only after the declared endpoint returns
+  not-found; every row must retain the same organization and open status.
+- Same-title page candidates use target-location URL evidence only as a ranking
+  feature. S7 separately rejects an explicit conflicting US state, preventing
+  the prior Bellevue/York System One swap.
+- Candidate counts distinguish incomplete native inventory from visible,
+  selected page candidates; no empty inventory is rewritten as complete.
+- Product entry points default to the staged three-route candidate path, while
+  lower-level library defaults and legacy replay remain disabled for
+  compatibility. The old path remains available through the explicit disable
+  flag.
+
+Focused live acceptance recovered exact openings for Northwell, Texas
+Children's, Gary and Mary West PACE, System One, SpaceX, and Kodiak Cakes.
+Texas/SpaceX passed again at 2/2 using the ordinary default command, and the
+full-outcome replay passed 2/2. Hugh Chatham remains intentionally non-exact:
+the public target belongs to Atrium Health and no verified hiring relationship
+connects the source company to that tenant.
+
+### Product-default observed regression
+
+After the focused gates passed, a new serial 40-company run used the ordinary
+product configuration with three-route discovery enabled by default. It did
+not use annotation URLs, company maps, authenticated browser state, or a
+parallel live benchmark.
+
+| Funnel | Baseline | First checkpoint | Product default | Delta from checkpoint |
+| --- | ---: | ---: | ---: | ---: |
+| Verified website | 35/40 | 38/40 | 40/40 | +2 |
+| Career page | 26/40 | 29/40 | 32/40 | +3 |
+| Job list | 20/40 | 22/40 | 28/40 | +6 |
+| Raw exact opening | 13/40 | 18/40 | 22/40 | +4 |
+
+The run completed 40 unique companies in 401.5 seconds. Its final per-stage
+capture lineage records 1,482 public HTTP transactions: 170 for website
+resolution, 42 for hiring identity, 441 for Career discovery, 749 for Job Board
+discovery, and 80 for opening match. All nine records still
+eligible after manual and identity review recover an S7-verified exact opening:
+Aarris Healthcare, System One, CHC, SpaceX, Lacoste, Texas Children's,
+Northwell Health, Gary and Mary West PACE, and Avery Dennison. The frozen
+annotation evaluator reports 9/10 only because the frozen source still labels
+Hugh Chatham as a system gap; the later hiring-identity audit reclassifies it as
+`eligibility_unknown`, so the current eligible queue is 9/9.
+
+| Recovered record | Verified provider / tenant | Official exact opening |
+| --- | --- | --- |
+| Aarris Healthcare | ApplicantStack / `aarris` | `https://aarris.applicantstack.com/x/detail/a27xztr5mziq` |
+| System One | First-party verified inventory / canonical board URL | `https://jobs.systemone.com/job/mechanical-design-engineer-industrial-manufacturing-york-pa-376670/07c3bf4e-7d3a-11f1-9454-02420a6c7775` |
+| CHC Snohomish County | UltiPro / `COM1101CMHS` board | `https://recruiting2.ultipro.com/COM1101CMHS/JobBoard/8de41890-2fe6-4347-b1ad-f3043de88a1a/OpportunityDetail?opportunityId=7905b0d4-e183-4125-b3f6-fc6044809d7d` |
+| SpaceX | Greenhouse / `spacex` | `https://boards.greenhouse.io/spacex/jobs/8527570002?gh_jid=8527570002` |
+| Lacoste | DigitalRecruiters / `careers.lacoste.com` | `https://careers.lacoste.com/en/annonce/4371325-account-executive-10016-new-york` |
+| Texas Children's Hospital | Oracle HCM / `eohh`, site `CX` | `https://eohh.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX/job/425798` |
+| Northwell Health | CWS / verified organization `1962` | `https://jobs.northwell.edu/job-3/23112933/registered-nurse-ambulatory-ob-gyn-lake-success-ny` |
+| Gary and Mary West PACE | iSolved / `westpace` | `https://westpace.isolvedhire.com/jobs/1822062` |
+| Avery Dennison | SmartRecruiters / `averydennison` | `https://jobs.smartrecruiters.com/averydennison/744000137723991` |
+
+For every row, S7 verifies the source company to hiring entity, provider,
+tenant, canonical board, selected opening, title, active status, and available
+location evidence. The URL table is reporting evidence only; none of these
+values is a production lookup override.
+
+Four records have independently frozen expected opening URLs and match 4/4.
+Wrong expected URL count and unsafe exact count are both zero. Whole-output
+exact precision is still not reportable because 18 of the 22 exact records do
+not have an independent frozen URL label. Solace remains an explicit review
+item rather than a claimed precision success. Lilly Pulitzer safely remains
+non-exact because the current opening's explicit location conflicts with the
+LinkedIn target.
+
+Final non-exact reasons are:
+
+| Reason | Count | Interpretation |
+| --- | ---: | --- |
+| `CAREER_PAGE_NOT_FOUND` | 8 | No verified public Career surface |
+| `JOB_BOARD_NOT_FOUND` | 4 | Career evidence exists, but no verified inventory handoff |
+| `OPENING_DISCOVERY_INCOMPLETE` | 3 | Public inventory could not support an exact conclusion |
+| `RESULT_IDENTITY_MISMATCH` | 1 | S7 rejected the explicit location conflict |
+| `BOT_PROTECTION` | 1 | Public inventory was blocked during this run |
+| `NO_PUBLIC_OPENINGS` | 1 | Complete official inventory verified no public match |
+
+The post-fix full-outcome replay reproduces 40/40 outcomes with zero mismatches
+and zero fixture gaps. No company worker raised an unhandled runtime exception.
+
+Product-default artifact provenance:
+
+| Artifact | Path | SHA-256 |
+| --- | --- | --- |
+| Cohort | `/private/tmp/remediation-observed40-current-cohort.json` | `6771e2a547841c5846767764b3bb8ac5b19b5e3312f279a1bd8f6cfb89f35f26` |
+| Results | `/private/tmp/remediation-observed40-product-default-v2-results.json` | `18ee8467cbaaeeea1505b645a549e193d4a283ff5475f8fba7ebb229e99e6fb2` |
+| Trace | `/private/tmp/remediation-observed40-product-default-v2-trace.json` | `745a42b84b750a76689427d1dbdaff112f6838f2160359a73c071ecfe4e1d787` |
+| Summary | `/private/tmp/remediation-observed40-product-default-v2-summary.json` | `21a92ae8398092ac3d86968fe982249f9ab8f6f9464974d7c31004984c529ad5` |
+| Annotation evaluation | `/private/tmp/remediation-observed40-product-default-v3-annotation-evaluation.json` | `6ac21ae31690e0ca82af7602c3697ec96669af26dfa701bbc718b099c0ea221a` |
+
+- Agent configuration digest:
+  `222ce27d63cda130b40453738145e80e8dd3d82b91ff75e6e76b9e9453b2b252`
+- Batch configuration digest:
+  `ce1de65e0bcfe8b700c9b7e5260868bfef955f04e80ba06c450f17fa1815f8f9`
+- Replay output root:
+  `/private/tmp/remediation-observed40-product-default-v3-full-replay`
+
+## Latest Offline Gates
+
+After the product-default live run and final identity/replay corrections:
+
+- CPython 3.12.6: 1,725 tests passed, 3 skipped.
 - Production provider benchmark: 25/25 exact expectations.
 - Resolver benchmark: 6/6.
-- Architecture validator: 32 native adapters, 0 issues.
+- Architecture validator: 33 native adapters, 0 issues.
 - Extension DOM/popup/bridge/HTTP slice: 34/34.
 - Replay/live-batch/evaluation preflight slice: 103/103.
 - `git diff --check`: passed.
@@ -232,8 +347,8 @@ and `git diff --check`.
 
 ## Final Gate
 
-Exactly one frozen 40-company final live evaluation ran on
-2026-07-17. It used the same agent and batch configuration digests as the
+The first frozen 40-company remediation checkpoint ran on 2026-07-17. It used
+the same agent and batch configuration digests as the
 baseline, isolated checkpoint/snapshot/completion roots, two company workers,
 and no concurrent live benchmark.
 
@@ -287,8 +402,9 @@ Final artifact provenance:
 | Website not resolved | 2 | Company identity evidence remained insufficient |
 | Verified no public opening | 1 | Complete inventory produced a safe no-match |
 
-The final-live Gary crash is fixed in code and tests but intentionally not
-retested live because the goal allowed exactly one final live execution.
+The first-checkpoint Gary crash is fixed in code and tests. The former
+single-live restriction has been removed, so it will be verified in the next
+serial cohort regression after the remaining generic fixes pass offline gates.
 
 Next-stage candidates, limited to three:
 

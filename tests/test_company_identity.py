@@ -47,6 +47,12 @@ class CompanyIdentityTests(unittest.TestCase):
             "Ekimetrics": "https://jobs.lever.co/ekimetrics",
             "Brex": "https://www.brex.com/careers",
             "Lyft": "https://job-boards.greenhouse.io/lyft",
+            "Michael Kors": "https://capri.wd1.myworkdayjobs.com/Michael_Kors",
+            "Saint Laurent": (
+                "https://www.kering.com/en/talent/job-offers/saint-laurent-careers/"
+            ),
+            "Gucci": "https://www.kering.com/en/talent/job-offers/gucci-careers/",
+            "adidas": "https://careers.adidas-group.com/",
         }
 
         for company_name, career_root in cases.items():
@@ -54,6 +60,61 @@ class CompanyIdentityTests(unittest.TestCase):
                 identity, _trace = CompanyIdentityResolver().resolve(company_name)
                 self.assertIsNotNone(identity)
                 self.assertEqual(identity.career_root_url, career_root)
+
+    def test_curated_parent_hiring_rules_retain_official_relationship_evidence(self):
+        cases = {
+            "Michael Kors": ("Capri Holdings", "official_brand_career_handoff"),
+            "Saint Laurent": ("Kering", "official_parent_career_handoff"),
+            "Gucci": ("Kering", "official_parent_career_handoff"),
+            "adidas": ("adidas", "official_company_career_handoff"),
+        }
+
+        for company_name, (parent, method) in cases.items():
+            with self.subTest(company_name=company_name):
+                identity, trace = CompanyIdentityResolver().resolve(company_name)
+
+                self.assertEqual(identity.hiring_entity_name, parent)
+                expected_relationship = (
+                    "same_entity" if company_name == "adidas" else "brand_parent"
+                )
+                self.assertEqual(identity.relationship_type, expected_relationship)
+                self.assertTrue(identity.relationship_verified)
+                self.assertEqual(identity.verification_method, method)
+                self.assertTrue(identity.evidence_url.startswith("https://"))
+                self.assertTrue(trace["selected"]["relationship"]["verified"])
+
+    def test_ambiguous_haystack_rule_requires_the_linkedin_company_slug(self):
+        resolver = CompanyIdentityResolver()
+
+        unresolved, _trace = resolver.resolve("Haystack")
+        identity, trace = resolver.resolve(
+            "Haystack",
+            linkedin_company_url="https://www.linkedin.com/company/wearehaystack",
+        )
+
+        self.assertIsNone(unresolved)
+        self.assertEqual(trace["matched_rule"], "wearehaystack")
+        self.assertEqual(identity.official_website_url, "https://www.haystackapp.io/")
+        self.assertEqual(identity.relationship_type, "same_entity")
+
+    def test_ambiguous_hadrian_rule_uses_linkedin_slug_and_official_ashby_board(self):
+        resolver = CompanyIdentityResolver()
+
+        unresolved, _trace = resolver.resolve("Hadrian")
+        identity, trace = resolver.resolve(
+            "Hadrian",
+            linkedin_company_url=(
+                "https://www.linkedin.com/company/hadrianautomation"
+            ),
+        )
+
+        self.assertIsNone(unresolved)
+        self.assertEqual(trace["matched_rule"], "hadrianautomation")
+        self.assertEqual(identity.official_website_url, "https://www.hadrian.co/")
+        self.assertEqual(
+            identity.career_root_url,
+            "https://jobs.ashbyhq.com/hadrian-automation",
+        )
 
     def test_meta_rule_does_not_match_metals(self):
         identity, _trace = CompanyIdentityResolver().resolve(

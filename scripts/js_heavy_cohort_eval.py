@@ -40,7 +40,7 @@ class FixtureCohortFetcher(SmartRenderedFetcher):
             raise FetchError(str(case["static_error"]))
         return self._page(url, case["static_fixture"], "saved_static_shell")
 
-    def _render_live(self, url, reason="manual"):
+    def _render_live(self, url, reason="manual", headers=None):
         self.render_attempts += 1
         case = self._cases[url]
         return self._page(url, case["rendered_fixture"], "saved_browser_dom")

@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from urllib.parse import quote, urlparse, urlunparse
+import re
+from urllib.parse import parse_qsl, quote, unquote, urlparse, urlunparse
 
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
@@ -12,20 +13,43 @@ class LeverAdapter:
 
     def recognizes(self, url: str) -> bool:
         try:
-            return (urlparse(url).hostname or "").lower() == "jobs.lever.co"
+            parsed = urlparse(url)
+            port = parsed.port
         except (TypeError, ValueError):
             return False
+        if (
+            parsed.scheme.casefold() != "https"
+            or parsed.username is not None
+            or parsed.password is not None
+            or port not in {None, 443}
+            or parsed.fragment
+        ):
+            return False
+        host = (parsed.hostname or "").casefold()
+        if host == "jobs.lever.co":
+            return _tenant_from_jobs_path(parsed.path) is not None
+        if host == "api.lever.co":
+            return (
+                _tenant_from_api_path(parsed.path) is not None
+                and _safe_api_query(parsed.query)
+            )
+        return False
 
     def identify_board(self, url: str) -> JobBoard | None:
         if not self.recognizes(url):
             return None
-        parts = [part for part in urlparse(url).path.split("/") if part]
-        if not parts:
+        parsed = urlparse(url)
+        tenant = (
+            _tenant_from_api_path(parsed.path)
+            if (parsed.hostname or "").casefold() == "api.lever.co"
+            else _tenant_from_jobs_path(parsed.path)
+        )
+        if tenant is None:
             return None
         return JobBoard(
-            url=f"https://jobs.lever.co/{parts[0]}",
+            url=f"https://jobs.lever.co/{tenant}",
             provider=self.name,
-            identifier=parts[0],
+            identifier=tenant,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
@@ -128,3 +152,26 @@ def _location_name(job: dict) -> str | None:
 
 
 ADAPTER = LeverAdapter()
+
+
+_TENANT = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9_-]{0,126}[A-Za-z0-9])?$")
+
+
+def _tenant_from_jobs_path(path: str) -> str | None:
+    parts = [unquote(part) for part in path.split("/") if part]
+    return parts[0] if parts and _TENANT.fullmatch(parts[0]) else None
+
+
+def _tenant_from_api_path(path: str) -> str | None:
+    parts = [unquote(part) for part in path.split("/") if part]
+    if len(parts) != 3 or [part.casefold() for part in parts[:2]] != ["v0", "postings"]:
+        return None
+    return parts[2] if _TENANT.fullmatch(parts[2]) else None
+
+
+def _safe_api_query(query: str) -> bool:
+    try:
+        values = parse_qsl(query, keep_blank_values=True)
+    except ValueError:
+        return False
+    return not values or values == [("mode", "json")]

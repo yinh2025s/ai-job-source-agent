@@ -1,8 +1,16 @@
 import unittest
 
 from job_source_agent.contracts import PipelineContext
+from job_source_agent.company_discovery_evidence import (
+    VerifiedCareerEvidence,
+    VerifiedCompanyDiscoveryEvidence,
+    VerifiedProviderBoardEvidence,
+    VerifiedWebsiteEvidence,
+)
+from job_source_agent.candidate_portfolio import CompositeCandidateDiscovery
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
+from job_source_agent.identity_continuity import HiringIdentityEvidence, ProviderIdentity
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.models import (
     STAGE_HIRING_IDENTITY_RESOLUTION,
@@ -14,6 +22,11 @@ from job_source_agent.stages import (
     JobBoardDiscoveryStage,
     OpeningMatchStage,
     PipelineStageRunner,
+)
+from job_source_agent.stages.discovery import (
+    _is_transient_generic_board_query_variant,
+    _stored_provider_relationship,
+    _stored_tenant_matches_hiring_entity,
 )
 
 
@@ -36,6 +49,738 @@ class FakeDiscoveryService:
 
 
 class DiscoveryStageTests(unittest.TestCase):
+    def test_first_party_generic_search_filter_preserves_stable_board_identity(self):
+        self.assertTrue(
+            _is_transient_generic_board_query_variant(
+                "https://jobs.acme.example/search-jobs",
+                "https://jobs.acme.example/search-jobs?orgIds=1127&k=Registered+Nurse",
+                verified_first_party_url="https://jobs.acme.example/careers",
+            )
+        )
+
+    def test_cross_site_organization_filter_is_not_treated_as_transient(self):
+        self.assertFalse(
+            _is_transient_generic_board_query_variant(
+                "https://jobs.vendor.example/search-jobs",
+                "https://jobs.vendor.example/search-jobs?orgIds=1127&k=Engineer",
+                verified_first_party_url="https://acme.example/careers",
+            )
+        )
+
+    class _EvidenceStore:
+        def __init__(self, record=None):
+            self.record = record
+            self.saved = []
+            self.invalidated = []
+
+        def load(self, company_name, linkedin_company_url):
+            return self.record
+
+        def save(self, company_name, linkedin_company_url, **layers):
+            self.saved.append((company_name, linkedin_company_url, layers))
+
+        def invalidate(self, company_name, linkedin_company_url, **kwargs):
+            self.invalidated.append((company_name, linkedin_company_url, kwargs))
+
+    @staticmethod
+    def _stored_career_record():
+        return VerifiedCompanyDiscoveryEvidence(
+            company_name="acme",
+            linkedin_company_url="https://www.linkedin.com/company/acme",
+            website=VerifiedWebsiteEvidence(
+                url="https://acme.example",
+                source="verified_resolver",
+                evidence_url="https://www.linkedin.com/company/acme",
+                observed_at=1.0,
+            ),
+            career=VerifiedCareerEvidence(
+                url="https://acme.example/careers",
+                website_url="https://acme.example",
+                source="first_party_navigation",
+                evidence_url="https://acme.example",
+                observed_at=1.0,
+            ),
+        )
+
+    def test_stored_career_is_revalidated_and_refreshed(self):
+        class CapturingCareer(FakeDiscoveryService):
+            preferred_url = None
+
+            def find_career_page(self, *args, preferred_url=None, **kwargs):
+                self.preferred_url = preferred_url
+                return preferred_url, {
+                    "selected": {"url": preferred_url, "reason": "same-site career link"}
+                }
+
+        store = self._EvidenceStore(self._stored_career_record())
+        service = CapturingCareer()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(service, store).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(service.preferred_url, "https://acme.example/careers")
+        self.assertEqual(store.saved[0][2]["career"].url, service.preferred_url)
+
+    def test_stored_website_and_career_are_revalidated_when_s2_has_no_output(self):
+        class CapturingCareer(FakeDiscoveryService):
+            website_url = None
+            preferred_url = None
+
+            def find_career_page(self, website_url, *args, preferred_url=None, **kwargs):
+                self.website_url = website_url
+                self.preferred_url = preferred_url
+                return preferred_url, {
+                    "selected": {"url": preferred_url, "reason": "same-site career link"}
+                }
+
+        store = self._EvidenceStore(self._stored_career_record())
+        service = CapturingCareer()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(service, store).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(service.website_url, "https://acme.example")
+        self.assertEqual(service.preferred_url, "https://acme.example/careers")
+        self.assertTrue(
+            execution.trace["stored_company_discovery_candidate"]["revalidated"]
+        )
+        self.assertTrue(execution.updates["hiring_identity_evidence"].verified)
+        self.assertEqual(
+            execution.updates["hiring_identity_evidence"].verification_method,
+            "revalidated_stored_career",
+        )
+        self.assertEqual(execution.updates["hiring_entity_name"], "Acme")
+        self.assertEqual(store.saved, [])
+
+    def test_stored_website_is_only_a_lead_until_same_site_career_is_verified(self):
+        class CapturingCareer(FakeDiscoveryService):
+            website_url = None
+            preferred_url = "unset"
+
+            def find_career_page(self, website_url, *args, preferred_url=None, **kwargs):
+                self.website_url = website_url
+                self.preferred_url = preferred_url
+                return f"{website_url}/careers", {
+                    "selected": {
+                        "url": f"{website_url}/careers",
+                        "reason": "same-site career link",
+                    }
+                }
+
+        base = self._stored_career_record()
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+        )
+        store = self._EvidenceStore(record)
+        service = CapturingCareer()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(service, store).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(service.website_url, "https://acme.example")
+        self.assertIsNone(service.preferred_url)
+        self.assertEqual(
+            execution.updates["hiring_identity_evidence"].verification_method,
+            "revalidated_stored_website_career",
+        )
+        self.assertEqual(store.saved[0][2]["career"].url, "https://acme.example/careers")
+
+    def test_stored_website_cross_site_career_does_not_restore_identity(self):
+        class CrossSiteCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                return "https://jobs.other.example/acme", {
+                    "selected": {
+                        "url": "https://jobs.other.example/acme",
+                        "reason": "provider career page",
+                    }
+                }
+
+        base = self._stored_career_record()
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+        )
+        store = self._EvidenceStore(record)
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(CrossSiteCareer(), store).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertNotIn("hiring_identity_evidence", execution.updates)
+        self.assertEqual(store.saved, [])
+
+    def test_stored_career_redirect_does_not_recover_hiring_identity(self):
+        class RedirectedCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                return "https://jobs.example.net/other", {
+                    "selected": {
+                        "url": "https://jobs.example.net/other",
+                        "reason": "provider career page",
+                    }
+                }
+
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(
+            RedirectedCareer(),
+            self._EvidenceStore(self._stored_career_record()),
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertNotIn("hiring_identity_evidence", execution.updates)
+        self.assertNotIn("revalidated_stored_career_identity", execution.trace)
+
+    def test_stored_provider_candidate_defers_s4_when_current_website_is_unavailable(self):
+        class UnexpectedCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise AssertionError("S4 must not consume the provider revalidation budget")
+
+        base = self._stored_career_record()
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+            career=base.career,
+            provider_boards=(
+                VerifiedProviderBoardEvidence(
+                    provider="greenhouse",
+                    tenant="acme",
+                    canonical_board_url="https://job-boards.greenhouse.io/acme",
+                    relationship_evidence_url="https://acme.example/careers",
+                    verification_method="first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=1.0,
+                ),
+            ),
+        )
+        store = self._EvidenceStore(record)
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(UnexpectedCareer(), store).run(context)
+
+        self.assertEqual(execution.result.status, "not_run")
+        self.assertEqual(
+            execution.trace["scheduler"]["reason"],
+            "stored_provider_candidate_deferred_to_s5",
+        )
+
+    def test_generic_nonretryable_stored_career_rejection_retains_career_layer(self):
+        class MissingCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise DiscoveryError(
+                    "career_page_not_found",
+                    "gone",
+                    trace={"candidate": {"url": "https://acme.example/careers"}},
+                )
+
+        store = self._EvidenceStore(self._stored_career_record())
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(MissingCareer(), store).run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(store.invalidated, [])
+
+    def test_explicit_stored_career_identity_rejection_invalidates_layer(self):
+        class WrongCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise DiscoveryError(
+                    "career_page_not_found",
+                    "identity conflict",
+                    trace={"stored_candidate_identity_rejected": True},
+                )
+
+        store = self._EvidenceStore(self._stored_career_record())
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(WrongCareer(), store).run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(store.invalidated[0][2]["layer"], "career")
+
+    def test_retryable_stored_career_rejection_retains_evidence(self):
+        class TimedOutCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise DiscoveryError(
+                    "career_page_not_found",
+                    "temporarily unavailable",
+                    trace={
+                        "fetch_failure": {
+                            "retryable": True,
+                            "url": "https://acme.example/careers",
+                        }
+                    },
+                )
+
+        store = self._EvidenceStore(self._stored_career_record())
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        CareerDiscoveryStage(TimedOutCareer(), store).run(context)
+
+        self.assertEqual(store.invalidated, [])
+
+    def test_verified_first_party_provider_handoff_is_persisted(self):
+        class BoardService:
+            def find_job_board_with_evidence(
+                self, career_page_url, company_name=None, target_location=None
+            ):
+                board = JobBoard(
+                    provider="greenhouse",
+                    identifier="acme",
+                    url="https://boards.greenhouse.io/acme",
+                )
+                return board.url, {}, DiscoveredJobBoard(
+                    board=board,
+                    detection_method="linked_url_evidence",
+                    evidence_url=board.url,
+                    relationship_evidence_url=career_page_url,
+                )
+
+        store = self._EvidenceStore()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+        context.company_website_url = "https://acme.example"
+        context.career_page_url = "https://acme.example/careers"
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="official_website",
+            verified=True,
+            evidence_url="https://acme.example",
+        )
+        context.hiring_entity_name = "Acme"
+
+        execution = JobBoardDiscoveryStage(
+            BoardService(),
+            company_discovery_evidence_store=store,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        saved = store.saved[0][2]["provider_board"]
+        self.assertEqual(saved.provider, "greenhouse")
+        self.assertEqual(saved.tenant, "acme")
+        self.assertEqual(saved.source, "first_party_handoff")
+
+    def test_tenant_name_match_alone_is_not_persisted(self):
+        class BoardService:
+            def find_job_board_with_evidence(
+                self, career_page_url, company_name=None, target_location=None
+            ):
+                board = JobBoard(
+                    provider="greenhouse",
+                    identifier="acme",
+                    url="https://boards.greenhouse.io/acme",
+                )
+                return board.url, {}, DiscoveredJobBoard(
+                    board=board,
+                    detection_method="search_result",
+                    evidence_url=board.url,
+                )
+
+        store = self._EvidenceStore()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+        context.company_website_url = "https://acme.example"
+        context.career_page_url = "https://acme.example/careers"
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="official_website",
+            verified=True,
+            evidence_url="https://acme.example",
+        )
+        context.hiring_entity_name = "Acme"
+
+        execution = JobBoardDiscoveryStage(
+            BoardService(),
+            company_discovery_evidence_store=store,
+        ).run(context)
+
+        self.assertEqual(
+            execution.updates["provider_identity"].verification_method,
+            "tenant_name_match",
+        )
+        self.assertEqual(store.saved, [])
+
+    def test_stored_provider_board_is_only_an_unverified_s5_candidate(self):
+        record = self._stored_career_record()
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=record.company_name,
+            linkedin_company_url=record.linkedin_company_url,
+            website=record.website,
+            career=record.career,
+            provider_boards=(
+                VerifiedProviderBoardEvidence(
+                    provider="greenhouse",
+                    tenant="acme",
+                    canonical_board_url="https://job-boards.greenhouse.io/acme",
+                    relationship_evidence_url="https://acme.example/careers",
+                    verification_method="first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=1.0,
+                ),
+            ),
+        )
+        store = self._EvidenceStore(record)
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+                job_title="Engineer",
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+            company_discovery_evidence_store=store,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://job-boards.greenhouse.io/acme",
+        )
+        self.assertFalse(
+            execution.updates["provider_identity"].relationship_verified
+        )
+        self.assertEqual(
+            execution.trace["selected"]["source_kind"],
+            "stored_verified_provider_board",
+        )
+        self.assertFalse(
+            execution.updates["job_board_portfolio"].eligible_set_complete
+        )
+        self.assertEqual(
+            execution.trace["candidate_discovery"]["waves"]["search"]["reason"],
+            "stored_candidate_requires_inventory_revalidation",
+        )
+
+    def test_current_career_route_precedes_unverified_stored_provider_candidate(self):
+        record = self._stored_career_record()
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=record.company_name,
+            linkedin_company_url=record.linkedin_company_url,
+            website=record.website,
+            career=record.career,
+            provider_boards=(
+                VerifiedProviderBoardEvidence(
+                    provider="workday",
+                    tenant="parent/Brand",
+                    canonical_board_url="https://parent.wd1.myworkdayjobs.com/Brand",
+                    relationship_evidence_url="https://old.example/careers",
+                    verification_method="first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=1.0,
+                ),
+            ),
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+                job_title="Engineer",
+            )
+        )
+        context.career_page_url = "https://acme.example/current-careers"
+
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+            company_discovery_evidence_store=self._EvidenceStore(record),
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://boards.greenhouse.io/acme",
+        )
+        self.assertEqual(
+            execution.trace["candidate_discovery"]["selected_wave"],
+            "website_direct",
+        )
+
+    def test_deterministic_hiring_identity_failure_blocks_stored_provider(self):
+        store = self._EvidenceStore(self._stored_career_record())
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+        context.stage_results.append(
+            StageResult(
+                stage=STAGE_HIRING_IDENTITY_RESOLUTION,
+                status="failed",
+                reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+            company_discovery_evidence_store=store,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "not_run")
+        self.assertEqual(
+            execution.trace["scheduler"]["reason"],
+            "hiring_identity_unresolved",
+        )
+
+    def test_complete_native_inventory_revalidates_stored_same_entity_board(self):
+        class EmptyInventoryService:
+            def match_discovered_board(self, discovered, *args):
+                return None, discovered.board.url, {
+                    "provider_api": {
+                        "provider": "smartrecruiters",
+                        "inventory": {
+                            "source": "native_adapter",
+                            "status": "verified_filtered_empty",
+                            "complete": True,
+                        },
+                        "adapter_trace": {
+                            "tenant_identity_conflict": False,
+                            "errors": [],
+                        },
+                    }
+                }
+
+        board = JobBoard(
+            provider="smartrecruiters",
+            identifier="LinkedIn3",
+            url="https://jobs.smartrecruiters.com/LinkedIn3",
+        )
+        discovered = DiscoveredJobBoard(
+            board=board,
+            detection_method="linked_url_evidence",
+            evidence_url=board.url,
+        )
+        base = self._stored_career_record()
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name="linkedin",
+            linkedin_company_url="https://www.linkedin.com/company/linkedin",
+            website=base.website,
+            career=base.career,
+            provider_boards=(
+                VerifiedProviderBoardEvidence(
+                    provider="smartrecruiters",
+                    tenant="LinkedIn3",
+                    canonical_board_url=board.url,
+                    relationship_evidence_url="https://careers.linkedin.com",
+                    verification_method="first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=1.0,
+                ),
+            ),
+        )
+        store = self._EvidenceStore(record)
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="LinkedIn",
+                linkedin_company_url="https://www.linkedin.com/company/linkedin",
+                job_title="Missing Role",
+            )
+        )
+        context.job_list_page_url = board.url
+        context.discovered_job_board = discovered
+        context.job_board_portfolio = JobBoardPortfolio(
+            boards=(discovered,),
+            eligible_set_complete=False,
+        )
+        context.provider_identity = ProviderIdentity(
+            hiring_entity_name="LinkedIn",
+            provider="smartrecruiters",
+            tenant="LinkedIn3",
+            canonical_board_url=board.url,
+            evidence_url=board.url,
+            verification_method="linked_url_only",
+            relationship_verified=False,
+        )
+        context.trace["stages"] = {
+            "job_board_discovery": {
+                "selected": {"source_kind": "stored_verified_provider_board"}
+            }
+        }
+
+        execution = OpeningMatchStage(
+            EmptyInventoryService(),
+            max_job_board_attempts=1,
+            company_discovery_evidence_store=store,
+        ).run(context)
+
+        self.assertEqual(execution.result.reason_code, "OPENING_NOT_FOUND")
+        self.assertTrue(
+            execution.updates["provider_identity"].relationship_verified
+        )
+        self.assertTrue(
+            execution.updates["hiring_identity_evidence"].verified
+        )
+
+    def test_stored_inventory_allows_verified_parent_brand_tenant_segment(self):
+        self.assertTrue(
+            _stored_tenant_matches_hiring_entity("Gucci", "kering/Gucci")
+        )
+        self.assertFalse(
+            _stored_tenant_matches_hiring_entity("Gucci", "kering/SaintLaurent")
+        )
+        self.assertFalse(
+            _stored_tenant_matches_hiring_entity("Gucci", "kering")
+        )
+
+    def test_generic_search_query_does_not_change_verified_board_identity(self):
+        root = "https://careers.example.com/jobs"
+        searched = f"{root}?search=Financial+Analyst"
+        opening = f"{root}/northern-america/financial-analyst"
+
+        class SearchResultService(FakeDiscoveryService):
+            def match_opening(self, job_list_url, target_title=None, target_location=None):
+                return opening, searched, {
+                    "selected": {
+                        "url": opening,
+                        "title": "Financial Analyst",
+                        "location": "Wayne, NJ",
+                        "provider": "generic",
+                        "score": 200,
+                        "reasons": ["exact title match"],
+                    }
+                }
+
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Example",
+                job_title="Financial Analyst",
+                job_location="Wayne, NJ",
+            )
+        )
+        context.hiring_entity_name = "Example"
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Example",
+            hiring_entity_name="Example",
+            relationship_type="same_entity",
+            verification_method="official_company_website",
+            verified=True,
+            evidence_url="https://www.example.com",
+        )
+        context.job_list_page_url = root
+        context.provider_identity = ProviderIdentity(
+            hiring_entity_name="Example",
+            provider="generic",
+            tenant=f"url:{root}",
+            canonical_board_url=root,
+            evidence_url=root,
+            verification_method="identity_career_root",
+            relationship_verified=True,
+        )
+
+        execution = OpeningMatchStage(SearchResultService()).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.updates["job_list_page_url"], searched)
+        self.assertEqual(
+            execution.updates["provider_identity"].canonical_board_url,
+            root,
+        )
+        self.assertEqual(execution.updates["provider_identity"].tenant, f"url:{root}")
+        self.assertEqual(execution.updates["opening_identity"].canonical_board_url, root)
+
+    def test_stored_first_party_chain_binds_brand_to_different_provider_tenant(self):
+        record = self._stored_career_record()
+        stored = VerifiedProviderBoardEvidence(
+            provider="ashby",
+            tenant="parentco",
+            canonical_board_url="https://jobs.ashbyhq.com/parentco",
+            relationship_evidence_url=record.career.url,
+            verification_method="verified_first_party_handoff",
+            source="first_party_handoff",
+            observed_at=1.0,
+        )
+
+        self.assertEqual(
+            _stored_provider_relationship(record, stored, "Acme", "parentco"),
+            ("brand_parent", "parentco"),
+        )
+        unbound = VerifiedProviderBoardEvidence(
+            provider=stored.provider,
+            tenant=stored.tenant,
+            canonical_board_url=stored.canonical_board_url,
+            relationship_evidence_url="https://unrelated.example/careers",
+            verification_method=stored.verification_method,
+            source=stored.source,
+            observed_at=stored.observed_at,
+        )
+        self.assertIsNone(
+            _stored_provider_relationship(record, unbound, "Acme", "parentco")
+        )
+
     def test_career_stage_passes_saved_homepage_navigation_evidence(self):
         class CapturingCareer(FakeDiscoveryService):
             def __init__(self):
@@ -563,6 +1308,54 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(execution.result.status, "partial")
         self.assertEqual(execution.result.reason_code, "OPENING_NOT_FOUND")
         self.assertEqual(execution.trace["board_portfolio"]["unattempted_count"], 0)
+
+    def test_opening_no_match_detail_reports_verified_location_conflict(self):
+        board = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://jobs.example.test/search-results",
+                provider="generic",
+            ),
+            detection_method="verified_first_party_action",
+            evidence_url="https://jobs.example.test/search-results",
+        )
+
+        class LocationConflictService(FakeDiscoveryService):
+            def match_discovered_board(self, discovered, target_title=None, target_location=None):
+                return None, discovered.board.url, {
+                    "provider_api": {
+                        "inventory": {
+                            "status": "verified",
+                            "scope": "filtered",
+                            "complete": True,
+                            "candidate_count": 64,
+                            "strongest_title_score": 150,
+                        }
+                    },
+                    "location_unverified_candidate_rejected": {
+                        "url": "https://jobs.example.test/jobs/42",
+                        "candidate_location": "United States",
+                        "target_location": "Greater Tampa Bay Area",
+                    },
+                }
+
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                job_title="Junior Data Analyst",
+                job_location="Greater Tampa Bay Area",
+            )
+        )
+        context.job_list_page_url = board.board.url
+        context.discovered_job_board = board
+        context.job_board_portfolio = JobBoardPortfolio(
+            boards=(board,),
+            eligible_set_complete=True,
+        )
+
+        execution = OpeningMatchStage(LocationConflictService()).run(context)
+
+        self.assertEqual(execution.result.reason_code, "OPENING_NOT_FOUND")
+        self.assertIn("none matched the target location", execution.result.detail)
 
     def test_opening_no_match_is_partial_not_failed(self):
         class NoMatchService(FakeDiscoveryService):

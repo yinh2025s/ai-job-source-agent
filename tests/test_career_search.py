@@ -6,6 +6,7 @@ from job_source_agent.career_search import (
     build_ats_search_queries,
     build_search_queries,
     clean_search_result_url,
+    search_site_openings,
 )
 from job_source_agent.career_transport_budget import CareerTransportBudgetFetcher
 from job_source_agent.web import FetchError, Fetcher, Page
@@ -44,6 +45,64 @@ def fixture(name):
 
 
 class CareerSearchTests(unittest.TestCase):
+    def test_unbound_career_lead_is_admitted_only_for_current_page_verification(self):
+        rss = (
+            "<rss><channel><item>"
+            "<title>Careers | Redlands Community Hospital</title>"
+            "<description>Jobs at Redlands Community Hospital</description>"
+            "<link>https://www.redlandshospital.org/careers</link>"
+            "</item></channel></rss>"
+        )
+        fetcher = MappingFetcher(lambda url: Page(url, rss, final_url=url))
+        resolver = CareerSearchResolver(fetcher, max_queries=1, max_source_fetches=1)
+
+        strict = resolver.search("Redlands Community Hospital", "")
+        unbound = resolver.search(
+            "Redlands Community Hospital",
+            "",
+            allow_unbound_career=True,
+        )
+
+        self.assertEqual(strict.candidates, [])
+        self.assertEqual(
+            [item.url for item in unbound.candidates],
+            ["https://www.redlandshospital.org/careers"],
+        )
+
+    def test_site_opening_search_keeps_only_same_site_job_leads(self):
+        official = "https://jobs.acme.example/"
+        valid = "https://jobs.acme.example/job-3/123/platform-engineer/"
+        rss = (
+            "<rss><channel>"
+            f"<item><link>{valid}</link></item>"
+            "<item><link>https://evil.example/jobs/platform-engineer</link></item>"
+            "<item><link>https://jobs.acme.example/about</link></item>"
+            "</channel></rss>"
+        )
+        fetcher = MappingFetcher(lambda url: Page(url, rss))
+
+        result = search_site_openings(fetcher, official, "Platform Engineer")
+
+        self.assertEqual([candidate.url for candidate in result.candidates], [valid])
+        self.assertEqual(len(fetcher.calls), 1)
+        self.assertEqual(result.trace["stopped_reason"], "query_plan_complete")
+
+    def test_site_opening_search_accepts_verified_sibling_subdomain_lead(self):
+        official = "https://careers.acme.example/"
+        valid = "https://www.acme.example/talent/job-offers/platform-engineer/"
+        rss = (
+            "<rss><channel>"
+            f"<item><link>{valid}</link></item>"
+            "<item><link>https://www.other.example/jobs/platform-engineer</link></item>"
+            "</channel></rss>"
+        )
+        fetcher = MappingFetcher(lambda url: Page(url, rss))
+
+        result = search_site_openings(fetcher, official, "Platform Engineer")
+
+        self.assertEqual([candidate.url for candidate in result.candidates], [valid])
+        self.assertIn('site:acme.example', result.trace["query"])
+
     def test_build_search_queries_prioritize_generic_and_site_queries(self):
         queries = build_search_queries("Acme Co", "acme.example")
 
@@ -80,11 +139,21 @@ class CareerSearchTests(unittest.TestCase):
             queries[:3],
             [
                 '"texas children hospital" "RN - LDRP" jobs',
-                'site:myworkdayjobs.com "texas children hospital" "RN - LDRP"',
-                'site:oraclecloud.com "texas children hospital" "RN - LDRP"',
+                'site:job-boards.greenhouse.io "texas children hospital" "RN - LDRP"',
+                'site:jobs.lever.co "texas children hospital" "RN - LDRP"',
             ],
         )
         self.assertTrue(all(" OR " not in query for query in queries))
+
+    def test_five_query_plan_covers_distinct_provider_families(self):
+        queries = build_ats_search_queries("Acme", "Data Analyst")[:5]
+
+        self.assertEqual(len(queries), 5)
+        self.assertIn("job-boards.greenhouse.io", queries[1])
+        self.assertIn("jobs.lever.co", queries[2])
+        self.assertIn("jobs.ashbyhq.com", queries[3])
+        self.assertIn("pinpointhq.com", queries[4])
+        self.assertFalse(any("site:boards.greenhouse.io" in query for query in queries))
 
     def test_title_targeted_search_keeps_opaque_ats_url_as_untrusted_lead(self):
         opaque = (
@@ -119,7 +188,7 @@ class CareerSearchTests(unittest.TestCase):
         self.assertEqual(len(fetcher.calls), 5)
         self.assertTrue(all("format=rss" in url for url in fetcher.calls))
         self.assertIn("site%3Ajob-boards.greenhouse.io", fetcher.calls[1])
-        self.assertIn("site%3Amyworkdayjobs.com", fetcher.calls[2])
+        self.assertIn("site%3Ajobs.lever.co", fetcher.calls[2])
         self.assertNotIn("Inc", fetcher.calls[0])
         self.assertFalse(result.trace["fetch_budget_supported"])
         self.assertEqual(result.trace["fetch_budget_checks"], 0)
@@ -320,6 +389,84 @@ class CareerSearchTests(unittest.TestCase):
         )
 
         self.assertEqual(result.candidates, [])
+
+    def test_branded_cross_domain_career_microsite_is_an_unverified_lead(self):
+        microsite = "https://acmelabsjobs.com/open-roles"
+        rss = f"""<rss><channel><item>
+          <title>Careers and jobs at Acme Labs</title>
+          <link>{microsite}</link>
+          <description>Join our team and explore current openings.</description>
+        </item></channel></rss>"""
+
+        result = CareerSearchResolver(
+            MappingFetcher(lambda url: Page(url, rss, final_url=url)),
+            max_queries=1,
+        ).search("Acme Labs", "https://acme.example")
+
+        self.assertEqual([item.url for item in result.candidates], [microsite])
+        self.assertIn(
+            "unverified branded career microsite search lead",
+            result.candidates[0].reasons,
+        )
+
+    def test_branded_microsite_can_use_html_search_snippet_hiring_semantics(self):
+        microsite = "https://acmelabsjobs.com/"
+        html = f"""<html><body><li class="b_algo">
+          <h2><a href="{microsite}">Acme Labs</a></h2>
+          <p>Search open positions and join our team.</p>
+        </li></body></html>"""
+
+        def handler(url):
+            if "format=rss" in url:
+                raise FetchError("rss unavailable")
+            return Page(url, html, final_url=url)
+
+        result = CareerSearchResolver(
+            MappingFetcher(handler),
+            max_queries=1,
+        ).search("Acme Labs", "https://acme.example")
+
+        self.assertEqual([item.url for item in result.candidates], [microsite])
+
+    def test_cross_domain_microsite_rejects_brand_and_semantic_false_positives(self):
+        cases = {
+            "unbranded third party": (
+                "Acme Labs",
+                "https://career-pages.example/acme-labs/jobs",
+                "Acme Labs careers and current jobs",
+            ),
+            "same-name partial brand": (
+                "Acme Labs",
+                "https://acmejobs.com/",
+                "Acme careers and current jobs",
+            ),
+            "aggregator brand path": (
+                "Acme Labs",
+                "https://jobcatalog.example/acmelabs/jobs",
+                "Acme Labs jobs and openings",
+            ),
+            "no hiring semantics": (
+                "Acme Labs",
+                "https://acmelabsjobs.com/",
+                "Acme Labs products and company news",
+            ),
+        }
+
+        for label, (company_name, url, title) in cases.items():
+            with self.subTest(label=label):
+                rss = (
+                    "<rss><channel><item>"
+                    f"<title>{title}</title><link>{url}</link>"
+                    "</item></channel></rss>"
+                )
+                result = CareerSearchResolver(
+                    MappingFetcher(
+                        lambda search_url: Page(search_url, rss, final_url=search_url)
+                    ),
+                    max_queries=1,
+                ).search(company_name, "https://acme.example")
+
+                self.assertEqual(result.candidates, [])
 
     def test_official_homepage_without_career_signal_is_rejected(self):
         rss = "<rss><channel><item><link>https://acme.example/</link></item></channel></rss>"

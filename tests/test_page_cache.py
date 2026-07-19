@@ -1,5 +1,6 @@
 import unittest
 
+from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.page_cache import PageCacheFetcher
 from job_source_agent.web import FetchError, Page
 
@@ -9,10 +10,12 @@ class RecordingFetcher:
         self.fail = fail
         self.final_url = final_url
         self.calls = []
+        self.interactions = []
         self.timeout = 4
 
-    def fetch(self, url, data=None, headers=None):
+    def fetch(self, url, data=None, headers=None, *, interaction=None):
         self.calls.append((url, data, headers))
+        self.interactions.append(interaction)
         if self.fail:
             raise FetchError("temporary failure")
         return Page(
@@ -47,6 +50,35 @@ class PageCacheFetcherTests(unittest.TestCase):
 
         self.assertEqual(len(base.calls), 4)
         self.assertEqual(fetcher.cache_hits, 0)
+
+    def test_interaction_requests_bypass_cache_reads_and_writes(self):
+        base = RecordingFetcher()
+        fetcher = PageCacheFetcher(base)
+        interaction = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="q",
+            target_title="Secret Staff Engineer",
+            submit_text="Search",
+        )
+
+        ordinary = fetcher.fetch("https://example.test/jobs")
+        first_interaction = fetcher.fetch(
+            "https://example.test/jobs",
+            interaction=interaction,
+        )
+        second_interaction = fetcher.fetch(
+            "https://example.test/jobs",
+            interaction=interaction,
+        )
+        cached = fetcher.fetch("https://example.test/jobs")
+
+        self.assertEqual(len(base.calls), 3)
+        self.assertEqual(base.interactions, [None, interaction, interaction])
+        self.assertEqual(first_interaction.html, "response 2")
+        self.assertEqual(second_interaction.html, "response 3")
+        self.assertEqual(cached.html, ordinary.html)
+        self.assertEqual(fetcher.cache_hits, 1)
+        self.assertEqual(fetcher.cache_misses, 1)
 
     def test_failures_are_not_cached(self):
         base = RecordingFetcher(fail=True)

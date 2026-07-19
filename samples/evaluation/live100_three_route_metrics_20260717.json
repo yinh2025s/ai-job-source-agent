@@ -1,0 +1,4730 @@
+{
+  "schema_version": "1.0",
+  "record_count": 100,
+  "routes": {
+    "external_apply": {
+      "input_coverage": {
+        "count": 0,
+        "denominator": 100,
+        "rate": 0.0
+      },
+      "candidate_produced": {
+        "count": 0,
+        "denominator": 0,
+        "rate": null
+      },
+      "provider_tenant_board_verified": {
+        "count": 0,
+        "denominator": 0,
+        "rate": null
+      },
+      "relationship_verified": {
+        "count": 0,
+        "denominator": 0,
+        "rate": null
+      },
+      "exact_attributable": {
+        "count": 0,
+        "denominator": 0,
+        "rate": null
+      },
+      "exact_attributable_overall": {
+        "count": 0,
+        "denominator": 100,
+        "rate": 0.0
+      },
+      "reason_counts": {
+        "input_not_covered": 99,
+        "legacy_route_not_evaluated": 1
+      },
+      "malformed_trace_count": 0
+    },
+    "provider_search": {
+      "input_coverage": {
+        "count": 99,
+        "denominator": 100,
+        "rate": 0.99
+      },
+      "candidate_produced": {
+        "count": 19,
+        "denominator": 99,
+        "rate": 0.1919191919191919
+      },
+      "provider_tenant_board_verified": {
+        "count": 19,
+        "denominator": 19,
+        "rate": 1.0
+      },
+      "relationship_verified": {
+        "count": 19,
+        "denominator": 19,
+        "rate": 1.0
+      },
+      "exact_attributable": {
+        "count": 11,
+        "denominator": 19,
+        "rate": 0.5789473684210527
+      },
+      "exact_attributable_overall": {
+        "count": 11,
+        "denominator": 100,
+        "rate": 0.11
+      },
+      "reason_counts": {
+        "candidate_not_produced": 80,
+        "exact_attributable": 11,
+        "final_exact_not_available": 8,
+        "legacy_route_not_evaluated": 1
+      },
+      "malformed_trace_count": 0
+    },
+    "website_career": {
+      "input_coverage": {
+        "count": 98,
+        "denominator": 100,
+        "rate": 0.98
+      },
+      "candidate_produced": {
+        "count": 59,
+        "denominator": 98,
+        "rate": 0.6020408163265306
+      },
+      "provider_tenant_board_verified": {
+        "count": 59,
+        "denominator": 59,
+        "rate": 1.0
+      },
+      "relationship_verified": {
+        "count": 58,
+        "denominator": 59,
+        "rate": 0.9830508474576272
+      },
+      "exact_attributable": {
+        "count": 24,
+        "denominator": 58,
+        "rate": 0.41379310344827586
+      },
+      "exact_attributable_overall": {
+        "count": 24,
+        "denominator": 100,
+        "rate": 0.24
+      },
+      "reason_counts": {
+        "candidate_not_produced": 39,
+        "exact_attributable": 24,
+        "final_exact_not_available": 33,
+        "input_not_covered": 2,
+        "relationship_not_verified": 1,
+        "selected_exact_not_attributable": 1
+      },
+      "malformed_trace_count": 0
+    }
+  },
+  "union_exact": {
+    "count": 28,
+    "denominator": 100,
+    "rate": 0.28
+  },
+  "malformed_trace": {
+    "count": 0,
+    "denominator": 100,
+    "rate": 0.0
+  },
+  "overlaps": [
+    {
+      "bitmask": 0,
+      "binary": "000",
+      "routes": [],
+      "count": 72,
+      "rate": 0.72,
+      "denominator": 100
+    },
+    {
+      "bitmask": 1,
+      "binary": "001",
+      "routes": [
+        "external_apply"
+      ],
+      "count": 0,
+      "rate": 0.0,
+      "denominator": 100
+    },
+    {
+      "bitmask": 2,
+      "binary": "010",
+      "routes": [
+        "provider_search"
+      ],
+      "count": 4,
+      "rate": 0.04,
+      "denominator": 100
+    },
+    {
+      "bitmask": 3,
+      "binary": "011",
+      "routes": [
+        "external_apply",
+        "provider_search"
+      ],
+      "count": 0,
+      "rate": 0.0,
+      "denominator": 100
+    },
+    {
+      "bitmask": 4,
+      "binary": "100",
+      "routes": [
+        "website_career"
+      ],
+      "count": 17,
+      "rate": 0.17,
+      "denominator": 100
+    },
+    {
+      "bitmask": 5,
+      "binary": "101",
+      "routes": [
+        "external_apply",
+        "website_career"
+      ],
+      "count": 0,
+      "rate": 0.0,
+      "denominator": 100
+    },
+    {
+      "bitmask": 6,
+      "binary": "110",
+      "routes": [
+        "provider_search",
+        "website_career"
+      ],
+      "count": 7,
+      "rate": 0.07,
+      "denominator": 100
+    },
+    {
+      "bitmask": 7,
+      "binary": "111",
+      "routes": [
+        "external_apply",
+        "provider_search",
+        "website_career"
+      ],
+      "count": 0,
+      "rate": 0.0,
+      "denominator": 100
+    }
+  ],
+  "overlap_bitmask_counts": {
+    "000": 72,
+    "001": 0,
+    "010": 4,
+    "011": 0,
+    "100": 17,
+    "101": 0,
+    "110": 7,
+    "111": 0
+  },
+  "records": [
+    {
+      "schema_version": "1.0",
+      "record_id": "ccc6e9990ca26fc5f368b813ad7249fe9d0cc85f8fba9ef49566386d8449e582",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 6,
+      "exact_bitmask_binary": "110"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "c6a5c877a79b4b16fde5bc77f0130945654809ac6607875b9f0308924c5a2cd7",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 6,
+      "exact_bitmask_binary": "110"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "cd2e3a4c001420d253c56270f10e44be8f64f23216dfd971612f024ecc53e6e9",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "09443e7ce92050ef1c175cf5421567d17d1619d4a3e9bc9135e6bf9b130eedaf",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 6,
+      "exact_bitmask_binary": "110"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "af896d89281c73ee481d577d4ef1d954cfae1e929f6f34502fbb475e27497bcc",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 6,
+      "exact_bitmask_binary": "110"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5296ce8557a4ba0c8b831afb3a5a647562e90311631cd32ef063440c1c4197ae",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "0c4c7518babdf042527615bbc8bebc18e63a53fc5f62c8afef59d200c6c65f5c",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "6c60d980d56c1d0f5e85cfd6746f6633a75588f163717434cff4549b77cf680f",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "c9be935a33c71e9421e68217afb15dabfb675260fbd951ca62fe26b8b06ed323",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "ef91cbbd672ce8508faabd30882e91b4bf39698d2e0c59757dbefa224519cd7e",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5004a40481194e608fded0c5063c0e407ddc07fe9f7ff5f1ebd5938414aef60f",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 2,
+      "exact_bitmask_binary": "010"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "685251a3a6809c913e78f31565f3863f995ba11bdcb4077df70dd675a3f59e8c",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "af6adc3c4d71f61570d57bf69164117231dd570871c25f91e13faf8e4746f642",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "e68f23dab65e6cecb9e2379594ead66af43deed4f9f2031e41ff8969d5428898",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5f9c789ad6c30c7245980617f1085cde49f2e201b341f4b5bc8af67f209184ae",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "6f2026147f269626a81c58c0bdcb4828e2864529795f2614a6d0f26591bbcad3",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "a16023a376a369e9ab38acc560857923dc2618ca204e9ca96f9baf5dc724c1cd",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "79c9eb51e6216d6a6af50220efe3922e3f55e35b2e87fa30278136fd6dedf2f7",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "7aefc4bd9b0b7753642c533e51477dcf5389b1c231f530deb74e93fb03f713fb",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "d44adacd06591468a1dd86f8e9fec4ba400574078c653c92622ac98e1f4282c2",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "60ab7ce3beebe299f870a034109e1903725e81c3898dbbac45c5be4a26341cf2",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "9e30885176afb1febd6bd2069ac9608ef575c845cf6ce4719af9bdbc9048de05",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "aba35eda2939d49a61bb1fb74af0ba8bd2711d97fe9b495b4c198a6320d0f349",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "27a4b3cbddfd28d00d95e8a2b3cad9207e40a75cc2c628eb9dd2a5b56183913c",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "61f02f1d70e2e0b9c4d5bb23639ee64564727540ce98813d5e4ac1c7fe32d4e1",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "0d3b59a9dfbfa034b61c0cedbfb9f64c0334bf6d1863d616626384798dce7284",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "a2b8d165068abbd6bdec245ddfce46a1bdfd7b26eefff8848c068e0dc3690975",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "dbf85c8542223994e0352d51d975d59f2f17795071d3260186932d0d8f1d6c78",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "relationship_not_verified",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "99e68fb55771538a90845f92e0dec7282c2e8b186417fb04d8a1364a90a6ffbf",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "51f5baa8ad93a80022a180e39ba13fd78e4eb62c82fc55aed56c802287a5bfea",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "33acdec02b08eafc89090f4100f99c6eb56776de50bb0c90df1cc6fae1532617",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "809da9923d9a7f0b71ecf4ad6fad0e19a376e365c365e89a672a161109d30348",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "ba48f175cddee1500f692f128c9e61fb14063cbc3e7ce0668cac76328cff6f4b",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "0e6f673aca016389c51349f5ef389db94f04a45a0de8e83a030ed3a0573a17d7",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "b9325ccaf59adfec55a2b1218b20835fb91788fc67502a6885aae2a3b529650d",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5aa63c2cf6ed0c9dd717dc41eb7d14aee92a08fcd8c4aa5704c1147a09236c0d",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5b86a0a1c0474a3489c4803d66f900912ea98373007f9f55d89544a224f79c91",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "c5cab9660aef4b3f72efda3314274dcb46f27165008af2fd61a25f88f4466d4a",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "59b18ba5346f5546430d95f4db683cd10dc74782ea4030fcf712d3ecf922a8e4",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "210765c243c43b4180e373bd33d2ec66add79d22d2859b8ce39b01e19d386d3f",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "0776804dbd7f497e71f33a6cf0290ff359bf76be462ca92d8b829fdea3788fad",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "b7104c40e5220423dc62b09c5a007661b9b076f2b0b13df385cd8b7a3bb95b58",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "f5ff4a7e0eb9fbb49ff3316df15c03407507bba8f8a5a5c9db9ce1fd4942622a",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "f0e8216f7b5aba5ac2134a75015c1d7074a0d5f1d8c69df3d52ebc6656ff63bd",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "df87e52503b64c40232db5a7fb6d522cbecf41430104bcfe0b15500638d04f33",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "308546f19a4ca6dcee9d861b65a3f2359b5383627d33b2b27e34e815b55d2db9",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "14fc3a34e0621c99e1b904f6727819d1e2c9be6f178570bc88acb75e25a143d2",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "selected_exact_not_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 2,
+      "exact_bitmask_binary": "010"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "9afd17fa0b46a42e66ce125b9b46f62e25e0c86aedefce24630da7f9f6da71c5",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 6,
+      "exact_bitmask_binary": "110"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "c867b7f0316408f46906891675c58554fd5c38c990840404165d6b4c99b29727",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "07ca91b68e28b0866fcbacd2325a1429c2ab11d2de55bddf999d9283255672d7",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5441b2e868cc659fef5bee8b3d3dfacf5740a8930e675bf7c4099b38d745f666",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "83be2d758cee73369fcb082a9df257113d4ab39f5eb82685c158aa505b9e1b9d",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "841b4b4c6cc6871c3354a6aa8f7b49c53db47faa3dacc8756b2234cbbe50c00b",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5c48fb25949671f720d8c2e7fe73895af86812c5c222960fcaf764b7ec615984",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "cead3c74f859c958d3126437c284e5d955cb791653ed421eaf3173ff5be25ac5",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "2029f8e323c2f736d73ba8201e44bc86db9426f1ccfb925be72007a698ee5e2e",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "f43dfd7d56b6ead9f2d8ce95d4284acc252c9a80eb1bef016069976f5b1dacbc",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "b23b61b0338b6657291b2084bda4470c4af6b35e4f648a4d759d2f34944f135f",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "3f0e723a77b2fcd1612230720269c0c389cf29413274a4bd4c9c9701eb0b96c0",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "9d35c59faade8969979cf9340345632a20f618e19bf556b0ee12857879bf1424",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "8b94c1af8f3faa85105f579f88e43f61d50eaa040446eeada10125b948747253",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "463054ff78089398f0aa1dd8a4d4708a28a0ec1cc35ba8907281f23d9af97532",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "cad5c9469d419dfd6ada1aebf593a9d7b1b647aa0da3adacd8ca46ff7076d4a0",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "73e0b00dbe87bbf191c0fd5c7754a92cc5baccbb0bd595153ea6332dda0a5e4c",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "e7492b40f3da8eb20112043c4a3f16e172f4dac7b412262237f4fc1a87c84334",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 2,
+      "exact_bitmask_binary": "010"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "9582bcfe04f47c43560db2d21883e2dbd05882980a4a349cd924a1b2de732142",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "850a412f748a0b6de761f38c8114282688b3f07e110211fda496bdad89638164",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 6,
+      "exact_bitmask_binary": "110"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "1c34891b9821abcc09763b47315ca87b4525d19b353ef8a68f775f92b2a39025",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "52b1cc3d171116d3e274e2dc2a3f6e2df52a7533667695d7e5ecb7035ccb4608",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "9f5661243d809051789afcbe179f4b4259c8ee8d1b0980b95dd2f9ea3d7e8d18",
+      "trace_mode": "legacy_website",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "legacy_route_not_evaluated",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "legacy_route_not_evaluated",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "a73d6cf043fddab5647c05ef13cd849e09718d7358dab711ad409e2282ffabbb",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "62fbc7a1ab980d3a71ce784a59754db4b031173ed0fb32ed7e69542ab96fbd97",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "a30da2de812a8ad533309c82e4162d84217b61d43506f0ea66b7c0d893567635",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "cabf2eda307c491a9377e68decba0c1d2b615cd7b6cc97b955bac57c3b08d0c5",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "33dfee5bd675b4a07f6c2778701f62bc6433cae3293262c77c9370c5d326a9b6",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 6,
+      "exact_bitmask_binary": "110"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "251c2f2c5dbca5095a5bb0d8f02108dc8bdbefda2bc6ca892f547442411eebf1",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "04bec4227b4e87382d0b9683b3d05afbd7baf7fdadbadde05cc2e0ada1a82858",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "a794d372f78c55ede919a1597faa7517f4f51993c10dc6c1e28f2a110e5298b1",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "3f635ddb4bd2007eac4c0b33fad43e667bef9b62ef4451b5919c5314e5432504",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "4dc73f3de0953ec7fad600ca515c76065f9d7cc59b6bfd9f31d7cb330d518fe7",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "a2a1534013384fb50be1364903f2bfc076e91ef6b0d6a6d28432099d4d5b1f50",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "baa0c59aa302ebb1999fc3172c7293780801efc1ed6359c8ca9c5b5a74ab2188",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "357cc4123992833072e199a947b2587c3472fd07c594970dc0b4335a0bb50166",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "0407a4905161cf7c23d77724758f9bfb32d25d2abf3864e0c620fd99848d6880",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5a04a7dd3df9867fd76ae86a80721f47ef52848ca609a776db37757b95600106",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "34bc02b747d4c84f61c1787b15791841462ca550ca9681449a2dddb435bcc5c7",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "4f66e7fd9e8abdf0af8d1bb778f994741a84162cf5c3066ec588850eb9584747",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "189d18a51c7770475c2d1bb707aa836028c88b658e7201a69cb8d9ba13838fa3",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "ff9feac17d0eeab5eecbaad455f50ffa633f63c6ed820555eb837940c1d27eda",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "a020cc1091ae54ead03cc3d401dbd7f683a46af070248fd8a2446883c2bd33ec",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "b0da58a5930e4c8019b84fd274702f7590f7aa13a569fb2b77d2b0363f246072",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "04679b41e228f42836612d21ada45ef81622da81bf23c3919cb91114c7ed5777",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5e5cb388ec387ca237fe8019a216135981e969b3f0b0175c4c4ee24f649e6761",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "6c0fdec4dca65fe49894ba9b6001aab98ccbdbd050519444da1f444d2ccd5bb3",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 4,
+      "exact_bitmask_binary": "100"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5e9d2c19e635b7d45bd07a5f462319d227096480b057b390b8ae4d042034f699",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": true,
+          "exact_attributable": true,
+          "reason": "exact_attributable",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": true,
+      "exact_bitmask": 2,
+      "exact_bitmask_binary": "010"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "5515bacfedda593e93e6b2502e3f1caa50034a6c929c9cb5823788ae546de04d",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "414d01c8607ff8cd96291276c6d06a5e459b8543ce435f98afbaae8043d8af68",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "1b70594c8b17853351d0c83db844e7169e3d261ab9cac4733258ac01974523bd",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "8a40aab6a7c0ebe9382fc9c45797cfc27c340ec1262b5e6afe4049ab16857ef1",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    },
+    {
+      "schema_version": "1.0",
+      "record_id": "245fb554a20c8cb446036e3d3161f3596792f593c286641209bd5475ff990fb3",
+      "trace_mode": "three_route",
+      "malformed_trace": false,
+      "malformed_reasons": [],
+      "routes": {
+        "external_apply": {
+          "input_coverage": false,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "input_not_covered",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "provider_search": {
+          "input_coverage": true,
+          "candidate_produced": false,
+          "provider_tenant_board_verified": false,
+          "relationship_verified": false,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "candidate_not_produced",
+          "malformed_trace": false,
+          "verified_board_count": 0
+        },
+        "website_career": {
+          "input_coverage": true,
+          "candidate_produced": true,
+          "provider_tenant_board_verified": true,
+          "relationship_verified": true,
+          "board_can_produce_selected": false,
+          "exact_attributable": false,
+          "reason": "final_exact_not_available",
+          "malformed_trace": false,
+          "verified_board_count": 1
+        }
+      },
+      "union_exact": false,
+      "exact_bitmask": 0,
+      "exact_bitmask_binary": "000"
+    }
+  ]
+}

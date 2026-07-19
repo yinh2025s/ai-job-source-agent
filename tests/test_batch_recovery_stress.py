@@ -147,11 +147,12 @@ class BatchRecoveryStressTests(unittest.TestCase):
                     max_career_search_queries=5,
                     max_ats_board_fetches=5,
                     career_search_timeout=6,
+                    enable_parallel_candidate_discovery=True,
                 )
             )
             batch_execution = BatchExecutionConfig.from_payload(
                 {
-                    "schema_version": "1.0",
+                    "schema_version": "1.1",
                     "batch": {
                         "company_time_budget": 45,
                         "website_time_budget": 20,
@@ -162,6 +163,7 @@ class BatchRecoveryStressTests(unittest.TestCase):
                         "render_budget": 2,
                         "verify_limit": 3,
                         "offline": True,
+                        "opening_phase_policy": "reserved_after_verified_job_list_v1",
                     },
                 }
             )

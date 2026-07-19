@@ -16,7 +16,9 @@ MAX_PROVIDER_CANDIDATES = 12
 SOURCE_PRIORITIES = {
     "external_apply": 500,
     "first_party_ats_link": 400,
+    "stored_verified_provider_board": 350,
     "targeted_opening_search": 300,
+    "verified_tenant_probe": 250,
     "targeted_board_search": 200,
     "guessed_path": 100,
 }
@@ -185,6 +187,7 @@ class CandidateDiscoveryRequest:
     company_website_url: str | None = None
     career_page_url: str | None = None
     external_apply_url: str | None = None
+    linkedin_company_url: str | None = None
 
 
 @dataclass(frozen=True)

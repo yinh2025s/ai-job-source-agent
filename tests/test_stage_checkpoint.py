@@ -7,7 +7,11 @@ from pathlib import Path
 from threading import Barrier
 from unittest.mock import patch
 
-from job_source_agent.checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
+from job_source_agent.checkpoint import (
+    ADAPTER_VERSION,
+    CHECKPOINT_SCHEMA_VERSION,
+    input_fingerprint,
+)
 from job_source_agent.contracts import CheckpointStore, StageExecution
 from job_source_agent.evidence_scope import StageEvidenceLineage
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
@@ -23,6 +27,32 @@ from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 
 
 class FilesystemCheckpointStoreTests(unittest.TestCase):
+    def test_company_evidence_revision_changes_input_fingerprint(self):
+        base = {
+            "company_name": "Acme",
+            "linkedin_company_url": "https://www.linkedin.com/company/acme",
+            "source_trace": {
+                "company_discovery_evidence_revision": "a" * 64,
+            },
+        }
+        changed = {
+            **base,
+            "source_trace": {
+                "company_discovery_evidence_revision": "b" * 64,
+            },
+        }
+
+        self.assertNotEqual(input_fingerprint(base), input_fingerprint(changed))
+
+    def test_invalid_company_evidence_revision_is_not_fingerprinted(self):
+        base = {"company_name": "Acme", "source_trace": {}}
+        malformed = {
+            "company_name": "Acme",
+            "source_trace": {"company_discovery_evidence_revision": "private-path"},
+        }
+
+        self.assertEqual(input_fingerprint(base), input_fingerprint(malformed))
+
     def test_identity_contracts_round_trip_as_typed_context_updates(self):
         hiring = HiringIdentityEvidence(
             source_company_name="Acme",
@@ -267,7 +297,7 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.assertEqual(restored, execution)
         self.assertIsInstance(restored.updates["job_board_portfolio"], JobBoardPortfolio)
 
-    def test_runtime_only_member_prevents_s5_checkpoint_without_secret(self):
+    def test_runtime_only_suffix_saves_safe_primary_without_secret(self):
         portfolio = JobBoardPortfolio(
             boards=(
                 DiscoveredJobBoard(
@@ -300,8 +330,12 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.store.save(self.fingerprint, execution)
 
         restored = self.store.load(self.fingerprint, "job_board_discovery")
-        self.assertIsNone(restored)
-        self.assertEqual(list(self.root.rglob("job_board_discovery.json")), [])
+        self.assertIsNotNone(restored)
+        restored_portfolio = restored.updates["job_board_portfolio"]
+        self.assertEqual(restored_portfolio.boards, (portfolio.primary,))
+        self.assertFalse(restored_portfolio.eligible_set_complete)
+        checkpoint = next(self.root.rglob("job_board_discovery.json"))
+        self.assertNotIn("portfolio-do-not-persist", checkpoint.read_text(encoding="utf-8"))
 
     def test_invalid_job_board_portfolio_update_type_is_rejected(self):
         execution = StageExecution(

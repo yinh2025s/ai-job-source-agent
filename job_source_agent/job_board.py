@@ -17,6 +17,7 @@ _DETECTION_METHODS = {
     "targeted_search",
     "url_evidence",
     "verified_declared_inventory",
+    "verified_first_party_action",
 }
 _PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_URL_CHARS = 8_192
@@ -32,6 +33,7 @@ _CWS_ORG_ID = re.compile(
     r"(?:/[A-Za-z0-9][A-Za-z0-9._-]{0,79}){0,3}$"
 )
 _CWS_DETAIL_PATH = re.compile(r"/[A-Za-z0-9][A-Za-z0-9/_-]{0,199}")
+_CWS_SORT_FIELD = re.compile(r"[A-Za-z][A-Za-z0-9_]{0,79}")
 _ORACLE_HOST = re.compile(
     r"^(?P<tenant>[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)"
     r"\.fa(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)?"
@@ -40,6 +42,16 @@ _ORACLE_HOST = re.compile(
 _ORACLE_LOCALE = re.compile(r"[A-Za-z]{2,3}(?:-[A-Za-z]{2})?")
 _ORACLE_SITE = re.compile(r"[A-Za-z0-9_-]{1,100}")
 _ORACLE_OPENING_ID = re.compile(r"[A-Za-z0-9_-]{1,128}")
+_PEOPLESOFT_NUMBER = re.compile(r"[1-9][0-9]{0,19}")
+_PEOPLESOFT_COMPONENT = "HRS_HRAM_FL.HRS_CG_SEARCH_FL.GBL"
+_ADP_UUID = re.compile(
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+)
+_ADP_CC_ID = re.compile(r"[0-9]{8}_[0-9]{6}")
+_ADP_LOCALE = re.compile(r"[A-Za-z]{2}_[A-Za-z]{2}")
+_ADP_POSITIVE_ID = re.compile(r"[1-9][0-9]{0,19}")
+_ADP_SITE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,99}")
+_ADP_PRC = re.compile(r"RMPOD[1-9][0-9]?", re.IGNORECASE)
 _SENSITIVE_QUERY_KEYS = {
     "csrf",
     "csrf_token",
@@ -163,18 +175,23 @@ class JobBoardPortfolio:
         return self.boards[0]
 
     def to_checkpoint_payload(self) -> dict[str, Any] | None:
-        if not all(discovered.board.replay_safe for discovered in self.boards):
-            return None
         board_payloads = []
         for discovered in self.boards:
+            if not discovered.board.replay_safe:
+                break
             payload = discovered.to_checkpoint_payload()
             if payload is None:
-                return None
+                break
             board_payloads.append(payload)
+        if not board_payloads:
+            return None
         return {
             "schema_version": _PORTFOLIO_SCHEMA_VERSION,
             "boards": board_payloads,
-            "eligible_set_complete": self.eligible_set_complete,
+            "eligible_set_complete": (
+                self.eligible_set_complete
+                and len(board_payloads) == len(self.boards)
+            ),
         }
 
     @classmethod
@@ -374,6 +391,66 @@ def _avature_policy(board: JobBoard) -> bool:
     )
 
 
+def _adp_policy(board: JobBoard) -> bool:
+    identifier = board.identifier or ""
+    parts = identifier.split("|")
+    parsed = urlparse(board.url)
+    host = _host(board.url)
+    try:
+        query = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return False
+
+    if len(parts) == 4 and parts[0] == "wfn":
+        _, cid, cc_id, locale = parts
+        expected_query = [
+            ("cid", cid),
+            ("ccId", cc_id),
+            ("type", "MP"),
+            ("lang", locale),
+            ("selectedMenuKey", "CurrentOpenings"),
+        ]
+        return bool(
+            cid == cid.casefold()
+            and _ADP_UUID.fullmatch(cid)
+            and _ADP_CC_ID.fullmatch(cc_id)
+            and _ADP_LOCALE.fullmatch(locale)
+            and host == "workforcenow.adp.com"
+            and parsed.path == "/mascsr/default/mdf/recruitment/recruitment.html"
+            and query == expected_query
+        )
+
+    if len(parts) == 5 and parts[0] == "srccar":
+        _, client, site_identity, prc_identity, requisition = parts
+        if not (
+            _ADP_POSITIVE_ID.fullmatch(client)
+            and _ADP_SITE.fullmatch(site_identity)
+            and site_identity == site_identity.casefold()
+            and (not prc_identity or _ADP_PRC.fullmatch(prc_identity))
+            and prc_identity == prc_identity.upper()
+            and (not requisition or _ADP_POSITIVE_ID.fullmatch(requisition))
+        ):
+            return False
+        expected_query = [("c", client)]
+        if len(query) < 2 or query[0] != expected_query[0]:
+            return False
+        site = query[1][1]
+        expected_query.append(("d", site))
+        if prc_identity:
+            expected_query.append(("prc", prc_identity))
+        if requisition:
+            expected_query.append(("r", requisition))
+        return bool(
+            _ADP_SITE.fullmatch(site)
+            and site.casefold() == site_identity
+            and host == "recruiting.adp.com"
+            and parsed.path == "/srccar/public/nghome.guid"
+            and query == expected_query
+        )
+
+    return False
+
+
 def _eightfold_policy(board: JobBoard) -> bool:
     parsed = urlparse(board.url)
     identifier = (board.identifier or "").casefold()
@@ -407,16 +484,56 @@ def _icims_policy(board: JobBoard) -> bool:
     return _valid_hostname(identifier) and identifier == _host(board.url) and "jobs" in parts
 
 
+def _healthcaresource_policy(board: JobBoard) -> bool:
+    tenant = (board.identifier or "").casefold()
+    parsed = urlparse(board.url)
+    return bool(
+        _SEGMENT.fullmatch(tenant)
+        and tenant == board.identifier
+        and (parsed.hostname or "").casefold() == f"{tenant}.hcshiring.com"
+        and parsed.path == "/jobs"
+        and _no_query(board.url)
+    )
+
+
+def _pinpoint_policy(board: JobBoard) -> bool:
+    tenant = (board.identifier or "").casefold()
+    parsed = urlparse(board.url)
+    return bool(
+        _SEGMENT.fullmatch(tenant)
+        and tenant == board.identifier
+        and (parsed.hostname or "").casefold() == f"{tenant}.pinpointhq.com"
+        and parsed.path == "/"
+        and _no_query(board.url)
+    )
+
+
 def _cws_policy(board: JobBoard) -> bool:
     identity = _strict_json(board.identifier or "")
-    if identity is None or set(identity) != {
-        "api_url", "board_url", "detail_path", "limit", "org_id"
-    }:
+    base_keys = {
+        "api_url",
+        "board_url",
+        "boost",
+        "detail_path",
+        "filters",
+        "limit",
+        "org_id",
+        "sort",
+    }
+    if (
+        identity is None
+        or set(identity)
+        not in {frozenset(base_keys), frozenset(base_keys | {"smartpost_org"})}
+    ):
         return False
     api_url = identity.get("api_url")
     detail_path = identity.get("detail_path")
     limit = identity.get("limit")
     org_id = identity.get("org_id")
+    smartpost_org = identity.get("smartpost_org")
+    filters = identity.get("filters")
+    boost = identity.get("boost")
+    sort = identity.get("sort")
     if not all(isinstance(value, str) for value in (api_url, detail_path, org_id)):
         return False
     parsed_api = urlparse(api_url)
@@ -431,14 +548,46 @@ def _cws_policy(board: JobBoard) -> bool:
         and not parsed_api.query
         and not parsed_api.fragment
         and _CWS_ORG_ID.fullmatch(org_id)
+        and (
+            smartpost_org is None
+            or (
+                isinstance(smartpost_org, str)
+                and re.fullmatch(r"[0-9]{1,20}", smartpost_org)
+            )
+        )
         and _CWS_DETAIL_PATH.fullmatch(detail_path)
         and "//" not in detail_path
         and all(segment not in {".", ".."} for segment in detail_path.split("/"))
         and not isinstance(limit, bool)
         and isinstance(limit, int)
         and 1 <= limit <= 100
+        and isinstance(filters, list)
+        and len(filters) <= 20
+        and len(set(filters)) == len(filters)
+        and all(_valid_cws_criterion(item) for item in filters)
+        and (boost is None or _valid_cws_criterion(boost))
+        and (
+            sort is None
+            or (
+                isinstance(sort, list)
+                and len(sort) == 2
+                and all(isinstance(item, str) for item in sort)
+                and _CWS_SORT_FIELD.fullmatch(sort[0])
+                and sort[1] in {"ascending", "descending"}
+            )
+        )
         and json.dumps(identity, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
         == board.identifier
+    )
+
+
+def _valid_cws_criterion(value: object) -> bool:
+    return bool(
+        isinstance(value, str)
+        and value
+        and len(value) <= 500
+        and not any(ord(character) < 32 for character in value)
+        and not _SECRET_VALUE.search(value)
     )
 
 
@@ -494,6 +643,106 @@ def _phenom_policy(board: JobBoard) -> bool:
         and parts
         and parts[-1] == "search-results"
         and _no_query(board.url)
+    )
+
+
+def _catsone_policy(board: JobBoard) -> bool:
+    identity = _strict_json(board.identifier or "")
+    if identity is None or set(identity) not in (
+        {"domain", "portal_id"},
+        {"domain", "portal_id", "public_host"},
+    ):
+        return False
+    domain = identity.get("domain")
+    portal_id = identity.get("portal_id")
+    if domain not in {"catsone.com", "catsone.nl"} or not (
+        isinstance(portal_id, str)
+        and re.fullmatch(r"[1-9][0-9]{0,18}", portal_id)
+    ):
+        return False
+    parsed = urlparse(board.url)
+    host = _host(board.url)
+    public_host = identity.get("public_host")
+    if public_host is None:
+        return bool(
+            host == f"app.{domain}"
+            and parsed.path == "/portal"
+            and parse_qsl(parsed.query, keep_blank_values=True) == [("id", portal_id)]
+        )
+    if not isinstance(public_host, str) or public_host != public_host.casefold():
+        return False
+    route = re.fullmatch(
+        rf"/careers/{re.escape(portal_id)}(?:-[A-Za-z0-9][A-Za-z0-9-]{{0,240}})?/",
+        parsed.path,
+    )
+    return bool(host == public_host and route and _no_query(board.url))
+
+
+def _peoplesoft_policy(board: JobBoard) -> bool:
+    identity = _strict_json(board.identifier or "")
+    required = {
+        "host",
+        "job_opening_id",
+        "kind",
+        "node",
+        "portal",
+        "posting_seq",
+        "site_id",
+        "v",
+    }
+    if identity is None or set(identity) != required or identity.get("v") != 1:
+        return False
+    host = identity.get("host")
+    portal = identity.get("portal")
+    node = identity.get("node")
+    site_id = identity.get("site_id")
+    kind = identity.get("kind")
+    opening_id = identity.get("job_opening_id")
+    posting_seq = identity.get("posting_seq")
+    if not (
+        isinstance(host, str)
+        and host == host.casefold() == _host(board.url)
+        and _HOSTNAME.fullmatch(host)
+        and isinstance(portal, str)
+        and _SEGMENT.fullmatch(portal)
+        and isinstance(node, str)
+        and _SEGMENT.fullmatch(node)
+        and isinstance(site_id, str)
+        and _PEOPLESOFT_NUMBER.fullmatch(site_id)
+        and kind in {"search", "detail"}
+    ):
+        return False
+    parsed = urlparse(board.url)
+    expected_path = (
+        f"/psc/{portal}/EMPLOYEE/{node}/c/{_PEOPLESOFT_COMPONENT}"
+    )
+    if parsed.path != expected_path or parsed.fragment:
+        return False
+    try:
+        query = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except ValueError:
+        return False
+    expected = [
+        ("Page", "HRS_APP_JBPST_FL" if kind == "detail" else "HRS_APP_SCHJOB_FL"),
+        ("Action", "U"),
+        ("SiteId", site_id),
+        ("FOCUS", "Applicant"),
+    ]
+    if kind == "search":
+        if opening_id is not None or posting_seq is not None:
+            return False
+    else:
+        if not isinstance(opening_id, str) or not _PEOPLESOFT_NUMBER.fullmatch(opening_id):
+            return False
+        expected.append(("JobOpeningId", opening_id))
+        if posting_seq is not None:
+            if not isinstance(posting_seq, str) or not _PEOPLESOFT_NUMBER.fullmatch(posting_seq):
+                return False
+            expected.append(("PostingSeq", posting_seq))
+    return bool(
+        query == expected
+        and json.dumps(identity, separators=(",", ":"), sort_keys=True)
+        == board.identifier
     )
 
 
@@ -608,6 +857,33 @@ def _smartrecruiters_policy(board: JobBoard) -> bool:
     )
 
 
+def _digitalrecruiters_policy(board: JobBoard) -> bool:
+    identity = _strict_json(board.identifier or "")
+    if identity is None or set(identity) != {"api_base", "board_url", "locale", "tenant"}:
+        return False
+    tenant = identity.get("tenant")
+    locale = identity.get("locale")
+    parsed = urlparse(board.url)
+    return bool(
+        identity.get("api_base") == "https://api.digitalrecruiters.com/public/v1"
+        and parsed.scheme == "https"
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.port is None
+        and not parsed.fragment
+        and isinstance(tenant, str)
+        and _valid_hostname(tenant)
+        and tenant.casefold() == tenant == _host(board.url)
+        and isinstance(locale, str)
+        and re.fullmatch(r"[a-z]{2}(?:_[A-Z]{2})?", locale)
+        and parsed.path == f"/{locale}/annonces"
+        and _no_query(board.url)
+        and identity.get("board_url") == board.url
+        and json.dumps(identity, ensure_ascii=True, separators=(",", ":"), sort_keys=True)
+        == board.identifier
+    )
+
+
 def _workday_policy(board: JobBoard) -> bool:
     identifier = board.identifier or ""
     if identifier.count("/") != 1:
@@ -637,12 +913,18 @@ def _workday_policy(board: JobBoard) -> bool:
 
 
 _REPLAY_SAFE_POLICIES: dict[str, Callable[[JobBoard], bool]] = {
+    "adp": _adp_policy,
     "avature": _avature_policy,
+    "catsone": _catsone_policy,
     "cws": _cws_policy,
+    "digitalrecruiters": _digitalrecruiters_policy,
     "eightfold": _eightfold_policy,
     "greenhouse": _greenhouse_policy,
+    "healthcaresource": _healthcaresource_policy,
     "icims": _icims_policy,
     "oracle_hcm": _oracle_hcm_policy,
+    "peoplesoft": _peoplesoft_policy,
+    "pinpoint": _pinpoint_policy,
     "phenom": _phenom_policy,
     "sitecore_next_jobs": _sitecore_policy,
     "smartrecruiters": _smartrecruiters_policy,

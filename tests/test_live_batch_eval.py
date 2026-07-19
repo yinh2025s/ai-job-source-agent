@@ -1,11 +1,13 @@
 import json
+import hashlib
 import io
 import tempfile
+import time
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from job_source_agent.checkpoint import execution_fingerprint
 from job_source_agent.contracts import StageExecution
@@ -20,11 +22,25 @@ from job_source_agent.models import (
     CompanyInput,
     DiscoveryResult,
     StageResult,
+    dataclass_to_dict,
 )
 from job_source_agent.pipeline_status import derive_pipeline_status
 from job_source_agent.pipeline_application import discovery_result_from_context
 from job_source_agent.process_budget import RemoteProcessError
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
+from job_source_agent.company_discovery_evidence import (
+    VerifiedCareerEvidence,
+    VerifiedProviderBoardEvidence,
+    VerifiedWebsiteEvidence,
+)
+from job_source_agent.company_discovery_evidence_store import (
+    FilesystemCompanyDiscoveryEvidenceStore,
+)
+from job_source_agent.evidence_scope import (
+    EMPTY_RECORDS_SHA256,
+    EvidenceScopeRef,
+    StageEvidenceLineage,
+)
 from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
@@ -38,11 +54,19 @@ from scripts.live_batch_eval import (
     enforce_bundle_gates,
     failure_result,
     _inner_deadline_budget,
+    _opening_phase_reserve,
+    _minimum_opening_execution_budget,
+    _phase_deadline_budget,
+    _prepare_automatic_replay_evidence_snapshot,
+    _freeze_company_discovery_evidence_revisions,
+    _split_opening_phase,
     _load_completed_companies,
     _downstream_start_stage,
     _ordered_records,
     _recover_checkpoint_prefix,
     _record_company_completion,
+    _recapture_retryable_missing_boundaries,
+    _remote_worker_failure_result,
     _run_configuration,
     load_batch_companies,
     prepare_company,
@@ -55,6 +79,41 @@ from scripts.live_batch_eval import (
 
 
 class LiveBatchEvalTests(unittest.TestCase):
+    def test_batch_freezes_per_company_public_evidence_revision(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            store = FilesystemCompanyDiscoveryEvidenceStore(path)
+            store.save(
+                "Acme",
+                "https://www.linkedin.com/company/acme",
+                website=VerifiedWebsiteEvidence(
+                    url="https://acme.example",
+                    source="verified_resolver",
+                    evidence_url="https://acme.example",
+                    observed_at=time.time(),
+                ),
+            )
+            companies = [
+                CompanyInput(
+                    company_name="Acme",
+                    linkedin_company_url="https://www.linkedin.com/company/acme",
+                ),
+                CompanyInput(
+                    company_name="Missing",
+                    linkedin_company_url="https://www.linkedin.com/company/missing",
+                ),
+            ]
+            args = SimpleNamespace(company_discovery_evidence_store=str(path))
+
+            _freeze_company_discovery_evidence_revisions(companies, args)
+
+        revisions = [
+            item.source_trace["company_discovery_evidence_revision"]
+            for item in companies
+        ]
+        self.assertTrue(all(len(value) == 64 for value in revisions))
+        self.assertNotEqual(revisions[0], revisions[1])
+
     def run_configuration(self, **overrides):
         return DeterministicRunConfig.from_agent_config(AgentConfig(**overrides))
 
@@ -112,10 +171,24 @@ class LiveBatchEvalTests(unittest.TestCase):
         )
 
     def test_inner_deadline_leaves_bounded_checkpoint_reserve(self):
-        self.assertEqual(_inner_deadline_budget(45), 43)
-        self.assertEqual(_inner_deadline_budget(20), 18)
-        self.assertEqual(_inner_deadline_budget(10), 9)
-        self.assertEqual(_inner_deadline_budget(0.5), 0.45)
+        self.assertEqual(_inner_deadline_budget(240), 210)
+        self.assertEqual(_inner_deadline_budget(60), 30)
+        self.assertEqual(_inner_deadline_budget(45), 22.5)
+        self.assertEqual(_inner_deadline_budget(20), 10)
+        self.assertEqual(_inner_deadline_budget(10), 5)
+        self.assertEqual(_inner_deadline_budget(0.5), 0.25)
+
+    def test_opening_phase_has_an_independent_bounded_reserve(self):
+        self.assertEqual(_opening_phase_reserve(20), 12)
+        self.assertEqual(_opening_phase_reserve(40), 16)
+        self.assertEqual(_opening_phase_reserve(100), 25)
+        self.assertEqual(_minimum_opening_execution_budget(12), 6)
+        self.assertEqual(_minimum_opening_execution_budget(25), 10)
+        self.assertEqual(_phase_deadline_budget(12), 10.8)
+        self.assertTrue(_split_opening_phase("career_discovery", 24))
+        self.assertTrue(_split_opening_phase("job_board_discovery", 45))
+        self.assertFalse(_split_opening_phase("opening_match", 45))
+        self.assertFalse(_split_opening_phase("career_discovery", 23.9))
 
     def pipeline_args(self, directory):
         return SimpleNamespace(
@@ -567,6 +640,18 @@ class LiveBatchEvalTests(unittest.TestCase):
             ],
             trace={"stages": {}},
         )
+        completed = DiscoveryResult(
+            company_name=company.company_name,
+            company_website_url="https://remote.example",
+            career_page_url="https://remote.example/careers",
+            job_list_page_url="https://jobs.remote.example",
+            open_position_url="https://jobs.remote.example/123",
+            stage_results=[
+                StageResult(stage=stage, status="success")
+                for stage in PIPELINE_STAGES
+            ],
+            trace={"stages": {}},
+        )
         args = SimpleNamespace(
             website_time_budget=20,
             company_time_budget=45,
@@ -576,7 +661,11 @@ class LiveBatchEvalTests(unittest.TestCase):
 
         with patch(
             "scripts.live_batch_eval.run_with_process_budget",
-            side_effect=[upstream, RemoteProcessError("worker crashed")],
+            side_effect=[
+                upstream,
+                RemoteProcessError("worker crashed"),
+                completed,
+            ],
         ), patch(
             "scripts.live_batch_eval._recover_checkpoint_prefix",
             return_value=recovered,
@@ -587,10 +676,10 @@ class LiveBatchEvalTests(unittest.TestCase):
             result = run_company(company, args)
 
         self.assertEqual(result.stage_status("job_board_discovery"), "success")
-        self.assertEqual(result.stage_status("opening_match"), "failed")
+        self.assertEqual(result.stage_status("opening_match"), "success")
         self.assertEqual(result.job_list_page_url, "https://jobs.remote.example")
-        self.assertEqual(result.error_code, "FETCH_FAILED")
-        self.assertEqual(result.error, "batch_worker_failed")
+        self.assertEqual(result.open_position_url, "https://jobs.remote.example/123")
+        self.assertIsNone(result.error)
 
     def test_downstream_failure_preserves_completed_upstream_evidence(self):
         company = CompanyInput(
@@ -1050,6 +1139,227 @@ class LiveBatchEvalTests(unittest.TestCase):
             for stage in PIPELINE_STAGES[3:]:
                 self.assertIsNone(stage_store.load(fingerprint, stage))
 
+    def test_identity_verified_final_output_restores_despite_upstream_retryable_failure(self):
+        company = CompanyInput(company_name="Published Board", company_website_url="https://a.example")
+        stages = [
+            {
+                "stage": stage,
+                "status": "failed" if stage == "website_resolution" else "success",
+                "retryable": stage == "website_resolution",
+                **({"reason_code": "NETWORK_TIMEOUT"} if stage == "website_resolution" else {}),
+            }
+            for stage in PIPELINE_STAGES
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = SimpleNamespace(
+                no_resume=False,
+                rerun_stage=None,
+                checkpoint_dir=str(root / "stages"),
+            )
+            store = FilesystemBatchCompletionStore(root / "completed")
+            input_record = dataclass_to_dict(company)
+            result = {
+                "company_name": company.company_name,
+                "pipeline_status": "failed",
+                "job_list_page_url": "https://boards.greenhouse.io/published-board",
+                "identity_assertion": {"verdict": "verified"},
+                "stages": stages,
+            }
+            store.save(input_record, result, {**result, "trace": {}}, 1.0)
+            fingerprint = execution_fingerprint(input_record, _run_configuration(args).digest)
+            stage_store = FilesystemCheckpointStore(args.checkpoint_dir)
+            stage_store.save(
+                fingerprint,
+                StageExecution(StageResult(stage="website_resolution", status="success")),
+            )
+
+            restored = _load_completed_companies([company], store, args)
+
+            self.assertEqual(list(restored), [1])
+            self.assertEqual(
+                args.batch_completion_resume_decisions[1],
+                {
+                    "action": "completion_restore",
+                    "reason": "identity_verified_final_output",
+                },
+            )
+            self.assertEqual(args.batch_completion_resume_stats["completion_restore"], 1)
+            self.assertEqual(args.batch_completion_resume_stats["retryable_resubmit"], 0)
+            self.assertIsNotNone(stage_store.load(fingerprint, "website_resolution"))
+
+    def test_identity_verified_exact_opening_restores_despite_upstream_retryable_failure(self):
+        company = CompanyInput(company_name="Published Opening", company_website_url="https://a.example")
+        stages = [
+            {
+                "stage": stage,
+                "status": "failed" if stage == "career_discovery" else "success",
+                "retryable": stage == "career_discovery",
+                **({"reason_code": "FETCH_FAILED"} if stage == "career_discovery" else {}),
+            }
+            for stage in PIPELINE_STAGES
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            args = SimpleNamespace(
+                no_resume=False,
+                rerun_stage=None,
+                checkpoint_dir=str(root / "stages"),
+            )
+            store = FilesystemBatchCompletionStore(root / "completed")
+            result = {
+                "company_name": company.company_name,
+                "pipeline_status": "failed",
+                "open_position_url": "https://boards.greenhouse.io/published-opening/jobs/1",
+                "identity_assertion": {"verdict": "verified"},
+                "stages": stages,
+            }
+            store.save(dataclass_to_dict(company), result, {**result, "trace": {}}, 1.0)
+
+            restored = _load_completed_companies([company], store, args)
+
+        self.assertEqual(list(restored), [1])
+        self.assertEqual(
+            args.batch_completion_resume_decisions[1]["reason"],
+            "identity_verified_final_output",
+        )
+
+    def test_retryable_completion_requires_verified_output_and_successful_final_gate(self):
+        cases = (
+            ("unverified_board", {"verdict": "unavailable"}, "success"),
+            ("failed_final_gate", {"verdict": "verified"}, "failed"),
+            ("incomplete_output", {"verdict": "verified"}, "success"),
+        )
+        for name, identity_assertion, final_status in cases:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                company = CompanyInput(company_name=name, company_website_url="https://a.example")
+                stages = [
+                    {
+                        "stage": stage,
+                        "status": (
+                            "failed"
+                            if stage == "website_resolution"
+                            else final_status
+                            if stage == "result_validation"
+                            else "success"
+                        ),
+                        "retryable": stage == "website_resolution",
+                        **({"reason_code": "NETWORK_TIMEOUT"} if stage == "website_resolution" else {}),
+                    }
+                    for stage in PIPELINE_STAGES
+                ]
+                root = Path(directory)
+                args = SimpleNamespace(
+                    no_resume=False,
+                    rerun_stage=None,
+                    checkpoint_dir=str(root / "stages"),
+                )
+                store = FilesystemBatchCompletionStore(root / "completed")
+                result = {
+                    "company_name": company.company_name,
+                    "pipeline_status": "failed",
+                    "job_list_page_url": (
+                        None if name == "incomplete_output" else "https://boards.greenhouse.io/example"
+                    ),
+                    "identity_assertion": identity_assertion,
+                    "stages": stages,
+                }
+                store.save(dataclass_to_dict(company), result, {**result, "trace": {}}, 1.0)
+
+                restored = _load_completed_companies([company], store, args)
+
+                self.assertEqual(restored, {})
+                self.assertEqual(args.batch_completion_resume_stats["retryable_resubmit"], 1)
+                self.assertEqual(
+                    args.batch_completion_resume_decisions[1]["reason_code"],
+                    "NETWORK_TIMEOUT",
+                )
+
+    def test_value_error_worker_payload_is_non_retryable_and_not_resubmitted(self):
+        company = CompanyInput(
+            company_name="Contract Failure",
+            company_website_url="https://contract.example",
+        )
+        error = RemoteProcessError(
+            "Traceback (most recent call last):\n"
+            '  File "worker.py", line 1, in run\n'
+            "ValueError: checkpoint contract mismatch"
+        )
+        result = _remote_worker_failure_result(company, error)
+        failed_stage = next(
+            stage for stage in result.stage_results if stage.status == "failed"
+        )
+
+        self.assertEqual(result.error, "batch_worker_contract_failed")
+        self.assertEqual(result.error_code, "INVALID_STRUCTURED_DATA")
+        self.assertFalse(failed_stage.retryable)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = FilesystemBatchCompletionStore(root / "completed")
+            store.save(
+                dataclass_to_dict(company),
+                result.result_record(),
+                dataclass_to_dict(result.trace_record()),
+                0.1,
+            )
+            args = SimpleNamespace(
+                no_resume=False,
+                rerun_stage=None,
+                checkpoint_dir=str(root / "stages"),
+            )
+            restored = _load_completed_companies([company], store, args)
+
+        self.assertEqual(list(restored), [1])
+        self.assertEqual(args.batch_completion_resume_stats["non_retryable_restore"], 1)
+        self.assertEqual(args.batch_completion_resume_stats["retryable_resubmit"], 0)
+
+    def test_fetch_error_worker_payload_remains_retryable_and_is_resubmitted(self):
+        company = CompanyInput(
+            company_name="Transport Failure",
+            company_website_url="https://transport.example",
+        )
+        error = RemoteProcessError(
+            "Traceback (most recent call last):\n"
+            '  File "transport.py", line 1, in decode\n'
+            "ValueError: malformed response header\n\n"
+            "The above exception was the direct cause of the following exception:\n\n"
+            "Traceback (most recent call last):\n"
+            '  File "worker.py", line 2, in run\n'
+            "job_source_agent.web.FetchError: connection reset"
+        )
+        result = _remote_worker_failure_result(company, error)
+        failed_stage = next(
+            stage for stage in result.stage_results if stage.status == "failed"
+        )
+
+        self.assertEqual(result.error, "batch_worker_failed")
+        self.assertEqual(result.error_code, "FETCH_FAILED")
+        self.assertTrue(failed_stage.retryable)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = FilesystemBatchCompletionStore(root / "completed")
+            store.save(
+                dataclass_to_dict(company),
+                result.result_record(),
+                dataclass_to_dict(result.trace_record()),
+                0.1,
+            )
+            args = SimpleNamespace(
+                no_resume=False,
+                rerun_stage=None,
+                checkpoint_dir=str(root / "stages"),
+            )
+            restored = _load_completed_companies([company], store, args)
+
+        self.assertEqual(restored, {})
+        self.assertEqual(args.batch_completion_resume_stats["retryable_resubmit"], 1)
+        self.assertEqual(
+            args.batch_completion_resume_decisions[1]["reason_code"],
+            "FETCH_FAILED",
+        )
+
     def test_automatic_retry_uses_failed_downstream_stage_as_real_start(self):
         cases = (
             ("career_discovery", 3),
@@ -1060,7 +1370,7 @@ class LiveBatchEvalTests(unittest.TestCase):
                 company = CompanyInput(
                     company_name="Aurora Data",
                     company_website_url="https://aurora-data.example",
-                    job_title="AI Engineer",
+                    job_title="AI Algorithm Engineer Intern",
                 )
                 args = self.pipeline_args(directory)
                 args.company_time_budget = 10
@@ -1170,6 +1480,175 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertIsNone(downstream_call[4])
         self.assertEqual(upstream_call[6], downstream_call[6])
         self.assertRegex(upstream_call[6], r"^[0-9a-f]{32}$")
+
+    def test_automatic_boundary_recapture_replaces_only_with_finalized_scope(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            company_website_url="https://checkpoint.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.failure_bundle_dir = str(Path(directory) / "bundle")
+            args.replay_bundle_dir = None
+            stages = [
+                {
+                    "stage": stage,
+                    "status": "failed" if stage == "career_discovery" else (
+                        "not_run" if PIPELINE_STAGES.index(stage) > 3 else "success"
+                    ),
+                    "retryable": stage == "career_discovery",
+                    "reason_code": (
+                        "NETWORK_TIMEOUT" if stage == "career_discovery" else None
+                    ),
+                }
+                for stage in PIPELINE_STAGES
+            ]
+            original = (
+                {"pipeline_status": "failed", "stages": stages},
+                {"stages": stages},
+                1.0,
+            )
+            completed = {1: original}
+            fingerprint = execution_fingerprint(
+                dataclass_to_dict(company),
+                _run_configuration(args).digest,
+            )
+            scope = EvidenceScopeRef(
+                snapshot_store_id="snapshot-store-test",
+                scope_id="a" * 64,
+                capture_attempt_id="capture-attempt-test",
+                execution_fingerprint=fingerprint,
+                stage="career_discovery",
+                request_count=0,
+                records_sha256=EMPTY_RECORDS_SHA256,
+            )
+            recaptured = DiscoveryResult(
+                company_name=company.company_name,
+                company_website_url=company.company_website_url,
+                status="success",
+                pipeline_status="success",
+                stage_results=[
+                    StageResult(stage=stage, status="success")
+                    for stage in PIPELINE_STAGES
+                ],
+                trace={
+                    "stage_evidence_lineage": [
+                        dataclass_to_dict(
+                            StageEvidenceLineage(
+                                stage="career_discovery",
+                                execution_fingerprint=fingerprint,
+                                producer_attempt_id="capture-attempt-test",
+                                snapshot_scope=scope,
+                            )
+                        )
+                    ]
+                },
+            )
+            completion_store = Mock()
+
+            with patch(
+                "scripts.live_batch_eval.run_company",
+                return_value=recaptured,
+            ) as run:
+                stats = _recapture_retryable_missing_boundaries(
+                    [company], completed, completion_store, args
+                )
+
+        run.assert_called_once()
+        completion_store.save.assert_called_once()
+        self.assertEqual(stats["attempted"], 1)
+        self.assertEqual(stats["replaced"], 1)
+        self.assertEqual(completed[1][0]["pipeline_status"], "success")
+
+    def test_automatic_boundary_recapture_keeps_original_when_scope_is_unfinalized(self):
+        company = CompanyInput(
+            company_name="Checkpoint Labs",
+            company_website_url="https://checkpoint.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.failure_bundle_dir = str(Path(directory) / "bundle")
+            args.replay_bundle_dir = None
+            stages = [
+                {
+                    "stage": stage,
+                    "status": "failed" if stage == "website_resolution" else (
+                        "not_run" if PIPELINE_STAGES.index(stage) > 1 else "success"
+                    ),
+                    "retryable": stage == "website_resolution",
+                    "reason_code": (
+                        "NETWORK_TIMEOUT" if stage == "website_resolution" else None
+                    ),
+                }
+                for stage in PIPELINE_STAGES
+            ]
+            original = (
+                {"pipeline_status": "failed", "stages": stages},
+                {"stages": stages},
+                1.0,
+            )
+            completed = {1: original}
+            recaptured = DiscoveryResult(
+                company_name=company.company_name,
+                company_website_url=company.company_website_url,
+                pipeline_status="failed",
+                stage_results=[StageResult(**stage) for stage in stages],
+            )
+            completion_store = Mock()
+
+            with patch(
+                "scripts.live_batch_eval.run_company",
+                return_value=recaptured,
+            ) as run:
+                stats = _recapture_retryable_missing_boundaries(
+                    [company], completed, completion_store, args
+                )
+
+        run.assert_called_once()
+        completion_store.save.assert_not_called()
+        self.assertIs(completed[1], original)
+        self.assertEqual(stats["attempted"], 1)
+        self.assertEqual(stats["boundary_still_missing"], 1)
+
+    def test_automatic_boundary_recapture_skips_non_retryable_record(self):
+        company = CompanyInput(company_name="Invalid Input")
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.failure_bundle_dir = str(Path(directory) / "bundle")
+            args.replay_bundle_dir = None
+            stages = [
+                {
+                    "stage": stage,
+                    "status": "failed" if stage == "website_resolution" else (
+                        "not_run" if PIPELINE_STAGES.index(stage) > 1 else "success"
+                    ),
+                    "retryable": False,
+                    "reason_code": (
+                        "INVALID_STRUCTURED_DATA"
+                        if stage == "website_resolution"
+                        else None
+                    ),
+                }
+                for stage in PIPELINE_STAGES
+            ]
+            completed = {
+                1: (
+                    {"pipeline_status": "failed", "stages": stages},
+                    {"stages": stages},
+                    0.1,
+                )
+            }
+            completion_store = Mock()
+
+            with patch("scripts.live_batch_eval.run_company") as run:
+                stats = _recapture_retryable_missing_boundaries(
+                    [company], completed, completion_store, args
+                )
+
+        run.assert_not_called()
+        completion_store.save.assert_not_called()
+        self.assertEqual(stats["eligible"], 0)
+        self.assertEqual(stats["attempted"], 0)
 
     def test_company_completions_are_persisted_and_rendered_in_input_order(self):
         companies = {
@@ -1426,6 +1905,7 @@ class LiveBatchEvalTests(unittest.TestCase):
             replay_bundle_dir="bundle",
             replay_bundle_limit=11,
             snapshot_dir="snapshots",
+            company_discovery_evidence_store="evidence.json",
         )
 
         with patch("scripts.live_batch_eval.replay_failure_bundle") as replay:
@@ -1437,7 +1917,146 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertIsNone(replay_args.pipeline_status)
         self.assertEqual(replay_args.limit, 11)
         self.assertTrue(replay_args.include_missing_website)
+        self.assertEqual(replay_args.company_discovery_evidence_store, "evidence.json")
         self.assertEqual(replay.call_args.kwargs, {"allow_empty": True})
+
+    def test_automatic_failure_bundle_passes_company_discovery_evidence_store(self):
+        args = SimpleNamespace(
+            failure_bundle_dir="bundle",
+            failure_bundle_limit=11,
+            snapshot_dir="snapshots",
+            company_discovery_evidence_store="evidence.json",
+        )
+
+        with patch("scripts.live_batch_eval.replay_failure_bundle") as replay:
+            replay.return_value = {"status": "success", "summary": {"total": 1}}
+            build_automatic_failure_bundle(args, Path("trace.json"))
+
+        replay_args = replay.call_args.args[0]
+        self.assertEqual(replay_args.company_discovery_evidence_store, "evidence.json")
+
+    def test_automatic_replay_snapshot_excludes_evidence_learned_during_batch(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_path = root / "evidence.json"
+            source_store = FilesystemCompanyDiscoveryEvidenceStore(source_path)
+            observed_at = time.time()
+            source_store.save(
+                "Acorns",
+                "https://www.linkedin.com/company/acorns/",
+                website=VerifiedWebsiteEvidence(
+                    url="https://www.acorns.com",
+                    source="verified_resolver",
+                    evidence_url="https://www.acorns.com",
+                    observed_at=observed_at,
+                ),
+                career=VerifiedCareerEvidence(
+                    url="https://www.acorns.com/careers",
+                    website_url="https://www.acorns.com",
+                    source="first_party_navigation",
+                    evidence_url="https://www.acorns.com/careers",
+                    observed_at=observed_at,
+                ),
+            )
+            args = SimpleNamespace(
+                output=str(root / "results.json"),
+                failure_bundle_dir=str(root / "failure-bundle"),
+                replay_bundle_dir=str(root / "replay-bundle"),
+                failure_bundle_limit=20,
+                replay_bundle_limit=20,
+                snapshot_dir=str(root / "snapshots"),
+                company_discovery_evidence_store=str(source_path),
+            )
+
+            snapshot_root, snapshot_path = _prepare_automatic_replay_evidence_snapshot(args)
+            self.assertIsNotNone(snapshot_root)
+            self.assertIsNotNone(snapshot_path)
+            try:
+                source_store.save(
+                    "Acorns",
+                    "https://www.linkedin.com/company/acorns/",
+                    provider_board=VerifiedProviderBoardEvidence(
+                        provider="greenhouse",
+                        tenant="acorns",
+                        canonical_board_url="https://boards.greenhouse.io/acorns",
+                        relationship_evidence_url="https://www.acorns.com/careers",
+                        verification_method="first_party_handoff",
+                        source="first_party_handoff",
+                        observed_at=observed_at,
+                    ),
+                )
+
+                snapshot_evidence = FilesystemCompanyDiscoveryEvidenceStore(
+                    snapshot_path
+                ).load("Acorns", "https://www.linkedin.com/company/acorns/")
+                live_evidence = source_store.load(
+                    "Acorns", "https://www.linkedin.com/company/acorns/"
+                )
+
+                self.assertEqual(snapshot_evidence.provider_boards, ())
+                self.assertEqual(len(live_evidence.provider_boards), 1)
+                with patch("scripts.live_batch_eval.replay_failure_bundle") as replay:
+                    replay.return_value = {
+                        "status": "success",
+                        "summary": {"total": 1},
+                        "company_discovery_evidence": {
+                            "source_path_sha256": "private-snapshot"
+                        },
+                    }
+                    build_automatic_failure_bundle(
+                        args,
+                        Path("trace.json"),
+                        company_discovery_evidence_store=snapshot_path,
+                        company_discovery_evidence_source=str(source_path),
+                    )
+                    build_automatic_replay_bundle(
+                        args,
+                        Path("trace.json"),
+                        company_discovery_evidence_store=snapshot_path,
+                        company_discovery_evidence_source=str(source_path),
+                    )
+
+                self.assertEqual(replay.call_count, 2)
+                self.assertTrue(
+                    all(
+                        call.args[0].company_discovery_evidence_store == snapshot_path
+                        for call in replay.call_args_list
+                    )
+                )
+                expected_source_hash = hashlib.sha256(
+                    str(source_path.resolve()).encode("utf-8")
+                ).hexdigest()
+                for bundle_dir in ("failure-bundle", "replay-bundle"):
+                    manifest = json.loads(
+                        (root / bundle_dir / "bundle-manifest.json").read_text(
+                            encoding="utf-8"
+                        )
+                    )
+                    self.assertEqual(
+                        manifest["company_discovery_evidence"]["source_path_sha256"],
+                        expected_source_hash,
+                    )
+            finally:
+                snapshot_root.cleanup()
+
+    def test_automatic_replay_snapshot_leaves_no_store_behavior_unchanged(self):
+        args = SimpleNamespace(
+            output="results.json",
+            failure_bundle_dir="bundle",
+            replay_bundle_dir=None,
+            failure_bundle_limit=20,
+            snapshot_dir="snapshots",
+        )
+
+        snapshot_root, snapshot_path = _prepare_automatic_replay_evidence_snapshot(args)
+
+        self.assertIsNone(snapshot_root)
+        self.assertIsNone(snapshot_path)
+        with patch("scripts.live_batch_eval.replay_failure_bundle") as replay:
+            replay.return_value = {"status": "success", "summary": {"total": 1}}
+            build_automatic_failure_bundle(args, Path("trace.json"))
+
+        self.assertIsNone(replay.call_args.args[0].company_discovery_evidence_store)
 
     def test_replay_bundle_summary_preserves_preflight_integrity_counts(self):
         manifest = {
@@ -1568,7 +2187,7 @@ class LiveBatchEvalTests(unittest.TestCase):
             "PROVIDER_RELATIONSHIP_UNVERIFIED",
             result.identity_assertion["failure_codes"],
         )
-        self.assertIsNone(result.error_code)
+        self.assertEqual(result.error_code, "RESULT_IDENTITY_MISMATCH")
 
     def test_external_apply_allows_resume_fallback_without_website(self):
         company = CompanyInput(
@@ -1589,7 +2208,7 @@ class LiveBatchEvalTests(unittest.TestCase):
         company = CompanyInput(
             company_name="Aurora Data",
             company_website_url="https://aurora-data.example",
-            job_title="AI Engineer",
+            job_title="AI Algorithm Engineer Intern",
         )
         with tempfile.TemporaryDirectory() as directory:
             args = self.pipeline_args(directory)
@@ -1626,7 +2245,7 @@ class LiveBatchEvalTests(unittest.TestCase):
         company = CompanyInput(
             company_name="Aurora Data",
             company_website_url="https://aurora-data.example",
-            job_title="AI Engineer",
+            job_title="AI Algorithm Engineer Intern",
         )
         with tempfile.TemporaryDirectory() as directory:
             args = self.pipeline_args(directory)
@@ -1662,7 +2281,7 @@ class LiveBatchEvalTests(unittest.TestCase):
         company = CompanyInput(
             company_name="Aurora Data",
             company_website_url="https://aurora-data.example",
-            job_title="AI Engineer",
+            job_title="AI Algorithm Engineer Intern",
             source="replay_input",
         )
         with tempfile.TemporaryDirectory() as directory:
@@ -1725,7 +2344,7 @@ class LiveBatchEvalTests(unittest.TestCase):
         company = CompanyInput(
             company_name="Aurora Data",
             company_website_url="https://aurora-data.example",
-            job_title="AI Engineer",
+            job_title="AI Algorithm Engineer Intern",
         )
         with tempfile.TemporaryDirectory() as directory:
             args = self.pipeline_args(directory)

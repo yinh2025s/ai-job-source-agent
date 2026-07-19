@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import shutil
@@ -20,6 +21,7 @@ from job_source_agent.checkpoint import (
 from job_source_agent.composition import (
     AgentConfig,
     FetcherConfig,
+    LINKEDIN_EVIDENCE_CACHE_FILENAME,
     build_application,
     build_application_from_fetcher,
 )
@@ -29,6 +31,15 @@ from job_source_agent.identity_continuity import (
     OpeningIdentity,
     ProviderIdentity,
 )
+from job_source_agent.identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
+from job_source_agent.company_discovery_evidence_store import (
+    FilesystemCompanyDiscoveryEvidenceStore,
+)
+from job_source_agent.company_discovery_evidence import (
+    COMPANY_DISCOVERY_EVIDENCE_SCHEMA_VERSION,
+    VerifiedProviderBoardEvidence,
+)
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.evaluation import result_provider, summarize_results
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import (
@@ -48,6 +59,7 @@ from job_source_agent.replay_record_plan import (
     build_replay_record_plans,
 )
 from job_source_agent.scoped_replay import ScopedReplayController
+from job_source_agent.snapshot import SENSITIVE_BODY_FIELDS
 from job_source_agent.snapshot_replay import (
     SnapshotReplayError,
     load_scoped_outcome_tapes,
@@ -55,30 +67,93 @@ from job_source_agent.snapshot_replay import (
 )
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.run_configuration import DeterministicRunConfig
-from job_source_agent.web import FetchError, normalize_url
+from job_source_agent.web import FetchError, Page, normalize_url
 from job_source_agent.result_identity import canonicalize_identity_url, tenant_locator
-from scripts.export_replay_input import _matches_filters, export_replay_records
+from job_source_agent.request_identity import is_sensitive_key
+from scripts.export_replay_input import (
+    _SCOPED_REPLAY_SOURCE_KINDS,
+    _matches_filters,
+    export_replay_records,
+)
 
 
 BUNDLE_SCHEMA_VERSION = 5
 SCOPED_BUNDLE_SCHEMA_VERSION = 7
-SCOPED_REPLAY_SOURCE_KINDS = frozenset(
-    {
-        "input",
-        "fixed_input",
-        "linkedin_public_jobs",
-        "linkedin_public_jobs_blind_holdout",
-        "linkedin_browser_extension",
-    }
-)
+SCOPED_REPLAY_SOURCE_KINDS = _SCOPED_REPLAY_SOURCE_KINDS
 SCOPED_REPLAY_PRODUCER_DEPENDENCIES = {
     "career_discovery": "website_resolution",
     "job_board_discovery": "career_discovery",
 }
 
 
+class _ScopedStageSeedAmbiguity(ValueError):
+    pass
+
+
 class FailureReplayError(ValueError):
     """Raised when a failure replay bundle cannot be built safely."""
+
+
+class _RedactionHydratingScopedFetcher:
+    timeout = None
+
+    def __init__(self, controller: ScopedReplayController) -> None:
+        self._controller = controller
+
+    @property
+    def supports_forced_render(self) -> bool:
+        return self._controller.supports_forced_render
+
+    def fetch(
+        self,
+        url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        *,
+        interaction=None,
+    ) -> Page:
+        page = self._controller.fetch(
+            url,
+            data=data,
+            headers=headers,
+            interaction=interaction,
+        )
+        hydrated = _hydrate_redacted_json_credentials(page.html)
+        return page if hydrated == page.html else replace(page, html=hydrated)
+
+    def remaining_fetch_seconds(self) -> float | None:
+        return self._controller.remaining_fetch_seconds()
+
+
+def _hydrate_redacted_json_credentials(body: str) -> str:
+    """Restore credential shape without restoring secrets in offline JSON responses."""
+
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return body
+    sensitive_fields = {field.casefold() for field in SENSITIVE_BODY_FIELDS}
+    replacement = "offline-replay-redacted-credential"
+
+    def hydrate(value, *, key: str | None = None):
+        if (
+            isinstance(value, str)
+            and value == "[REDACTED]"
+            and isinstance(key, str)
+            and key.casefold() in sensitive_fields
+        ):
+            return replacement
+        if isinstance(value, dict):
+            return {
+                item_key: hydrate(item_value, key=item_key)
+                for item_key, item_value in value.items()
+            }
+        if isinstance(value, list):
+            return [hydrate(item) for item in value]
+        return value
+
+    hydrated = hydrate(payload)
+    return body if hydrated == payload else json.dumps(hydrated, sort_keys=True)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -95,6 +170,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--provider", action="append")
     parser.add_argument("--limit", type=int)
     parser.add_argument("--include-missing-website", action="store_true")
+    parser.add_argument(
+        "--company-discovery-evidence-store",
+        help=(
+            "Optional public company-discovery evidence store to freeze for the "
+            "selected replay records."
+        ),
+    )
     parser.add_argument(
         "--legacy-run-config",
         choices=("composition-defaults",),
@@ -219,10 +301,20 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             "record_id"
         ] = plan.record_id
 
+    _remove_derived_hiring_entity_inputs(replay_records)
+
     _reset_checkpoint_output(output_root / "checkpoints")
     input_path = output_root / "replay-input.json"
     _write_json_atomic(input_path, replay_records)
     companies = load_company_inputs(input_path)
+    company_discovery_evidence_path, company_discovery_evidence = (
+        _freeze_company_discovery_evidence(
+            args,
+            output_root,
+            companies,
+            source_records,
+        )
+    )
     if evidence_mode == "scoped_outcome_tape":
         scopes_by_id = {
             lineage.snapshot_scope.scope_id: lineage.snapshot_scope
@@ -240,6 +332,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             tapes,
             output_root / "checkpoints",
             run_configuration,
+            company_discovery_evidence_path,
         )
         snapshot_summary = scoped_manifest["summary"]
         bundle_schema_version = SCOPED_BUNDLE_SCHEMA_VERSION
@@ -257,6 +350,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             output_root / "checkpoints",
             output_root / "offline" / "sites",
             run_configuration,
+            company_discovery_evidence_path,
         )
         snapshot_summary = fixture_result.summary
         bundle_schema_version = BUNDLE_SCHEMA_VERSION
@@ -314,6 +408,11 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             "summary": "replay-summary.json",
             "checkpoints": "checkpoints",
             **replay_paths,
+            **(
+                {"company_discovery_evidence": str(company_discovery_evidence_path.relative_to(output_root))}
+                if company_discovery_evidence_path is not None
+                else {}
+            ),
         },
         "filters": {
             "pipeline_status": args.pipeline_status or [],
@@ -324,12 +423,26 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             "limit": args.limit,
         },
         "snapshot_summary": snapshot_summary,
+        **(
+            {"company_discovery_evidence": company_discovery_evidence}
+            if getattr(args, "company_discovery_evidence_store", None)
+            else {}
+        ),
         "summary": summary,
         "record_integrity": record_integrity,
         "outcome_gate": outcome_gate,
     }
     _write_json_atomic(output_root / "bundle-manifest.json", manifest)
     return manifest
+
+
+def _remove_derived_hiring_entity_inputs(replay_records: list[dict]) -> None:
+    """Keep result-only identity outputs out of reconstructed replay input."""
+
+    for replay_record in replay_records:
+        # Authoritative upstream checkpoints restore this when the recorded
+        # prefix includes it; it must not instead become an execution input.
+        replay_record.pop("hiring_entity_name", None)
 
 
 def _empty_bundle_manifest(
@@ -356,6 +469,11 @@ def _empty_bundle_manifest(
             "limit": args.limit,
         },
         "snapshot_summary": None,
+        **(
+            {"company_discovery_evidence": _empty_company_discovery_evidence_provenance(args)}
+            if getattr(args, "company_discovery_evidence_store", None)
+            else {}
+        ),
         "summary": {"total": 0},
         "record_integrity": record_integrity,
         "outcome_gate": {
@@ -377,6 +495,245 @@ def _reset_checkpoint_output(path: Path) -> None:
         raise FailureReplayError(f"Unsafe replay checkpoint output: {path}")
     if path.exists():
         shutil.rmtree(path)
+
+
+def _freeze_company_discovery_evidence(
+    args: argparse.Namespace,
+    output_root: Path,
+    companies: list,
+    source_records: list[dict],
+) -> tuple[Path | None, dict]:
+    """Copy only selected, currently valid public discovery candidates into a bundle."""
+
+    source_value = getattr(args, "company_discovery_evidence_store", None)
+    provenance = _empty_company_discovery_evidence_provenance(args)
+    bundle_path = output_root / "company-discovery-evidence.json"
+    _reset_bundle_file_output(bundle_path)
+    identities = {
+        (company.company_name, company.linkedin_company_url)
+        for company in companies
+        if isinstance(company.company_name, str)
+        and company.company_name.strip()
+        and isinstance(company.linkedin_company_url, str)
+        and company.linkedin_company_url.strip()
+    }
+    provenance["selected_identity_count"] = len(identities)
+    if not source_value:
+        return None, provenance
+
+    source_path = Path(source_value)
+    source_status = _company_discovery_evidence_source_status(source_path)
+    provenance["source_status"] = source_status
+    if source_status != "available":
+        provenance["status"] = "omitted"
+        return None, provenance
+
+    source_store = FilesystemCompanyDiscoveryEvidenceStore(source_path)
+    frozen_store = FilesystemCompanyDiscoveryEvidenceStore(bundle_path)
+    frozen_count = 0
+    for company_name, linkedin_company_url in sorted(identities):
+        try:
+            evidence = source_store.load(company_name, linkedin_company_url)
+        except (OSError, TypeError, ValueError):
+            provenance["source_status"] = "unreadable"
+            provenance["status"] = "omitted"
+            _reset_bundle_file_output(bundle_path)
+            return None, provenance
+        if evidence is None:
+            continue
+        try:
+            frozen_store.save(
+                company_name,
+                linkedin_company_url,
+                website=evidence.website,
+                career=evidence.career,
+            )
+            for provider_board in evidence.provider_boards:
+                frozen_store.save(
+                    company_name,
+                    linkedin_company_url,
+                    provider_board=provider_board,
+                )
+        except (OSError, TypeError, ValueError) as error:
+            _reset_bundle_file_output(bundle_path)
+            raise FailureReplayError(
+                f"Could not freeze company discovery evidence: {error}"
+            ) from error
+        frozen_count += 1
+
+    restored_provider_inputs = _restore_stored_provider_inputs(
+        frozen_store,
+        companies,
+        source_records,
+    )
+    provenance["restored_stored_provider_input_count"] = restored_provider_inputs
+
+    provenance["frozen_record_count"] = frozen_count
+    if not frozen_count:
+        provenance["status"] = "omitted"
+        provenance["source_status"] = "available_no_selected_evidence"
+        return None, provenance
+    provenance["status"] = "frozen"
+    provenance["bundle_path"] = str(bundle_path.relative_to(output_root))
+    return bundle_path, provenance
+
+
+def _restore_stored_provider_inputs(
+    store: FilesystemCompanyDiscoveryEvidenceStore,
+    companies: list,
+    source_records: list[dict],
+) -> int:
+    """Restore durable provider evidence that the captured S5 explicitly read.
+
+    The live batch freezes its evidence store before workers mutate it. A later
+    phase can nevertheless read evidence committed by an earlier phase or a
+    recovered attempt. Scoped replay must reconstruct that producer state, but
+    only when the source trace proves the candidate was stored and S7 verifies
+    the same first-party relationship. The provider inventory is still replayed
+    from its outcome tape; this input never authorizes an opening by itself.
+    """
+
+    restored = 0
+    for company, source_record in zip(companies, source_records, strict=True):
+        linkedin_url = getattr(company, "linkedin_company_url", None)
+        if not isinstance(linkedin_url, str) or not linkedin_url:
+            continue
+        stage_trace = _source_stage_trace(source_record, "job_board_discovery")
+        selected = stage_trace.get("selected") if isinstance(stage_trace, dict) else None
+        if (
+            not isinstance(selected, dict)
+            or selected.get("source_kind") != "stored_verified_provider_board"
+        ):
+            continue
+        assertion = source_record.get("identity_assertion")
+        provider = assertion.get("provider") if isinstance(assertion, dict) else None
+        hiring = assertion.get("hiring") if isinstance(assertion, dict) else None
+        if (
+            not isinstance(assertion, dict)
+            or assertion.get("verdict") != "verified"
+            or not isinstance(provider, dict)
+            or provider.get("relationship_verified") is not True
+            or not isinstance(hiring, dict)
+            or hiring.get("verified") is not True
+        ):
+            continue
+        provider_name = provider.get("provider")
+        tenant = provider.get("tenant")
+        board_url = provider.get("canonical_board_url")
+        evidence_url = provider.get("evidence_url")
+        verification_method = provider.get("verification_method")
+        if not all(
+            isinstance(value, str) and value.strip()
+            for value in (
+                provider_name,
+                tenant,
+                board_url,
+                evidence_url,
+                verification_method,
+            )
+        ):
+            continue
+        if not _same_identity_url(selected.get("url"), board_url):
+            continue
+        record = store.load(company.company_name, linkedin_url)
+        if record is None or record.career is None:
+            continue
+        if not (
+            _same_identity_url(evidence_url, record.career.url)
+            or _same_identity_url(evidence_url, record.career.evidence_url)
+        ):
+            continue
+        adapter = DEFAULT_PROVIDER_REGISTRY.adapter_for(board_url)
+        board = adapter.identify_board(board_url) if adapter is not None else None
+        if adapter is None or board is None:
+            continue
+        canonicalize = getattr(adapter, "canonicalize_board", None)
+        if callable(canonicalize):
+            board = canonicalize(board)
+        board_tenant = board.identifier or tenant_locator(board.url)
+        if (
+            board.provider != provider_name
+            or board_tenant != tenant
+            or not _same_identity_url(board.url, board_url)
+        ):
+            continue
+        try:
+            store.save(
+                company.company_name,
+                linkedin_url,
+                provider_board=VerifiedProviderBoardEvidence(
+                    provider=provider_name,
+                    tenant=tenant,
+                    canonical_board_url=board.url,
+                    relationship_evidence_url=evidence_url,
+                    verification_method=verification_method,
+                    source="first_party_handoff",
+                    observed_at=record.career.observed_at,
+                ),
+            )
+        except (OSError, TypeError, ValueError):
+            continue
+        restored += 1
+    return restored
+
+
+def _source_stage_trace(source_record: dict, stage: str) -> dict | None:
+    trace = source_record.get("trace")
+    stages = trace.get("stages") if isinstance(trace, dict) else None
+    value = stages.get(stage) if isinstance(stages, dict) else None
+    return value if isinstance(value, dict) else None
+
+
+def _same_identity_url(left: object, right: object) -> bool:
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    normalized_left = canonicalize_identity_url(left)
+    normalized_right = canonicalize_identity_url(right)
+    return bool(normalized_left and normalized_left == normalized_right)
+
+
+def _empty_company_discovery_evidence_provenance(args: argparse.Namespace) -> dict:
+    source_value = getattr(args, "company_discovery_evidence_store", None)
+    return {
+        "status": "not_configured" if not source_value else "pending",
+        "source_configured": bool(source_value),
+        "source_path_sha256": (
+            hashlib.sha256(
+                str(Path(source_value).expanduser().resolve()).encode("utf-8")
+            ).hexdigest()
+            if source_value
+            else None
+        ),
+        "source_status": "not_configured" if not source_value else "pending",
+        "selected_identity_count": 0,
+        "frozen_record_count": 0,
+        "restored_stored_provider_input_count": 0,
+    }
+
+
+def _company_discovery_evidence_source_status(path: Path) -> str:
+    if not path.exists():
+        return "missing"
+    if not path.is_file() or path.is_symlink():
+        return "unreadable"
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return "corrupt"
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != COMPANY_DISCOVERY_EVIDENCE_SCHEMA_VERSION
+        or not isinstance(payload.get("records"), dict)
+    ):
+        return "incompatible"
+    return "available"
+
+
+def _reset_bundle_file_output(path: Path) -> None:
+    if path.is_symlink() or (path.exists() and not path.is_file()):
+        raise FailureReplayError(f"Unsafe replay evidence output: {path}")
+    if path.exists():
+        path.unlink()
 
 
 def _write_scoped_tapes(
@@ -427,6 +784,7 @@ def _run_legacy_replay_records(
     checkpoint_root: Path,
     fixtures_dir: Path,
     run_configuration: DeterministicRunConfig,
+    company_discovery_evidence_path: Path | None,
 ) -> list:
     discoveries = []
     for company, replay_record, source_record, plan in zip(
@@ -448,6 +806,7 @@ def _run_legacy_replay_records(
             FetcherConfig(fixtures_dir=fixtures_dir, offline=True),
             checkpoint_dir=record_checkpoint_root,
             run_configuration=run_configuration,
+            company_discovery_evidence_path=company_discovery_evidence_path,
         )
         discoveries.append(
             application.pipeline.discover(company, start_at=resume_stage)
@@ -463,6 +822,7 @@ def _run_scoped_replay_records(
     tapes: dict[str, OutcomeTape],
     checkpoint_root: Path,
     run_configuration: DeterministicRunConfig,
+    company_discovery_evidence_path: Path | None,
 ) -> list:
     discoveries = []
     for company, replay_record, source_record, plan in zip(
@@ -483,6 +843,11 @@ def _run_scoped_replay_records(
             run_configuration,
             record_plans=(plan,),
         )[0]
+        _seed_scoped_replay_producer_state(
+            record_checkpoint_root,
+            company,
+            source_record,
+        )
         start_stage = resume_stage or PIPELINE_STAGES[0]
         start_index = PIPELINE_STAGES.index(start_stage)
         scopes_by_stage = {
@@ -516,18 +881,28 @@ def _run_scoped_replay_records(
             execution_fingerprint=execution_fingerprint_value,
         )
         application = build_application_from_fetcher(
-            controller,
+            _RedactionHydratingScopedFetcher(controller),
             checkpoint_dir=record_checkpoint_root,
             run_configuration=run_configuration,
             capture_coordinator=controller,
+            company_discovery_evidence_path=company_discovery_evidence_path,
         )
         try:
+            same_attempt_continuation = (
+                _captured_scoped_resume_stage(source_record) == resume_stage
+                and any(
+                    stage.get("status") not in {"success", "not_applicable"}
+                    for stage in source_record.get("stages", [])[:start_index]
+                    if isinstance(stage, dict)
+                )
+            )
             discovery = application.pipeline.discover(
                 company,
                 start_at=resume_stage,
                 stop_after=stop_stage,
                 capture_attempt_id=f"scoped-replay-{plan.record_id[:16]}",
                 execution_fingerprint_override=execution_fingerprint_value,
+                same_attempt_continuation=same_attempt_continuation,
             )
             controller.assert_all_consumed()
         except (FetchError, KeyError, TypeError, ValueError) as error:
@@ -546,6 +921,61 @@ def _run_scoped_replay_records(
             )
         discoveries.append(discovery)
     return discoveries
+
+
+def _seed_scoped_replay_producer_state(
+    checkpoint_root: Path,
+    company,
+    source_record: dict,
+) -> None:
+    """Restore captured non-request inputs that affected a producer stage."""
+
+    trace = source_record.get("trace")
+    stage_traces = trace.get("stages") if isinstance(trace, dict) else None
+    website_trace = (
+        stage_traces.get("website_resolution")
+        if isinstance(stage_traces, dict)
+        else None
+    )
+    if not isinstance(website_trace, dict) or (
+        website_trace.get("linkedin_official_evidence_source") != "cache"
+    ):
+        return
+    linkedin_company_url = company.linkedin_company_url
+    if not isinstance(linkedin_company_url, str) or not linkedin_company_url:
+        return
+
+    cached_urls: list[str] = []
+    candidates = website_trace.get("candidates", [])
+    selected = website_trace.get("selected")
+    if isinstance(selected, dict):
+        candidates = (
+            [*candidates, selected]
+            if isinstance(candidates, list)
+            else [selected]
+        )
+    for candidate in candidates:
+        if not isinstance(candidate, dict):
+            continue
+        reasons = candidate.get("reasons")
+        url = candidate.get("url")
+        if (
+            isinstance(reasons, list)
+            and "candidate source: linkedin_cached_official_website" in reasons
+            and isinstance(url, str)
+            and url not in cached_urls
+        ):
+            cached_urls.append(url)
+    if not cached_urls:
+        return
+
+    FilesystemLinkedInWebsiteEvidenceStore(
+        checkpoint_root / LINKEDIN_EVIDENCE_CACHE_FILENAME
+    ).save(
+        company.company_name,
+        linkedin_company_url,
+        tuple(cached_urls),
+    )
 
 
 def _scoped_execution_company(company, source_record: dict):
@@ -735,11 +1165,23 @@ def _scoped_execution_boundary_errors(
             replay_record,
             plan,
         )
-        resumable = (
-            requested_start is not None
-            and _authoritative_upstream_executions(source_record, requested_start)
-            is not None
-        )
+        try:
+            upstream_executions = _authoritative_upstream_executions(
+                source_record,
+                requested_start,
+                scoped_stage_evidence=True,
+            )
+        except _ScopedStageSeedAmbiguity as error:
+            errors.append(
+                {
+                    "reason_code": "scoped_stage_seed_ambiguous",
+                    "record_id": plan.record_id,
+                    "company_name": source_record.get("company_name") or "",
+                    "detail": str(error),
+                }
+            )
+            continue
+        resumable = requested_start is not None and upstream_executions is not None
         start_stage = requested_start if resumable else PIPELINE_STAGES[0]
         start_index = PIPELINE_STAGES.index(start_stage)
         captured_stages = [
@@ -787,13 +1229,32 @@ def _record_integrity_with_boundary_errors(
         "reasons": list(record_integrity.get("reasons", [])),
         "status": "failed",
     }
-    updated["reasons"].append(
-        {
-            "code": "captured_execution_boundary_missing",
-            "count": len(boundary_errors),
-            "records": boundary_errors[:20],
-        }
-    )
+    missing_boundary_errors = [
+        error
+        for error in boundary_errors
+        if error.get("reason_code") != "scoped_stage_seed_ambiguous"
+    ]
+    ambiguous_seed_errors = [
+        error
+        for error in boundary_errors
+        if error.get("reason_code") == "scoped_stage_seed_ambiguous"
+    ]
+    if missing_boundary_errors:
+        updated["reasons"].append(
+            {
+                "code": "captured_execution_boundary_missing",
+                "count": len(missing_boundary_errors),
+                "records": missing_boundary_errors[:20],
+            }
+        )
+    if ambiguous_seed_errors:
+        updated["reasons"].append(
+            {
+                "code": "scoped_stage_seed_ambiguous",
+                "count": len(ambiguous_seed_errors),
+                "records": ambiguous_seed_errors[:20],
+            }
+        )
     return updated
 
 
@@ -820,7 +1281,14 @@ def _seed_authoritative_handoffs(
             replay_record,
             record_plan,
         )
-        executions = _authoritative_upstream_executions(source_record, resume_stage)
+        executions = _authoritative_upstream_executions(
+            source_record,
+            resume_stage,
+            scoped_stage_evidence=(
+                record_plan is not None
+                and record_plan.evidence_mode == "scoped_outcome_tape"
+            ),
+        )
         if executions is None:
             resume_stages.append(None)
             continue
@@ -930,16 +1398,57 @@ def _effective_replay_resume_stage(
     replay_record: dict,
     record_plan: ReplayRecordPlan | None,
 ) -> str | None:
+    failure_stage = _first_non_success_stage_name(replay_record)
     resume_stage = _replay_resume_stage(
         source_record,
-        _first_non_success_stage_name(replay_record),
+        failure_stage,
     )
     if record_plan is None or record_plan.evidence_mode != "scoped_outcome_tape":
         return resume_stage
 
+    captured_resume_stage = _captured_scoped_resume_stage(source_record)
+    if captured_resume_stage is not None:
+        resume_stage = captured_resume_stage
+    # Scoped tapes preserve the opening-stage request boundary, so replay the
+    # serialized S5 handoff instead of rerunning page-derived board discovery
+    # in the same in-memory context as S6.
+    elif failure_stage == "opening_match":
+        resume_stage = "opening_match"
+
     while resume_stage in SCOPED_REPLAY_PRODUCER_DEPENDENCIES:
         resume_stage = SCOPED_REPLAY_PRODUCER_DEPENDENCIES[resume_stage]
     return resume_stage
+
+
+def _captured_scoped_resume_stage(source_record: dict) -> str | None:
+    """Recover the actual resumed phase boundary recorded by the live runner."""
+
+    trace = source_record.get("trace")
+    events = trace.get("checkpoint_events") if isinstance(trace, dict) else None
+    if not isinstance(events, list):
+        return None
+    for index in range(len(events) - 1, -1, -1):
+        event = events[index]
+        if not isinstance(event, dict) or event.get("action") != "invalidate_from":
+            continue
+        stage = event.get("stage")
+        if stage not in PIPELINE_STAGES:
+            continue
+        stage_index = PIPELINE_STAGES.index(stage)
+        subsequent = [item for item in events[index + 1 :] if isinstance(item, dict)]
+        restored = {
+            item.get("stage")
+            for item in subsequent
+            if item.get("action") == "restore"
+        }
+        saved = {
+            item.get("stage")
+            for item in subsequent
+            if item.get("action") == "save"
+        }
+        if set(PIPELINE_STAGES[:stage_index]).issubset(restored) and stage in saved:
+            return stage
+    return None
 
 
 def _results_require_page_derived_board(source_record: dict) -> bool:
@@ -996,6 +1505,8 @@ def _results_require_page_derived_board(source_record: dict) -> bool:
 def _authoritative_upstream_executions(
     source_record: dict,
     resume_stage: str | None,
+    *,
+    scoped_stage_evidence: bool = False,
 ) -> list[StageExecution] | None:
     if resume_stage is None:
         return None
@@ -1009,9 +1520,21 @@ def _authoritative_upstream_executions(
         if isinstance(stage, dict) and stage.get("stage") in PIPELINE_STAGES
     }
     upstream = PIPELINE_STAGES[:resume_index]
+    allowed_statuses = (
+        {
+            "success",
+            "not_applicable",
+            "failed",
+            "partial",
+            "unsupported",
+            "not_run",
+        }
+        if scoped_stage_evidence
+        else {"success", "not_applicable"}
+    )
     if any(
         stage_name not in stage_by_name
-        or stage_by_name[stage_name].get("status") not in {"success", "not_applicable"}
+        or stage_by_name[stage_name].get("status") not in allowed_statuses
         for stage_name in upstream
     ):
         return None
@@ -1026,7 +1549,11 @@ def _authoritative_upstream_executions(
                     if key in result_fields
                 }
             ),
-            updates=_authoritative_stage_updates(stage_name, source_record),
+            updates=_authoritative_stage_updates(
+                stage_name,
+                source_record,
+                scoped_stage_evidence=scoped_stage_evidence,
+            ),
             trace={},
         )
         for stage_name in upstream
@@ -1047,7 +1574,12 @@ def _authoritative_upstream_executions(
     return executions
 
 
-def _authoritative_stage_updates(stage: str, source_record: dict) -> dict:
+def _authoritative_stage_updates(
+    stage: str,
+    source_record: dict,
+    *,
+    scoped_stage_evidence: bool = False,
+) -> dict:
     fields_by_stage = {
         "website_resolution": ("company_website_url",),
         "hiring_identity_resolution": (
@@ -1073,10 +1605,287 @@ def _authoritative_stage_updates(stage: str, source_record: dict) -> dict:
             ),
             {},
         )
+        if scoped_stage_evidence:
+            updates.pop("job_list_page_url", None)
+            stage_url = _scoped_job_board_stage_url(result, source_record)
+            if stage_url is not None:
+                updates["job_list_page_url"] = stage_url
+            portfolio = _scoped_job_board_portfolio(source_record)
+            if portfolio is not None:
+                updates["discovered_job_board"] = portfolio.primary
+                updates["job_board_portfolio"] = portfolio
         if result.get("provider"):
             updates["provider"] = result["provider"]
     updates.update(_legacy_identity_checkpoint_updates(stage, source_record, updates))
     return updates
+
+
+def _scoped_job_board_stage_url(result: dict, source_record: dict) -> str | None:
+    candidates: list[str] = []
+    evidence = result.get("evidence") if isinstance(result, dict) else None
+    if isinstance(evidence, list):
+        candidates.extend(
+            item["url"]
+            for item in evidence
+            if isinstance(item, dict)
+            and item.get("field") == "job_list_page_url"
+            and isinstance(item.get("url"), str)
+            and item["url"]
+        )
+
+    trace = source_record.get("trace")
+    stage_traces = trace.get("stages") if isinstance(trace, dict) else None
+    job_board_trace = (
+        stage_traces.get("job_board_discovery")
+        if isinstance(stage_traces, dict)
+        else None
+    )
+    traced_url = (
+        job_board_trace.get("job_list_page_url")
+        if isinstance(job_board_trace, dict)
+        else None
+    )
+    if isinstance(traced_url, str) and traced_url:
+        candidates.append(traced_url)
+
+    unique_candidates = tuple(dict.fromkeys(candidates))
+    if len(unique_candidates) > 1:
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job_board_discovery evidence has conflicting "
+            f"job_list_page_url values: {list(unique_candidates)}"
+        )
+    return unique_candidates[0] if unique_candidates else None
+
+
+def _verified_identity_job_board(
+    source_record: dict,
+    *,
+    provider: str,
+    board_url: str,
+) -> JobBoard | None:
+    """Restore a typed dynamic board only from a verified S7 identity chain."""
+
+    if provider == "generic":
+        return None
+    assertion = source_record.get("identity_assertion")
+    if not isinstance(assertion, dict) or assertion.get("verdict") != "verified":
+        return None
+    payload = assertion.get("provider")
+    if not isinstance(payload, dict):
+        return None
+    try:
+        identity = ProviderIdentity.from_checkpoint_payload(payload)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not identity.relationship_verified
+        or identity.provider != provider
+        or canonicalize_identity_url(identity.canonical_board_url)
+        != canonicalize_identity_url(board_url)
+        or not identity.tenant
+    ):
+        return None
+    return JobBoard(
+        url=identity.canonical_board_url,
+        provider=identity.provider,
+        identifier=identity.tenant,
+        replay_safe=True,
+    )
+
+
+def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None:
+    trace = source_record.get("trace")
+    stage_traces = trace.get("stages") if isinstance(trace, dict) else None
+    job_board_trace = (
+        stage_traces.get("job_board_discovery")
+        if isinstance(stage_traces, dict)
+        else None
+    )
+    portfolio_summary = (
+        job_board_trace.get("job_board_portfolio")
+        if isinstance(job_board_trace, dict)
+        else None
+    )
+    if not isinstance(portfolio_summary, dict):
+        return None
+    eligible_count = portfolio_summary.get("eligible_count")
+    eligible_set_complete = portfolio_summary.get("eligible_set_complete")
+    if (
+        type(eligible_count) is not int
+        or eligible_count < 1
+        or type(eligible_set_complete) is not bool
+    ):
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job-board portfolio summary is incomplete"
+        )
+    primary_url = portfolio_summary.get("primary_url")
+    primary_provider = portfolio_summary.get("primary_provider")
+    provider_detection = (
+        job_board_trace.get("provider_detection")
+        if isinstance(job_board_trace, dict)
+        else None
+    )
+    detected_url = (
+        provider_detection.get("url")
+        if isinstance(provider_detection, dict)
+        else None
+    )
+    detected_provider = (
+        provider_detection.get("provider")
+        if isinstance(provider_detection, dict)
+        else None
+    )
+    detection_method = (
+        provider_detection.get("method")
+        if isinstance(provider_detection, dict)
+        else None
+    )
+    result = next(
+        (
+            item
+            for item in source_record.get("stages", [])
+            if isinstance(item, dict) and item.get("stage") == "job_board_discovery"
+        ),
+        {},
+    )
+    result_provider = result.get("provider") if isinstance(result, dict) else None
+    if (
+        not isinstance(primary_url, str)
+        or not primary_url
+        or not isinstance(primary_provider, str)
+        or not primary_provider
+        or len(
+            {
+                provider
+                for provider in (
+                    primary_provider,
+                    detected_provider,
+                    result_provider,
+                )
+                if isinstance(provider, str) and provider
+            }
+        )
+        != 1
+    ):
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job-board portfolio primary detection metadata is inconsistent"
+        )
+
+    if (
+        eligible_count == 1
+        and eligible_set_complete
+        and primary_provider == "generic"
+        and detected_url is None
+        and detected_provider is None
+    ):
+        return None
+    if detected_url != primary_url or detected_provider != primary_provider:
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job-board portfolio primary detection metadata is inconsistent"
+        )
+
+    if eligible_count == 1 and eligible_set_complete:
+        adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(primary_provider)
+        board = adapter.identify_board(primary_url) if adapter is not None else None
+        if board is None or not board.replay_safe:
+            board = _verified_identity_job_board(
+                source_record,
+                provider=primary_provider,
+                board_url=primary_url,
+            )
+        if board is None or not board.replay_safe:
+            return None
+        try:
+            discovered = DiscoveredJobBoard(
+                board=board,
+                detection_method=detection_method,
+                evidence_url=detected_url,
+            )
+            return JobBoardPortfolio(
+                boards=(discovered,),
+                eligible_set_complete=True,
+            )
+        except (TypeError, ValueError) as error:
+            raise _ScopedStageSeedAmbiguity(
+                "Scoped singleton job-board discovery evidence is not checkpoint-safe"
+            ) from error
+
+    opening_trace = (
+        stage_traces.get("opening_match")
+        if isinstance(stage_traces, dict)
+        else None
+    )
+    board_portfolio = (
+        opening_trace.get("board_portfolio")
+        if isinstance(opening_trace, dict)
+        else None
+    )
+    attempts = (
+        board_portfolio.get("attempts")
+        if isinstance(board_portfolio, dict)
+        else None
+    )
+    if not isinstance(attempts, list) or len(attempts) != eligible_count:
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job-board portfolio attempts do not cover the captured eligible set"
+        )
+
+    discovered: list[DiscoveredJobBoard] = []
+    for attempt in attempts:
+        board_url = attempt.get("board_url") if isinstance(attempt, dict) else None
+        provider = attempt.get("provider") if isinstance(attempt, dict) else None
+        attempt_trace = attempt.get("trace") if isinstance(attempt, dict) else None
+        provider_api = (
+            attempt_trace.get("provider_api")
+            if isinstance(attempt_trace, dict)
+            else None
+        )
+        provider_detection = (
+            provider_api.get("provider_detection")
+            if isinstance(provider_api, dict)
+            else None
+        )
+        detection_method = (
+            provider_detection.get("source_method")
+            if isinstance(provider_detection, dict)
+            else None
+        )
+        adapter = (
+            DEFAULT_PROVIDER_REGISTRY.adapter_named(provider)
+            if isinstance(provider, str)
+            else None
+        )
+        board = adapter.identify_board(board_url) if adapter is not None else None
+        if board is None or not board.replay_safe or board.provider != provider:
+            raise _ScopedStageSeedAmbiguity(
+                "Scoped job-board portfolio contains a non-replayable board identity"
+            )
+        try:
+            discovered.append(
+                DiscoveredJobBoard(
+                    board=board,
+                    detection_method=detection_method,
+                    evidence_url=board_url,
+                )
+            )
+        except (TypeError, ValueError) as error:
+            raise _ScopedStageSeedAmbiguity(
+                "Scoped job-board portfolio has invalid discovery evidence"
+            ) from error
+    if len({(item.board.provider, item.board.url) for item in discovered}) != len(
+        discovered
+    ):
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job-board portfolio contains duplicate board identities"
+        )
+    if discovered[0].board.url != primary_url:
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job-board portfolio primary identity does not match its attempts"
+        )
+    return JobBoardPortfolio(
+        boards=tuple(discovered),
+        eligible_set_complete=eligible_set_complete,
+    )
 
 
 def _legacy_identity_checkpoint_updates(
@@ -1687,6 +2496,8 @@ def _normalized_conflicting_fields(value: object) -> list[str]:
 
 
 def _normalize_identity_value(value: object, *, key: str | None = None) -> object:
+    if key and is_sensitive_key(key):
+        return "[redacted]"
     if isinstance(value, dict):
         return {
             str(name): _normalize_identity_value(item, key=str(name))
@@ -1696,6 +2507,19 @@ def _normalize_identity_value(value: object, *, key: str | None = None) -> objec
     if isinstance(value, (list, tuple)):
         return [_normalize_identity_value(item, key=key) for item in value]
     if isinstance(value, str):
+        if key and key.casefold() in {"identifier", "tenant"} and value.lstrip().startswith("{"):
+            try:
+                structured = json.loads(value)
+            except (json.JSONDecodeError, TypeError, ValueError):
+                structured = None
+            if isinstance(structured, dict):
+                normalized = _normalize_identity_value(structured)
+                return json.dumps(
+                    normalized,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                )
         if key and "url" in key.casefold():
             return _canonical_public_url(value) or " ".join(value.split())
         return " ".join(value.split()).casefold()

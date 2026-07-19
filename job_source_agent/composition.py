@@ -6,10 +6,14 @@ from pathlib import Path
 from .application_runner import ApplicationRunner
 from .candidate_portfolio import CompositeCandidateDiscovery
 from .career_search import CareerSearchResolver
+from .career_surface_discovery import CareerSurfaceCandidateDiscovery
 from .career_transport_budget import CareerTransportBudgetFetcher
 from .company_identity import CompanyIdentityResolver
 from .contracts import EvidenceCaptureCoordinator, FetchClient
 from .identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
+from .company_discovery_evidence_store import (
+    FilesystemCompanyDiscoveryEvidenceStore,
+)
 from .direct_candidate_discovery import (
     ExternalApplyDiscovery,
     WebsiteCareerDiscovery,
@@ -137,6 +141,7 @@ def build_agent(
         enable_parallel_candidate_discovery=(
             settings.enable_parallel_candidate_discovery
         ),
+        evaluate_all_candidate_routes=settings.evaluate_all_candidate_routes,
         career_search_timeout=settings.career_search_timeout,
         run_configuration=run_configuration,
     )
@@ -149,6 +154,7 @@ def build_application(
     checkpoint_dir: str | Path | None = None,
     website_overrides: str | Path | None = None,
     linkedin_evidence_cache_path: str | Path | None = None,
+    company_discovery_evidence_path: str | Path | None = None,
     run_configuration: DeterministicRunConfig | None = None,
 ) -> ApplicationComponents:
     capture_coordinator = (
@@ -165,6 +171,7 @@ def build_application(
         checkpoint_dir=checkpoint_dir,
         website_overrides=website_overrides,
         linkedin_evidence_cache_path=linkedin_evidence_cache_path,
+        company_discovery_evidence_path=company_discovery_evidence_path,
         run_configuration=run_configuration,
         capture_coordinator=capture_coordinator,
     )
@@ -178,6 +185,7 @@ def build_application_from_fetcher(
     checkpoint_dir: str | Path | None = None,
     website_overrides: str | Path | None = None,
     linkedin_evidence_cache_path: str | Path | None = None,
+    company_discovery_evidence_path: str | Path | None = None,
     run_configuration: DeterministicRunConfig | None = None,
     capture_coordinator: EvidenceCaptureCoordinator | None = None,
 ) -> ApplicationComponents:
@@ -214,15 +222,37 @@ def build_application_from_fetcher(
             else None
         ),
     )
+    company_discovery_store = (
+        FilesystemCompanyDiscoveryEvidenceStore(company_discovery_evidence_path)
+        if company_discovery_evidence_path is not None
+        else None
+    )
     candidate_discovery = CompositeCandidateDiscovery(
         (
             ExternalApplyDiscovery(registry),
             WebsiteCareerDiscovery(registry),
+            CareerSurfaceCandidateDiscovery(
+                CareerSearchResolver(
+                    fetcher,
+                    max_results=2,
+                    max_queries=min(settings.max_career_search_queries, 2),
+                    max_source_fetches=2,
+                ),
+                agent,
+                provider_registry=registry,
+                max_surface_candidates=2,
+                max_candidates=min(settings.max_candidates, MAX_PROVIDER_CANDIDATES),
+            ),
             ProviderSearchCandidateDiscovery(
                 CareerSearchResolver(
                     fetcher,
                     max_results=min(settings.max_candidates, MAX_PROVIDER_CANDIDATES),
                     max_queries=settings.max_career_search_queries,
+                    # Candidate search must finalize before the opening phase.
+                    # Four source dispatches cover the primary/secondary search
+                    # pair without allowing an empty search to consume the
+                    # company-level discovery window.
+                    max_source_fetches=2,
                 ),
                 provider_registry=registry,
                 max_candidates=min(settings.max_candidates, MAX_PROVIDER_CANDIDATES),
@@ -233,14 +263,21 @@ def build_application_from_fetcher(
     runner = ApplicationRunner(
         (
             InputDiscoveryStage(),
-            WebsiteResolutionStage(website_resolver),
+            WebsiteResolutionStage(
+                website_resolver,
+                identity_hint_resolver=CompanyIdentityResolver(),
+                company_discovery_evidence_store=company_discovery_store,
+            ),
             HiringIdentityResolutionStage(
                 CompanyIdentityResolver(
                     posting_probe=LinkedInPostingIdentityProbe(fetcher),
                     website_resolver=website_resolver,
                 )
             ),
-            CareerDiscoveryStage(agent),
+            CareerDiscoveryStage(
+                agent,
+                company_discovery_evidence_store=company_discovery_store,
+            ),
             JobBoardDiscoveryStage(
                 agent,
                 registry,
@@ -248,11 +285,16 @@ def build_application_from_fetcher(
                 enable_parallel_candidate_discovery=(
                     settings.enable_parallel_candidate_discovery
                 ),
+                evaluate_all_candidate_routes=(
+                    settings.evaluate_all_candidate_routes
+                ),
+                company_discovery_evidence_store=company_discovery_store,
             ),
             OpeningMatchStage(
                 agent,
                 registry,
                 max_job_board_attempts=settings.max_job_board_attempts,
+                company_discovery_evidence_store=company_discovery_store,
             ),
             ResultValidationStage(),
         ),

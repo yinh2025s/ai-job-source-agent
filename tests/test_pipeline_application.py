@@ -50,7 +50,7 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertIn("d9d64766", result.open_position_url)
         self.assertEqual(result.result_record()["output_validation_status"], "success")
         self.assertEqual(result.result_schema_version, "2.2")
-        self.assertEqual(result.run_configuration["schema_version"], "1.3")
+        self.assertEqual(result.run_configuration["schema_version"], "1.4")
         self.assertEqual(
             result.run_configuration["agent"]["max_job_board_attempts"],
             3,
@@ -191,7 +191,7 @@ class PipelineApplicationTests(unittest.TestCase):
             "HIRING_IDENTITY_MISSING",
             result.identity_assertion["failure_codes"],
         )
-        self.assertIsNone(result.error_code)
+        self.assertEqual(result.error_code, "RESULT_IDENTITY_MISMATCH")
 
     def test_resume_hydrates_upstream_updates_from_stage_checkpoints(self):
         company = load_company_inputs(ROOT / "samples" / "linkedin_jobs.json")[0]

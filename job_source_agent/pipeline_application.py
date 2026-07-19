@@ -44,6 +44,7 @@ class PipelineApplication:
         rerun_from: str | None = None,
         capture_attempt_id: str | None = None,
         execution_fingerprint_override: str | None = None,
+        same_attempt_continuation: bool = False,
     ) -> DiscoveryResult:
         context = PipelineContext.from_company(company)
         run_options: dict = {
@@ -60,6 +61,7 @@ class PipelineApplication:
         attempt_id = capture_attempt_id or new_capture_attempt_id()
         run_options["execution_fingerprint"] = fingerprint
         run_options["producer_attempt_id"] = attempt_id
+        run_options["same_attempt_continuation"] = same_attempt_continuation
         if self.runner.checkpointing_enabled:
             run_options["input_fingerprint"] = fingerprint
             run_options["rerun_from"] = rerun_from
@@ -110,9 +112,42 @@ def discovery_result_from_context(
             for issue in identity_issues
         )
     )
+    job_board_trace = context.trace.get("stages", {}).get(
+        STAGE_JOB_BOARD_DISCOVERY,
+        {},
+    )
+    selected_job_board_candidate = (
+        job_board_trace.get("selected")
+        if isinstance(job_board_trace, dict)
+        else None
+    )
+    opening_stage_trace = context.trace.get("stages", {}).get(
+        STAGE_OPENING_MATCH,
+        {},
+    )
+    opening_stage_finished = not (
+        isinstance(opening_stage_trace, dict)
+        and opening_stage_trace.get("scheduler", {}).get("reason")
+        == "after_stop_after"
+    )
+    stored_job_list_identity_unverified = bool(
+        context.job_list_page_url
+        and opening_stage_finished
+        and isinstance(selected_job_board_candidate, dict)
+        and selected_job_board_candidate.get("source_kind")
+        == "stored_verified_provider_board"
+        and (
+            context.hiring_identity_evidence is None
+            or not context.hiring_identity_evidence.verified
+            or context.provider_identity is None
+            or not context.provider_identity.relationship_verified
+        )
+    )
     public_opening_url = None if identity_rejected else context.open_position_url
     public_job_list_url = (
-        None if job_list_identity_rejected else context.job_list_page_url
+        None
+        if job_list_identity_rejected or stored_job_list_identity_unverified
+        else context.job_list_page_url
     )
     identity_assertion = _identity_assertion(context, identity_issues)
     result = DiscoveryResult(
@@ -162,6 +197,7 @@ def discovery_result_from_context(
 
     first_terminal_stage = None
     source_terminal_stage = None
+    opening_terminal_stage = None
     for stage_result in result.stage_results:
         stage_trace = context.trace.get("stages", {}).get(stage_result.stage, {})
         if stage_result.stage in {
@@ -181,9 +217,36 @@ def discovery_result_from_context(
 
         if stage_result.reason_code == "LINKEDIN_NATIVE_ONLY":
             source_terminal_stage = stage_result
+        if (
+            stage_result.stage == STAGE_OPENING_MATCH
+            and stage_result.reason_code
+        ):
+            opening_terminal_stage = stage_result
 
     terminal_stage = source_terminal_stage or first_terminal_stage
-    if not context.job_list_page_url and terminal_stage is not None:
+    stored_candidate_revalidation_terminal = (
+        opening_terminal_stage
+        if validation_failed
+        and stored_job_list_identity_unverified
+        and not context.open_position_url
+        and opening_terminal_stage is not None
+        else None
+    )
+    if stored_candidate_revalidation_terminal is not None:
+        result.error_code = stored_candidate_revalidation_terminal.reason_code
+        result.error = _legacy_error(
+            stored_candidate_revalidation_terminal.stage,
+            stored_candidate_revalidation_terminal.reason_code,
+        )
+        result.trace["failure_detail"] = stored_candidate_revalidation_terminal.detail
+    elif validation_failed and validation_result is not None and validation_result.reason_code:
+        result.error_code = validation_result.reason_code
+        result.error = _legacy_error(
+            validation_result.stage,
+            validation_result.reason_code,
+        )
+        result.trace["failure_detail"] = validation_result.detail
+    elif not context.job_list_page_url and terminal_stage is not None:
         result.error_code = terminal_stage.reason_code
         result.error = _legacy_error(terminal_stage.stage, terminal_stage.reason_code)
         result.trace["failure_detail"] = terminal_stage.detail
@@ -225,12 +288,24 @@ def _identity_assertion(
     provider = context.provider_identity
     opening = context.opening_identity
     selection = context.opening_selection_evidence
-    has_candidate = bool(context.open_position_url)
+    has_candidate = bool(context.job_list_page_url or context.open_position_url)
     if not has_candidate:
         verdict = "not_applicable"
     elif failure_codes:
         verdict = "rejected"
-    elif hiring is not None and provider is not None and opening is not None:
+    elif (
+        hiring is not None
+        and hiring.verified
+        and provider is not None
+        and provider.relationship_verified
+        and (
+            opening is not None
+            or (
+                context.job_list_page_url
+                and _job_list_identity_is_conclusive(context)
+            )
+        )
+    ):
         verdict = "verified"
     else:
         verdict = "unavailable"
@@ -247,6 +322,26 @@ def _identity_assertion(
         .get("location_classification"),
         "candidate_opening_url": context.open_position_url,
     }
+
+
+def _job_list_identity_is_conclusive(context: PipelineContext) -> bool:
+    if not context.company.job_title:
+        return True
+    opening_result = next(
+        (
+            result
+            for result in context.stage_results
+            if result.stage == STAGE_OPENING_MATCH
+        ),
+        None,
+    )
+    return bool(
+        opening_result is not None
+        and opening_result.status == "partial"
+        and not opening_result.retryable
+        and opening_result.reason_code
+        in {"OPENING_NOT_FOUND", "NO_PUBLIC_OPENINGS", "OPENING_CLOSED"}
+    )
 
 
 def _legacy_step_name(stage: str) -> str:

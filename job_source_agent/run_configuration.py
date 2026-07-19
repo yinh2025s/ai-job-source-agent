@@ -7,11 +7,12 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RUN_CONFIGURATION_SCHEMA_VERSION = "1.3"
-BATCH_EXECUTION_SCHEMA_VERSION = "1.0"
+RUN_CONFIGURATION_SCHEMA_VERSION = "1.4"
+BATCH_EXECUTION_SCHEMA_VERSION = "1.1"
 _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION = "1.0"
 _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION = "1.1"
 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION = "1.2"
+_PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION = "1.3"
 _MAX_BUDGET = 1_000
 _MAX_TIMEOUT_SECONDS = 300.0
 
@@ -29,6 +30,7 @@ class AgentConfig:
     career_search_timeout: float | None = None
     max_career_discovery_transport_calls: int | None = None
     enable_parallel_candidate_discovery: bool = False
+    evaluate_all_candidate_routes: bool = False
 
 
 @dataclass(frozen=True)
@@ -46,6 +48,7 @@ class DeterministicRunConfig:
     career_search_timeout: float | None
     max_career_discovery_transport_calls: int | None = None
     enable_parallel_candidate_discovery: bool = False
+    evaluate_all_candidate_routes: bool = False
     _schema_version: str = field(
         default=RUN_CONFIGURATION_SCHEMA_VERSION,
         repr=False,
@@ -76,6 +79,7 @@ class DeterministicRunConfig:
             _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION,
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             raise ValueError("Run configuration schema version is incompatible")
@@ -93,16 +97,23 @@ class DeterministicRunConfig:
         if schema_version in {
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_career_discovery_transport_calls")
         if schema_version in {
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_job_board_attempts")
-        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+        if schema_version in {
+            _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             expected_fields.add("enable_parallel_candidate_discovery")
+        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            expected_fields.add("evaluate_all_candidate_routes")
         if not isinstance(agent, dict) or set(agent) != expected_fields:
             raise ValueError("Run configuration agent fields are incomplete or unsupported")
 
@@ -118,6 +129,7 @@ class DeterministicRunConfig:
             if schema_version
             in {
                 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else 1
@@ -137,6 +149,7 @@ class DeterministicRunConfig:
             in {
                 _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else None
@@ -160,9 +173,24 @@ class DeterministicRunConfig:
                 agent["enable_parallel_candidate_discovery"],
                 "enable_parallel_candidate_discovery",
             )
+            if schema_version in {
+                _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+                RUN_CONFIGURATION_SCHEMA_VERSION,
+            }
+            else False
+        )
+        evaluate_all_candidate_routes = (
+            _boolean(
+                agent["evaluate_all_candidate_routes"],
+                "evaluate_all_candidate_routes",
+            )
             if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
             else False
         )
+        if evaluate_all_candidate_routes and not enable_parallel_candidate_discovery:
+            raise ValueError(
+                "Candidate route evaluation requires parallel candidate discovery"
+            )
         career_search_timeout = _optional_timeout(agent["career_search_timeout"])
         return cls(
             max_candidates=max_candidates,
@@ -176,6 +204,7 @@ class DeterministicRunConfig:
             enable_career_search=enable_career_search,
             career_search_timeout=career_search_timeout,
             enable_parallel_candidate_discovery=enable_parallel_candidate_discovery,
+            evaluate_all_candidate_routes=evaluate_all_candidate_routes,
             _schema_version=schema_version,
         )
 
@@ -193,6 +222,7 @@ class DeterministicRunConfig:
         if self._schema_version in {
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_career_discovery_transport_calls"] = (
@@ -200,13 +230,19 @@ class DeterministicRunConfig:
             )
         if self._schema_version in {
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_job_board_attempts"] = self.max_job_board_attempts
-        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+        if self._schema_version in {
+            _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             agent["enable_parallel_candidate_discovery"] = (
                 self.enable_parallel_candidate_discovery
             )
+        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            agent["evaluate_all_candidate_routes"] = self.evaluate_all_candidate_routes
         return {"schema_version": self._schema_version, "agent": agent}
 
     def to_agent_config(self) -> AgentConfig:
@@ -222,6 +258,7 @@ class DeterministicRunConfig:
             enable_career_search=self.enable_career_search,
             career_search_timeout=self.career_search_timeout,
             enable_parallel_candidate_discovery=self.enable_parallel_candidate_discovery,
+            evaluate_all_candidate_routes=self.evaluate_all_candidate_routes,
         )
 
     @property
@@ -242,6 +279,7 @@ class BatchExecutionConfig:
     render_budget: int
     verify_limit: int
     offline: bool
+    opening_phase_policy: str
 
     @classmethod
     def from_payload(cls, payload: Any) -> BatchExecutionConfig:
@@ -260,6 +298,7 @@ class BatchExecutionConfig:
             "render_budget",
             "verify_limit",
             "offline",
+            "opening_phase_policy",
         }
         if not isinstance(batch, dict) or set(batch) != expected_fields:
             raise ValueError("Batch execution fields are incomplete or unsupported")
@@ -274,6 +313,9 @@ class BatchExecutionConfig:
         render_mode = batch["render_mode"]
         if render_mode not in {"none", "smart", "always"}:
             raise ValueError("Batch render_mode is unsupported")
+        opening_phase_policy = batch["opening_phase_policy"]
+        if opening_phase_policy != "reserved_after_verified_job_list_v1":
+            raise ValueError("Batch opening_phase_policy is unsupported")
         return cls(
             company_time_budget=company_time_budget,
             website_time_budget=website_time_budget,
@@ -298,6 +340,7 @@ class BatchExecutionConfig:
                 batch["verify_limit"], "verify_limit", minimum=1, maximum=100
             ),
             offline=_boolean(batch["offline"], "offline"),
+            opening_phase_policy=opening_phase_policy,
         )
 
     def to_payload(self) -> dict[str, Any]:

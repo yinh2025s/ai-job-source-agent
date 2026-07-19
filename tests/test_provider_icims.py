@@ -48,18 +48,34 @@ class ICIMSAdapterTests(unittest.TestCase):
         self.adapter = ICIMSAdapter()
 
     def test_recognizes_only_icims_careers_job_search_and_detail_urls(self):
+        self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs"))
+        self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs/"))
         self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs/search"))
         self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs/search?ss=1"))
         self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs/123/data-analyst/job"))
-        self.assertFalse(self.adapter.recognizes("https://careers-acme.icims.com/"))
-        self.assertFalse(self.adapter.recognizes("https://jobs-acme.icims.com/jobs/search"))
-        self.assertFalse(self.adapter.recognizes("https://example.com/jobs/careers-acme.icims.com/jobs/search"))
-        self.assertFalse(self.adapter.recognizes("https://careers-.icims.com/jobs/search"))
-        self.assertFalse(self.adapter.recognizes("https://evil@careers-acme.icims.com/jobs/search"))
-        self.assertFalse(self.adapter.recognizes("https://careers-acme.icims.com:8443/jobs/search"))
-        self.assertFalse(self.adapter.recognizes("http://[invalid/jobs/search"))
+        rejected = (
+            "https://careers-acme.icims.com/",
+            "https://careers-acme.icims.com/jobsfoo",
+            "https://careers-acme.icims.com/jobs/login",
+            "https://careers-acme.icims.com/jobs/brand",
+            "https://jobs-acme.icims.com/jobs/search",
+            "https://careers-acme.evil.icims.com/jobs/search",
+            "https://careers-acme.icims.com.evil.example/jobs/search",
+            "https://example.com/jobs/careers-acme.icims.com/jobs/search",
+            "https://careers-.icims.com/jobs/search",
+            "https://evil@careers-acme.icims.com/jobs/search",
+            "http://careers-acme.icims.com/jobs/search",
+            "https://careers-acme.icims.com:8443/jobs/search",
+            "http://[invalid/jobs/search",
+        )
+        for url in rejected:
+            with self.subTest(url=url):
+                self.assertFalse(self.adapter.recognizes(url))
 
     def test_identifies_search_page_and_canonicalizes_detail_to_board(self):
+        root = self.adapter.identify_board(
+            "https://careers-acme.icims.com/jobs/?from=brand#openings"
+        )
         search = self.adapter.identify_board(
             "https://careers-acme.icims.com/jobs/search-jsonld?ss=1#results"
         )
@@ -67,6 +83,11 @@ class ICIMSAdapterTests(unittest.TestCase):
             "https://careers-acme.icims.com/jobs/123/data-analyst/job?mode=job"
         )
 
+        self.assertEqual(root, JobBoard(
+            url="https://careers-acme.icims.com/jobs/search",
+            provider="icims",
+            identifier="careers-acme.icims.com",
+        ))
         self.assertEqual(search, JobBoard(
             url="https://careers-acme.icims.com/jobs/search-jsonld",
             provider="icims",
@@ -290,6 +311,54 @@ class ICIMSAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result.candidates[0].raw["source"], "html_link")
         self.assertEqual(result.trace["html_link_count"], 3)
+
+    def test_lists_hosted_root_through_public_search_inventory(self):
+        fetcher = StubFetcher("""
+            <a href="/jobs/4242/platform-engineer/job?in_iframe=1"
+               title="4242 - Platform Engineer">Open role</a>
+        """)
+        board = self.adapter.identify_board("https://careers-acme.icims.com/jobs")
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Platform Engineer"),
+        )
+
+        self.assertEqual(board.identifier, "careers-acme.icims.com")
+        self.assertEqual(len(fetcher.requested_urls), 1)
+        requested = urlparse(fetcher.requested_urls[0])
+        self.assertEqual(requested.hostname, "careers-acme.icims.com")
+        self.assertEqual(requested.path, "/jobs/search")
+        self.assertEqual(parse_qs(requested.query), {
+            "ss": ["1"],
+            "searchKeyword": ["Platform Engineer"],
+            "in_iframe": ["1"],
+        })
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(
+            result.candidates[0].url,
+            "https://careers-acme.icims.com/jobs/4242/platform-engineer/job",
+        )
+
+    def test_rejects_hosted_root_redirects_to_login_brand_or_another_host(self):
+        board = self.adapter.identify_board("https://careers-acme.icims.com/jobs")
+
+        for final_url in (
+            "https://careers-acme.icims.com/login",
+            "https://careers-acme.icims.com/jobs",
+            "https://careers-other.icims.com/jobs/search",
+            "https://example.com/jobs/search",
+        ):
+            class RedirectFetcher:
+                def fetch(self, url, data=None, headers=None):
+                    return Page(url=url, final_url=final_url, html="<html>Brand page</html>")
+
+            with self.subTest(final_url=final_url):
+                result = self.adapter.list_jobs(RedirectFetcher(), board, JobQuery())
+                self.assertEqual(result.candidates, [])
+                self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+                self.assertEqual(result.trace["rejected_pagination_urls"], [final_url])
 
     def test_lists_embedded_jobs_and_builds_missing_detail_urls(self):
         fetcher = StubFetcher("""

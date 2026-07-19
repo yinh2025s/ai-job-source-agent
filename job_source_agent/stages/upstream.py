@@ -4,6 +4,13 @@ import time
 from typing import Protocol
 
 from ..contracts import PipelineContext, StageExecution
+from ..company_discovery_evidence import (
+    CompanyDiscoveryEvidenceStore,
+    VerifiedWebsiteEvidence,
+)
+from ..company_discovery_evidence_store import (
+    stored_website_deterministically_rejected,
+)
 from ..identity_continuity import HiringIdentityEvidence
 from ..result_identity import canonicalize_identity_url
 from ..errors import DiscoveryError
@@ -86,8 +93,15 @@ class InputDiscoveryStage:
 class WebsiteResolutionStage:
     name = STAGE_WEBSITE_RESOLUTION
 
-    def __init__(self, service: WebsiteResolutionService) -> None:
+    def __init__(
+        self,
+        service: WebsiteResolutionService,
+        identity_hint_resolver: HiringIdentityResolutionService | None = None,
+        company_discovery_evidence_store: CompanyDiscoveryEvidenceStore | None = None,
+    ) -> None:
         self.service = service
+        self.identity_hint_resolver = identity_hint_resolver
+        self.company_discovery_evidence_store = company_discovery_evidence_store
 
     def run(self, context: PipelineContext) -> StageExecution:
         started = time.perf_counter()
@@ -97,7 +111,55 @@ class WebsiteResolutionStage:
         try:
             provided_website = (
                 context.company_website_url or context.company.company_website_url
+            ) or None
+            stored_record = self._load_stored_evidence(context)
+            stored_website = (
+                stored_record.website.url
+                if not provided_website
+                and stored_record is not None
+                and stored_record.website is not None
+                else None
             )
+            identity_hint = None
+            identity_hint_trace = None
+            if not provided_website and self.identity_hint_resolver is not None:
+                identity_hint, identity_hint_trace = self.identity_hint_resolver.resolve(
+                    context.company.company_name,
+                    None,
+                    context.company.linkedin_company_url,
+                    context.company.linkedin_job_url,
+                    context.company.job_location,
+                )
+            hinted_website = (
+                getattr(identity_hint, "official_website_url", None)
+                if getattr(identity_hint, "relationship_verified", False) is True
+                else None
+            )
+            if hinted_website:
+                website_url = normalize_url(hinted_website)
+                trace = {
+                    "method": "verified_company_identity_hint",
+                    "identity_hint": identity_hint_trace,
+                    "selected": {
+                        "url": website_url,
+                        "reason": "verified company identity rule",
+                    },
+                }
+                navigation_evidence = None
+                detail = "Verified company identity rule supplied the official website."
+                return StageExecution(
+                    result=make_stage_result(
+                        self.name,
+                        "success",
+                        duration_ms=_elapsed_ms(started),
+                        input_count=1,
+                        output_count=1,
+                        evidence=[{"field": "company_website_url", "url": website_url}],
+                        detail=detail,
+                    ),
+                    updates={"company_website_url": website_url},
+                    trace=trace,
+                )
             resolve_with_evidence = getattr(
                 self.service, "resolve_with_navigation_evidence", None
             )
@@ -107,6 +169,11 @@ class WebsiteResolutionStage:
                     context.company.linkedin_company_url,
                     context.company.job_location,
                     preferred_url=provided_website,
+                    **(
+                        {"stored_candidate_url": stored_website}
+                        if stored_website
+                        else {}
+                    ),
                 )
             else:
                 website_url, trace = self.service.resolve(
@@ -114,6 +181,11 @@ class WebsiteResolutionStage:
                     context.company.linkedin_company_url,
                     context.company.job_location,
                     preferred_url=provided_website,
+                    **(
+                        {"stored_candidate_url": stored_website}
+                        if stored_website
+                        else {}
+                    ),
                 )
                 navigation_evidence = None
             website_url = normalize_url(website_url) if website_url else None
@@ -148,13 +220,42 @@ class WebsiteResolutionStage:
             )
 
         if not website_url:
-            return _failed_execution(
-                "WEBSITE_NOT_RESOLVED",
+            resolution_failure = (
+                trace.get("resolution_failure")
+                if isinstance(trace, dict)
+                else None
+            )
+            retained_reason = (
+                canonical_reason_code(resolution_failure.get("reason_code"))
+                if isinstance(resolution_failure, dict)
+                else "WEBSITE_NOT_RESOLVED"
+            )
+            retained_detail = (
+                resolution_failure.get("error")
+                if isinstance(resolution_failure, dict)
+                and isinstance(resolution_failure.get("error"), str)
+                else "No official company website could be resolved."
+            )
+            execution = _failed_execution(
+                retained_reason,
                 started,
-                "No official company website could be resolved.",
+                retained_detail,
                 trace=trace,
                 clear_unverified_website=clear_unverified_website,
             )
+            self._invalidate_rejected_stored_website(
+                context,
+                stored_website,
+                trace,
+            )
+            return execution
+
+        self._save_verified_website(
+            context,
+            website_url,
+            provided_website=provided_website,
+            trace=trace,
+        )
 
         return StageExecution(
             result=make_stage_result(
@@ -176,6 +277,89 @@ class WebsiteResolutionStage:
             },
             trace=trace,
         )
+
+    def _load_stored_evidence(self, context: PipelineContext):
+        if (
+            self.company_discovery_evidence_store is None
+            or not context.company.linkedin_company_url
+        ):
+            return None
+        try:
+            return self.company_discovery_evidence_store.load(
+                context.company.company_name,
+                context.company.linkedin_company_url,
+            )
+        except (OSError, TypeError, ValueError):
+            return None
+
+    def _save_verified_website(
+        self,
+        context: PipelineContext,
+        website_url: str,
+        *,
+        provided_website: str | None,
+        trace: dict,
+    ) -> None:
+        store = self.company_discovery_evidence_store
+        linkedin_url = context.company.linkedin_company_url
+        if store is None or not linkedin_url:
+            return
+        selected_reasons = (
+            trace.get("selected", {}).get("reasons", [])
+            if isinstance(trace, dict)
+            else []
+        )
+        if any(
+            reason in selected_reasons
+            for reason in (
+                "verified regional gateway declares access-controlled locale root",
+                "verified regional gateway supports access-controlled sibling root",
+            )
+        ):
+            return
+        source = (
+            "provided_website"
+            if provided_website
+            else "linkedin_official_website"
+            if "LinkedIn company page identifies official website" in selected_reasons
+            else "verified_resolver"
+        )
+        evidence_url = provided_website or website_url
+        try:
+            store.save(
+                context.company.company_name,
+                linkedin_url,
+                website=VerifiedWebsiteEvidence(
+                    url=website_url,
+                    source=source,
+                    evidence_url=evidence_url,
+                    observed_at=time.time(),
+                ),
+            )
+        except (OSError, TypeError, ValueError):
+            return
+
+    def _invalidate_rejected_stored_website(
+        self,
+        context: PipelineContext,
+        stored_website: str | None,
+        trace: dict,
+    ) -> None:
+        store = self.company_discovery_evidence_store
+        linkedin_url = context.company.linkedin_company_url
+        if store is None or not linkedin_url or not stored_website:
+            return
+        if not stored_website_deterministically_rejected(trace, stored_website):
+            return
+        try:
+            store.invalidate(
+                context.company.company_name,
+                linkedin_url,
+                layer="website",
+                evidence_url=stored_website,
+            )
+        except (OSError, TypeError, ValueError):
+            return
 
 
 class HiringIdentityResolutionStage:

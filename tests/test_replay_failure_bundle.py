@@ -2,31 +2,861 @@ import contextlib
 import io
 import json
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
 from pathlib import Path
 from types import SimpleNamespace
 
-from job_source_agent.composition import FetcherConfig, build_application
+from job_source_agent.composition import (
+    FetcherConfig,
+    LINKEDIN_EVIDENCE_CACHE_FILENAME,
+    build_application,
+)
+from job_source_agent.identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
+from job_source_agent.company_discovery_evidence import (
+    VerifiedCareerEvidence,
+    VerifiedCompanyDiscoveryEvidence,
+    VerifiedProviderBoardEvidence,
+    VerifiedWebsiteEvidence,
+)
+from job_source_agent.company_discovery_evidence_store import (
+    FilesystemCompanyDiscoveryEvidenceStore,
+)
+from job_source_agent.contracts import PipelineContext
+from job_source_agent.identity_continuity import ProviderIdentity
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.models import PIPELINE_STAGES, CompanyInput, dataclass_to_dict
 from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
+from job_source_agent.stages import OpeningMatchStage
 from job_source_agent.web import Page
 from scripts.replay_failure_bundle import (
     FailureReplayError,
+    _RedactionHydratingScopedFetcher,
     _build_outcome_gate,
     _build_record_integrity,
+    _authoritative_upstream_executions,
     _effective_replay_resume_stage,
     _export_replay_records_with_sources,
+    _hydrate_redacted_json_credentials,
+    _normalize_identity_contract,
+    _remove_derived_hiring_entity_inputs,
     _replay_resume_stage,
+    _restore_stored_provider_inputs,
     _scoped_execution_boundary_errors,
     _scoped_execution_company,
+    _scoped_job_board_portfolio,
+    _seed_scoped_replay_producer_state,
     main,
     replay_failure_bundle,
 )
 
 
 class FailureReplayBundleTests(unittest.TestCase):
+    def test_scoped_replay_restores_explicit_stored_provider_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            store = FilesystemCompanyDiscoveryEvidenceStore(path)
+            company = CompanyInput(
+                company_name="Century Communities",
+                linkedin_company_url="https://www.linkedin.com/company/century",
+            )
+            store.save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=VerifiedWebsiteEvidence(
+                    url="https://century.example",
+                    source="linkedin_official_website",
+                    evidence_url=company.linkedin_company_url,
+                    observed_at=time.time(),
+                ),
+                career=VerifiedCareerEvidence(
+                    url="https://century.example/careers",
+                    website_url="https://century.example",
+                    source="first_party_navigation",
+                    evidence_url="https://century.example/careers",
+                    observed_at=time.time(),
+                ),
+            )
+            source = self._stored_provider_source_record(
+                board_url="https://job-boards.greenhouse.io/century",
+                tenant="century",
+            )
+
+            restored = _restore_stored_provider_inputs(store, [company], [source])
+            evidence = store.load(company.company_name, company.linkedin_company_url)
+
+        self.assertEqual(restored, 1)
+        self.assertEqual(len(evidence.provider_boards), 1)
+        self.assertEqual(evidence.provider_boards[0].provider, "greenhouse")
+        self.assertEqual(evidence.provider_boards[0].tenant, "century")
+
+    def test_scoped_replay_rejects_nonstored_or_cross_tenant_provider_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "evidence.json"
+            store = FilesystemCompanyDiscoveryEvidenceStore(path)
+            company = CompanyInput(
+                company_name="Century Communities",
+                linkedin_company_url="https://www.linkedin.com/company/century",
+            )
+            observed_at = time.time()
+            store.save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=VerifiedWebsiteEvidence(
+                    url="https://century.example",
+                    source="linkedin_official_website",
+                    evidence_url=company.linkedin_company_url,
+                    observed_at=observed_at,
+                ),
+                career=VerifiedCareerEvidence(
+                    url="https://century.example/careers",
+                    website_url="https://century.example",
+                    source="first_party_navigation",
+                    evidence_url="https://century.example/careers",
+                    observed_at=observed_at,
+                ),
+            )
+            targeted_search = self._stored_provider_source_record(
+                board_url="https://job-boards.greenhouse.io/century",
+                tenant="century",
+            )
+            targeted_search["trace"]["stages"]["job_board_discovery"]["selected"][
+                "source_kind"
+            ] = "targeted_board_search"
+            cross_tenant = self._stored_provider_source_record(
+                board_url="https://job-boards.greenhouse.io/century",
+                tenant="other-tenant",
+            )
+
+            restored_search = _restore_stored_provider_inputs(
+                store,
+                [company],
+                [targeted_search],
+            )
+            restored_tenant = _restore_stored_provider_inputs(
+                store,
+                [company],
+                [cross_tenant],
+            )
+            evidence = store.load(company.company_name, company.linkedin_company_url)
+
+        self.assertEqual(restored_search, 0)
+        self.assertEqual(restored_tenant, 0)
+        self.assertEqual(evidence.provider_boards, ())
+
+    @staticmethod
+    def _stored_provider_source_record(*, board_url: str, tenant: str) -> dict:
+        return {
+            "trace": {
+                "stages": {
+                    "job_board_discovery": {
+                        "selected": {
+                            "url": board_url,
+                            "source_kind": "stored_verified_provider_board",
+                        }
+                    }
+                }
+            },
+            "identity_assertion": {
+                "verdict": "verified",
+                "hiring": {"verified": True},
+                "provider": {
+                    "provider": "greenhouse",
+                    "tenant": tenant,
+                    "canonical_board_url": board_url,
+                    "evidence_url": "https://century.example/careers",
+                    "verification_method": (
+                        "stored_handoff_revalidated_provider_inventory"
+                    ),
+                    "relationship_verified": True,
+                },
+            },
+        }
+
+    def test_identity_comparison_redacts_secret_inside_structured_tenant(self):
+        def assertion(api_key):
+            return {
+                "verdict": "verified",
+                "normalized_chain": {
+                    "provider": {
+                        "provider": "ceipal",
+                        "tenant": json.dumps(
+                            {
+                                "api_key": api_key,
+                                "career_portal_id": "portal-one",
+                                "origin": "https://careers.example.com",
+                            },
+                            separators=(",", ":"),
+                            sort_keys=True,
+                        ),
+                    }
+                },
+            }
+
+        live = _normalize_identity_contract(assertion("runtime-secret"))
+        replay = _normalize_identity_contract(assertion("[redacted]"))
+
+        self.assertEqual(live, replay)
+        self.assertNotIn("runtime-secret", json.dumps(live))
+        self.assertIn("portal-one", json.dumps(live))
+
+    def test_replay_does_not_promote_stored_provider_hiring_output_to_input(self):
+        class EvidenceStore:
+            def __init__(self, record):
+                self.record = record
+
+            def load(self, company_name, linkedin_company_url):
+                return self.record
+
+        class CompleteInventoryService:
+            def match_discovered_board(self, discovered, *args):
+                return None, discovered.board.url, {
+                    "provider_api": {
+                        "provider": "ashby",
+                        "inventory": {
+                            "source": "native_adapter",
+                            "status": "verified_filtered_empty",
+                            "complete": True,
+                        },
+                        "adapter_trace": {
+                            "tenant_identity_conflict": False,
+                            "errors": [],
+                        },
+                    }
+                }
+
+        linkedin_url = "https://www.linkedin.com/company/haystack"
+        board = JobBoard(
+            provider="ashby",
+            identifier="deepsetai",
+            url="https://jobs.ashbyhq.com/deepsetai",
+        )
+        discovered = DiscoveredJobBoard(
+            board=board,
+            detection_method="stored_verified_provider_board",
+            evidence_url=board.url,
+        )
+        evidence = VerifiedCompanyDiscoveryEvidence(
+            company_name="Haystack",
+            linkedin_company_url=linkedin_url,
+            website=VerifiedWebsiteEvidence(
+                url="https://www.deepset.ai",
+                source="verified_resolver",
+                evidence_url=linkedin_url,
+                observed_at=1.0,
+            ),
+            career=VerifiedCareerEvidence(
+                url="https://www.deepset.ai/careers",
+                website_url="https://www.deepset.ai",
+                source="first_party_navigation",
+                evidence_url="https://www.deepset.ai",
+                observed_at=1.0,
+            ),
+            provider_boards=(
+                VerifiedProviderBoardEvidence(
+                    provider="ashby",
+                    tenant="deepsetai",
+                    canonical_board_url=board.url,
+                    relationship_evidence_url="https://www.deepset.ai/careers",
+                    verification_method="verified_first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=1.0,
+                ),
+            ),
+        )
+
+        def resolve_stored_identity(company):
+            context = PipelineContext.from_company(company)
+            context.job_list_page_url = board.url
+            context.discovered_job_board = discovered
+            context.provider_identity = ProviderIdentity(
+                hiring_entity_name=company.company_name,
+                provider="ashby",
+                tenant="deepsetai",
+                canonical_board_url=board.url,
+                evidence_url=board.url,
+                verification_method="linked_url_only",
+                relationship_verified=False,
+            )
+            context.trace["stages"] = {
+                "job_board_discovery": {
+                    "selected": {"source_kind": "stored_verified_provider_board"}
+                }
+            }
+            execution = OpeningMatchStage(
+                CompleteInventoryService(),
+                company_discovery_evidence_store=EvidenceStore(evidence),
+            ).run(context)
+            return execution.updates["hiring_identity_evidence"]
+
+        live_identity = resolve_stored_identity(
+            CompanyInput(company_name="Haystack", linkedin_company_url=linkedin_url)
+        )
+        replay_input = {
+            "company_name": "Haystack",
+            "linkedin_company_url": linkedin_url,
+            "hiring_entity_name": "deepsetai",
+            "source": "replay_input",
+        }
+        _remove_derived_hiring_entity_inputs([replay_input])
+        replay_identity = resolve_stored_identity(CompanyInput(**replay_input))
+        checkpointed_prefix = _authoritative_upstream_executions(
+            {
+                "company_website_url": "https://www.deepset.ai",
+                "hiring_entity_name": "deepsetai",
+                "stages": [
+                    {"stage": "linkedin_discovery", "status": "success"},
+                    {"stage": "website_resolution", "status": "success"},
+                    {"stage": "hiring_identity_resolution", "status": "success"},
+                ],
+            },
+            "career_discovery",
+        )
+
+        self.assertEqual(live_identity.relationship_type, "brand_parent")
+        self.assertEqual(replay_identity.relationship_type, "brand_parent")
+        self.assertEqual(replay_identity.hiring_entity_name, "deepsetai")
+        self.assertNotIn("hiring_entity_name", replay_input)
+        self.assertEqual(
+            checkpointed_prefix[-1].updates["hiring_entity_name"],
+            "deepsetai",
+        )
+
+    def test_redaction_hydrating_fetcher_forwards_forced_render_capability(self):
+        controller = SimpleNamespace(supports_forced_render=True)
+
+        fetcher = _RedactionHydratingScopedFetcher(controller)
+
+        self.assertTrue(fetcher.supports_forced_render)
+        controller.supports_forced_render = False
+        self.assertFalse(fetcher.supports_forced_render)
+
+    def test_scoped_replay_hydrates_only_redacted_json_credentials(self):
+        hydrated = json.loads(_hydrate_redacted_json_credentials(json.dumps({
+            "myJobsToken": "[REDACTED]",
+            "nested": {"authorization": "[REDACTED]"},
+            "label": "[REDACTED]",
+        })))
+
+        self.assertEqual(
+            hydrated["myJobsToken"],
+            "offline-replay-redacted-credential",
+        )
+        self.assertEqual(
+            hydrated["nested"]["authorization"],
+            "offline-replay-redacted-credential",
+        )
+        self.assertEqual(hydrated["label"], "[REDACTED]")
+
+    def test_scoped_replay_does_not_rewrite_non_json_redactions(self):
+        body = '<meta name="token" content="[REDACTED]">'
+
+        self.assertEqual(_hydrate_redacted_json_credentials(body), body)
+
+    def test_scoped_s5_seed_uses_stage_board_before_s6_changes_final_board(self):
+        board_a = "https://careers.example.test/jobs?search=china"
+        board_b = "https://careers.example.test/jobs?search=account+executive"
+        source_record = {
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://careers.example.test/jobs?search=china",
+            "job_list_page_url": board_b,
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "not_applicable"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "evidence": [
+                        {"field": "job_list_page_url", "url": board_a},
+                    ],
+                },
+                {"stage": "opening_match", "status": "success"},
+            ],
+            "trace": {
+                "stages": {
+                    "job_board_discovery": {"job_list_page_url": board_a},
+                    "opening_match": {"job_list_page_url": board_b},
+                }
+            },
+        }
+
+        executions = _authoritative_upstream_executions(
+            source_record,
+            "opening_match",
+            scoped_stage_evidence=True,
+        )
+
+        self.assertIsNotNone(executions)
+        job_board_execution = next(
+            execution
+            for execution in executions
+            if execution.result.stage == "job_board_discovery"
+        )
+        self.assertEqual(job_board_execution.updates["job_list_page_url"], board_a)
+
+    def test_scoped_s5_seed_restores_captured_multi_board_portfolio(self):
+        boards = (
+            "https://recruiting.adp.com/srccar/public/nghome.guid?c=1181515&d=Corporate",
+            "https://recruiting.adp.com/srccar/public/nghome.guid?c=1181515&d=Retail",
+        )
+        source_record = {
+            "company_name": "Example",
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": boards[0],
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {"stage": "job_board_discovery", "status": "success", "provider": "adp"},
+                {"stage": "opening_match", "status": "partial"},
+            ],
+            "trace": {"stages": {
+                "job_board_discovery": {
+                    "job_list_page_url": boards[0],
+                    "job_board_portfolio": {
+                        "eligible_count": 2,
+                        "eligible_set_complete": False,
+                        "primary_provider": "adp",
+                        "primary_url": boards[0],
+                    },
+                    "provider_detection": {
+                        "method": "linked_url_evidence",
+                        "provider": "adp",
+                        "url": boards[0],
+                    },
+                },
+                "opening_match": {"board_portfolio": {"attempts": [
+                    {
+                        "board_url": board,
+                        "provider": "adp",
+                        "trace": {"provider_api": {"provider_detection": {
+                            "source_method": "linked_url_evidence",
+                        }}},
+                    }
+                    for board in boards
+                ]}},
+            }},
+        }
+
+        executions = _authoritative_upstream_executions(
+            source_record,
+            "opening_match",
+            scoped_stage_evidence=True,
+        )
+
+        self.assertIsNotNone(executions)
+        job_board_execution = next(
+            execution
+            for execution in executions
+            if execution.result.stage == "job_board_discovery"
+        )
+        portfolio = job_board_execution.updates["job_board_portfolio"]
+        self.assertEqual(
+            tuple(item.board.url for item in portfolio.boards),
+            boards,
+        )
+        self.assertFalse(portfolio.eligible_set_complete)
+
+    def test_scoped_s5_seed_keeps_generic_singleton_url_only_without_detection(self):
+        board_url = "https://careers.example.test/jobs"
+        source_record = {
+            "company_name": "Example",
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": board_url,
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "evidence": [{
+                        "field": "job_list_page_url",
+                        "url": board_url,
+                    }],
+                },
+                {"stage": "opening_match", "status": "partial"},
+            ],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_list_page_url": board_url,
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "generic",
+                    "primary_url": board_url,
+                },
+            }}},
+        }
+
+        executions = _authoritative_upstream_executions(
+            source_record,
+            "opening_match",
+            scoped_stage_evidence=True,
+        )
+
+        self.assertIsNotNone(executions)
+        job_board_execution = next(
+            execution
+            for execution in executions
+            if execution.result.stage == "job_board_discovery"
+        )
+        self.assertEqual(job_board_execution.updates["job_list_page_url"], board_url)
+        self.assertNotIn("discovered_job_board", job_board_execution.updates)
+        self.assertNotIn("job_board_portfolio", job_board_execution.updates)
+
+    def test_scoped_s5_seed_restores_replay_safe_singleton_board(self):
+        board_url = (
+            "https://recruiting.adp.com/srccar/public/nghome.guid"
+            "?c=1181515&d=Corporate"
+        )
+        source_record = {
+            "company_name": "Example",
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": board_url,
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {"stage": "job_board_discovery", "status": "success", "provider": "adp"},
+                {"stage": "opening_match", "status": "partial"},
+            ],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_list_page_url": board_url,
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "adp",
+                    "primary_url": board_url,
+                },
+                "provider_detection": {
+                    "method": "linked_url_evidence",
+                    "provider": "adp",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        executions = _authoritative_upstream_executions(
+            source_record,
+            "opening_match",
+            scoped_stage_evidence=True,
+        )
+
+        job_board_execution = next(
+            execution
+            for execution in executions
+            if execution.result.stage == "job_board_discovery"
+        )
+        self.assertEqual(
+            job_board_execution.updates["discovered_job_board"].detection_method,
+            "linked_url_evidence",
+        )
+        self.assertTrue(
+            job_board_execution.updates["job_board_portfolio"].eligible_set_complete
+        )
+
+    def test_scoped_s5_seed_restores_verified_dynamic_board_identity(self):
+        board_url = "https://careers.example.test/en/annonces"
+        identifier = json.dumps(
+            {
+                "api_base": "https://api.digitalrecruiters.com/public/v1",
+                "board_url": board_url,
+                "locale": "en",
+                "tenant": "careers.example.test",
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        source_record = {
+            "identity_assertion": {
+                "verdict": "verified",
+                "provider": {
+                    "canonical_board_url": board_url,
+                    "evidence_url": "https://careers.example.test/en",
+                    "hiring_entity_name": "Example",
+                    "provider": "digitalrecruiters",
+                    "relationship_verified": True,
+                    "schema_version": "1.1",
+                    "tenant": identifier,
+                    "verification_method": "verified_first_party_provider_page",
+                },
+            },
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "digitalrecruiters",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "digitalrecruiters",
+                    "primary_url": board_url,
+                },
+                "provider_detection": {
+                    "method": "page_evidence",
+                    "provider": "digitalrecruiters",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        portfolio = _scoped_job_board_portfolio(source_record)
+
+        self.assertIsNotNone(portfolio)
+        self.assertEqual(portfolio.primary.board.identifier, identifier)
+        self.assertTrue(portfolio.primary.board.replay_safe)
+
+    def test_scoped_s5_seed_preserves_custom_singleton_checkpoint_boundary(self):
+        board_url = "https://careers.example.test/search/"
+        source_record = {
+            "company_name": "Example",
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": board_url,
+            "identity_assertion": {"provider": {
+                "canonical_board_url": board_url.rstrip("/"),
+                "evidence_url": "https://example.test/careers",
+                "hiring_entity_name": "Example",
+                "provider": "successfactors",
+                "relationship_verified": True,
+                "schema_version": "1.1",
+                "tenant": "custom:example",
+                "verification_method": "verified_first_party_provider_page",
+            }},
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "successfactors",
+                },
+                {"stage": "opening_match", "status": "partial"},
+            ],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_list_page_url": board_url,
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "successfactors",
+                    "primary_url": board_url,
+                },
+                "provider_detection": {
+                    "method": "page_evidence",
+                    "provider": "successfactors",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        executions = _authoritative_upstream_executions(
+            source_record,
+            "opening_match",
+            scoped_stage_evidence=True,
+        )
+
+        job_board_execution = next(
+            execution
+            for execution in executions
+            if execution.result.stage == "job_board_discovery"
+        )
+        self.assertNotIn("discovered_job_board", job_board_execution.updates)
+        self.assertNotIn("job_board_portfolio", job_board_execution.updates)
+        self.assertEqual(
+            job_board_execution.updates["provider_identity"].tenant,
+            "custom:example",
+        )
+
+    def test_scoped_singleton_seed_rejects_conflicting_provider_detection(self):
+        board_url = "https://careers.example.test/search/"
+        source_record = {
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "successfactors",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "successfactors",
+                    "primary_url": board_url,
+                },
+                "provider_detection": {
+                    "method": "page_evidence",
+                    "provider": "greenhouse",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "metadata is inconsistent"):
+            _scoped_job_board_portfolio(source_record)
+
+    def test_scoped_preflight_rejects_ambiguous_s5_board_evidence(self):
+        source_record = {
+            "company_name": "Example",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "not_applicable"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "evidence": [{
+                        "field": "job_list_page_url",
+                        "url": "https://careers.example.test/jobs?search=china",
+                    }],
+                },
+                {"stage": "opening_match", "status": "partial"},
+            ],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_list_page_url": (
+                    "https://careers.example.test/jobs?search=account+executive"
+                ),
+            }}},
+        }
+        replay_record = {
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "opening_match",
+            }}},
+        }
+        plan = SimpleNamespace(
+            evidence_mode="scoped_outcome_tape",
+            record_id="a" * 64,
+            stage_evidence_lineage=tuple(
+                SimpleNamespace(stage=stage)
+                for stage in PIPELINE_STAGES[:6]
+            ),
+        )
+
+        errors = _scoped_execution_boundary_errors(
+            [source_record],
+            [replay_record],
+            (plan,),
+        )
+
+        self.assertEqual(errors[0]["reason_code"], "scoped_stage_seed_ambiguous")
+        self.assertIn("conflicting", errors[0]["detail"])
+
+    def test_scoped_replay_restores_cache_backed_website_producer_state(self):
+        company = CompanyInput(
+            company_name="Example Electric",
+            linkedin_company_url="https://www.linkedin.com/company/example-electric",
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "website_resolution": {
+                        "linkedin_official_evidence_source": "cache",
+                        "candidates": [
+                            {
+                                "url": "https://unrelated.example.test",
+                                "reasons": ["candidate source: speculative_guess"],
+                            },
+                        ],
+                        "selected": {
+                            "url": "https://www.example-electric.test",
+                            "reasons": [
+                                "candidate source: linkedin_cached_official_website"
+                            ],
+                        },
+                    }
+                }
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_root = Path(directory)
+            _seed_scoped_replay_producer_state(
+                checkpoint_root,
+                company,
+                source_record,
+            )
+            store = FilesystemLinkedInWebsiteEvidenceStore(
+                checkpoint_root / LINKEDIN_EVIDENCE_CACHE_FILENAME
+            )
+
+            self.assertEqual(
+                store.load(company.company_name, company.linkedin_company_url),
+                ("https://www.example-electric.test",),
+            )
+
+    def test_scoped_replay_consumes_downstream_tape_after_cache_backed_website(self):
+        company = CompanyInput(
+            company_name="Example Electric",
+            linkedin_company_url="https://www.linkedin.com/company/example-electric",
+            linkedin_job_url=(
+                "https://www.linkedin.com/jobs/view/engineer-at-example-electric-123"
+            ),
+            job_title="Engineer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_checkpoint_root = root / "source-checkpoints"
+            FilesystemLinkedInWebsiteEvidenceStore(
+                source_checkpoint_root / LINKEDIN_EVIDENCE_CACHE_FILENAME
+            ).save(
+                company.company_name,
+                company.linkedin_company_url,
+                ("https://www.example-electric.test",),
+            )
+            application = build_application(
+                FetcherConfig(
+                    fixtures_dir=(
+                        Path(__file__).resolve().parents[1] / "samples" / "sites"
+                    ),
+                    offline=True,
+                    snapshot_dir=root / "snapshots",
+                ),
+                checkpoint_dir=source_checkpoint_root,
+            )
+            source = application.pipeline.discover(
+                company,
+                capture_attempt_id="capture-cache-backed-producer",
+            )
+            website_trace = source.trace["stages"]["website_resolution"]
+            self.assertEqual(
+                website_trace["linkedin_official_evidence_source"],
+                "cache",
+            )
+            self.assertEqual(
+                source.company_website_url,
+                "https://www.example-electric.test",
+            )
+            (root / "results.json").write_text(
+                json.dumps([dataclass_to_dict(source.trace_record())]),
+                encoding="utf-8",
+            )
+
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    pipeline_status=None,
+                    stage=None,
+                    stage_status=None,
+                    reason_code=None,
+                    legacy_run_config=None,
+                )
+            )
+
+        self.assertEqual(manifest["status"], "success")
+        self.assertEqual(manifest["outcome_gate"]["status"], "passed")
+
     def test_scoped_execution_restores_authoritative_original_source_semantics(self):
         company = CompanyInput(
             company_name="Example",
@@ -116,6 +946,30 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(execution_company.source, "replay_input")
         self.assertIn("replay", execution_company.source_trace)
 
+    def test_scoped_execution_replay_input_clears_derived_website(self):
+        company = CompanyInput(
+            company_name="SKIMS",
+            company_website_url="https://skims.com/",
+            source="replay_input",
+            source_trace={"replay": {"record_id": "record-1"}},
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "linkedin_discovery": {"source": "replay_input"},
+                    "website_resolution": {"preferred_url": None},
+                    "hiring_identity_resolution": {"matched_rule": None},
+                    "career_discovery": {},
+                }
+            }
+        }
+
+        execution_company = _scoped_execution_company(company, source_record)
+
+        self.assertEqual(execution_company.source, "replay_input")
+        self.assertEqual(execution_company.company_website_url, "")
+        self.assertNotIn("replay", execution_company.source_trace)
+
     def test_scoped_execution_normalizes_blind_holdout_source_without_derived_website(self):
         company = CompanyInput(
             company_name="Example",
@@ -145,6 +999,35 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertEqual(execution_company.company_website_url, "")
         self.assertNotIn("replay", execution_company.source_trace)
 
+    def test_scoped_execution_normalizes_observed_development_source_without_derived_website(self):
+        company = CompanyInput(
+            company_name="Example",
+            company_website_url="https://derived.example.test",
+            source="replay_input",
+            source_trace={"replay": {"record_id": "record-1"}},
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "linkedin_discovery": {
+                        "source": "linkedin_public_jobs_observed_development"
+                    },
+                    "website_resolution": {"preferred_url": ""},
+                    "hiring_identity_resolution": {"matched_rule": None},
+                    "career_discovery": {},
+                }
+            }
+        }
+
+        execution_company = _scoped_execution_company(company, source_record)
+
+        self.assertEqual(
+            execution_company.source,
+            "linkedin_public_jobs_observed_development",
+        )
+        self.assertEqual(execution_company.company_website_url, "")
+        self.assertNotIn("replay", execution_company.source_trace)
+
     def _args(self, root: Path, **overrides):
         values = {
             "results": str(root / "results.json"),
@@ -158,6 +1041,7 @@ class FailureReplayBundleTests(unittest.TestCase):
             "limit": None,
             "include_missing_website": False,
             "legacy_run_config": "composition-defaults",
+            "company_discovery_evidence_store": None,
         }
         values.update(overrides)
         return SimpleNamespace(**values)
@@ -234,6 +1118,7 @@ class FailureReplayBundleTests(unittest.TestCase):
         )
         for query_url in (
             f"{board_url}?q=Missing+Role",
+            f"{board_url}?query=Missing+Role",
             f"{board_url}?search=Missing+Role",
         ):
             SnapshotStore(root / "snapshots").write_page(
@@ -301,7 +1186,7 @@ class FailureReplayBundleTests(unittest.TestCase):
         company = CompanyInput(
             company_name="Aurora Data",
             company_website_url="https://aurora-data.example",
-            job_title="AI Engineer",
+            job_title="AI Algorithm Engineer Intern",
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -349,6 +1234,149 @@ class FailureReplayBundleTests(unittest.TestCase):
         )
         self.assertNotIn("fixtures", manifest["paths"])
         self.assertEqual(manifest["paths"]["tapes"], "offline/tapes")
+
+    def test_scoped_replay_freezes_selected_company_discovery_evidence(self):
+        linkedin_company_url = "https://www.linkedin.com/company/aurora-data"
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source_store_path = root / "source-company-evidence.json"
+            source_store = FilesystemCompanyDiscoveryEvidenceStore(source_store_path)
+            observed_at = time.time()
+            source_store.save(
+                "Aurora Data",
+                linkedin_company_url,
+                website=VerifiedWebsiteEvidence(
+                    url="https://aurora-data.example",
+                    source="linkedin_official_website",
+                    evidence_url=linkedin_company_url,
+                    observed_at=observed_at,
+                ),
+            )
+            source_store.save(
+                "Unselected Company",
+                "https://www.linkedin.com/company/unselected-company",
+                website=VerifiedWebsiteEvidence(
+                    url="https://unselected.example",
+                    source="provided_website",
+                    evidence_url="https://unselected.example",
+                    observed_at=observed_at,
+                ),
+            )
+            application = build_application(
+                FetcherConfig(
+                    fixtures_dir=Path(__file__).resolve().parents[1] / "samples" / "sites",
+                    offline=True,
+                    snapshot_dir=root / "snapshots",
+                ),
+                company_discovery_evidence_path=source_store_path,
+            )
+            source = application.pipeline.discover(
+                CompanyInput(
+                    company_name="Aurora Data",
+                    linkedin_company_url=linkedin_company_url,
+                    job_title="AI Algorithm Engineer Intern",
+                    source="fixed_input",
+                ),
+                capture_attempt_id="capture-company-evidence-replay",
+            )
+            (root / "results.json").write_text(
+                json.dumps([dataclass_to_dict(source.trace_record())]),
+                encoding="utf-8",
+            )
+
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    pipeline_status=None,
+                    stage=None,
+                    stage_status=None,
+                    reason_code=None,
+                    legacy_run_config=None,
+                    company_discovery_evidence_store=str(source_store_path),
+                )
+            )
+            frozen = json.loads(
+                (root / "bundle" / "company-discovery-evidence.json").read_text(
+                    encoding="utf-8"
+                )
+            )
+
+        self.assertEqual(manifest["status"], "success")
+        self.assertEqual(manifest["outcome_gate"]["status"], "passed")
+        evidence_provenance = manifest["company_discovery_evidence"]
+        self.assertEqual(evidence_provenance["status"], "frozen")
+        self.assertTrue(evidence_provenance["source_configured"])
+        self.assertEqual(len(evidence_provenance["source_path_sha256"]), 64)
+        self.assertEqual(evidence_provenance["source_status"], "available")
+        self.assertEqual(evidence_provenance["selected_identity_count"], 1)
+        self.assertEqual(evidence_provenance["frozen_record_count"], 1)
+        self.assertEqual(evidence_provenance["bundle_path"], "company-discovery-evidence.json")
+        self.assertEqual(
+            manifest["paths"]["company_discovery_evidence"],
+            "company-discovery-evidence.json",
+        )
+        self.assertEqual(len(frozen["records"]), 1)
+        frozen_record = next(iter(frozen["records"].values()))
+        self.assertEqual(frozen_record["company_name"], "aurora data")
+        self.assertNotIn("open_position_url", json.dumps(frozen))
+        self.assertNotIn("inventory", json.dumps(frozen))
+
+    def test_corrupt_company_discovery_evidence_store_is_omitted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+            source_store_path = root / "corrupt-company-evidence.json"
+            source_store_path.write_text("{not json", encoding="utf-8")
+
+            manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    company_discovery_evidence_store=str(source_store_path),
+                )
+            )
+
+        self.assertEqual(manifest["company_discovery_evidence"]["status"], "omitted")
+        self.assertEqual(manifest["company_discovery_evidence"]["source_status"], "corrupt")
+        self.assertNotIn("company_discovery_evidence", manifest["paths"])
+
+    def test_missing_or_unmatched_company_discovery_evidence_is_omitted(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_inputs(root)
+            missing_manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    company_discovery_evidence_store=str(root / "missing-store.json"),
+                )
+            )
+            unmatched_store_path = root / "unmatched-store.json"
+            FilesystemCompanyDiscoveryEvidenceStore(unmatched_store_path).save(
+                "Different Company",
+                "https://www.linkedin.com/company/different-company",
+                website=VerifiedWebsiteEvidence(
+                    url="https://different.example",
+                    source="provided_website",
+                    evidence_url="https://different.example",
+                    observed_at=time.time(),
+                ),
+            )
+            unmatched_manifest = replay_failure_bundle(
+                self._args(
+                    root,
+                    output_dir=str(root / "unmatched-bundle"),
+                    company_discovery_evidence_store=str(unmatched_store_path),
+                )
+            )
+
+        self.assertEqual(missing_manifest["company_discovery_evidence"]["status"], "omitted")
+        self.assertEqual(missing_manifest["company_discovery_evidence"]["source_status"], "missing")
+        self.assertNotIn("company_discovery_evidence", missing_manifest["paths"])
+        self.assertEqual(unmatched_manifest["company_discovery_evidence"]["status"], "omitted")
+        self.assertEqual(
+            unmatched_manifest["company_discovery_evidence"]["source_status"],
+            "available_no_selected_evidence",
+        )
+        self.assertNotIn("company_discovery_evidence", unmatched_manifest["paths"])
 
     def test_scoped_capture_replays_upstream_terminal_boundary_without_website(self):
         company = CompanyInput(
@@ -457,7 +1485,7 @@ class FailureReplayBundleTests(unittest.TestCase):
         company = CompanyInput(
             company_name="Aurora Data",
             company_website_url="https://aurora-data.example",
-            job_title="AI Engineer",
+            job_title="AI Algorithm Engineer Intern",
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -532,7 +1560,7 @@ class FailureReplayBundleTests(unittest.TestCase):
         company = CompanyInput(
             company_name="Aurora Data",
             company_website_url="https://aurora-data.example",
-            job_title="AI Engineer",
+            job_title="AI Algorithm Engineer Intern",
         )
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -629,6 +1657,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                         "max_career_discovery_transport_calls",
                         "max_job_board_attempts",
                         "enable_parallel_candidate_discovery",
+                        "evaluate_all_candidate_routes",
                     }
                 },
             }
@@ -694,6 +1723,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                         "max_career_discovery_transport_calls",
                         "max_job_board_attempts",
                         "enable_parallel_candidate_discovery",
+                        "evaluate_all_candidate_routes",
                     }
                 },
             }
@@ -1046,7 +2076,7 @@ class FailureReplayBundleTests(unittest.TestCase):
             "career_discovery",
         )
 
-    def test_scoped_page_derived_board_replays_full_producer_chain(self):
+    def test_scoped_page_derived_opening_keeps_captured_stage_boundary(self):
         source_record = {
             "job_list_page_url": "https://careers.example.com/search-jobs",
             "stages": [{
@@ -1073,8 +2103,163 @@ class FailureReplayBundleTests(unittest.TestCase):
                 replay_record,
                 scoped_plan,
             ),
-            "website_resolution",
+            "opening_match",
         )
+
+    def test_scoped_opening_replay_keeps_captured_stage_boundary(self):
+        source_record = {
+            "job_list_page_url": "https://careers.example.test/jobs/corporate",
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 2,
+                    "eligible_set_complete": False,
+                    "primary_url": "https://careers.example.test/jobs/corporate",
+                },
+            }}},
+        }
+        replay_record = {
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "opening_match",
+            }}},
+        }
+        scoped_plan = SimpleNamespace(evidence_mode="scoped_outcome_tape")
+        legacy_plan = SimpleNamespace(evidence_mode="legacy_global_latest")
+
+        self.assertEqual(
+            _effective_replay_resume_stage(
+                source_record,
+                replay_record,
+                scoped_plan,
+            ),
+            "opening_match",
+        )
+        self.assertEqual(
+            _effective_replay_resume_stage(
+                source_record,
+                replay_record,
+                legacy_plan,
+            ),
+            "opening_match",
+        )
+
+    def test_scoped_replay_uses_recorded_two_phase_boundary_with_failed_upstream(self):
+        source_record = {
+            "company_website_url": "",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": "https://example.test/careers",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "failed"},
+                {"stage": "hiring_identity_resolution", "status": "not_run"},
+                {"stage": "career_discovery", "status": "success"},
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "evidence": [{
+                        "field": "job_list_page_url",
+                        "url": "https://example.test/careers",
+                    }],
+                },
+                {"stage": "opening_match", "status": "success"},
+                {"stage": "result_validation", "status": "success"},
+            ],
+            "trace": {
+                "checkpoint_events": [
+                    {"stage": "opening_match", "action": "invalidate_from"},
+                    *[
+                        {"stage": stage, "action": "restore"}
+                        for stage in PIPELINE_STAGES[:5]
+                    ],
+                    {"stage": "opening_match", "action": "save"},
+                    {"stage": "result_validation", "action": "save"},
+                ]
+            },
+        }
+        replay_record = {
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "website_resolution",
+            }}},
+        }
+        scoped_plan = SimpleNamespace(evidence_mode="scoped_outcome_tape")
+
+        self.assertEqual(
+            _effective_replay_resume_stage(
+                source_record,
+                replay_record,
+                scoped_plan,
+            ),
+            "opening_match",
+        )
+        executions = _authoritative_upstream_executions(
+            source_record,
+            "opening_match",
+            scoped_stage_evidence=True,
+        )
+        self.assertIsNotNone(executions)
+        self.assertEqual(
+            [execution.result.status for execution in executions],
+            ["success", "failed", "not_run", "success", "success"],
+        )
+
+    def test_scoped_opening_preflight_rejects_incomplete_portfolio_seed(self):
+        replay_record = {
+            "company_name": "Example",
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "opening_match",
+            }}},
+        }
+        source_record = {
+            "company_name": "Example",
+            "company_website_url": "https://example.test",
+            "career_page_url": "https://example.test/careers",
+            "job_list_page_url": "https://boards.greenhouse.io/example",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {"stage": "career_discovery", "status": "success"},
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "greenhouse",
+                },
+                {"stage": "opening_match", "status": "partial"},
+            ],
+            "trace": {"stages": {
+                "job_board_discovery": {
+                    "job_board_portfolio": {
+                        "eligible_count": 2,
+                        "eligible_set_complete": False,
+                        "primary_provider": "greenhouse",
+                        "primary_url": "https://boards.greenhouse.io/example",
+                    },
+                    "job_list_page_url": "https://boards.greenhouse.io/example",
+                    "provider_detection": {
+                        "method": "linked_url_evidence",
+                        "provider": "greenhouse",
+                        "url": "https://boards.greenhouse.io/example",
+                    },
+                },
+                "opening_match": {"board_portfolio": {"attempts": []}},
+            }},
+        }
+        plan = SimpleNamespace(
+            evidence_mode="scoped_outcome_tape",
+            record_id="a" * 64,
+            stage_evidence_lineage=tuple(
+                SimpleNamespace(stage=stage)
+                for stage in PIPELINE_STAGES[5:]
+            ),
+        )
+
+        errors = _scoped_execution_boundary_errors(
+            [source_record],
+            [replay_record],
+            (plan,),
+        )
+
+        self.assertEqual(errors[0]["reason_code"], "scoped_stage_seed_ambiguous")
+        self.assertIn("do not cover", errors[0]["detail"])
 
     def test_scoped_preflight_requires_producer_tape_for_career_replay(self):
         replay_record = {

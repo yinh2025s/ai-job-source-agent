@@ -1,5 +1,6 @@
 import unittest
 
+from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.request_identity import (
     REDACTED_VALUE,
     build_request_identity,
@@ -10,6 +11,74 @@ from job_source_agent.web import normalize_url
 
 
 class RequestIdentityTests(unittest.TestCase):
+    def test_browser_interaction_has_distinct_redacted_request_identity(self):
+        first = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="query",
+            query_id="job-keywords",
+            submit_text="Search",
+            target_title="Data Analyst",
+        )
+        second = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="query",
+            query_id="job-keywords",
+            submit_text="Search",
+            target_title="Senior Data Analyst",
+        )
+
+        plain = build_request_identity("https://example.test/jobs")
+        searched = build_request_identity(
+            "https://example.test/jobs", interaction=first
+        )
+        other_search = build_request_identity(
+            "https://example.test/jobs", interaction=second
+        )
+
+        self.assertNotEqual(plain.fingerprint(), searched.fingerprint())
+        self.assertNotEqual(searched.fingerprint(), other_search.fingerprint())
+        self.assertEqual(
+            searched.semantic_headers["x-job-source-agent-interaction"],
+            first.fingerprint(),
+        )
+        self.assertNotIn("Data Analyst", str(searched.as_dict()))
+
+    def test_browser_interaction_rejects_arbitrary_selectors_and_control_text(self):
+        with self.assertRaises(ValueError):
+            JobSearchInteraction(
+                form_ordinal=0,
+                query_name="input[name=q]",
+                submit_text="Search",
+                target_title="Data Analyst",
+            )
+        with self.assertRaises(ValueError):
+            JobSearchInteraction(
+                form_ordinal=0,
+                query_name="query",
+                submit_text="Search",
+                target_title="Data\nAnalyst",
+            )
+        with self.assertRaises(ValueError):
+            JobSearchInteraction(
+                form_ordinal=0,
+                query_name=None,
+                submit_text="Search",
+                target_title="Data Analyst",
+            )
+
+    def test_placeholder_only_job_search_interaction_is_supported(self):
+        interaction = JobSearchInteraction(
+            form_ordinal=0,
+            query_name=None,
+            query_placeholder="Job Title",
+            submit_text="Find Jobs",
+            submit_tag="span",
+            target_title="Registered Nurse",
+        )
+
+        self.assertEqual(interaction.query_placeholder, "Job Title")
+        self.assertEqual(interaction.submit_tag, "span")
+
     def test_navigation_normalization_preserves_response_affecting_empty_query_values(self):
         normalized = normalize_url(
             "https://example.test/api?themeid=&utm_source=test&job_id="
@@ -66,6 +135,23 @@ class RequestIdentityTests(unittest.TestCase):
 
         self.assertEqual(first.body_fingerprint, second.body_fingerprint)
         self.assertTrue(first.requires_fixture_suffix)
+
+    def test_meta_lsd_form_token_is_sensitive_and_does_not_change_identity(self):
+        first = build_request_identity(
+            "https://www.metacareers.com/graphql",
+            data=b"doc_id=123&lsd=first-secret&q=Engineer",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+        second = build_request_identity(
+            "https://www.metacareers.com/graphql",
+            data=b"doc_id=123&lsd=second-secret&q=Engineer",
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        self.assertTrue(is_sensitive_key("lsd"))
+        self.assertTrue(is_sensitive_key("X-FB-LSD"))
+        self.assertEqual(first.body_fingerprint, second.body_fingerprint)
+        self.assertNotIn("first-secret", repr(first.as_dict()))
 
     def test_ceipal_credential_path_is_redacted_without_losing_endpoint_shape(self):
         first = sanitize_url(

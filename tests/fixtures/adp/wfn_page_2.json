@@ -1,0 +1,12 @@
+{
+  "jobRequisitions": [
+    {
+      "itemID": "9201055789928_1",
+      "requisitionTitle": "CERTIFIED CODER - HOSPITAL",
+      "requisitionLocations": [
+        {"nameCode": {"shortName": "Financial Operations Center - Paris, IL, US"}}
+      ]
+    }
+  ],
+  "meta": {"startSequence": 3, "totalNumber": 3, "links": []}
+}

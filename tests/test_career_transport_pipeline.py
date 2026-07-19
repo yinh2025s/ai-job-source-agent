@@ -70,6 +70,34 @@ class CareerTransportPipelineTests(unittest.TestCase):
             {"verified_homepage_navigation_candidates": 1},
         )
 
+    def test_verified_navigation_prefers_portal_over_editorial_career_article(self):
+        homepage = "https://www.example.com/en/"
+        article = (
+            "https://www.example.com/en/magazine/careers/"
+            "how-our-team-built-a-product"
+        )
+        portal = "https://careers.example.com/"
+        base = RecordingCareerFetcher(
+            {
+                article: "<main>Career story</main>",
+                portal: "<main>Search jobs and open roles</main>",
+            }
+        )
+        agent = build_agent(base, limit=2)
+        evidence = HomepageNavigationEvidence(
+            homepage_url=homepage,
+            candidate_urls=(article, portal),
+        )
+
+        selected, _trace = agent.find_career_page(
+            homepage,
+            company_name="Example",
+            homepage_navigation_evidence=evidence,
+        )
+
+        self.assertEqual(selected, portal)
+        self.assertEqual(base.calls, [portal])
+
     def test_www_equivalent_homepage_navigation_saves_homepage_dispatch(self):
         homepage = "https://company.example"
         careers = "https://www.company.example/careers"

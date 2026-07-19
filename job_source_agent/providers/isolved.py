@@ -3,22 +3,25 @@ from __future__ import annotations
 from html.parser import HTMLParser
 import json
 import re
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlencode, urlparse
 
 from ..reasons import classify_fetch_error, reason_spec
 from ..web import FetchError
-from .base import AdapterResult, JobBoard, JobQuery
+from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _HOST_SUFFIX = ".isolvedhire.com"
 _TENANT = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _ROUTE_DATA = re.compile(r"\bmountingData\.courierCurrentRouteData\s*=")
 _JOB_LISTINGS = re.compile(r"\[\s*['\"]JobListings['\"]\s*\]")
+_JOB_DETAIL_PATH = re.compile(r"^/jobs/(?P<job_id>[0-9]+)/?$")
 _COMPONENT_FIELD = re.compile(
     r"\b(?P<name>organizationId|domainId|domainName|subdomainName)\s*:\s*"
     r"(?:(?P<quote>['\"])(?P<string>[^'\"\\]{1,255})(?P=quote)|(?P<number>[0-9]{1,20}))"
 )
 _MAX_HTML_CHARS = 2_000_000
+_MAX_INVENTORY_CHARS = 5_000_000
+_MAX_JOBS = 2_000
 
 
 class ISolvedAdapter:
@@ -73,19 +76,89 @@ class ISolvedAdapter:
             )
 
         career_site_name, organization_id, domain_id = identity
-        # The frozen module only re-exports an unfrozen chunk. Without that chunk,
-        # the anonymous inventory transport and response schema are not proven.
-        return _incomplete(
-            board,
-            "PROVIDER_VARIANT_UNSUPPORTED",
-            "anonymous iSolved inventory transport was not present in frozen evidence",
-            board_url=board_url,
-            response_source=page.source,
-            identity={
-                "tenant": tenant,
-                "career_site_name": career_site_name,
-                "organization_id": organization_id,
-                "domain_id": domain_id,
+        identity_trace = {
+            "tenant": tenant,
+            "career_site_name": career_site_name,
+            "organization_id": organization_id,
+            "domain_id": domain_id,
+        }
+        inventory_url = _inventory_url(tenant, domain_id)
+        try:
+            inventory_page = fetcher.fetch(
+                inventory_url,
+                headers={
+                    "Accept": "application/json, text/plain, */*",
+                    "Referer": board_url,
+                },
+            )
+        except (FetchError, OSError, TimeoutError) as error:
+            reason_code = classify_fetch_error(str(error))
+            if reason_code == "FETCH_FAILED":
+                reason_code = "PROVIDER_FETCH_FAILED"
+            return _incomplete(
+                board,
+                reason_code,
+                str(error),
+                retryable=reason_spec(reason_code).retryable,
+                board_url=board_url,
+                response_source=page.source,
+                identity=identity_trace,
+                api_url=inventory_url,
+            )
+
+        if not _same_inventory_url(inventory_page.final_url or inventory_page.url, inventory_url):
+            return _unsupported(
+                board,
+                "iSolved inventory redirected outside the verified tenant/site endpoint",
+                board_url=board_url,
+                response_source=inventory_page.source,
+            )
+        parsed = _parse_inventory(inventory_page.html, tenant, domain_id)
+        if parsed is None:
+            return _incomplete(
+                board,
+                "INVALID_STRUCTURED_DATA",
+                "invalid or contradictory iSolved public inventory",
+                board_url=board_url,
+                response_source=inventory_page.source,
+                identity=identity_trace,
+                api_url=inventory_url,
+            )
+        jobs, total = parsed
+        candidates = [
+            candidate
+            for job in jobs
+            if (candidate := _job_candidate(job, tenant, domain_id)) is not None
+        ]
+        if len(candidates) != len(jobs):
+            return _incomplete(
+                board,
+                "INVALID_STRUCTURED_DATA",
+                "iSolved inventory contained an invalid or cross-tenant opening",
+                board_url=board_url,
+                response_source=inventory_page.source,
+                identity=identity_trace,
+                api_url=inventory_url,
+            )
+        return AdapterResult(
+            provider=self.name,
+            board=board,
+            candidates=candidates,
+            reason_code="EMPTY_PROVIDER_RESPONSE" if not candidates else None,
+            inventory_scope="full",
+            inventory_complete=True,
+            trace={
+                "adapter": self.name,
+                "variant": "applicant_pro_public_inventory",
+                "board_urls": [board_url],
+                "api_urls": [inventory_url],
+                "response_source": inventory_page.source,
+                "identity": identity_trace,
+                "records_seen": len(jobs),
+                "total": total,
+                "candidate_count": len(candidates),
+                "inventory_scope": "full",
+                "inventory_complete": True,
             },
         )
 
@@ -159,6 +232,10 @@ def _exact_board_tenant(url: str) -> str | None:
 
 def _board_url(tenant: str) -> str:
     return f"https://{tenant}{_HOST_SUFFIX}/jobs/"
+
+
+def _job_url(tenant: str, job_id: str) -> str:
+    return f"https://{tenant}{_HOST_SUFFIX}/jobs/{job_id}"
 
 
 def _job_board(tenant: str) -> JobBoard:
@@ -246,6 +323,92 @@ def _positive_identifier(value: object) -> bool:
     return text.isdigit() and text != "0" and len(text) <= 20
 
 
+def _inventory_url(tenant: str, domain_id: str) -> str:
+    get_params = json.dumps({"isInternal": 0}, separators=(",", ":"))
+    query = urlencode({"getParams": get_params})
+    return f"https://{tenant}{_HOST_SUFFIX}/core/jobs/{domain_id}?{query}"
+
+
+def _same_inventory_url(actual_url: str, expected_url: str) -> bool:
+    try:
+        actual = urlparse(actual_url)
+        expected = urlparse(expected_url)
+        return actual == expected and actual.port in {None, 443}
+    except (TypeError, ValueError):
+        return False
+
+
+def _parse_inventory(raw: str, tenant: str, domain_id: str) -> tuple[list[dict], int] | None:
+    if not isinstance(raw, str) or len(raw) > _MAX_INVENTORY_CHARS:
+        return None
+    try:
+        payload = json.loads(raw)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("success") is not True:
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict) or not isinstance(data.get("jobs"), list):
+        return None
+    jobs = data["jobs"]
+    total = data.get("jobCount", data.get("total", len(jobs)))
+    if (
+        len(jobs) > _MAX_JOBS
+        or any(not isinstance(job, dict) for job in jobs)
+        or isinstance(total, bool)
+        or not isinstance(total, int)
+        or total != len(jobs)
+    ):
+        return None
+    declared_domain_id = data.get("domainId")
+    declared_tenant = data.get("subdomainName")
+    if declared_domain_id is not None and str(declared_domain_id) != domain_id:
+        return None
+    if declared_tenant is not None and (
+        not isinstance(declared_tenant, str)
+        or declared_tenant.casefold() != tenant
+    ):
+        return None
+    return jobs, total
+
+
+def _job_candidate(job: dict, tenant: str, domain_id: str) -> JobCandidate | None:
+    raw_id = job.get("id")
+    title = job.get("title")
+    url = job.get("jobUrl") or job.get("url")
+    if (
+        not _positive_identifier(raw_id)
+        or not isinstance(title, str)
+        or not title.strip()
+        or len(title) > 500
+        or not isinstance(url, str)
+    ):
+        return None
+    parsed_tenant = _safe_url(url)
+    if parsed_tenant is None:
+        return None
+    parsed, opening_tenant = parsed_tenant
+    detail_match = _JOB_DETAIL_PATH.fullmatch(parsed.path)
+    if (
+        opening_tenant != tenant
+        or parsed.query
+        or detail_match is None
+        or not _positive_identifier(detail_match.group("job_id"))
+        or str(raw_id) != detail_match.group("job_id")
+    ):
+        return None
+    location = job.get("jobLocation") or job.get("location")
+    if location is not None and (not isinstance(location, str) or len(location) > 500):
+        return None
+    return JobCandidate(
+        title=title.strip(),
+        url=_job_url(tenant, str(raw_id)),
+        provider="isolved",
+        location=location.strip() if isinstance(location, str) and location.strip() else None,
+        raw={"job_id": str(raw_id), "domain_id": domain_id},
+    )
+
+
 def _incomplete(
     board: JobBoard,
     reason_code: str,
@@ -255,12 +418,13 @@ def _incomplete(
     board_url: str | None = None,
     response_source: str | None = None,
     identity: dict[str, str] | None = None,
+    api_url: str | None = None,
 ) -> AdapterResult:
     trace = {
         "adapter": "isolved",
-        "variant": "applicant_pro_detection_only",
+        "variant": "applicant_pro_public_inventory",
         "board_urls": [board_url] if board_url else [],
-        "api_urls": [],
+        "api_urls": [api_url] if api_url else [],
         "error": error,
         "inventory_scope": "unknown",
         "inventory_complete": False,
@@ -297,4 +461,3 @@ def _unsupported(
 
 
 ADAPTER = ISolvedAdapter()
-

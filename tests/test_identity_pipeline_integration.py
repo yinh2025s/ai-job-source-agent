@@ -119,9 +119,24 @@ class IdentityPipelineIntegrationTests(unittest.TestCase):
             "acquired_brand_handoff",
             "https://parent.example/brands/fresh-legacy",
         )
+        opening_url = "https://jobs.example/parent/jobs/software-engineer"
         service = _DiscoveryService(
             board,
-            "https://jobs.example/parent/jobs/software-engineer",
+            opening_url,
+            {
+                "provider_api": {
+                    "inventory": {
+                        "source": "native_adapter",
+                        "scope": "full",
+                        "complete": True,
+                        "candidate_count": 1,
+                    },
+                },
+                "selected": {
+                    "url": opening_url,
+                    "title": "Software Engineer",
+                },
+            },
         )
         context = PipelineContext.from_company(
             CompanyInput(
@@ -288,9 +303,24 @@ class IdentityPipelineIntegrationTests(unittest.TestCase):
             "https://jobs.example/opaque-tenant",
             relationship_evidence_url=career,
         )
+        opening_url = "https://jobs.example/opaque-tenant/jobs/software-engineer"
         service = _DiscoveryService(
             board,
-            "https://jobs.example/opaque-tenant/jobs/software-engineer",
+            opening_url,
+            {
+                "provider_api": {
+                    "inventory": {
+                        "source": "native_adapter",
+                        "scope": "full",
+                        "complete": True,
+                        "candidate_count": 1,
+                    },
+                },
+                "selected": {
+                    "url": opening_url,
+                    "title": "Software Engineer",
+                },
+            },
         )
         context = PipelineContext.from_company(
             CompanyInput(company_name="Acme", job_title="Software Engineer")
@@ -377,6 +407,127 @@ class IdentityPipelineIntegrationTests(unittest.TestCase):
         )
         self.assertEqual(context.opening_identity.canonical_opening_url, opening)
         self.assertEqual(context.opening_selection_evidence.location, "Oxnard, CA")
+        self.assertEqual(context.stage_results[-1].status, "success")
+
+    def test_verified_same_site_search_page_contributes_nonempty_selection(self):
+        career = "https://careers.acme.example/search"
+        opening = "https://www.acme.example/talent/job-offers/platform-engineer"
+        board = DiscoveredJobBoard(
+            JobBoard(career, "generic"),
+            "verified_first_party_action",
+            career,
+            relationship_evidence_url="https://www.acme.example/careers",
+        )
+        match_trace = {
+            "selected": {
+                "url": opening,
+                "title": "Platform Engineer",
+                "location": "Denver, CO",
+                "hiring_organization_name": "Acme",
+            },
+            "verified_site_search": {
+                "verified_pages": [
+                    {
+                        "url": opening + "/",
+                        "title": "Platform Engineer",
+                        "location": "Denver, CO",
+                        "hiring_organization_name": "Acme",
+                    }
+                ]
+            },
+        }
+        service = _DiscoveryService(board, opening, match_trace)
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                job_title="Platform Engineer",
+                job_location="Denver, CO",
+            )
+        )
+        context.career_page_url = "https://www.acme.example/careers"
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://www.acme.example/careers",
+        )
+
+        PipelineStageRunner(
+            [
+                JobBoardDiscoveryStage(service, self.registry),
+                OpeningMatchStage(service, self.registry),
+                ResultValidationStage(),
+            ]
+        ).run(context)
+
+        selection = context.opening_selection_evidence
+        self.assertIsNotNone(selection)
+        assert selection is not None
+        self.assertEqual(selection.inventory_scope, "title_filtered")
+        self.assertFalse(selection.inventory_complete)
+        self.assertEqual(selection.candidate_count, 1)
+        self.assertEqual(context.stage_results[-1].status, "success")
+
+    def test_declared_inventory_board_accepts_verified_career_action_handoff(self):
+        career = "https://acme.example/careers"
+        search = "https://acme.example/careers/search"
+        opening = "https://recruiting.paylocity.com/Recruiting/Jobs/Details/4324729"
+        board = DiscoveredJobBoard(
+            JobBoard(search, "generic"),
+            "verified_declared_inventory",
+            search,
+            relationship_evidence_url=career,
+        )
+        match_trace = {
+            "provider_api": {
+                "provider_detection": {
+                    "method": "verified_declared_inventory",
+                    "url": search,
+                    "endpoint_url": "https://acme.example/api/jobs",
+                    "inventory_complete": True,
+                }
+            },
+            "candidates": [{"url": opening}],
+            "selected": {
+                "url": opening,
+                "title": "Registered Nurse",
+                "location": "Oxnard, CA",
+                "reasons": ["listing origin: verified_declared_inventory"],
+            },
+        }
+        service = _DiscoveryService(board, opening, match_trace)
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                job_title="Registered Nurse",
+                job_location="Oxnard, CA",
+            )
+        )
+        context.career_page_url = career
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://acme.example",
+        )
+
+        PipelineStageRunner(
+            [
+                JobBoardDiscoveryStage(service, self.registry),
+                OpeningMatchStage(service, self.registry),
+                ResultValidationStage(),
+            ]
+        ).run(context)
+
+        self.assertEqual(
+            context.provider_identity.verification_method,
+            "verified_declared_inventory",
+        )
+        self.assertEqual(context.opening_identity.canonical_opening_url, opening)
         self.assertEqual(context.stage_results[-1].status, "success")
 
 

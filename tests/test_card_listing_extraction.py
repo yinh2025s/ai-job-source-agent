@@ -110,6 +110,106 @@ class CardListingExtractionTests(unittest.TestCase):
             ],
         )
 
+    def test_anchor_card_preserves_explicit_map_pin_location(self):
+        html = """
+            <a class="job-card" href="/jobs/814/senior-platform-engineer">
+              <h3>Senior Platform Engineer</h3>
+              <p>Example Systems</p>
+              <span class="job-metadata">
+                <svg class="lucide lucide-map-pin" aria-hidden="true"></svg>
+                Tampa, FL
+              </span>
+              <span class="salary">$145,000 - $175,000</span>
+              <time datetime="2026-07-18">1 day ago</time>
+            </a>
+        """
+
+        candidates = extract_card_listing_candidates(html, SOURCE_URL)
+
+        self.assertEqual(len(candidates), 1)
+        candidate = candidates[0]
+        self.assertEqual(candidate.title, "Senior Platform Engineer")
+        self.assertEqual(candidate.url, "https://careers.example.com/jobs/814/senior-platform-engineer")
+        self.assertEqual(candidate.location, "Tampa, FL")
+        raw_link = candidate.as_raw_link()
+        self.assertEqual(
+            (raw_link.url, raw_link.text, raw_link.source_url, raw_link.origin, raw_link.location),
+            (
+                "https://careers.example.com/jobs/814/senior-platform-engineer",
+                "Senior Platform Engineer",
+                SOURCE_URL,
+                "parent_card",
+                "Tampa, FL",
+            ),
+        )
+
+    def test_anchor_card_rejects_ambiguous_distinct_locations(self):
+        html = """
+            <a class="job-card" href="/jobs/814/senior-platform-engineer">
+              <h3>Senior Platform Engineer</h3>
+              <span class="job-location">Tampa, FL</span>
+              <span class="location">Remote, US</span>
+            </a>
+        """
+
+        candidates = extract_card_listing_candidates(html, SOURCE_URL)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertIsNone(candidates[0].location)
+        self.assertIsNone(candidates[0].as_raw_link().location)
+
+    def test_anchor_card_does_not_infer_location_without_marker(self):
+        html = """
+            <a class="job-card" href="/jobs/814/senior-platform-engineer">
+              <h3>Senior Platform Engineer</h3>
+              <p>Example Systems</p>
+              <span>Tampa, FL</span>
+              <span>$145,000 - $175,000</span>
+              <time datetime="2026-07-18">1 day ago</time>
+            </a>
+        """
+
+        candidates = extract_card_listing_candidates(html, SOURCE_URL)
+
+        self.assertEqual(len(candidates), 1)
+        self.assertIsNone(candidates[0].location)
+
+    def test_anchor_card_accepts_job_family_uuid_detail_route(self):
+        html = """
+            <a class="job-card" href="/jobs/123e4567-e89b-42d3-a456-426614174000">
+              <h3>Senior Platform Engineer</h3>
+              <p>Example Systems</p>
+            </a>
+        """
+
+        candidates = extract_card_listing_candidates(html, SOURCE_URL)
+
+        self.assertEqual(
+            [(item.title, item.url) for item in candidates],
+            [
+                (
+                    "Senior Platform Engineer",
+                    "https://careers.example.com/jobs/123e4567-e89b-42d3-a456-426614174000",
+                )
+            ],
+        )
+
+    def test_anchor_card_rejects_non_job_uuid_route_and_ambiguous_uuid_heading(self):
+        uuid = "123e4567-e89b-42d3-a456-426614174000"
+        cases = (
+            f'<a class="job-card" href="/teams/{uuid}"><h3>Platform Engineer</h3></a>',
+            f"""
+                <a class="job-card" href="/jobs/{uuid}">
+                  <h3>Platform Engineer</h3>
+                  <h4>Infrastructure Engineer</h4>
+                </a>
+            """,
+        )
+
+        for html in cases:
+            with self.subTest(html=html):
+                self.assertEqual(extract_card_listing_candidates(html, SOURCE_URL), [])
+
     def test_anchor_card_rejects_ambiguous_or_description_only_titles(self):
         cases = (
             """

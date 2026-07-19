@@ -5,6 +5,7 @@ from job_source_agent.identity_continuity import (
     HiringIdentityEvidence,
     HiringRelationshipEvidence,
     OpeningIdentity,
+    OpeningSelectionEvidence,
     ProviderIdentity,
     validate_opening_identity_chain,
 )
@@ -201,10 +202,51 @@ class OpeningIdentityContinuityTests(unittest.TestCase):
         context.provider_identity = self.provider
         context.opening_identity = self.opening
         context.open_position_url = self.opening.canonical_opening_url
+        context.opening_selection_evidence = OpeningSelectionEvidence(
+            provider="ashby",
+            tenant="acme",
+            canonical_board_url="https://jobs.ashbyhq.com/acme",
+            canonical_opening_url="https://jobs.ashbyhq.com/acme/role-123",
+            title="Software Engineer",
+            location=None,
+            inventory_scope="full",
+            inventory_complete=True,
+            candidate_count=1,
+        )
 
         execution = ResultValidationStage().run(context)
 
         self.assertEqual(execution.result.status, "success")
+
+    def test_s7_rejects_ambiguous_incomplete_selection_without_location(self):
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                job_title="Software Engineer",
+                job_location="New York, NY",
+            )
+        )
+        context.hiring_identity_evidence = self.hiring
+        context.provider_identity = self.provider
+        context.opening_identity = self.opening
+        context.open_position_url = self.opening.canonical_opening_url
+        context.opening_selection_evidence = OpeningSelectionEvidence(
+            provider="ashby",
+            tenant="acme",
+            canonical_board_url="https://jobs.ashbyhq.com/acme",
+            canonical_opening_url="https://jobs.ashbyhq.com/acme/role-123",
+            title="Software Engineer",
+            location=None,
+            inventory_scope="unknown",
+            inventory_complete=False,
+            candidate_count=8,
+        )
+
+        execution = ResultValidationStage().run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(execution.result.reason_code, "RESULT_IDENTITY_MISMATCH")
+        self.assertIn("OPENING_LOCATION_UNVERIFIED", execution.trace["issues"])
 
 
 if __name__ == "__main__":

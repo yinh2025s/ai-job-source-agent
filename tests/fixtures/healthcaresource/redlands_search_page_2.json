@@ -1,0 +1,20 @@
+{
+  "jobs": [
+    {
+      "id": "Y8R-Q9nnf0q7WsU8w1pP6g",
+      "title": "New Graduate Registered Nurse (RN)",
+      "isInternalOnly": false,
+      "hasOpening": true,
+      "organization": "Community Hospital - Nursing Education",
+      "city": "Redlands",
+      "state": "CA",
+      "zip": "92373"
+    }
+  ],
+  "meta": {
+    "page": 2,
+    "perPage": 2,
+    "totalJobs": 3,
+    "totalPages": 2
+  }
+}

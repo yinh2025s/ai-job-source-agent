@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
+from .browser_interaction import BrowserInteraction
 from .evidence_scope import EvidenceScopeRef
 from .models import PIPELINE_STAGES
 from .outcome_tape import (
@@ -36,6 +37,13 @@ class ScopedReplayController:
         self._active_fetcher: OutcomeTapeFetcher | None = None
         self._completed_stages: set[str] = set()
 
+    @property
+    def supports_forced_render(self) -> bool:
+        return bool(
+            self._active_fetcher is not None
+            and self._active_fetcher.supports_forced_render
+        )
+
     def begin_stage(
         self,
         attempt_id: str,
@@ -61,10 +69,17 @@ class ScopedReplayController:
         url: str,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
     ) -> Page:
         if self._active_fetcher is None:
             raise _divergence("Scoped replay received a request outside an active stage")
-        return self._active_fetcher.fetch(url, data=data, headers=headers)
+        return self._active_fetcher.fetch(
+            url,
+            data=data,
+            headers=headers,
+            interaction=interaction,
+        )
 
     def finalize(self) -> EvidenceScopeRef:
         if self._active_stage is None or self._active_fetcher is None:

@@ -1,5 +1,6 @@
 import unittest
 
+from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.evidence_scope import EvidenceScopeRef
 from job_source_agent.outcome_tape import (
     OFFLINE_TAPE_DIVERGENCE,
@@ -15,31 +16,63 @@ from job_source_agent.web import FetchError
 class ScopedReplayControllerTests(unittest.TestCase):
     execution_fingerprint = "a" * 64
 
-    def tape(self, stage, url, *, attempt):
-        entry = PageOutcomeTapeEntry(
-            snapshot_store_id="snapshot-store-replay",
-            scope_id=("b" if stage == "career_discovery" else "c") * 64,
-            capture_attempt_id=attempt,
-            execution_fingerprint=self.execution_fingerprint,
-            stage=stage,
-            request_ordinal=1,
-            request=build_request_identity(url),
-            page_url=url,
-            html=f"<p>{stage}</p>",
-            final_url=url,
-        )
+    def tape(self, stage, url, *, attempt, interaction=None, count=1):
+        entries = [
+            PageOutcomeTapeEntry(
+                snapshot_store_id="snapshot-store-replay",
+                scope_id=("b" if stage == "career_discovery" else "c") * 64,
+                capture_attempt_id=attempt,
+                execution_fingerprint=self.execution_fingerprint,
+                stage=stage,
+                request_ordinal=ordinal,
+                request=build_request_identity(url, interaction=interaction),
+                page_url=url,
+                html=f"<p>{stage}</p>",
+                final_url=url,
+            )
+            for ordinal in range(1, count + 1)
+        ]
+        entry = entries[0]
         scope = EvidenceScopeRef(
             snapshot_store_id=entry.snapshot_store_id,
             scope_id=entry.scope_id,
             capture_attempt_id=attempt,
             execution_fingerprint=self.execution_fingerprint,
             stage=stage,
-            request_count=1,
-            records_sha256=outcome_records_sha256([entry]),
+            request_count=count,
+            records_sha256=outcome_records_sha256(entries),
             first_sequence=1,
-            last_sequence=1,
+            last_sequence=count,
         )
-        return OutcomeTape(scope, [entry])
+        return OutcomeTape(scope, entries)
+
+    def test_forwards_forced_render_capability_for_active_tape(self):
+        url = "https://www.acorns.com/career-opportunities"
+        controller = ScopedReplayController(
+            {
+                "career_discovery": self.tape(
+                    "career_discovery",
+                    url,
+                    attempt="capture-attempt-old",
+                    count=2,
+                )
+            },
+            execution_fingerprint=self.execution_fingerprint,
+        )
+
+        self.assertFalse(controller.supports_forced_render)
+        controller.begin_stage(
+            "attempt-current-001",
+            self.execution_fingerprint,
+            "career_discovery",
+        )
+        self.assertFalse(controller.supports_forced_render)
+        controller.fetch(url)
+        self.assertTrue(controller.supports_forced_render)
+        controller.fetch(url)
+        self.assertFalse(controller.supports_forced_render)
+        controller.finalize()
+        self.assertFalse(controller.supports_forced_render)
 
     def test_stage_boundaries_select_exact_tape_and_preserve_source_scope(self):
         career_url = "https://example.com/careers"
@@ -126,6 +159,39 @@ class ScopedReplayControllerTests(unittest.TestCase):
                 self.execution_fingerprint,
                 "opening_match",
             )
+
+    def test_forwards_interaction_to_stage_tape_identity(self):
+        url = "https://example.com/careers"
+        interaction = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="q",
+            target_title="Secret Staff Engineer",
+            submit_text="Search",
+        )
+        controller = ScopedReplayController(
+            {
+                "career_discovery": self.tape(
+                    "career_discovery",
+                    url,
+                    attempt="capture-attempt-old",
+                    interaction=interaction,
+                )
+            },
+            execution_fingerprint=self.execution_fingerprint,
+        )
+        controller.begin_stage(
+            "attempt-current-001",
+            self.execution_fingerprint,
+            "career_discovery",
+        )
+
+        with self.assertRaises(FetchError):
+            controller.fetch(url)
+        self.assertEqual(
+            controller.fetch(url, interaction=interaction).html,
+            "<p>career_discovery</p>",
+        )
+        controller.finalize()
 
 
 if __name__ == "__main__":

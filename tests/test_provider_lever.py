@@ -28,10 +28,20 @@ class LeverAdapterTests(unittest.TestCase):
         self.assertEqual("lever", ADAPTER.name)
         self.assertTrue(ADAPTER.supports_listing)
 
-    def test_recognizes_jobs_lever_co_only(self):
+    def test_recognizes_canonical_jobs_and_public_inventory_urls_only(self):
         self.assertTrue(self.adapter.recognizes("https://jobs.lever.co/acme"))
         self.assertTrue(self.adapter.recognizes("https://jobs.lever.co/acme/123"))
-        self.assertFalse(self.adapter.recognizes("https://api.lever.co/v0/postings/acme"))
+        self.assertTrue(self.adapter.recognizes("https://api.lever.co/v0/postings/acme"))
+        self.assertTrue(
+            self.adapter.recognizes(
+                "https://api.lever.co/v0/postings/acme?mode=json"
+            )
+        )
+        self.assertFalse(self.adapter.recognizes("http://jobs.lever.co/acme"))
+        self.assertFalse(self.adapter.recognizes("https://user@jobs.lever.co/acme"))
+        self.assertFalse(self.adapter.recognizes("https://jobs.lever.co:8443/acme"))
+        self.assertFalse(self.adapter.recognizes("https://api.lever.co/v0/postings/acme/1"))
+        self.assertFalse(self.adapter.recognizes("https://api.lever.co/v0/postings/acme?token=x"))
         self.assertFalse(self.adapter.recognizes("https://jobs.lever.co.example.com/acme"))
         self.assertFalse(self.adapter.recognizes("https://example.com/jobs.lever.co/acme"))
         self.assertFalse(self.adapter.recognizes("https://[invalid"))
@@ -49,6 +59,18 @@ class LeverAdapterTests(unittest.TestCase):
         )
         self.assertIsNone(self.adapter.identify_board("https://jobs.lever.co/"))
         self.assertIsNone(self.adapter.identify_board("https://example.com/acme"))
+
+        api_board = self.adapter.identify_board(
+            "https://api.lever.co/v0/postings/jushico"
+        )
+        self.assertEqual(
+            api_board,
+            JobBoard(
+                url="https://jobs.lever.co/jushico",
+                provider="lever",
+                identifier="jushico",
+            ),
+        )
 
     def test_lists_and_normalizes_postings(self):
         fetcher = StubFetcher(

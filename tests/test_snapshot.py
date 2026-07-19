@@ -6,6 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import job_source_agent.snapshot as snapshot_module
+from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.snapshot import (
     SnapshotStore,
     SnapshottingFetcher,
@@ -43,6 +44,18 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("secret-value", sanitized)
         self.assertNotIn("public-session-token", sanitized)
         self.assertNotIn("private-auth-token", sanitized)
+
+    def test_sanitize_snapshot_body_redacts_adp_myjobs_token(self):
+        raw = (
+            '{"domain":"examplecareers","myJobsToken":"temporary-public-routing-token",'
+            '"orgoid":"public-org"}'
+        )
+
+        sanitized = sanitize_snapshot_body(raw)
+
+        self.assertNotIn("temporary-public-routing-token", sanitized)
+        self.assertIn('"myJobsToken":"[REDACTED]"', sanitized)
+        self.assertIn('"orgoid":"public-org"', sanitized)
         self.assertNotIn("csrf-secret", sanitized)
         self.assertNotIn("abcdefghijklmnop", sanitized)
         self.assertIn("[REDACTED]", sanitized)
@@ -172,7 +185,7 @@ class SnapshotTests(unittest.TestCase):
         class FakeFetcher:
             timeout = 1
 
-            def fetch(self, url, data=None, headers=None):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
                 return Page(url=url, final_url=url, html="<html>ok</html>", source="fake")
 
         with tempfile.TemporaryDirectory() as directory:
@@ -193,6 +206,49 @@ class SnapshotTests(unittest.TestCase):
         self.assertEqual(record["schema_version"], 2)
         self.assertNotIn("scope_id", record)
         self.assertNotIn("request_ordinal", record)
+
+    def test_interaction_snapshot_identities_are_isolated_and_privacy_safe(self):
+        interaction = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="q",
+            target_title="Secret Staff Engineer",
+            submit_text="Search",
+        )
+        url = "https://example.com/jobs"
+        with tempfile.TemporaryDirectory() as directory:
+            store = SnapshotStore(directory)
+            ordinary = store.write_page(Page(url=url, html="ordinary", source="live"))
+            interactive = store.write_page(
+                Page(url=url, html="interactive", source="live"),
+                interaction=interaction,
+            )
+            failure = store.write_failure(
+                FetchError("timeout", reason_code="NETWORK_TIMEOUT", retryable=True),
+                url,
+                interaction=interaction,
+            )
+            replay = Fetcher(fixtures_dir=store.fixtures_dir, offline=True)
+            ordinary_page = replay.fetch(url)
+            interactive_page = replay.fetch(url, interaction=interaction)
+            metadata = (
+                Path(store.index_path).read_text(encoding="utf-8")
+                + Path(store.failure_index_path).read_text(encoding="utf-8")
+            )
+
+        fingerprint = interaction.fingerprint()
+        self.assertNotEqual(ordinary.path, interactive.path)
+        self.assertEqual(ordinary_page.html, "ordinary")
+        self.assertEqual(interactive_page.html, "interactive")
+        self.assertNotIn("x-job-source-agent-interaction", ordinary.request["semantic_headers"])
+        self.assertEqual(
+            interactive.request["semantic_headers"]["x-job-source-agent-interaction"],
+            fingerprint,
+        )
+        self.assertEqual(
+            failure.request["semantic_headers"]["x-job-source-agent-interaction"],
+            fingerprint,
+        )
+        self.assertNotIn(interaction.target_title, metadata)
 
     def test_snapshot_source_strips_runtime_paths(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -333,7 +389,7 @@ class SnapshotTests(unittest.TestCase):
         class FailingFetcher:
             timeout = 1
 
-            def fetch(self, url, data=None, headers=None):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
                 raise FetchError(
                     "HTTP Error 403: Forbidden",
                     status=403,
@@ -358,7 +414,7 @@ class SnapshotTests(unittest.TestCase):
         class MustNotFetch:
             timeout = 1
 
-            def fetch(self, url, data=None, headers=None):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
                 raise AssertionError("guarded request must not reach the network")
 
         with tempfile.TemporaryDirectory() as directory:

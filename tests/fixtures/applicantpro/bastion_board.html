@@ -1,0 +1,25 @@
+<!doctype html>
+<html>
+  <head><title>Job Listings - Bastion Technologies Jobs</title></head>
+  <body>
+    <div id="job_listings"></div>
+    <script>
+      mountingData.courierCurrentRouteData = {
+        "domain_id": "4242",
+        "career_site_name": "Bastion Technologies",
+        "organization_id": "1701",
+        "user_id": 0
+      };
+    </script>
+    <script>
+      window.bootstrapVue("#job_listings", ["JobListings"], {
+        componentData: {
+          organizationId: 1701,
+          domainId: 4242,
+          domainName: "applicantpro.com",
+          subdomainName: "bastiontechnologies"
+        }
+      });
+    </script>
+  </body>
+</html>

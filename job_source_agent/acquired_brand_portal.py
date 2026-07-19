@@ -220,6 +220,12 @@ def parse_acquired_brand_portal_evidence(
     evidence_url = _safe_portal_url(page.final_url or page.url, base_url=None)
     if not expected_key or evidence_url is None or len(page.html) > _MAX_HTML_CHARS:
         return None
+    folded_html = page.html.casefold()
+    if "search all jobs" not in folded_html or not any(
+        marker in folded_html
+        for marker in (" is now a ", " is now an ", " was acquired by ")
+    ):
+        return None
 
     parser = _PortalParser()
     try:

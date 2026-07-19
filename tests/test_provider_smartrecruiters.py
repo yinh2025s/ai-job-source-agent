@@ -220,10 +220,111 @@ class SmartRecruitersAdapterTests(unittest.TestCase):
         adapter = SmartRecruitersAdapter()
 
         self.assertTrue(adapter.recognizes("https://jobs.smartrecruiters.com/AcmeCorp"))
+        self.assertTrue(adapter.recognizes("https://careers.smartrecruiters.com/AcmeCorp"))
         self.assertFalse(adapter.recognizes("https://api.smartrecruiters.com/v1/companies/AcmeCorp"))
         self.assertFalse(adapter.recognizes("https://smartrecruiters.com.example.com/AcmeCorp"))
         self.assertFalse(adapter.recognizes("https://user@jobs.smartrecruiters.com/AcmeCorp"))
         self.assertFalse(adapter.recognizes("https://jobs.smartrecruiters.com:8443/AcmeCorp"))
+
+    def test_canonicalizes_storefront_board_detail_and_query_variants(self):
+        adapter = SmartRecruitersAdapter()
+        urls = (
+            "https://careers.smartrecruiters.com/AcmeCorp",
+            "https://careers.smartrecruiters.com/AcmeCorp/engineering/job-1",
+            "https://careers.smartrecruiters.com/AcmeCorp?oga=true#openings",
+        )
+
+        for url in urls:
+            with self.subTest(url=url):
+                board = adapter.identify_board(url)
+                self.assertIsNotNone(board)
+                self.assertEqual(board.identifier, "AcmeCorp")
+                self.assertEqual(
+                    board.url,
+                    "https://jobs.smartrecruiters.com/AcmeCorp",
+                )
+                self.assertTrue(board.replay_safe)
+
+    def test_storefront_board_uses_native_inventory_with_location_evidence(self):
+        adapter = SmartRecruitersAdapter()
+        board = adapter.identify_board(
+            "https://careers.smartrecruiters.com/AcmeApi?oga=true"
+        )
+        fetcher = _StaticFetcher(json.dumps({
+            "totalFound": 1,
+            "limit": 100,
+            "content": [{
+                "name": "ML Engineer",
+                "id": "job-1",
+                "company": {"identifier": "AcmeApi"},
+                "location": {"fullLocation": "Paris, France"},
+            }],
+        }))
+
+        result = adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["tenant_identity_verified"])
+        self.assertEqual(result.candidates[0].location, "Paris, France")
+        self.assertEqual(
+            result.candidates[0].url,
+            "https://jobs.smartrecruiters.com/AcmeApi/job-1",
+        )
+
+    def test_identifies_verified_same_tenant_storefront_page(self):
+        adapter = SmartRecruitersAdapter()
+        page = Page(
+            url="https://careers.smartrecruiters.com/AcmeCorp?oga=true",
+            final_url="https://careers.smartrecruiters.com/acmecorp/engineering",
+            html="<html></html>",
+        )
+
+        board = adapter.identify_board_from_page(page)
+
+        self.assertIsNotNone(board)
+        self.assertEqual(board.identifier, "acmecorp")
+        self.assertEqual(board.url, "https://jobs.smartrecruiters.com/acmecorp")
+
+    def test_rejects_unsafe_or_tenantless_storefront_urls(self):
+        adapter = SmartRecruitersAdapter()
+        urls = (
+            "https://careers.smartrecruiters.com/",
+            "http://careers.smartrecruiters.com/AcmeCorp",
+            "https://user@careers.smartrecruiters.com/AcmeCorp",
+            "https://careers.smartrecruiters.com:8443/AcmeCorp",
+            "https://careers.smartrecruiters.com/%2Fetc",
+            "https://careers.smartrecruiters.com/Acme.Corp",
+            "https://careers.smartrecruiters.com.evil.example/AcmeCorp",
+        )
+
+        for url in urls:
+            with self.subTest(url=url):
+                self.assertFalse(adapter.recognizes(url))
+                self.assertIsNone(adapter.identify_board(url))
+
+    def test_rejects_cross_tenant_and_cross_host_storefront_redirects(self):
+        adapter = SmartRecruitersAdapter()
+        pages = (
+            Page(
+                url="https://careers.smartrecruiters.com/AcmeCorp",
+                final_url="https://careers.smartrecruiters.com/OtherCorp",
+                html="<html></html>",
+            ),
+            Page(
+                url="https://careers.smartrecruiters.com/AcmeCorp",
+                final_url="https://evil.example/AcmeCorp",
+                html=widget_html("AcmeCorp"),
+            ),
+            Page(
+                url="https://company.example/careers",
+                final_url="https://careers.smartrecruiters.com/AcmeCorp",
+                html="<html></html>",
+            ),
+        )
+
+        for page in pages:
+            with self.subTest(url=page.url, final_url=page.final_url):
+                self.assertIsNone(adapter.identify_board_from_page(page))
 
     def test_identifies_company_from_board_or_detail_url(self):
         adapter = SmartRecruitersAdapter()

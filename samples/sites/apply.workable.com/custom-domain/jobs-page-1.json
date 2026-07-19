@@ -1,0 +1,12 @@
+{
+  "total": 2,
+  "results": [
+    {
+      "shortcode": "FIRST2001",
+      "title": "Manufacturing Engineer",
+      "location": {"country": "United Kingdom", "city": "Oxford"},
+      "accountUid": "12345678-1234-4123-8123-123456789abc"
+    }
+  ],
+  "nextPage": "custom-domain-page-2"
+}

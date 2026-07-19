@@ -1,0 +1,42 @@
+{
+  "jobs": [
+    {
+      "id": "a1RpXN2MPEOWZT1PXB5NrA",
+      "title": "Registered Nurse (RN) - Emergency",
+      "summary": "Public opening summary",
+      "isInternalOnly": false,
+      "organization": "Community Hospital - Emergency Services",
+      "street": "350 Example Blvd",
+      "city": "Redlands",
+      "state": "CA",
+      "zip": "92373",
+      "onePage": false,
+      "hasOpening": true,
+      "lastOpening": "2026-07-16T14:06:46Z",
+      "validThrough": null,
+      "publicFieldValues": []
+    },
+    {
+      "id": "SNV6gJWMv0qBtDueN67MeA",
+      "title": "Registered Nurse (RN) - Observation",
+      "summary": "Public opening summary",
+      "isInternalOnly": false,
+      "organization": "Community Hospital - Observation",
+      "street": "350 Example Blvd",
+      "city": "Redlands",
+      "state": "CA",
+      "zip": "92373",
+      "onePage": false,
+      "hasOpening": true,
+      "lastOpening": "2026-07-16T14:06:46Z",
+      "validThrough": null,
+      "publicFieldValues": []
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "perPage": 2,
+    "totalJobs": 3,
+    "totalPages": 2
+  }
+}

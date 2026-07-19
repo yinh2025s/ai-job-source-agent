@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 import ipaddress
+import json
 import re
 from collections.abc import Callable
+from dataclasses import dataclass
 from html.parser import HTMLParser
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlencode, urlparse
 
 from .contracts import FetchClient
 from .first_party_inventory import (
@@ -12,6 +14,7 @@ from .first_party_inventory import (
     ProviderBoardIdentity,
     probe_first_party_job_inventory,
 )
+from .generic_opening_inventory import parse_dynamic_inventory_payload
 from .web import FetchError, Page, RawLink, domain_of, normalize_url
 
 
@@ -38,6 +41,25 @@ _ANGULAR_ROUTE_LABEL = re.compile(
     rf'''(?P<label>[^"']*\b(?:careers?|jobs?|open\s+positions)\b[^"']*)["']''',
     flags=re.I,
 )
+_MAX_DYNAMIC_ENDPOINTS = 2
+_MAX_DYNAMIC_PAGE_SIZE = 1_000
+_MAX_NAMED_JOB_DESTINATIONS = 32
+_NAMED_JOB_DESTINATION = re.compile(
+    r"\{[^{}]{0,500}?\bname\s*:\s*(?:\"(?P<label_d>[^\"]{1,120})\"|"
+    r"'(?P<label_s>[^']{1,120})')"
+    r"[^{}]{0,500}?\burl\s*:\s*(?:\"(?P<url_d>https://[^\"]{1,2000})\"|"
+    r"'(?P<url_s>https://[^']{1,2000})')"
+    r"[^{}]{0,500}?\}",
+    flags=re.I,
+)
+
+
+@dataclass(frozen=True)
+class _DynamicInventoryDeclaration:
+    endpoint_url: str
+    detail_url_template: str | None
+    complete_hint: bool
+    asset_url: str
 
 
 def discover_first_party_career_navigation(
@@ -259,6 +281,7 @@ def probe_first_party_provider_assets(
     bundles: list[str] = []
     asset_sources: list[AssetSource] = []
     provider_urls: list[str] = []
+    job_destinations: list[dict[str, str]] = []
     for asset_url in asset_urls[:max_assets]:
         try:
             asset_page = fetcher.fetch(asset_url)
@@ -271,6 +294,7 @@ def probe_first_party_provider_assets(
         bundles.append(bundle)
         asset_sources.append(AssetSource(url=asset_url, body=bundle))
         provider_urls.extend(_recognized_provider_urls(bundle, recognizes_provider_url))
+        job_destinations.extend(_named_job_destinations(bundle, asset_url))
         if provider_urls:
             break
 
@@ -283,9 +307,18 @@ def probe_first_party_provider_assets(
             asset_sources,
             provider_board_identity,
         )
-        if inventory_probe is None:
-            return page, None
-        return inventory_probe.page, inventory_probe.trace
+        if inventory_probe is not None and inventory_probe.trace.get("status") == "verified":
+            return inventory_probe.page, inventory_probe.trace
+        dynamic_probe = _probe_public_dynamic_inventory(
+            fetcher,
+            page,
+            asset_sources,
+        )
+        if dynamic_probe is not None:
+            return dynamic_probe
+        if inventory_probe is not None:
+            return inventory_probe.page, inventory_probe.trace
+        return page, None
     return (
         Page(
             url=page.url,
@@ -298,8 +331,322 @@ def probe_first_party_provider_assets(
             "method": "first_party_provider_asset",
             "asset_urls": fetched,
             "provider_urls": list(dict.fromkeys(provider_urls)),
+            "job_destinations": _dedupe_named_job_destinations(job_destinations),
         },
     )
+
+
+def _named_job_destinations(bundle: str, asset_url: str) -> list[dict[str, str]]:
+    destinations: list[dict[str, str]] = []
+    for match in _NAMED_JOB_DESTINATION.finditer(bundle[:5_000_000]):
+        label = " ".join((match.group("label_d") or match.group("label_s")).split())
+        raw_url = (match.group("url_d") or match.group("url_s")).replace(r"\/", "/")
+        try:
+            url = normalize_url(raw_url)
+            parsed = urlparse(url)
+            port = parsed.port
+        except (TypeError, ValueError):
+            continue
+        if (
+            parsed.scheme != "https"
+            or not _is_public_host(parsed.hostname)
+            or parsed.username is not None
+            or parsed.password is not None
+            or port not in {None, 443}
+        ):
+            continue
+        destinations.append(
+            {"label": label, "url": url, "asset_url": asset_url}
+        )
+        if len(destinations) >= _MAX_NAMED_JOB_DESTINATIONS:
+            break
+    # A single object can be unrelated application configuration. A coherent
+    # list of destinations is the evidence that this is a job-destination map.
+    return destinations if len(destinations) >= 2 else []
+
+
+def _dedupe_named_job_destinations(
+    destinations: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    deduped: list[dict[str, str]] = []
+    seen: set[tuple[str, str]] = set()
+    for destination in destinations:
+        identity = (destination["label"].casefold(), destination["url"])
+        if identity in seen:
+            continue
+        seen.add(identity)
+        deduped.append(destination)
+    return deduped[:_MAX_NAMED_JOB_DESTINATIONS]
+
+
+def _probe_public_dynamic_inventory(
+    fetcher: FetchClient,
+    page: Page,
+    assets: list[AssetSource],
+) -> tuple[Page, dict] | None:
+    declarations: list[_DynamicInventoryDeclaration] = []
+    for asset in assets:
+        declarations.extend(_dynamic_inventory_declarations(page, asset))
+    declarations = list(
+        {item.endpoint_url: item for item in declarations}.values()
+    )[:_MAX_DYNAMIC_ENDPOINTS]
+    if not declarations:
+        return None
+
+    attempts: list[dict] = []
+    for declaration in declarations:
+        try:
+            response = fetcher.fetch(declaration.endpoint_url)
+        except (FetchError, OSError, TimeoutError) as exc:
+            attempts.append(
+                {
+                    "endpoint_url": declaration.endpoint_url,
+                    "status": "fetch_failed",
+                    "error_type": type(exc).__name__,
+                }
+            )
+            continue
+        response_url = response.final_url or response.url
+        try:
+            response_matches = normalize_url(response_url) == normalize_url(
+                declaration.endpoint_url
+            )
+        except (TypeError, ValueError):
+            response_matches = False
+        if not response_matches:
+            attempts.append(
+                {
+                    "endpoint_url": declaration.endpoint_url,
+                    "status": "redirect_rejected",
+                }
+            )
+            continue
+        parsed = parse_dynamic_inventory_payload(
+            response.html or "",
+            endpoint_url=declaration.endpoint_url,
+            detail_url_template=declaration.detail_url_template,
+            complete_hint=declaration.complete_hint,
+        )
+        if not parsed.inventory_complete or not parsed.candidates:
+            attempts.append(
+                {
+                    "endpoint_url": declaration.endpoint_url,
+                    "status": "incomplete_or_invalid_payload",
+                    "candidate_count": len(parsed.candidates),
+                    "reported_total": parsed.total,
+                }
+            )
+            continue
+        jobs = []
+        for candidate in parsed.candidates:
+            job = {"title": candidate.title, "url": candidate.url}
+            if candidate.location:
+                job["location"] = candidate.location
+            jobs.append(job)
+        envelope = json.dumps(
+            {
+                "endpoint_url": declaration.endpoint_url,
+                "inventory_complete": True,
+                "jobs": jobs,
+                "total": len(jobs),
+            },
+            ensure_ascii=True,
+            separators=(",", ":"),
+        )
+        enriched = Page(
+            url=page.url,
+            final_url=page.final_url,
+            html=(
+                '<script type="application/json" data-dynamic-job-inventory>'
+                f"{envelope}</script>\n{page.html}"
+            ),
+            source=f"{page.source}|first_party_dynamic_inventory",
+            artifacts=page.artifacts,
+        )
+        return enriched, {
+            "method": "first_party_declared_inventory",
+            "transport": "public_same_origin_get",
+            "status": "verified",
+            "asset_urls": [declaration.asset_url],
+            "endpoint_url": declaration.endpoint_url,
+            "inventory_complete": True,
+            "inventory_count": len(jobs),
+            "response_source": response.source,
+            "attempts": attempts,
+        }
+    return page, {
+        "method": "first_party_declared_inventory",
+        "transport": "public_same_origin_get",
+        "status": "unverified",
+        "asset_urls": [item.asset_url for item in declarations],
+        "endpoint_url": declarations[0].endpoint_url,
+        "inventory_complete": False,
+        "inventory_count": None,
+        "attempts": attempts,
+    }
+
+
+def _dynamic_inventory_declarations(
+    page: Page,
+    asset: AssetSource,
+) -> list[_DynamicInventoryDeclaration]:
+    raw_body = asset.body[:5_000_000]
+    body = _strip_javascript_comments(raw_body)
+    # Regex literals can resemble line comments to the lightweight stripper.
+    # Fall back only for single-line minified bundles that it mostly erased.
+    if raw_body.count("\n") <= 1 and len(body) * 2 < len(raw_body):
+        body = raw_body
+    page_url = page.final_url or page.url
+    declarations: list[_DynamicInventoryDeclaration] = []
+
+    api_bases = re.findall(r'["\'](https://[^"\']{1,300}/api)/?["\']', body)
+    list_routes = re.findall(
+        r'\.get\(\s*["\'](?P<route>/[^"\']{1,180}[?&][^"\']{0,120}=)'
+        r'["\']\s*\+\s*[A-Za-z_$][A-Za-z0-9_$]{0,79}\s*\)',
+        body,
+    )
+    propagated_values = set()
+    for match in re.finditer(
+        r'\bvar\s+(?P<name>[A-Za-z_$][A-Za-z0-9_$]{0,79})\s*=\s*'
+        r'["\'](?P<value>[A-Za-z0-9_-]{1,20})["\'];(?P<suffix>[\s\S]{0,500})',
+        body,
+    ):
+        if re.search(
+            rf'\.getAll\(\s*{re.escape(match.group("name"))}\s*\)',
+            match.group("suffix"),
+        ):
+            propagated_values.add(match.group("value"))
+    full_list_values = propagated_values or set(
+        re.findall(r'\.getAll\(\s*["\']([A-Za-z0-9_-]{1,20})["\']\s*\)', body)
+    )
+    if len(set(api_bases)) == 1 and len(set(list_routes)) == 1 and len(full_list_values) == 1:
+        route = list_routes[0] + next(iter(full_list_values))
+        endpoint = _safe_dynamic_endpoint(
+            f"{api_bases[0].rstrip('/')}/{route.lstrip('/')}", page_url
+        )
+        detail_template = _declared_id_detail_template(body, page_url)
+        if endpoint is not None and detail_template is not None:
+            declarations.append(
+                _DynamicInventoryDeclaration(
+                    endpoint,
+                    detail_template,
+                    True,
+                    asset.url,
+                )
+            )
+
+    jtable_endpoint = re.search(
+        r'\burl\s*:\s*["\'](?P<path>/[^"\']{1,180}(?:search|jobs?)'
+        r'[^"\']{0,100}\?)["\']\s*\+\s*[^;]{0,200}\.toString\(\)',
+        body,
+        flags=re.I,
+    )
+    jtable_evidence = all(
+        marker in body
+        for marker in ("jtStartIndex", "jtPageSize", "dataType: \"json\"")
+    ) and bool(re.search(r'\.jtable\(\s*\{[\s\S]{0,8000}?listAction\s*:', body))
+    if jtable_endpoint is not None and jtable_evidence:
+        query = urlencode(
+            {"jtStartIndex": 0, "jtPageSize": _MAX_DYNAMIC_PAGE_SIZE}
+        )
+        endpoint = _safe_dynamic_endpoint(
+            f"{jtable_endpoint.group('path')}{query}", page_url
+        )
+        detail_template = _declared_slug_id_detail_template(body, page_url)
+        if endpoint is not None and detail_template is not None:
+            declarations.append(
+                _DynamicInventoryDeclaration(
+                    endpoint,
+                    detail_template,
+                    False,
+                    asset.url,
+                )
+            )
+    return declarations
+
+
+def _declared_id_detail_template(body: str, page_url: str) -> str | None:
+    routes = set(
+        re.findall(
+            r'\bpath\s*:\s*["\'](/?[^"\']{0,120}job/:id)["\']',
+            body,
+            flags=re.I,
+        )
+    )
+    if not routes:
+        literal_bases = set(
+            re.findall(
+                r'["\']((?:https://[^"\']{1,240})?/job/)["\']',
+                body,
+                flags=re.I,
+            )
+        )
+        safe_templates = {
+            template
+            for base in literal_bases
+            if (template := _safe_detail_template(f"{base}{{id}}", page_url))
+            is not None
+        }
+        return safe_templates.pop() if len(safe_templates) == 1 else None
+    shortest_length = min(len(route) for route in routes)
+    shortest = {route for route in routes if len(route) == shortest_length}
+    if len(shortest) != 1:
+        return None
+    route = shortest.pop()
+    if not route.startswith("/"):
+        route = "/" + route
+    return _safe_detail_template(route.replace(":id", "{id}"), page_url)
+
+
+def _declared_slug_id_detail_template(body: str, page_url: str) -> str | None:
+    matches = re.findall(
+        r'`(?P<prefix>/[^`$]{1,160})\$\{(?P<slug>[A-Za-z_$][A-Za-z0-9_$]*)\}'
+        r'/\$\{(?P<identifier>[A-Za-z_$][A-Za-z0-9_$]*)\}`',
+        body,
+    )
+    templates = {
+        f"{prefix}{{slug}}/{{id}}"
+        for prefix, _slug, _identifier in matches
+        if "job" in prefix.casefold()
+    }
+    if len(templates) != 1:
+        return None
+    return _safe_detail_template(templates.pop(), page_url)
+
+
+def _safe_dynamic_endpoint(value: str, page_url: str) -> str | None:
+    try:
+        endpoint = normalize_url(value, page_url)
+        parsed = urlparse(endpoint)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not _is_safe_same_site_asset(endpoint, page_url)
+        or (parsed.hostname or "").casefold()
+        != (urlparse(page_url).hostname or "").casefold()
+        or parsed.fragment
+    ):
+        return None
+    return endpoint
+
+
+def _safe_detail_template(value: str, page_url: str) -> str | None:
+    try:
+        template = normalize_url(value, page_url)
+        parsed = urlparse(template)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not _is_safe_same_site_asset(template, page_url)
+        or (parsed.hostname or "").casefold()
+        != (urlparse(page_url).hostname or "").casefold()
+        or parsed.query
+        or parsed.fragment
+        or set(re.findall(r"\{[^{}]+\}", template))
+        - {"{id}", "{slug}"}
+    ):
+        return None
+    return template
 
 
 def _first_party_script_assets(page: Page, *, max_assets: int) -> list[str]:
@@ -318,7 +665,7 @@ def _first_party_script_assets(page: Page, *, max_assets: int) -> list[str]:
             continue
         if _is_safe_same_site_asset(asset_url, page_url) and asset_url not in asset_urls:
             asset_urls.append(asset_url)
-    asset_urls.sort(key=lambda url: _provider_asset_priority(url, ""))
+    asset_urls.sort(key=_navigation_asset_priority)
     return asset_urls[:max_assets]
 
 
@@ -478,10 +825,36 @@ def _provider_asset_priority(url: str, route_token: str) -> tuple[int, str]:
     filename = urlparse(url).path.rsplit("/", 1)[-1].casefold()
     if route_token and route_token in filename:
         return 0, filename
+    if "job" in filename and any(
+        token in filename for token in ("search", "result", "listing", "inventory")
+    ):
+        return 0, filename
     if filename.startswith("page-"):
+        return 1, filename
+    if filename.startswith("main.") or filename.startswith("main-"):
         return 1, filename
     if filename.startswith("index-"):
         return 2, filename
+    if filename.startswith(("jquery", "bootstrap", "lity", "polyfills", "vendor")):
+        return 4, filename
+    return 3, filename
+
+
+def _navigation_asset_priority(url: str) -> tuple[int, str]:
+    """Prefer route-bearing app chunks over framework and library bundles."""
+
+    path = urlparse(url).path.casefold()
+    filename = path.rsplit("/", 1)[-1]
+    if "/pages/" in path or filename.startswith(("page-", "index-")):
+        return 0, filename
+    if filename.startswith("_app-") or re.fullmatch(
+        r"\d+(?:[-.][a-z0-9]+)*\.js", filename
+    ):
+        return 1, filename
+    if filename.startswith("main.") or filename.startswith("main-"):
+        return 2, filename
+    if filename.startswith(("jquery", "bootstrap", "lity", "polyfills", "vendor")):
+        return 4, filename
     return 3, filename
 
 

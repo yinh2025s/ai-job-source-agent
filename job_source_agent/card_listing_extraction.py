@@ -14,7 +14,9 @@ MAX_TEXT_CHARS = 500_000
 MAX_CANDIDATES = 500
 MAX_CARD_LINKS = 12
 MAX_CARD_TITLES = 6
+MAX_CARD_LOCATIONS = 4
 MAX_TITLE_CHARS = 200
+MAX_LOCATION_CHARS = 160
 
 _VOID_TAGS = {
     "area",
@@ -55,6 +57,21 @@ _CARD_PRESENTATION_MARKER = re.compile(
 _TITLE_MARKER = re.compile(
     r"(?:^|[-_\s])(?:job|role|position|opening|career(?:[-_\s]*blog)?|card)"
     r"[-_\s]*title(?:$|[-_\s])",
+    re.I,
+)
+_LOCATION_MARKER = re.compile(
+    r"(?:^|[-_\s])(?:job[-_\s]*)?location(?:$|[-_\s])",
+    re.I,
+)
+_MAP_PIN_MARKER = re.compile(r"(?:^|[-_\s])map[-_\s]*pin(?:$|[-_\s])", re.I)
+_UUID_DETAIL_PATH = re.compile(
+    r"^/(?:jobs?|roles?|careers?|openings?|positions?)/"
+    r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/?$",
+    re.I,
+)
+_NON_LOCATION_TEXT = re.compile(
+    r"(?:[$\u00a3\u20ac\u00a5]|\b(?:salary|compensation|per (?:hour|year)|"
+    r"full[- ]?time|part[- ]?time|posted|days? ago|hours? ago)\b)",
     re.I,
 )
 _HIDDEN_STYLE = re.compile(r"(?:^|;)\s*(?:display\s*:\s*none|visibility\s*:\s*hidden)\b", re.I)
@@ -132,9 +149,16 @@ class CardListingCandidate:
     url: str
     source_url: str
     origin: str = "parent_card"
+    location: str | None = None
 
     def as_raw_link(self) -> RawLink:
-        return RawLink(self.url, self.title, self.source_url, self.origin)
+        return RawLink(
+            self.url,
+            self.title,
+            self.source_url,
+            self.origin,
+            location=self.location,
+        )
 
 
 @dataclass
@@ -142,6 +166,8 @@ class _TextCapture:
     card: _Card
     fallback: bool = False
     chunks: list[str] = field(default_factory=list)
+    chars: int = 0
+    overflow: bool = False
 
 
 @dataclass
@@ -154,10 +180,12 @@ class _Card:
     titles: list[str] = field(default_factory=list)
     fallback_titles: list[str] = field(default_factory=list)
     anchors: list[tuple[str, str]] = field(default_factory=list)
+    locations: list[str] = field(default_factory=list)
     anchor_as_card: bool = False
     explicit_title_nodes: int = 0
     has_nested_card: bool = False
     title_overflow: bool = False
+    location_overflow: bool = False
 
 
 @dataclass
@@ -168,6 +196,7 @@ class _Element:
     navigation: bool = False
     card: _Card | None = None
     title_capture: _TextCapture | None = None
+    location_capture: _TextCapture | None = None
     anchor_capture: _AnchorCapture | None = None
 
 
@@ -194,6 +223,9 @@ class _CardParser(HTMLParser):
         inherited_block = bool(self.stack and self.stack[-1].blocked)
         blocked = inherited_block or _is_hidden(tag, values)
         marker = _attribute_marker(values)
+        icon_marker = " ".join(
+            (marker, values.get("data-lucide", ""), values.get("data-icon", ""))
+        )
         navigation = self._inside_navigation() or _is_navigation(tag, values)
         card = None
         parent = self._current_card()
@@ -213,8 +245,8 @@ class _CardParser(HTMLParser):
                     card = _Card()
 
         element = _Element(tag=tag, blocked=blocked, marker=marker, navigation=navigation, card=card)
+        owner = card or self._current_card()
         if not blocked:
-            owner = card or self._current_card()
             if owner is not None and (
                 tag in _TITLE_TAGS
                 or (owner.anchor_as_card and tag == "h1")
@@ -222,8 +254,17 @@ class _CardParser(HTMLParser):
                 or _TITLE_MARKER.search(marker)
             ):
                 element.title_capture = _TextCapture(owner, fallback=tag == "p")
+            if owner is not None and _LOCATION_MARKER.search(marker):
+                element.location_capture = _TextCapture(owner)
             if owner is not None and tag == "a" and values.get("href"):
                 element.anchor_capture = _AnchorCapture(owner, href=values["href"])
+        if (
+            owner is not None
+            and not inherited_block
+            and not navigation
+            and _MAP_PIN_MARKER.search(icon_marker)
+        ):
+            self._start_enclosing_span_location_capture(owner)
 
         if tag not in _VOID_TAGS:
             self.stack.append(element)
@@ -244,6 +285,8 @@ class _CardParser(HTMLParser):
         for element in self.stack:
             if element.title_capture is not None:
                 element.title_capture.chunks.append(value)
+            if element.location_capture is not None:
+                self._append_bounded_location(element.location_capture, value)
             if element.anchor_capture is not None:
                 element.anchor_capture.chunks.append(value)
         if len(data) > remaining:
@@ -279,6 +322,16 @@ class _CardParser(HTMLParser):
                     destination.append(title)
                 else:
                     element.title_capture.card.title_overflow = True
+        if element.location_capture is not None:
+            capture = element.location_capture
+            location = _clean_text(capture.chunks, MAX_LOCATION_CHARS)
+            if capture.overflow:
+                capture.card.location_overflow = True
+            elif location and _plausible_location(location):
+                if len(capture.card.locations) < MAX_CARD_LOCATIONS:
+                    capture.card.locations.append(location)
+                else:
+                    capture.card.location_overflow = True
         if element.anchor_capture is not None:
             anchor = element.anchor_capture
             text = _clean_text(anchor.chunks, MAX_TITLE_CHARS)
@@ -299,6 +352,25 @@ class _CardParser(HTMLParser):
 
     def _inside_navigation(self) -> bool:
         return any(element.navigation for element in self.stack)
+
+    def _start_enclosing_span_location_capture(self, owner: _Card) -> None:
+        for element in reversed(self.stack):
+            if element.card is not None and element.card is not owner:
+                return
+            if element.tag == "span":
+                if element.location_capture is None:
+                    element.location_capture = _TextCapture(owner)
+                return
+
+    @staticmethod
+    def _append_bounded_location(capture: _TextCapture, value: str) -> None:
+        remaining = MAX_LOCATION_CHARS - capture.chars
+        if remaining > 0:
+            captured = value[:remaining]
+            capture.chunks.append(captured)
+            capture.chars += len(captured)
+        if len(value) > remaining:
+            capture.overflow = True
 
 
 def extract_card_listing_candidates(html: str, source_url: str) -> list[CardListingCandidate]:
@@ -344,6 +416,7 @@ def _candidate_from_card(card: _Card, source_url: str) -> CardListingCandidate |
             )
         )
     detail_links: list[tuple[str, str]] = []
+    allow_uuid_detail = card.explicit_title_nodes == 1 and len(titles) == 1
     for href, anchor_text in card.anchors:
         title_evidence = titles[0] if len(titles) == 1 else anchor_text
         normalized = _validated_detail_url(
@@ -351,6 +424,7 @@ def _candidate_from_card(card: _Card, source_url: str) -> CardListingCandidate |
             source_url,
             anchor_text,
             title=title_evidence,
+            allow_uuid_detail=allow_uuid_detail,
         )
         if normalized:
             detail_links.append((normalized, anchor_text))
@@ -367,9 +441,12 @@ def _candidate_from_card(card: _Card, source_url: str) -> CardListingCandidate |
                 if candidate_url == url and _plausible_title(text)
             )
         )
-    if len(titles) != 1 or not _title_matches_url(titles[0], url, source_url):
+    uuid_detail = allow_uuid_detail and _is_uuid_detail_path(urlparse(url))
+    if len(titles) != 1 or (not uuid_detail and not _title_matches_url(titles[0], url, source_url)):
         return None
-    return CardListingCandidate(titles[0], url, source_url)
+    locations = list(dict.fromkeys(card.locations))
+    location = locations[0] if len(locations) == 1 and not card.location_overflow else None
+    return CardListingCandidate(titles[0], url, source_url, location=location)
 
 
 def _validated_detail_url(
@@ -378,6 +455,7 @@ def _validated_detail_url(
     text: str,
     *,
     title: str = "",
+    allow_uuid_detail: bool = False,
 ) -> str | None:
     normalized = safe_normalize_url(href, source_url)
     if not normalized:
@@ -403,6 +481,8 @@ def _validated_detail_url(
         return normalized
     if same_origin and _is_explicit_query_detail(parsed):
         return normalized
+    if same_origin and allow_uuid_detail and _is_uuid_detail_path(parsed):
+        return normalized
     if (
         same_origin
         and _looks_like_role_title(title)
@@ -412,6 +492,10 @@ def _validated_detail_url(
     ):
         return normalized
     return None
+
+
+def _is_uuid_detail_path(parsed) -> bool:
+    return not parsed.query and not parsed.fragment and bool(_UUID_DETAIL_PATH.fullmatch(parsed.path))
 
 
 def _could_be_anchor_card(href: str, source_url: str) -> bool:
@@ -484,6 +568,15 @@ def _plausible_title(value: str) -> bool:
 
 def _looks_like_role_title(value: str) -> bool:
     return bool(set(_words(value)).intersection(_ROLE_TITLE_WORDS))
+
+
+def _plausible_location(value: str) -> bool:
+    return (
+        1 <= len(value) <= MAX_LOCATION_CHARS
+        and len(value.split()) <= 16
+        and bool(re.search(r"[A-Za-z]", value))
+        and not _NON_LOCATION_TEXT.search(value)
+    )
 
 
 def _is_semantic_card(tag: str, attrs: dict[str, str], stack: list[_Element]) -> bool:

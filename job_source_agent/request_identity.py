@@ -7,6 +7,8 @@ from dataclasses import asdict, dataclass
 from typing import Any
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from .browser_interaction import BrowserInteraction
+
 
 IDENTITY_VERSION = "1"
 REDACTED_VALUE = "[REDACTED]"
@@ -19,6 +21,7 @@ _SENSITIVE_KEYS = {
     "code",
     "csrf",
     "idtoken",
+    "lsd",
     "key",
     "password",
     "protectedsessionjwt",
@@ -31,6 +34,7 @@ _SENSITIVE_KEYS = {
     "signature",
     "state",
     "token",
+    "xfblsd",
 }
 _SENSITIVE_MARKERS = ("token", "secret", "password", "credential", "session", "csrf")
 _SEMANTIC_HEADERS = {
@@ -39,6 +43,7 @@ _SEMANTIC_HEADERS = {
     "origin",
     "referer",
     "x-referer-host",
+    "x-job-source-agent-interaction",
 }
 _MAX_MULTIPART_CHARS = 2_000_000
 _MAX_MULTIPART_FIELDS = 100
@@ -116,9 +121,15 @@ def build_request_identity(
     url: str,
     data: bytes | None = None,
     headers: dict[str, str] | None = None,
+    *,
+    interaction: BrowserInteraction | None = None,
 ) -> RequestIdentity:
     method = "POST" if data is not None else "GET"
     semantic_headers = _sanitize_semantic_headers(headers or {})
+    if interaction is not None:
+        semantic_headers["x-job-source-agent-interaction"] = (
+            interaction.fingerprint()
+        )
     body_fingerprint, replayable, reason = _body_identity(data, semantic_headers)
     return RequestIdentity(
         identity_version=IDENTITY_VERSION,

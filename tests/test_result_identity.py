@@ -74,6 +74,14 @@ class ResultIdentityTests(unittest.TestCase):
         self.assertTrue(identity_urls_equivalent(plain, www, allow_www=True))
         self.assertFalse(identity_urls_equivalent(plain, www))
 
+    def test_equivalence_ignores_tracking_parameters(self):
+        self.assertTrue(
+            identity_urls_equivalent(
+                "https://jobs.example/role/123",
+                "https://jobs.example/role/123?utm_medium=jobshare",
+            )
+        )
+
     def test_public_identity_uses_url_tenant_and_no_runtime_identifiers(self):
         identity = public_result_identity(
             {

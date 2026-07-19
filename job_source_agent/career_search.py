@@ -51,6 +51,13 @@ class _SearchSource:
     url: str
 
 
+@dataclass(frozen=True)
+class _SearchResult:
+    url: str
+    title: str = ""
+    snippet: str = ""
+
+
 class CareerSearchResolver:
     def __init__(
         self,
@@ -72,6 +79,8 @@ class CareerSearchResolver:
         target_title: str | None = None,
         ats_only: bool = False,
         exhaustive: bool = False,
+        allow_unbound_career: bool = False,
+        query_diversity_first: bool = False,
     ) -> CareerSearchResult:
         official_domain = domain_of(company_website_url)
         candidates: list[LinkCandidate] = []
@@ -93,6 +102,8 @@ class CareerSearchResolver:
             "stopped_reason": None,
             "ats_only": ats_only,
             "exhaustive": exhaustive,
+            "allow_unbound_career": allow_unbound_career,
+            "query_diversity_first": query_diversity_first,
         }
 
         configured_queries = (
@@ -109,7 +120,15 @@ class CareerSearchResolver:
         for query_text in queries:
             query_candidate_count = len(candidates)
             sources = _search_sources(query_text)
-            if ats_only:
+            diversity_mode = query_diversity_first and (
+                ats_only or allow_unbound_career
+            )
+            if diversity_mode:
+                # Spend a small budget across distinct queries. Repeating one
+                # SERP via HTML or a challenge-prone secondary source provides
+                # less recall than reaching the next provider/site query.
+                sources = [source for source in sources if source.name == "bing_rss"]
+            elif ats_only:
                 sources = [
                     source
                     for source in sources
@@ -117,7 +136,12 @@ class CareerSearchResolver:
                 ]
             use_ats_secondary = False
             for source in sources:
-                if ats_only and source.name == "duckduckgo_html" and not use_ats_secondary:
+                if (
+                    ats_only
+                    and not diversity_mode
+                    and source.name == "duckduckgo_html"
+                    and not use_ats_secondary
+                ):
                     continue
                 if source.name in disabled_sources:
                     trace["source_circuit_skips"].append(
@@ -165,6 +189,17 @@ class CareerSearchResolver:
                         )
                     continue
 
+                query_trace["final_url"] = page.final_url or page.url
+                challenge_reason = _search_challenge_reason(source.name, page.html)
+                if challenge_reason is not None:
+                    query_trace["error"] = challenge_reason
+                    query_trace["response_disposition"] = "search_challenge"
+                    disabled_sources.add(source.name)
+                    trace["source_circuit_breaks"].append(
+                        {"source": source.name, "reason": "search_challenge"}
+                    )
+                    continue
+
                 raw_urls = _parse_search_results(source.name, page.html)
                 query_trace["result_count"] = len(raw_urls)
                 self._collect_search_candidates(
@@ -178,20 +213,25 @@ class CareerSearchResolver:
                     query_trace,
                     ats_only=ats_only,
                     allow_unbound_ats=bool(ats_only and target_title),
+                    allow_unbound_career=allow_unbound_career,
                 )
                 if len(candidates) > query_candidate_count:
                     if not exhaustive:
                         trace["stopped_reason"] = "search_candidate_found"
                     break
-                if source.name == "bing_rss" and raw_urls:
-                    use_ats_secondary = ats_only
-                    if ats_only:
-                        query_trace["skipped_sources"] = [
-                            {
-                                "source": "bing_html",
-                                "reason": "rss_returned_results_without_valid_candidate",
-                            }
-                        ]
+                if (
+                    ats_only
+                    and not diversity_mode
+                    and source.name == "bing_rss"
+                    and raw_urls
+                ):
+                    use_ats_secondary = True
+                    query_trace["skipped_sources"] = [
+                        {
+                            "source": "bing_html",
+                            "reason": "rss_returned_results_without_valid_candidate",
+                        }
+                    ]
             if len(candidates) > query_candidate_count and not exhaustive:
                 break
             if trace["source_fetch_budget_exhausted"]:
@@ -210,7 +250,7 @@ class CareerSearchResolver:
 
     def _collect_search_candidates(
         self,
-        raw_urls: list[str],
+        raw_results: list[_SearchResult],
         source_url: str,
         query_text: str,
         company_name: str,
@@ -221,9 +261,10 @@ class CareerSearchResolver:
         *,
         ats_only: bool = False,
         allow_unbound_ats: bool = False,
+        allow_unbound_career: bool = False,
     ) -> None:
-        for raw_url in raw_urls:
-            cleaned = clean_search_result_url(raw_url)
+        for result in raw_results:
+            cleaned = clean_search_result_url(result.url)
             key = _dedupe_key(cleaned)
             if not cleaned or key in seen:
                 continue
@@ -234,16 +275,129 @@ class CareerSearchResolver:
                 cleaned,
                 company_name,
                 official_domain,
+                search_text=f"{result.title} {result.snippet}",
                 allow_unbound_ats=allow_unbound_ats,
+                allow_unbound_career=allow_unbound_career,
             ):
                 continue
             link = RawLink(url=cleaned, text=cleaned, source_url=source_url, origin="search_result")
             candidate = score_career_link(link)
             candidate.score += _search_bonus(cleaned, official_domain, query_text)
+            if _is_branded_career_microsite(
+                cleaned,
+                company_name,
+                official_domain,
+                f"{result.title} {result.snippet}",
+            ):
+                candidate.score += 80
+                candidate.reasons.append("unverified branded career microsite search lead")
             if candidate.score < 60:
                 continue
             candidates.append(candidate)
             query_trace["candidates"].append(_candidate_trace(candidate))
+
+
+def search_site_openings(
+    fetcher: Fetcher,
+    official_url: str,
+    target_title: str,
+    *,
+    max_results: int = 3,
+    max_source_fetches: int = 2,
+) -> CareerSearchResult:
+    """Return bounded same-site opening leads; callers must verify every page."""
+
+    official_domain = domain_of(official_url)
+    official_site = _registrable_site(official_domain)
+    normalized_title = " ".join(target_title.replace('"', " ").split())
+    trace = {
+        "query": None,
+        "queries": [],
+        "candidates": [],
+        "source_fetch_budget": max_source_fetches,
+        "source_fetch_budget_exhausted": False,
+        "stopped_reason": None,
+    }
+    if (
+        not official_domain
+        or not official_site
+        or not normalized_title
+        or max_results < 1
+        or max_source_fetches < 1
+    ):
+        trace["stopped_reason"] = "invalid_or_empty_request"
+        return CareerSearchResult([], trace)
+
+    query_text = f'site:{official_site} "{normalized_title}"'
+    trace["query"] = query_text
+    candidates: list[LinkCandidate] = []
+    seen: set[str] = set()
+    source_fetches = 0
+    for source in _search_sources(query_text):
+        if source.name == "bing_html":
+            continue
+        if source_fetches >= max_source_fetches:
+            trace["source_fetch_budget_exhausted"] = True
+            break
+        source_fetches += 1
+        query_trace = {
+            "source": source.name,
+            "query_url": source.url,
+            "result_count": 0,
+            "candidates": [],
+            "error": None,
+        }
+        trace["queries"].append(query_trace)
+        try:
+            page = fetcher.fetch(source.url)
+        except FetchError as error:
+            query_trace["error"] = str(error)
+            continue
+        raw_results = _parse_search_results(source.name, page.html)
+        query_trace["result_count"] = len(raw_results)
+        for result in raw_results:
+            cleaned = clean_search_result_url(result.url)
+            key = _dedupe_key(cleaned)
+            if not cleaned or key in seen or is_resource_url(cleaned):
+                continue
+            seen.add(key)
+            candidate_domain = domain_of(cleaned)
+            if _registrable_site(candidate_domain) != official_site:
+                continue
+            path = urlparse(cleaned).path.casefold()
+            if not re.search(r"(?:^|[-_/])jobs?(?:[-_/]|$)", path):
+                continue
+            candidate = LinkCandidate(
+                url=cleaned,
+                text=cleaned,
+                source_url=source.url,
+                score=100,
+                reasons=["same-site title-targeted opening lead"],
+            )
+            candidates.append(candidate)
+            query_trace["candidates"].append(_candidate_trace(candidate))
+            if len(candidates) >= max_results:
+                break
+        if candidates:
+            break
+    trace["candidates"] = [_candidate_trace(candidate) for candidate in candidates]
+    trace["stopped_reason"] = (
+        "candidate_limit_reached"
+        if len(candidates) >= max_results
+        else "query_plan_complete"
+        if candidates
+        else "no_valid_candidates"
+    )
+    return CareerSearchResult(candidates, trace)
+
+
+def _registrable_site(host: str) -> str:
+    labels = host.casefold().strip(".").split(".")
+    if len(labels) <= 2:
+        return ".".join(labels)
+    two_level_suffixes = {"co.jp", "co.nz", "co.uk", "com.au", "com.br", "com.sg"}
+    suffix = ".".join(labels[-2:])
+    return ".".join(labels[-3:]) if suffix in two_level_suffixes else suffix
 
 
 def _fetch_budget_available(fetcher: FetchBudget) -> tuple[bool, bool]:
@@ -267,39 +421,116 @@ def _fetch_budget_available(fetcher: FetchBudget) -> tuple[bool, bool]:
 class _BingResultParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.urls: list[str] = []
+        self.results: list[_SearchResult] = []
         self._in_result_heading = False
+        self._in_snippet = False
+        self._url = ""
+        self._title_parts: list[str] = []
+        self._snippet_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {key.lower(): value or "" for key, value in attrs}
         classes = set(attrs_dict.get("class", "").split())
+        if tag == "li" and "b_algo" in classes:
+            self._finish_result()
         if tag in {"h2", "h3"}:
             self._in_result_heading = True
         if tag == "a" and self._in_result_heading and attrs_dict.get("href"):
-            self.urls.append(attrs_dict["href"])
-        elif tag == "li" and "b_algo" in classes:
-            self._in_result_heading = False
+            self._url = attrs_dict["href"]
+        if tag == "p" and self._url:
+            self._in_snippet = True
+
+    def handle_data(self, data: str) -> None:
+        if self._in_result_heading:
+            self._title_parts.append(data)
+        elif self._in_snippet:
+            self._snippet_parts.append(data)
 
     def handle_endtag(self, tag: str) -> None:
         if tag in {"h2", "h3"}:
             self._in_result_heading = False
+        elif tag == "p":
+            self._in_snippet = False
+        elif tag == "li":
+            self._finish_result()
+
+    def close(self) -> None:
+        super().close()
+        self._finish_result()
+
+    def _finish_result(self) -> None:
+        if self._url:
+            self.results.append(
+                _SearchResult(
+                    self._url,
+                    " ".join("".join(self._title_parts).split()),
+                    " ".join("".join(self._snippet_parts).split()),
+                )
+            )
+        self._url = ""
+        self._title_parts = []
+        self._snippet_parts = []
+        self._in_result_heading = False
+        self._in_snippet = False
 
 
 class _DuckDuckGoResultParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
-        self.urls: list[str] = []
+        self.results: list[_SearchResult] = []
+        self._url = ""
+        self._in_title = False
+        self._in_snippet = False
+        self._title_parts: list[str] = []
+        self._snippet_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         attrs_dict = {key.lower(): value or "" for key, value in attrs}
-        if tag == "a" and "result__a" in attrs_dict.get("class", "").split():
+        classes = set(attrs_dict.get("class", "").split())
+        if tag == "a" and "result__a" in classes:
+            self._finish_result()
             if attrs_dict.get("href"):
-                self.urls.append(attrs_dict["href"])
+                self._url = attrs_dict["href"]
+                self._in_title = True
+        elif "result__snippet" in classes:
+            self._in_snippet = True
+
+    def handle_data(self, data: str) -> None:
+        if self._in_title:
+            self._title_parts.append(data)
+        elif self._in_snippet:
+            self._snippet_parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "a" and self._in_title:
+            self._in_title = False
+        elif self._in_snippet and tag in {"a", "div", "span"}:
+            self._in_snippet = False
+
+    def close(self) -> None:
+        super().close()
+        self._finish_result()
+
+    def _finish_result(self) -> None:
+        if self._url:
+            self.results.append(
+                _SearchResult(
+                    self._url,
+                    " ".join("".join(self._title_parts).split()),
+                    " ".join("".join(self._snippet_parts).split()),
+                )
+            )
+        self._url = ""
+        self._title_parts = []
+        self._snippet_parts = []
+        self._in_title = False
+        self._in_snippet = False
 
 
 def _search_sources(query_text: str) -> list[_SearchSource]:
-    query = urlencode({"q": query_text})
-    rss_query = urlencode({"q": query_text, "format": "rss"})
+    locale = {"setlang": "en-us", "cc": "us"}
+    query = urlencode({"q": query_text, **locale})
+    rss_query = urlencode({"q": query_text, "format": "rss", **locale})
     return [
         _SearchSource("bing_rss", f"{BING_SEARCH_ENDPOINT}?{rss_query}"),
         _SearchSource("bing_html", f"{BING_SEARCH_ENDPOINT}?{query}"),
@@ -307,16 +538,37 @@ def _search_sources(query_text: str) -> list[_SearchSource]:
     ]
 
 
-def _parse_search_results(source: str, body: str) -> list[str]:
+def _search_challenge_reason(source: str, body: str) -> str | None:
+    if source != "duckduckgo_html":
+        return None
+    text = (body or "")[:100_000].casefold()
+    markers = (
+        "anomaly.js",
+        "bots use duckduckgo",
+        "challenge-form",
+        "captcha",
+    )
+    return "duckduckgo_challenge" if any(marker in text for marker in markers) else None
+
+
+def _parse_search_results(source: str, body: str) -> list[_SearchResult]:
     if source == "bing_rss":
         try:
             root = ET.fromstring(body)
         except ET.ParseError:
             return []
-        return [(item.findtext("link") or "").strip() for item in root.findall(".//item")]
+        return [
+            _SearchResult(
+                (item.findtext("link") or "").strip(),
+                (item.findtext("title") or "").strip(),
+                (item.findtext("description") or "").strip(),
+            )
+            for item in root.findall(".//item")
+        ]
     parser = _DuckDuckGoResultParser() if source == "duckduckgo_html" else _BingResultParser()
     parser.feed(body)
-    return parser.urls
+    parser.close()
+    return parser.results
 
 
 def clean_search_result_url(url: str) -> str:
@@ -368,12 +620,16 @@ def _is_valid_search_result(
     company_name: str,
     official_domain: str,
     *,
+    search_text: str = "",
     allow_unbound_ats: bool = False,
+    allow_unbound_career: bool = False,
 ) -> bool:
     if is_resource_url(url) or _is_blocked(url):
         return False
     domain = domain_of(url)
-    if official_domain and (domain == official_domain or domain.endswith("." + official_domain)):
+    if official_domain and (
+        domain == official_domain or domain.endswith("." + official_domain)
+    ):
         path = urlparse(url).path.lower()
         return domain.startswith(("careers.", "jobs.")) or bool(
             re.search(
@@ -382,7 +638,15 @@ def _is_valid_search_result(
             )
         )
     if not is_ats_url(url):
-        return False
+        return (
+            _is_branded_career_microsite(
+                url, company_name, official_domain, search_text
+            )
+            or (
+                allow_unbound_career
+                and _is_unbound_career_search_lead(url, company_name, search_text)
+            )
+        )
     # Title-targeted search only produces untrusted leads. Opaque ATS tenants
     # are verified by provider and identity contracts downstream.
     if allow_unbound_ats:
@@ -395,6 +659,61 @@ def _is_valid_search_result(
         (bool(compact_company) and compact_company in haystack)
         or all(token in haystack for token in company_tokens)
         or any(token == official_domain.split(".", 1)[0].lower() and token in haystack for token in tokens)
+    )
+
+
+def _is_branded_career_microsite(
+    url: str,
+    company_name: str,
+    official_domain: str,
+    search_text: str,
+) -> bool:
+    domain = domain_of(url)
+    if not domain or not search_text or is_ats_url(url):
+        return False
+    if official_domain and (domain == official_domain or domain.endswith("." + official_domain)):
+        return False
+
+    company_tokens = _identity_tokens(company_name)
+    if not company_tokens:
+        return False
+    site_identity = re.sub(r"[^a-z0-9]+", "", _registrable_site(domain).lower())
+    compact_company = "".join(company_tokens)
+    brand_bound = compact_company in site_identity or all(
+        token in site_identity for token in company_tokens
+    )
+    if not brand_bound:
+        return False
+
+    normalized_search_text = re.sub(r"[^a-z0-9]+", " ", search_text.lower())
+    return bool(
+        re.search(
+            r"\b(careers?|jobs?|hiring|openings?|positions?|employment|"
+            r"opportunities|join (?:our|the) team|work with us)\b",
+            normalized_search_text,
+        )
+    )
+
+
+def _is_unbound_career_search_lead(
+    url: str,
+    company_name: str,
+    search_text: str,
+) -> bool:
+    """Admit an untrusted lead; current-page verification remains mandatory."""
+
+    parsed = urlparse(url)
+    route_text = f"{parsed.hostname or ''} {parsed.path}"
+    if not re.search(
+        r"(?:^|[.\-_/])(careers?|jobs?|employment|openings|positions)(?:[.\-_/]|$)",
+        route_text.casefold(),
+    ):
+        return False
+    tokens = _identity_tokens(company_name)
+    normalized_search = re.sub(r"[^a-z0-9]+", " ", search_text.casefold())
+    return bool(tokens) and all(
+        re.search(rf"\b{re.escape(token)}\b", normalized_search)
+        for token in tokens
     )
 
 
@@ -415,20 +734,25 @@ def build_ats_search_queries(
     if normalized_title:
         return [
             f'"{normalized_company}" "{normalized_title}" jobs',
-            f'site:myworkdayjobs.com "{normalized_company}" "{normalized_title}"',
-            f'site:oraclecloud.com "{normalized_company}" "{normalized_title}"',
             f'site:job-boards.greenhouse.io "{normalized_company}" "{normalized_title}"',
             f'site:jobs.lever.co "{normalized_company}" "{normalized_title}"',
             f'site:jobs.ashbyhq.com "{normalized_company}" "{normalized_title}"',
+            f'site:pinpointhq.com "{normalized_company}" "{normalized_title}"',
             f'site:jobs.smartrecruiters.com "{normalized_company}" "{normalized_title}"',
+            f'site:myworkdayjobs.com "{normalized_company}" "{normalized_title}"',
+            f'site:oraclecloud.com "{normalized_company}" "{normalized_title}"',
+            f'site:eightfold.ai "{normalized_company}" "{normalized_title}"',
         ]
     return [
         f'"{normalized_company}" careers jobs',
         f'site:job-boards.greenhouse.io "{normalized_company}" jobs',
-        f'site:myworkdayjobs.com "{normalized_company}" jobs',
         f'site:jobs.lever.co "{normalized_company}" jobs',
         f'site:jobs.ashbyhq.com "{normalized_company}" jobs',
+        f'site:pinpointhq.com "{normalized_company}" jobs',
+        f'site:jobs.smartrecruiters.com "{normalized_company}" jobs',
+        f'site:myworkdayjobs.com "{normalized_company}" jobs',
         f'site:eightfold.ai "{normalized_company}" jobs',
+        f'site:oraclecloud.com "{normalized_company}" jobs',
     ]
 
 

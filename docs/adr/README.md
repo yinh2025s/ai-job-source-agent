@@ -35,3 +35,8 @@ NNNN-short-decision-title.md
 - [ADR-0021: Probe Acquired-Brand Job Portals](0021-probe-acquired-brand-job-portals.md)
 - [ADR-0022: Verify TalentBrew Search Inventory](0022-verify-talentbrew-search-inventory.md)
 - [ADR-0023: Preflight Scoped Replay Execution Boundaries](0023-preflight-scoped-replay-boundaries.md)
+- [ADR-0024: Enforce Opening Identity Continuity](0024-enforce-opening-identity-continuity.md)
+- [ADR-0025: Merge Provider Candidate Discovery Before Verification](0025-merge-provider-candidate-discovery.md)
+- [ADR-0026: Follow Career Inventory](0026-follow-career-inventory.md)
+- [ADR-0027: Bind Provider Candidates To Hiring Relationships](0027-bind-provider-candidates-to-hiring-relationships.md)
+- [ADR-0028: Cache Verified Company Discovery Evidence](0028-cache-verified-company-discovery-evidence.md)

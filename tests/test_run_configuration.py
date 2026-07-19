@@ -19,7 +19,7 @@ class DeterministicRunConfigTests(unittest.TestCase):
 
         self.assertEqual(implicit.to_payload(), explicit.to_payload())
         self.assertEqual(implicit.digest, explicit.digest)
-        self.assertEqual(implicit.to_payload()["schema_version"], "1.3")
+        self.assertEqual(implicit.to_payload()["schema_version"], "1.4")
 
     def test_parallel_candidate_discovery_is_explicit_and_deterministic(self):
         disabled = DeterministicRunConfig.from_agent_config(AgentConfig())
@@ -32,6 +32,23 @@ class DeterministicRunConfigTests(unittest.TestCase):
         self.assertNotEqual(disabled.digest, enabled.digest)
         self.assertTrue(
             enabled.to_payload()["agent"]["enable_parallel_candidate_discovery"]
+        )
+
+    def test_exhaustive_route_evaluation_requires_parallel_discovery(self):
+        with self.assertRaisesRegex(ValueError, "requires parallel"):
+            DeterministicRunConfig.from_agent_config(
+                AgentConfig(evaluate_all_candidate_routes=True)
+            )
+
+        enabled = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                enable_parallel_candidate_discovery=True,
+                evaluate_all_candidate_routes=True,
+            )
+        )
+        self.assertTrue(enabled.evaluate_all_candidate_routes)
+        self.assertTrue(
+            enabled.to_payload()["agent"]["evaluate_all_candidate_routes"]
         )
 
     def test_round_trip_faithfully_rebuilds_agent_config(self):
@@ -229,7 +246,7 @@ class DeterministicRunConfigTests(unittest.TestCase):
 
     def test_batch_execution_configuration_is_strict_and_stable(self):
         payload = {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "batch": {
                 "company_time_budget": 60,
                 "website_time_budget": 20,
@@ -240,6 +257,7 @@ class DeterministicRunConfigTests(unittest.TestCase):
                 "render_budget": 2,
                 "verify_limit": 3,
                 "offline": False,
+                "opening_phase_policy": "reserved_after_verified_job_list_v1",
             },
         }
         configuration = BatchExecutionConfig.from_payload(payload)
@@ -257,6 +275,10 @@ class DeterministicRunConfigTests(unittest.TestCase):
             {**payload, "batch": {**payload["batch"], "retry_base_delay": -0.1}},
             {**payload, "batch": {**payload["batch"], "render_mode": "magic"}},
             {**payload, "batch": {**payload["batch"], "offline": 1}},
+            {
+                **payload,
+                "batch": {**payload["batch"], "opening_phase_policy": "shared_deadline"},
+            },
         ):
             with self.subTest(invalid=invalid):
                 with self.assertRaises(ValueError):

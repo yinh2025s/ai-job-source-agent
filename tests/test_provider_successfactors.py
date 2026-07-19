@@ -253,6 +253,223 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
         )
         self.assertIsNone(self.adapter.identify_board("https://careers.example.com/jobs"))
 
+    def test_shared_legacy_root_is_typed_but_not_accepted_as_tenant_board(self):
+        board = self.adapter.identify_board("https://career41.sapsf.com")
+
+        self.assertIsNotNone(board)
+        self.assertIsNone(board.identifier)
+        fetcher = StubFetcher("should not be fetched")
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Software Engineer"),
+        )
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertEqual(fetcher.requested_urls, [])
+
+    def test_page_evidence_recovers_tenant_route_from_successfactors_sso_config(self):
+        page = Page(
+            url="https://careers.example.com/",
+            final_url="https://careers.example.com/",
+            html="""
+            <form method="get" action="/search/"><input name="q"></form>
+            <script>
+              j2w.init({
+                "siteTypeId": 1,
+                "ssoCompanyId": 'viacomcbsi',
+                "ssoUrl": 'https://career41.sapsf.com'
+              });
+            </script>
+            """,
+            source="paramount-shaped-fixture",
+        )
+
+        board = self.adapter.identify_board_from_page(page)
+
+        self.assertEqual(board.identifier, "custom:viacomcbsi")
+        self.assertEqual(
+            board.url,
+            "https://careers.example.com/search/",
+        )
+        fetcher = StubFetcher(
+            "<script>j2w.init({ssoCompanyId: 'viacomcbsi', "
+            "ssoUrl: 'https://career41.sapsf.com'});</script>"
+            '<a href="/job/Software-Engineer/123/">Software Engineer</a>'
+        )
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Software Engineer"),
+        )
+
+        self.assertEqual(result.reason_code, None)
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(
+            fetcher.requested_urls,
+            [
+                "https://careers.example.com/search/?q=Software+Engineer"
+            ],
+        )
+
+    def test_custom_domain_paginates_title_search_and_binds_detail_to_tenant(self):
+        def search_page(tenant, body):
+            return (
+                "<script>j2w.init({ssoCompanyId: '" + tenant + "', "
+                "ssoUrl: 'https://career5.successfactors.eu'});</script>" + body
+            )
+
+        initial = Page(
+            url="https://careers.example.com/search/",
+            html=search_page("tenant_a", '<a href="?q=Data+Analyst&startrow=25">2</a>'),
+        )
+        board = self.adapter.identify_board_from_page(initial)
+        self.assertEqual(board.identifier, "custom:tenant_a")
+        self.assertEqual(board.url, "https://careers.example.com/search/")
+
+        class PagedFetcher:
+            def __init__(self):
+                self.requested_urls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested_urls.append(url)
+                pages = {
+                    "https://careers.example.com/search/?q=Data+Analyst": search_page(
+                        "tenant_a", '<a href="?q=Data+Analyst&startrow=25">2</a>'
+                    ),
+                    "https://careers.example.com/search/?q=Data+Analyst&startrow=25": search_page(
+                        "tenant_a",
+                        '<a href="?q=Data+Analyst&startrow=25">2</a>'
+                        '<a href="?q=Data+Analyst&startrow=50">3</a>',
+                    ),
+                    "https://careers.example.com/search/?q=Data+Analyst&startrow=50": search_page(
+                        "tenant_a", '<a href="/job/Data-Analyst/444/">Data Analyst</a>'
+                    ),
+                }
+                return Page(url=url, final_url=url, html=pages[url], source="custom")
+
+        fetcher = PagedFetcher()
+        result = self.adapter.list_jobs(fetcher, board, JobQuery(title="Data Analyst"))
+
+        self.assertEqual([candidate.url for candidate in result.candidates], [
+            "https://careers.example.com/job/Data-Analyst/444/",
+        ])
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(len(fetcher.requested_urls), 3)
+
+    def test_custom_domain_rejects_fake_lookalike_and_cross_tenant_pagination(self):
+        self.assertIsNone(self.adapter.identify_board_from_page(Page(
+            url="https://careers.example.com/search/",
+            html="j2w.init({ssoCompanyId: 'tenant_a', ssoUrl: 'https://career5.successfactors.eu'});",
+        )))
+        self.assertIsNone(self.adapter.identify_board_from_page(Page(
+            url="https://careers.example.com/search/",
+            html="<script>j2w.init({ssoCompanyId: 'tenant_a', ssoUrl: "
+            "'https://career5.successfactors.eu.evil.example'});</script>",
+        )))
+
+        def page(tenant, links):
+            return (
+                "<script>j2w.init({ssoCompanyId: '" + tenant + "', "
+                "ssoUrl: 'https://career5.successfactors.eu'});</script>" + links
+            )
+
+        board = self.adapter.identify_board_from_page(Page(
+            url="https://careers.example.com/search/", html=page("tenant_a", "")
+        ))
+
+        class CrossTenantFetcher:
+            def fetch(self, url, data=None, headers=None):
+                pages = {
+                    "https://careers.example.com/search/?q=Analyst": page(
+                        "tenant_a", '<a href="?q=Analyst&startrow=25">2</a>'
+                    ),
+                    "https://careers.example.com/search/?q=Analyst&startrow=25": page(
+                        "tenant_b", '<a href="/job/Analyst/7/">Analyst</a>'
+                    ),
+                }
+                return Page(url=url, final_url=url, html=pages[url])
+
+        result = self.adapter.list_jobs(CrossTenantFetcher(), board, JobQuery(title="Analyst"))
+        self.assertFalse(result.inventory_complete)
+        self.assertEqual(result.trace["stop_reason"], "custom_tenant_identity_mismatch")
+
+    def test_custom_domain_all_numbered_pages_visited_is_complete(self):
+        def page(links):
+            return (
+                "<script>j2w.init({ssoCompanyId: 'tenant_a', "
+                "ssoUrl: 'https://career5.successfactors.eu'});</script>" + links
+            )
+
+        board = self.adapter.identify_board_from_page(Page(
+            url="https://careers.example.com/search/", html=page("")
+        ))
+
+        class CycleFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=page('<a href="?q=Analyst&startrow=25">2</a>'),
+                )
+
+        result = self.adapter.list_jobs(CycleFetcher(), board, JobQuery(title="Analyst"))
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.trace["stop_reason"], "numbered_pagination_complete")
+
+    def test_page_evidence_rejects_missing_ambiguous_or_unscoped_sso_identity(self):
+        pages = [
+            Page(
+                url="https://careers.example.com/",
+                html="j2w.init({ssoUrl: 'https://career41.sapsf.com'});",
+            ),
+            Page(
+                url="https://careers.example.com/",
+                html=(
+                    "j2w.init({ssoCompanyId: 'alpha', ssoCompanyId: 'beta', "
+                    "ssoUrl: 'https://career41.sapsf.com'});"
+                ),
+            ),
+            Page(
+                url="https://careers.example.com/",
+                html=(
+                    "j2w.init({ssoCompanyId: 'alpha', "
+                    "ssoUrl: 'https://career41.sapsf.com/sfcareer/jobreqcareer'});"
+                ),
+            ),
+        ]
+
+        for page in pages:
+            with self.subTest(html=page.html):
+                self.assertIsNone(self.adapter.identify_board_from_page(page))
+
+    def test_tenant_bearing_legacy_and_cloud_routes_remain_supported(self):
+        legacy_query = self.adapter.identify_board(
+            "https://career41.sapsf.com/career?company=tenant_a"
+        )
+        legacy_host = self.adapter.identify_board(
+            "https://tenant-a.jobs.sapsf.com/career"
+        )
+        cloud = self.adapter.identify_board(
+            "https://tenant-a.jobs.hr.cloud.sap/search/?locale=en_US"
+        )
+
+        self.assertEqual(legacy_query.identifier, "tenant_a")
+        self.assertEqual(legacy_host.identifier, "tenant-a.jobs.sapsf.com")
+        self.assertEqual(cloud.identifier, "cloud:tenant-a.jobs.hr.cloud.sap")
+
+    def test_identifies_legacy_jobreqcareer_jobid_as_detail_parameter(self):
+        board = self.adapter.identify_board(
+            "https://career4.successfactors.com/sfcareer/jobreqcareer?"
+            "jobId=662657&company=ARAMARKPROD"
+        )
+
+        self.assertEqual(board.identifier, "ARAMARKPROD")
+        self.assertEqual(
+            board.url,
+            "https://career4.successfactors.com/sfcareer/jobreqcareer?company=ARAMARKPROD",
+        )
+
     def test_parses_embedded_json_and_reconstructs_detail_urls(self):
         html = """
         <script type="application/json">

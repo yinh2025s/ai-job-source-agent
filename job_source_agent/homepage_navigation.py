@@ -72,14 +72,7 @@ class HomepageNavigationEvidence:
         normalized = _public_queryless_https_url(homepage_url)
         if normalized is None:
             return False
-        expected = urlparse(self.homepage_url)
-        actual = urlparse(normalized)
-        expected_host = (expected.hostname or "").casefold().removeprefix("www.")
-        actual_host = (actual.hostname or "").casefold().removeprefix("www.")
-        return (
-            expected_host == actual_host
-            and expected.path.rstrip("/") == actual.path.rstrip("/")
-        )
+        return _same_canonical_homepage(self.homepage_url, normalized)
 
     def raw_links(self) -> list[RawLink]:
         return [
@@ -151,6 +144,19 @@ def _validate_evidence(evidence: HomepageNavigationEvidence) -> None:
     for candidate in candidates:
         if _public_queryless_https_url(candidate) != candidate:
             raise ValueError("Homepage navigation candidate URL is not canonical public HTTPS")
+
+
+def _same_canonical_homepage(expected_url: str, actual_url: str) -> bool:
+    """Compare canonical homepages with equivalent host spelling and path slashes."""
+
+    expected = urlparse(expected_url)
+    actual = urlparse(actual_url)
+    expected_host = (expected.hostname or "").casefold().removeprefix("www.")
+    actual_host = (actual.hostname or "").casefold().removeprefix("www.")
+    return (
+        expected_host == actual_host
+        and expected.path.rstrip("/") == actual.path.rstrip("/")
+    )
 
 
 def _public_queryless_https_url(value: Any) -> str | None:

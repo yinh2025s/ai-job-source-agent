@@ -126,7 +126,8 @@ aggregate.
 - [x] **Hugh Chatham Health** - Registered Nurse (RN) Weekender - LDRP; Monroe, NC. [LinkedIn](https://www.linkedin.com/jobs/view/registered-nurse-rn-weekender-ldrp-at-hugh-chatham-health-4439383470) | [Website](http://www.hughchatham.org)
   - Automated evidence: website resolved; no Career page passed verification.
   - Manual Career URL / finding: 官网无法打开，但 Workday 上存在目标岗位；系统仍应通过 ATS 候选路径恢复。
-  - Manual disposition: `system_gap`
+  - Later identity audit: the public Workday target belongs to Atrium Health; no first-party handoff, parent relationship, or provider-tenant evidence connects Hugh Chatham Health to Atrium.
+  - Manual disposition: `eligibility_unknown` (reclassified; do not force exact)
 - [x] **Roper St. Francis Healthcare** - Registered Nurse (RN) - Full Time; Hayward, CA. [LinkedIn](https://www.linkedin.com/jobs/view/registered-nurse-rn-full-time-at-roper-st-francis-healthcare-4436643921) | [Website](https://www.rsfh.com)
   - Automated evidence: website resolved; no Career page passed verification.
   - Manual Career URL / finding: 官网同样无法打开，当前证据不足以判断是否存在公开目标 opening。
@@ -163,19 +164,19 @@ aggregate.
 - Reviewed: 23/27
 - Pending manual review: 4/27 (`PUMA Group`, `Parfums Christian Dior`,
   `Electrolux Group`, and `Gucci`)
-- `system_gap`: 10
+- `system_gap`: 9
 - `verified_closed`: 3
 - `no_public_opening`: 5
 - `external_blocked`: 3
 - `identity_rejected`: 1
-- `eligibility_unknown`: 1
+- `eligibility_unknown`: 2
 
-Of the 10 confirmed system gaps, three have already recovered exact openings in
-targeted live runs: Aarris Healthcare, System One, and Community Health Center
-of Snohomish County. The seven unresolved confirmed gaps are SpaceX, Lacoste,
-Texas Children's Hospital, Northwell Health, Gary and Mary West PACE, Avery
-Dennison, and Hugh Chatham Health. These counts describe the manual review and
-later targeted evidence; they do not rewrite the frozen 13/40 aggregate.
+All nine confirmed system gaps now recover exact openings in targeted or final
+live runs: Aarris Healthcare, System One, Community Health Center of Snohomish
+County, SpaceX, Lacoste, Texas Children's Hospital, Northwell Health, Gary and
+Mary West PACE, and Avery Dennison. Hugh Chatham Health is no longer in the
+eligible queue after the identity audit above. These later dispositions and
+recoveries do not rewrite the frozen 13/40 aggregate.
 
 ## Manual Disposition Options
 

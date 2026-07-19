@@ -14,6 +14,7 @@ from .identity_continuity import (
     ProviderIdentity,
 )
 from .web import Page
+from .browser_interaction import BrowserInteraction
 
 
 CONTRACT_SCHEMA_VERSION = "1.6"
@@ -28,6 +29,8 @@ class FetchClient(Protocol):
         url: str,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
     ) -> Page:
         ...
 

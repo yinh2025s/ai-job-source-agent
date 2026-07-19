@@ -6,6 +6,7 @@ from html import unescape
 from pathlib import Path
 import gzip
 import hashlib
+import ipaddress
 import json
 import re
 import signal
@@ -19,6 +20,7 @@ from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlparse, urlu
 from urllib.request import HTTPCookieProcessor, Request, build_opener
 
 from .reasons import REASON_SPECS, classify_fetch_error, reason_spec
+from .job_actions import is_explicit_career_action
 from .request_identity import (
     RequestIdentity,
     build_request_identity,
@@ -26,6 +28,7 @@ from .request_identity import (
     request_identity_from_dict,
     sanitize_url as sanitize_request_url,
 )
+from .browser_interaction import BrowserInteraction
 
 
 TRACKING_PARAMS = {
@@ -40,6 +43,43 @@ TRACKING_PARAMS = {
 
 MAX_EXTRACTED_LINKS = 200
 MAX_EMBEDDED_SCAN_CHARS = 1_000_000
+MAX_STRUCTURED_ATTRIBUTE_CHARS = 65_536
+MAX_STRUCTURED_ATTRIBUTE_SCAN_CHARS = 1_000_000
+_STRUCTURED_COMPONENT_ATTRIBUTES = {
+    "data-component-model",
+    "data-component-props",
+    "data-model",
+    "data-props",
+}
+_STRUCTURED_LABEL_KEYS = {
+    "arialabel",
+    "buttonlabel",
+    "buttontext",
+    "displayname",
+    "label",
+    "linklabel",
+    "linktext",
+    "name",
+    "text",
+    "title",
+}
+_RESOURCE_PATH_SUFFIXES = {
+    ".avif",
+    ".css",
+    ".gif",
+    ".ico",
+    ".jpeg",
+    ".jpg",
+    ".js",
+    ".json",
+    ".map",
+    ".pdf",
+    ".png",
+    ".svg",
+    ".webp",
+    ".woff",
+    ".woff2",
+}
 _URL_DATA_ATTRIBUTES = {
     "data-apply-url",
     "data-careers-url",
@@ -64,6 +104,8 @@ _PROVIDER_DOMAINS = (
     "jobvite.com",
     "myworkdayjobs.com",
     "oraclecloud.com",
+    "pinpointhq.com",
+    "recruiting.adp.com",
     "recruitee.com",
     "sapsf.com",
     "smartrecruiters.com",
@@ -86,6 +128,8 @@ EXPLICIT_JOB_LIST_COMMANDS = (
     "find jobs",
     "find roles",
     "job offers",
+    "job board",
+    "job openings",
     "job opportunities",
     "job search",
     "list all jobs",
@@ -224,9 +268,11 @@ class _LinkParser(HTMLParser):
         self.command_links: list[RawLink] = []
         self.embedded_text: list[str] = []
         self._embedded_text_chars = 0
+        self._structured_attribute_chars = 0
         self.base_url = source_url
         self._active_href: str | None = None
         self._active_text: list[str] = []
+        self._active_fallback_text: list[str] = []
 
     def _append_attribute_link(self, value: str, origin: str) -> None:
         normalized = safe_normalize_url(value, self.base_url)
@@ -240,6 +286,31 @@ class _LinkParser(HTMLParser):
     def _append_provider_link(self, link: RawLink) -> None:
         if _is_provider_url(link.url) and len(self.provider_links) < MAX_EXTRACTED_LINKS:
             self.provider_links.append(link)
+
+    def _append_structured_attribute_links(self, value: str) -> None:
+        if (
+            len(value) > MAX_STRUCTURED_ATTRIBUTE_CHARS
+            or self._structured_attribute_chars + len(value)
+            > MAX_STRUCTURED_ATTRIBUTE_SCAN_CHARS
+        ):
+            return
+        self._structured_attribute_chars += len(value)
+        try:
+            payload = json.loads(unescape(value))
+        except (json.JSONDecodeError, TypeError):
+            return
+        if not isinstance(payload, (dict, list)):
+            return
+        for url, label in _structured_component_urls(payload):
+            link = RawLink(
+                url=url,
+                text=label,
+                source_url=self.source_url,
+                origin="structured_component_attribute",
+            )
+            self._append_provider_link(link)
+            if len(self.links) < MAX_EXTRACTED_LINKS:
+                self.links.append(link)
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag_name = tag.lower()
@@ -255,15 +326,28 @@ class _LinkParser(HTMLParser):
             self._append_attribute_link(attrs_dict["src"] or "", "script_src")
         if tag_name == "form" and attrs_dict.get("action"):
             self._append_attribute_link(attrs_dict["action"] or "", "form_action")
+        for name in _STRUCTURED_COMPONENT_ATTRIBUTES:
+            value = attrs_dict.get(name)
+            if value:
+                self._append_structured_attribute_links(value)
         for name, value in attrs_dict.items():
             if value and (name in _URL_DATA_ATTRIBUTES or (name.startswith("data-") and name.endswith("-url"))):
                 self._append_attribute_link(value, "data_attribute")
+        if tag_name == "img" and self._active_href is not None:
+            alt = attrs_dict.get("alt")
+            if alt:
+                self._active_fallback_text.append(alt)
         if tag_name != "a":
             return
         href = attrs_dict.get("href")
         if href and not href.startswith(("mailto:", "tel:", "javascript:")):
             self._active_href = href
             self._active_text = []
+            self._active_fallback_text = [
+                value
+                for value in (attrs_dict.get("aria-label"), attrs_dict.get("title"))
+                if value
+            ]
 
     def handle_data(self, data: str) -> None:
         remaining = MAX_EMBEDDED_SCAN_CHARS - self._embedded_text_chars
@@ -278,6 +362,8 @@ class _LinkParser(HTMLParser):
         if tag.lower() != "a" or self._active_href is None:
             return
         text = " ".join(" ".join(self._active_text).split())
+        if not text:
+            text = " ".join(" ".join(self._active_fallback_text).split())
         normalized_href = safe_normalize_url(self._active_href, self.base_url)
         if normalized_href:
             link = RawLink(
@@ -293,6 +379,7 @@ class _LinkParser(HTMLParser):
                 self.links.append(link)
         self._active_href = None
         self._active_text = []
+        self._active_fallback_text = []
 
 
 def extract_links(page: Page) -> list[RawLink]:
@@ -316,6 +403,7 @@ def extract_links(page: Page) -> list[RawLink]:
     configured_board_urls = (
         _greenhouse_template_board_urls(embedded)
         + _lever_embed_board_urls(embedded)
+        + _bamboohr_embed_board_urls(embedded)
     )
     provider_config_links = [
         RawLink(
@@ -332,7 +420,10 @@ def extract_links(page: Page) -> list[RawLink]:
     embedded_payload = re.sub(r"\\u00(?:2f|2F)", "/", embedded_payload)
     embedded_payload = embedded_payload.replace(r"\/", "/")
     embedded_payload = unescape(embedded_payload)
-    for url in re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+", embedded_payload):
+    # Raw script scanning must stop at JavaScript string delimiters.  Treating
+    # an apostrophe as an RFC URL character here can consume the rest of an
+    # object literal (for example `url:'https://...',type:'GET'`).
+    for url in re.findall(r"https?://[A-Za-z0-9._~:/?#\[\]@!$&*+,;=%()-]+", embedded_payload):
         normalized_url = safe_normalize_url(url.rstrip("'\"),.;"))
         normalized_url = _canonical_navigation_url(normalized_url) if normalized_url else None
         if not normalized_url:
@@ -360,12 +451,22 @@ def extract_links(page: Page) -> list[RawLink]:
 
 def _stable_bounded_links(*groups: list[RawLink]) -> list[RawLink]:
     links: list[RawLink] = []
-    seen_urls: set[str] = set()
+    seen_urls: dict[str, int] = {}
     for group in groups:
         for link in group:
-            if link.url in seen_urls:
+            existing_index = seen_urls.get(link.url)
+            if existing_index is not None:
+                existing = links[existing_index]
+                if not existing.text.strip() and link.text.strip():
+                    links[existing_index] = RawLink(
+                        url=existing.url,
+                        text=link.text,
+                        source_url=existing.source_url,
+                        origin=existing.origin,
+                        location=existing.location or link.location,
+                    )
                 continue
-            seen_urls.add(link.url)
+            seen_urls[link.url] = len(links)
             links.append(link)
             if len(links) >= MAX_EXTRACTED_LINKS:
                 return links
@@ -374,7 +475,10 @@ def _stable_bounded_links(*groups: list[RawLink]) -> list[RawLink]:
 
 def _is_explicit_job_list_command(text: str) -> bool:
     normalized_text = " ".join(text.casefold().split())
-    return any(command in normalized_text for command in EXPLICIT_JOB_LIST_COMMANDS)
+    return bool(
+        any(command in normalized_text for command in EXPLICIT_JOB_LIST_COMMANDS)
+        or is_explicit_career_action(text)
+    )
 
 
 def _is_provider_url(url: str) -> bool:
@@ -387,6 +491,97 @@ def _is_provider_url(url: str) -> bool:
     if parsed.username or parsed.password or port not in {None, 80, 443}:
         return False
     return any(host == domain or host.endswith("." + domain) for domain in _PROVIDER_DOMAINS)
+
+
+def _structured_component_urls(payload: dict | list) -> list[tuple[str, str]]:
+    found: list[tuple[str, str]] = []
+    remaining_nodes = 2_000
+
+    def visit(value: object, inherited_label: str = "", depth: int = 0) -> None:
+        nonlocal remaining_nodes
+        if remaining_nodes <= 0 or depth > 20:
+            return
+        remaining_nodes -= 1
+        if isinstance(value, str):
+            url = _safe_structured_navigation_url(value)
+            if url:
+                found.append((url, inherited_label))
+            return
+        if isinstance(value, list):
+            for item in value:
+                visit(item, inherited_label, depth + 1)
+            return
+        if not isinstance(value, dict):
+            return
+
+        local_label = inherited_label
+        for key, label in value.items():
+            normalized_key = re.sub(r"[^a-z0-9]+", "", str(key).casefold())
+            if (
+                normalized_key in _STRUCTURED_LABEL_KEYS
+                and isinstance(label, str)
+                and label.strip()
+            ):
+                local_label = " ".join(label.split())[:500]
+                break
+        for key, item in value.items():
+            normalized_key = re.sub(r"[^a-z0-9]+", "", str(key).casefold())
+            if normalized_key not in _STRUCTURED_LABEL_KEYS:
+                visit(item, local_label, depth + 1)
+
+    visit(payload)
+    return found
+
+
+def _safe_structured_navigation_url(value: str) -> str | None:
+    candidate = unescape(value.strip())
+    if len(candidate) > 8_192:
+        return None
+    try:
+        parsed = urlparse(candidate)
+        port = parsed.port
+    except ValueError:
+        return None
+    host = (parsed.hostname or "").casefold()
+    if (
+        parsed.scheme.casefold() != "https"
+        or not host
+        or parsed.username
+        or parsed.password
+        or port not in {None, 443}
+        or parsed.fragment
+        or _is_non_public_host(host)
+        or any(is_sensitive_key(key) for key, _value in parse_qsl(parsed.query, keep_blank_values=True))
+        or any(parsed.path.casefold().endswith(suffix) for suffix in _RESOURCE_PATH_SUFFIXES)
+        or _is_provider_lookalike_host(host)
+    ):
+        return None
+    normalized = safe_normalize_url(candidate)
+    return _canonical_navigation_url(normalized) if normalized else None
+
+
+def _is_non_public_host(host: str) -> bool:
+    try:
+        return not ipaddress.ip_address(host).is_global
+    except ValueError:
+        pass
+    if host == "localhost" or host.endswith((".localhost", ".local", ".internal")):
+        return True
+    return not bool(
+        "." in host
+        and len(host) <= 253
+        and all(
+            re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?", label)
+            for label in host.split(".")
+        )
+    )
+
+
+def _is_provider_lookalike_host(host: str) -> bool:
+    return any(
+        domain in host and host != domain and not host.endswith("." + domain)
+        for domain in _PROVIDER_DOMAINS
+    )
 
 
 def _canonical_navigation_url(url: str) -> str:
@@ -436,6 +631,64 @@ def _lever_embed_board_urls(text: str) -> list[str]:
     return [f"https://jobs.lever.co/{identifier}" for _quote, identifier in identifiers]
 
 
+def _bamboohr_embed_board_urls(text: str) -> list[str]:
+    configured_hosts: set[str] = set()
+    for _quote, raw_domain in re.findall(
+        r"\bdata-domain\s*=\s*([\"'])([^\"']+)\1",
+        text,
+        re.I,
+    ):
+        candidate = raw_domain.strip().casefold()
+        parsed = urlparse(candidate if "://" in candidate else f"https://{candidate}")
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname
+            and not parsed.username
+            and not parsed.password
+            and parsed.port is None
+            and parsed.path in {"", "/"}
+            and not parsed.query
+            and not parsed.fragment
+            and re.fullmatch(
+                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.bamboohr\.com",
+                parsed.hostname,
+            )
+        ):
+            configured_hosts.add(parsed.hostname)
+
+    embedded_hosts: set[str] = set()
+    for _quote, script_url in re.findall(
+        r"<script\b[^>]{0,2000}?\bsrc\s*=\s*([\"'])([^\"']+)\1",
+        text,
+        re.I,
+    ):
+        try:
+            parsed = urlparse(script_url.strip())
+            port = parsed.port
+        except ValueError:
+            continue
+        if (
+            parsed.scheme == "https"
+            and parsed.hostname
+            and not parsed.username
+            and not parsed.password
+            and port is None
+            and parsed.path.rstrip("/") == "/js/embed.js"
+            and not parsed.query
+            and not parsed.fragment
+            and re.fullmatch(
+                r"[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.bamboohr\.com",
+                parsed.hostname.casefold(),
+            )
+        ):
+            embedded_hosts.add(parsed.hostname.casefold())
+
+    return [
+        f"https://{host}/careers"
+        for host in sorted(configured_hosts & embedded_hosts)
+    ]
+
+
 class Fetcher:
     def __init__(
         self,
@@ -448,9 +701,21 @@ class Fetcher:
         self.timeout = timeout
         self._http_sessions = threading.local()
 
-    def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
+    def fetch(
+        self,
+        url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
+    ) -> Page:
         normalized = normalize_url(url)
-        identity = build_request_identity(normalized, data=data, headers=headers)
+        identity = build_request_identity(
+            normalized,
+            data=data,
+            headers=headers,
+            interaction=interaction,
+        )
         failure = self._failure_for(identity)
         if failure is not None:
             raise FetchError(
@@ -481,9 +746,26 @@ class Fetcher:
                 retryable=False,
                 request_identity=identity.as_dict(),
             )
-        return self._fetch_live(normalized, data=data, headers=headers)
+        if interaction is None:
+            return self._fetch_live(normalized, data=data, headers=headers)
+        return self._fetch_live(
+            normalized, data=data, headers=headers, interaction=interaction
+        )
 
-    def _fetch_live(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
+    def _fetch_live(
+        self,
+        url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
+    ) -> Page:
+        if interaction is not None:
+            raise FetchError(
+                "browser interaction is unavailable for this fetch client",
+                reason_code="OPENING_DISCOVERY_INCOMPLETE",
+                retryable=False,
+            )
         socket.setdefaulttimeout(self.timeout)
         request_headers = {
             "User-Agent": (

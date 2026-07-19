@@ -72,7 +72,7 @@ def explicit_closed_source_status(source_trace: dict[str, Any]) -> str | None:
             values.extend((container.get("status"), container.get("availability")))
     for value in values:
         normalized = _string_value(value)
-        if normalized in {"closed", "expired", "unavailable"}:
+        if normalized in {"closed", "expired"}:
             return normalized
     return None
 

@@ -10,6 +10,7 @@ from job_source_agent.stages.discovery import (
     CareerDiscoveryStage,
     JobBoardDiscoveryStage,
     OpeningMatchStage,
+    _tenant_matches_hiring_entity,
 )
 
 
@@ -108,6 +109,198 @@ class StageIdentityContinuityTests(unittest.TestCase):
         self.assertTrue(execution.updates["provider_identity"].relationship_verified)
         self.assertEqual(execution.updates["provider_identity"].verification_method, "tenant_name_match")
 
+    def test_s5_accepts_provider_board_that_is_the_verified_career_page(self):
+        board = DiscoveredJobBoard(
+            JobBoard("https://jobs.example/acme", "example", "acme"),
+            "url_evidence",
+            "https://jobs.example/acme",
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Source Brand"))
+        context.career_page_url = "https://jobs.example/acme/jobs"
+        context.hiring_identity_evidence = _hiring("Source Brand")
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertTrue(identity.relationship_verified)
+        self.assertEqual(
+            identity.verification_method,
+            "verified_provider_career_page",
+        )
+
+    def test_s5_does_not_authorize_provider_board_from_a_different_career_url(self):
+        board = DiscoveredJobBoard(
+            JobBoard("https://jobs.example/acme", "example", "acme"),
+            "url_evidence",
+            "https://jobs.example/acme",
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Source Brand"))
+        context.career_page_url = "https://acme.example/careers"
+        context.hiring_identity_evidence = _hiring("Source Brand")
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertFalse(identity.relationship_verified)
+        self.assertEqual(identity.verification_method, "linked_url_only")
+
+    def test_s5_accepts_generic_board_from_explicit_first_party_handoff(self):
+        career = "https://acme.example/careers"
+        board_url = "https://opaque-hiring.example/jobs"
+        board = DiscoveredJobBoard(
+            JobBoard(board_url, "generic"),
+            "verified_first_party_action",
+            board_url,
+            relationship_evidence_url=career,
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = career
+        context.hiring_identity_evidence = _hiring("Acme")
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertTrue(identity.relationship_verified)
+        self.assertEqual(
+            identity.verification_method,
+            "verified_first_party_handoff",
+        )
+
+    def test_s5_rejects_generic_handoff_from_a_different_career_page(self):
+        board_url = "https://opaque-hiring.example/jobs"
+        board = DiscoveredJobBoard(
+            JobBoard(board_url, "generic"),
+            "verified_first_party_action",
+            board_url,
+            relationship_evidence_url="https://other.example/careers",
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = "https://acme.example/careers"
+        context.hiring_identity_evidence = _hiring("Acme")
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertFalse(identity.relationship_verified)
+        self.assertEqual(identity.verification_method, "linked_url_only")
+
+    def test_s5_accepts_provider_handoff_through_same_site_career_page(self):
+        career = "https://www.acme.example/careers"
+        board_url = "https://jobs.example/opaque-tenant"
+        board = DiscoveredJobBoard(
+            JobBoard(board_url, "example", "opaque-tenant"),
+            "linked_url_evidence",
+            board_url,
+            relationship_evidence_url=(
+                "https://www.acme.example/careers/acme-jobs"
+            ),
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = career
+        context.hiring_identity_evidence = _hiring("Acme")
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertTrue(identity.relationship_verified)
+        self.assertEqual(identity.verification_method, "verified_first_party_handoff")
+
+    def test_s5_accepts_provider_handoff_from_officially_linked_career_microsite(self):
+        website = "https://www.acme.example"
+        career = "https://careers.acme-jobs.example/"
+        board_url = "https://jobs.example/opaque-tenant"
+        board = DiscoveredJobBoard(
+            JobBoard(board_url, "example", "opaque-tenant"),
+            "linked_url_evidence",
+            board_url,
+            relationship_evidence_url="https://jobs.example/opaque-tenant/root",
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", company_website_url=website)
+        )
+        context.career_page_url = career
+        context.hiring_identity_evidence = _hiring("Acme")
+        context.trace["stages"] = {
+            "career_discovery": {
+                "selected": {
+                    "url": career,
+                    "source_url": website,
+                    "origin": "page_link",
+                }
+            }
+        }
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertTrue(identity.relationship_verified)
+        self.assertEqual(identity.verification_method, "verified_first_party_handoff")
+
+    def test_s5_rejects_provider_handoff_from_guessed_career_microsite(self):
+        website = "https://www.acme.example"
+        career = "https://careers.acme-jobs.example/"
+        board_url = "https://jobs.example/opaque-tenant"
+        board = DiscoveredJobBoard(
+            JobBoard(board_url, "example", "opaque-tenant"),
+            "linked_url_evidence",
+            board_url,
+            relationship_evidence_url="https://jobs.example/opaque-tenant/root",
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", company_website_url=website)
+        )
+        context.career_page_url = career
+        context.hiring_identity_evidence = _hiring("Acme")
+        context.trace["stages"] = {
+            "career_discovery": {
+                "selected": {
+                    "url": career,
+                    "source_url": website,
+                    "origin": "path_probe",
+                }
+            }
+        }
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertFalse(identity.relationship_verified)
+        self.assertEqual(identity.verification_method, "linked_url_only")
+
+    def test_s5_does_not_authorize_generic_link_evidence_as_action_attestation(self):
+        career = "https://acme.example/careers"
+        board_url = "https://opaque-hiring.example/jobs"
+        board = DiscoveredJobBoard(
+            JobBoard(board_url, "generic"),
+            "linked_url_evidence",
+            board_url,
+            relationship_evidence_url=career,
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = career
+        context.hiring_identity_evidence = _hiring("Acme")
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertFalse(identity.relationship_verified)
+        self.assertEqual(identity.verification_method, "linked_url_only")
+
+    def test_s5_does_not_authorize_provider_career_page_without_hiring_identity(self):
+        board = DiscoveredJobBoard(
+            JobBoard("https://jobs.example/acme", "example", "acme"),
+            "url_evidence",
+            "https://jobs.example/acme",
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = "https://jobs.example/acme/jobs"
+
+        execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertFalse(identity.relationship_verified)
+        self.assertEqual(identity.verification_method, "linked_url_only")
+
     def test_s5_does_not_authorize_a_tenant_by_substring(self):
         board = DiscoveredJobBoard(
             JobBoard("https://jobs.example/notacmeportfolio", "example", "notacmeportfolio"),
@@ -121,6 +314,12 @@ class StageIdentityContinuityTests(unittest.TestCase):
         execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
 
         self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+
+    def test_s5_accepts_repeated_workday_tenant_and_site_identity(self):
+        self.assertTrue(_tenant_matches_hiring_entity("Acme", "acme/acme"))
+
+    def test_s5_rejects_mixed_tenant_segments(self):
+        self.assertFalse(_tenant_matches_hiring_entity("Acme", "other/acme"))
 
     def test_external_apply_preserves_typed_discovered_board(self):
         context = PipelineContext.from_company(
@@ -153,11 +352,47 @@ class StageIdentityContinuityTests(unittest.TestCase):
             _Service(board, "https://jobs.example/acme/jobs/123"), self.registry
         ).run(context)
         self.assertEqual(execution.updates["opening_identity"].tenant, "acme")
+        self.assertTrue(execution.updates["provider_identity"].relationship_verified)
+        self.assertEqual(
+            execution.updates["provider_identity"].verification_method,
+            "tenant_name_match",
+        )
 
         wrong = OpeningMatchStage(
             _Service(board, "https://jobs.example/notion/jobs/123"), self.registry
         ).run(context)
         self.assertNotIn("opening_identity", wrong.updates)
+
+    def test_s6_does_not_inherit_verified_relationship_for_a_different_board(self):
+        board = DiscoveredJobBoard(
+            JobBoard("https://jobs.example/acme", "example", "acme"),
+            "url_evidence",
+            "https://careers.example/jobs",
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.discovered_job_board = board
+        context.job_list_page_url = board.board.url
+        context.provider_identity = ProviderIdentity(
+            hiring_entity_name="Acme",
+            provider="example",
+            tenant="acme",
+            canonical_board_url="https://jobs.example/alternate",
+            evidence_url="https://careers.example/jobs",
+            verification_method="first_party_handoff",
+            relationship_verified=True,
+        )
+
+        execution = OpeningMatchStage(
+            _Service(board, "https://jobs.example/acme/jobs/123"), self.registry
+        ).run(context)
+
+        self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+        self.assertEqual(
+            execution.updates["provider_identity"].verification_method,
+            "linked_url_only",
+        )
 
     def test_s6_rejects_same_provider_and_tenant_on_different_canonical_board(self):
         board = DiscoveredJobBoard(

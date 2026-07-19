@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": "504718",
+      "title": "DevOps Engineer",
+      "url": "https://wolfe.pinpointhq.com/en/postings/cacd0cbd-eee6-4326-99f1-b73ab432e303",
+      "path": "/en/postings/cacd0cbd-eee6-4326-99f1-b73ab432e303",
+      "workplace_type": "onsite",
+      "job": {
+        "id": "511748",
+        "department": {"id": "76482", "name": "DevOps"}
+      },
+      "location": {
+        "id": "77957",
+        "city": "Pittsburgh",
+        "name": "Pittsburgh Onsite",
+        "postal_code": "15220",
+        "province": "Pennsylvania",
+        "street_address": ""
+      }
+    }
+  ]
+}

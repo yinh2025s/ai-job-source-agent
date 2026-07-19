@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 import fcntl
 
+from .browser_interaction import BrowserInteraction
 from .reasons import classify_fetch_error, reason_spec
 from .request_identity import build_request_identity, is_sensitive_key, sanitize_url
 from .web import FetchError, Page, fixture_path_candidates
@@ -44,6 +45,7 @@ SENSITIVE_QUERY_KEYS = {
 SENSITIVE_BODY_FIELDS = SENSITIVE_QUERY_KEYS | {
     "_csrf",
     "authToken",
+    "myJobsToken",
     "protectedSessionJWT",
     "sessionCSRFToken",
     "sessionJWT",
@@ -125,12 +127,15 @@ class SnapshotStore:
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
         capture: SnapshotRequestCapture | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
     ) -> SnapshotRecord:
         self._validate_capture(capture)
         request_identity = build_request_identity(
             request_url or page.url,
             data=data,
             headers=headers,
+            interaction=interaction,
         )
         sanitized_final_url = sanitize_url(page.final_url or page.url)
         html = sanitize_snapshot_body(page.html)
@@ -176,9 +181,16 @@ class SnapshotStore:
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
         capture: SnapshotRequestCapture | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
     ) -> FetchFailureRecord:
         self._validate_capture(capture)
-        request_identity = build_request_identity(request_url, data=data, headers=headers)
+        request_identity = build_request_identity(
+            request_url,
+            data=data,
+            headers=headers,
+            interaction=interaction,
+        )
         reason_code = error.reason_code or classify_fetch_error(str(error))
         retryable = (
             error.retryable
@@ -267,10 +279,25 @@ class SnapshottingFetcher:
             coordinator.bind_store(self.snapshot_store)
         self.timeout = getattr(fetcher, "timeout", None)
 
-    def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
+    def fetch(
+        self,
+        url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
+    ) -> Page:
         capture = self.coordinator.begin_request() if self.coordinator is not None else None
         try:
-            page = self.fetcher.fetch(url, data=data, headers=headers)
+            if interaction is None:
+                page = self.fetcher.fetch(url, data=data, headers=headers)
+            else:
+                page = self.fetcher.fetch(
+                    url,
+                    data=data,
+                    headers=headers,
+                    interaction=interaction,
+                )
         except FetchError as error:
             record = self.snapshot_store.write_failure(
                 error,
@@ -278,6 +305,7 @@ class SnapshottingFetcher:
                 data=data,
                 headers=headers,
                 capture=capture,
+                interaction=interaction,
             )
             if self.coordinator is not None:
                 self.coordinator.accept_terminal_record(record)
@@ -288,6 +316,7 @@ class SnapshottingFetcher:
             data=data,
             headers=headers,
             capture=capture,
+            interaction=interaction,
         )
         if self.coordinator is not None:
             self.coordinator.accept_terminal_record(record)
@@ -304,6 +333,8 @@ class SnapshottingFetcher:
         url: str,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
     ) -> FetchFailureRecord:
         capture = self.coordinator.begin_request() if self.coordinator is not None else None
         record = self.snapshot_store.write_failure(
@@ -312,6 +343,7 @@ class SnapshottingFetcher:
             data=data,
             headers=headers,
             capture=capture,
+            interaction=interaction,
         )
         if self.coordinator is not None:
             self.coordinator.accept_terminal_record(record)

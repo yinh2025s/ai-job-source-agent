@@ -75,7 +75,7 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
             [item.url for item in scheduled],
             ["https://example.com/jobs", "https://example.com/careers"],
         )
-        self.assertEqual(trace["version"], "4")
+        self.assertEqual(trace["version"], "9")
 
     def test_verified_homepage_navigation_has_page_link_tier_and_boost(self):
         agent = JobSourceAgent(Fetcher(offline=True))
@@ -123,6 +123,60 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
         self.assertEqual(scheduled[0].url, command.url)
         self.assertEqual(candidate_evidence_tier(command), 1)
 
+    def test_small_budget_prioritizes_same_origin_get_form_job_command(self):
+        form_action = candidate(
+            "https://example.com/careers/open-positions",
+            55,
+            ["explicit job-list command"],
+            text="Open Positions",
+            origin="form_action",
+            source_url="https://example.com/careers",
+        )
+        path_probe = candidate(
+            "https://example.com/jobs",
+            900,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+
+        scheduled, _trace = schedule_career_candidates(
+            [path_probe, form_action],
+            fetch_limit=1,
+        )
+
+        self.assertEqual(scheduled[0].url, form_action.url)
+        self.assertEqual(candidate_evidence_tier(form_action), 1)
+
+    def test_unsafe_form_actions_do_not_gain_job_command_evidence(self):
+        unsafe = (
+            candidate(
+                "https://evil.example.net/jobs",
+                900,
+                ["explicit job-list command"],
+                text="Open Positions",
+                origin="form_action",
+                source_url="https://example.com/careers",
+            ),
+            candidate(
+                "https://user:secret@example.com/jobs",
+                900,
+                ["explicit job-list command"],
+                text="Jobs",
+                origin="form_action",
+                source_url="https://example.com/careers",
+            ),
+            candidate(
+                "http://example.com/jobs",
+                900,
+                ["explicit job-list command"],
+                text="Jobs",
+                origin="form_action",
+                source_url="https://example.com/careers",
+            ),
+        )
+
+        self.assertTrue(all(candidate_evidence_tier(item) > 1 for item in unsafe))
+
     def test_small_budget_prioritizes_observed_cross_site_ats_candidate(self):
         ats_candidate = candidate(
             "https://boards.greenhouse.io/example",
@@ -144,6 +198,85 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
 
         self.assertEqual(scheduled[0].url, ats_candidate.url)
         self.assertEqual(candidate_evidence_tier(ats_candidate), 1)
+
+    def test_observed_http_ats_anchor_precedes_blind_guesses(self):
+        ats_candidate = candidate(
+            "http://job-boards.greenhouse.io:80/aperiasolutions",
+            60,
+            ["known ATS domain", "ATS company board URL", "homepage navigation link"],
+            origin="page_link",
+            source_url="https://www.aperia.com/",
+        )
+        path_probe = candidate(
+            "https://www.aperia.com/careers",
+            900,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+        blind_ats = candidate(
+            "https://job-boards.greenhouse.io/aperia",
+            850,
+            ["known ATS domain", "ATS company board URL"],
+            origin="blind_ats_probe",
+        )
+
+        scheduled, _trace = schedule_career_candidates(
+            [path_probe, blind_ats, ats_candidate],
+            fetch_limit=1,
+        )
+
+        self.assertEqual(candidate_evidence_tier(ats_candidate), 2)
+        self.assertEqual(scheduled[0].url, ats_candidate.url)
+
+    def test_unsafe_or_unobserved_http_ats_candidates_are_not_promoted(self):
+        unsafe_candidates = [
+            candidate(
+                "http://careers.example.net/jobs",
+                900,
+                ["career keyword 'jobs'", "homepage navigation link"],
+                origin="page_link",
+                source_url="https://www.aperia.com/",
+            ),
+            candidate(
+                "http://evil.job-boards.greenhouse.io/aperiasolutions",
+                900,
+                ["known ATS domain", "homepage navigation link"],
+                origin="page_link",
+                source_url="https://www.aperia.com/",
+            ),
+            candidate(
+                "http://job-boards.greenhouse.io:8080/aperiasolutions",
+                900,
+                ["known ATS domain", "homepage navigation link"],
+                origin="page_link",
+                source_url="https://www.aperia.com/",
+            ),
+            candidate(
+                "http://user:secret@job-boards.greenhouse.io/aperiasolutions",
+                900,
+                ["known ATS domain", "homepage navigation link"],
+                origin="page_link",
+                source_url="https://www.aperia.com/",
+            ),
+            candidate(
+                "http://job-boards.greenhouse.io/aperiasolutions",
+                900,
+                ["known ATS domain", "homepage navigation link"],
+                origin="page_link",
+                source_url="http://www.aperia.com/",
+            ),
+            candidate(
+                "http://job-boards.greenhouse.io/aperiasolutions",
+                900,
+                ["known ATS domain", "ATS company board URL"],
+                origin="blind_ats_probe",
+                source_url="https://www.aperia.com/",
+            ),
+        ]
+
+        self.assertTrue(
+            all(candidate_evidence_tier(item) >= 3 for item in unsafe_candidates)
+        )
 
     def test_blind_or_unsafe_job_list_candidates_are_not_promoted(self):
         path_probe = candidate(
@@ -396,6 +529,32 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
         self.assertEqual(scheduled[0].url, "https://example.com/careers")
         self.assertEqual(len(scheduled), 2)
 
+    def test_target_region_generated_path_represents_family_inside_fetch_window(self):
+        localized = candidate(
+            "https://example.com/en-us/careers",
+            200,
+            [
+                "generated path probe",
+                "matches target location region 'us'",
+            ],
+            origin="path_probe",
+        )
+        locale_free = candidate(
+            "https://example.com/careers",
+            600,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+
+        scheduled, trace = schedule_career_candidates(
+            [locale_free, localized],
+            fetch_limit=1,
+        )
+
+        self.assertEqual(scheduled[0].url, localized.url)
+        self.assertEqual(trace["roles_by_url"][localized.url], "representative")
+        self.assertEqual(trace["roles_by_url"][locale_free.url], "locale_alias")
+
     def test_speculative_truncation_does_not_report_fetch_budget_exhaustion(self):
         fetcher = RecordingFailureFetcher()
         agent = JobSourceAgent(
@@ -562,6 +721,148 @@ class CareerCandidateSchedulerTests(unittest.TestCase):
         self.assertEqual(scheduled[4].url, "https://www.example.com/careers")
         self.assertEqual(trace["reserved_host_fallback"], scheduled[4].url)
         self.assertEqual(trace["roles_by_url"][scheduled[4].url], "reserved_host_fallback")
+
+    def test_five_fetch_schedule_reserves_career_subdomain_after_path_guesses(self):
+        guesses = [
+            candidate(
+                f"https://www.lacoste.com/us/{route}",
+                500 - index,
+                ["generated path probe"],
+                origin="path_probe",
+            )
+            for index, route in enumerate(
+                ("company/careers", "careers", "about/careers", "careers/jobs", "jobs")
+            )
+        ]
+        careers_subdomain = candidate(
+            "https://careers.lacoste.com",
+            195,
+            ["career keyword 'careers'"],
+            origin="subdomain_probe",
+            source_url="https://www.lacoste.com/us/",
+        )
+
+        scheduled, trace = schedule_career_candidates(
+            guesses + [careers_subdomain],
+            fetch_limit=5,
+        )
+
+        self.assertIn(careers_subdomain.url, [item.url for item in scheduled[:5]])
+        self.assertEqual(trace["reserved_subdomain_probe"], careers_subdomain.url)
+        self.assertEqual(
+            trace["roles_by_url"][careers_subdomain.url],
+            "reserved_subdomain_probe",
+        )
+
+    def test_target_region_same_site_gateway_keeps_one_bounded_traversal_slot(self):
+        gateway = candidate(
+            "https://us.caudalie.com/",
+            50,
+            ["matches target location region 'us'"],
+            text="United States",
+            origin="page_link",
+            source_url="https://caudalie.com/en-fr",
+        )
+        guesses = [
+            candidate(
+                f"https://caudalie.com/{route}",
+                500 - index,
+                ["generated path probe"],
+                origin="path_probe",
+            )
+            for index, route in enumerate(("careers", "jobs", "open-positions"))
+        ]
+
+        scheduled, trace = schedule_career_candidates(
+            guesses + [gateway],
+            fetch_limit=3,
+        )
+
+        self.assertIn(gateway.url, [item.url for item in scheduled[:3]])
+        self.assertEqual(trace["reserved_regional_gateway"], gateway.url)
+        self.assertEqual(trace["roles_by_url"][gateway.url], "reserved_regional_gateway")
+        self.assertGreater(candidate_evidence_tier(gateway), 1)
+
+    def test_target_region_gateway_is_marked_when_already_inside_fetch_window(self):
+        gateway = candidate(
+            "https://us.caudalie.com/",
+            230,
+            ["matches target location region 'us'"],
+            text="United States",
+            origin="page_link",
+            source_url="https://caudalie.com/en-fr",
+        )
+
+        scheduled, trace = schedule_career_candidates(
+            [
+                gateway,
+                candidate(
+                    "https://caudalie.com/careers",
+                    100,
+                    ["generated path probe"],
+                    origin="path_probe",
+                ),
+            ],
+            fetch_limit=3,
+        )
+
+        self.assertIn(gateway.url, [item.url for item in scheduled[:3]])
+        self.assertEqual(
+            trace["roles_by_url"][gateway.url],
+            "reserved_regional_gateway",
+        )
+
+    def test_regional_gateway_reservation_rejects_cross_site_conflicting_or_selector_links(self):
+        guesses = [
+            candidate(
+                f"https://caudalie.com/{route}",
+                500 - index,
+                ["generated path probe"],
+                origin="path_probe",
+            )
+            for index, route in enumerate(("careers", "jobs", "open-positions"))
+        ]
+        ineligible = [
+            candidate(
+                "https://us.unrelated.example/",
+                50,
+                ["matches target location region 'us'"],
+                origin="page_link",
+                source_url="https://caudalie.com/en-fr",
+            ),
+            candidate(
+                "https://fr.caudalie.com/",
+                50,
+                [
+                    "matches target location region 'us'",
+                    "conflicts with target location region 'us': 'fr'",
+                ],
+                origin="page_link",
+                source_url="https://caudalie.com/en-fr",
+            ),
+            candidate(
+                "https://caudalie.com/country-selector",
+                50,
+                ["matches target location region 'us'"],
+                origin="page_link",
+                source_url="https://caudalie.com/en-fr",
+            ),
+            candidate(
+                "https://us.caudalie.com/",
+                50,
+                [],
+                origin="page_link",
+                source_url="https://caudalie.com/en-fr",
+            ),
+        ]
+
+        scheduled, trace = schedule_career_candidates(
+            guesses + ineligible,
+            fetch_limit=3,
+        )
+
+        self.assertEqual([item.url for item in scheduled[:3]], [item.url for item in guesses])
+        self.assertIsNone(trace["reserved_regional_gateway"])
 
     def test_two_letter_product_route_is_not_treated_as_locale(self):
         agent = JobSourceAgent(Fetcher(offline=True))

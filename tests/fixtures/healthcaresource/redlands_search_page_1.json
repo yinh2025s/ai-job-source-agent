@@ -1,0 +1,30 @@
+{
+  "jobs": [
+    {
+      "id": "3N6g2qWPgE2f6nF5G5j3cw",
+      "title": "New Graduate Registered Nurse (RN) - Emergency",
+      "isInternalOnly": false,
+      "hasOpening": true,
+      "organization": "Community Hospital - Emergency Services",
+      "city": "Redlands",
+      "state": "CA",
+      "zip": "92373"
+    },
+    {
+      "id": "x5OUKFPv-kqVdKcw1e6R9A",
+      "title": "New Graduate Registered Nurse (RN) - Telemetry",
+      "isInternalOnly": false,
+      "hasOpening": true,
+      "organization": "Community Hospital - Telemetry",
+      "city": "Redlands",
+      "state": "CA",
+      "zip": "92373"
+    }
+  ],
+  "meta": {
+    "page": 1,
+    "perPage": 2,
+    "totalJobs": 3,
+    "totalPages": 2
+  }
+}

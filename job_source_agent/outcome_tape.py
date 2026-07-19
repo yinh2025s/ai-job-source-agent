@@ -6,6 +6,7 @@ import threading
 from dataclasses import dataclass
 from typing import Any, ClassVar, Iterable, Literal, TypeAlias
 
+from .browser_interaction import BrowserInteraction
 from .evidence_scope import EvidenceScopeRef, evidence_records_sha256
 from .reasons import REASON_SPECS, reason_spec
 from .request_identity import (
@@ -203,15 +204,42 @@ class OutcomeTapeFetcher:
             raise TypeError("tape must be an OutcomeTape")
         self._tape = tape
         self._consumed = [False] * len(tape.entries)
+        self._last_consumed_index: int | None = None
         self._lock = threading.Lock()
+
+    @property
+    def supports_forced_render(self) -> bool:
+        with self._lock:
+            if self._last_consumed_index is None:
+                return False
+            last_entry = self._tape.entries[self._last_consumed_index]
+            next_index = next(
+                (
+                    index
+                    for index in range(self._last_consumed_index + 1, len(self._consumed))
+                    if not self._consumed[index]
+                ),
+                None,
+            )
+            return (
+                next_index is not None
+                and self._tape.entries[next_index].request == last_entry.request
+            )
 
     def fetch(
         self,
         url: str,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
     ) -> Page:
-        identity = build_request_identity(url, data=data, headers=headers)
+        identity = build_request_identity(
+            url,
+            data=data,
+            headers=headers,
+            interaction=interaction,
+        )
         with self._lock:
             entry_index = next(
                 (
@@ -229,6 +257,7 @@ class OutcomeTapeFetcher:
                 )
                 raise _divergence(message, identity)
             self._consumed[entry_index] = True
+            self._last_consumed_index = entry_index
             entry = self._tape.entries[entry_index]
         if isinstance(entry, PageOutcomeTapeEntry):
             return entry.to_page()

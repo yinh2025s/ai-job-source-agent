@@ -5,7 +5,13 @@ from job_source_agent.request_identity import build_request_identity
 from job_source_agent.web import FetchError, Fetcher, Page, domain_of
 from job_source_agent.website_resolver import (
     CompanyWebsiteResolver,
+    SearchEvidence,
+    WebsiteCandidate,
+    _alternate_apex_www_candidate,
+    _corporate_group_root_candidates,
     _linkedin_json_ld_websites,
+    _regional_root_candidates,
+    _regional_sibling_root_candidates,
     clean_search_url,
     is_blocked_domain,
     tokenize_company_name,
@@ -14,11 +20,184 @@ from job_source_agent.website_resolver import (
 
 
 class WebsiteResolverTests(unittest.TestCase):
+    def test_parenthetical_b_corp_certification_is_not_brand_identity(self):
+        class CertificationFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == "https://group.loccitane.com":
+                    return page
+                raise FetchError("unexpected candidate")
+
+        page = Page(
+            url="https://group.loccitane.com",
+            html=(
+                "<html><head><title>Group L'OCCITANE</title></head>"
+                "<body><h1>L'OCCITANE Group</h1><a href='/careers'>Careers</a></body></html>"
+            ),
+            final_url="https://group.loccitane.com",
+        )
+        resolver = CompanyWebsiteResolver(
+            CertificationFetcher(offline=True),
+            verify_limit=1,
+        )
+
+        website, trace = resolver.resolve(
+            "L'OCCITANE Group (B Corp)",
+            "https://www.linkedin.com/company/l-occitane-group",
+            stored_candidate_url="https://group.loccitane.com",
+        )
+
+        self.assertEqual(website, "https://group.loccitane.com")
+        self.assertIn("stored company evidence revalidated", trace["selected"]["reasons"])
+
+    def test_stored_company_candidate_is_revalidated_before_blocked_linkedin(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class StoredCandidateFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if domain_of(url) == "acme.example":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.example/",
+                        html="<title>Acme</title><body>Acme official company</body>",
+                    )
+                if "linkedin.com" in url:
+                    raise AssertionError("stored revalidation must not fetch LinkedIn first")
+                raise FetchError("not this candidate")
+
+        fetcher = StoredCandidateFetcher()
+        website_url, trace = CompanyWebsiteResolver(fetcher).resolve(
+            "Acme",
+            linkedin_url,
+            stored_candidate_url="https://acme.example",
+        )
+
+        self.assertEqual(website_url, "https://acme.example/")
+        self.assertEqual(fetcher.calls, ["https://acme.example"])
+        self.assertIn(
+            "stored company evidence revalidated",
+            trace["selected"]["reasons"],
+        )
+
+    def test_transport_fallback_only_removes_www_from_verified_candidate(self):
+        self.assertEqual(
+            _alternate_apex_www_candidate("https://www.example.com/about"),
+            "https://example.com/about",
+        )
+        self.assertIsNone(
+            _alternate_apex_www_candidate("https://careers.example.com/about")
+        )
+        self.assertIsNone(_alternate_apex_www_candidate("https://example.com/about"))
+
     def test_url_region_accepts_only_leading_language_region_locales(self):
         self.assertEqual(url_region("https://example.com/en-be/jobs"), "be")
         self.assertEqual(url_region("https://example.com/es-es/jobs"), "es")
+        self.assertEqual(url_region("https://example.cn/jobs"), "cn")
         self.assertIsNone(url_region("https://example.com/jobs/en-be/openings"))
         self.assertIsNone(url_region("https://example.com/careers/us/engineering"))
+
+    def test_us_job_rejects_conflicting_cctld_and_uses_global_company_site(self):
+        class RegionalDomainFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                if domain_of(url) == "maison.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.maison.com/",
+                        html="<title>Maison</title><body>Maison official website</body>",
+                    )
+                if domain_of(url) == "maison.cn":
+                    return Page(
+                        url=url,
+                        final_url="https://www.maison.cn/",
+                        html="<title>Maison China</title><body>Maison official website</body>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            RegionalDomainFetcher(offline=True), verify_limit=3
+        ).resolve(
+            "Maison",
+            "https://www.linkedin.com/company/maison",
+            "New York, NY",
+            "https://maison.cn",
+        )
+
+        self.assertEqual(website_url, "https://www.maison.com/")
+        china_candidate = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "maison.cn"
+        )
+        self.assertIn(
+            "regional website conflicts with job location: cn vs us",
+            china_candidate["reasons"],
+        )
+
+    def test_china_job_can_select_matching_cctld(self):
+        class ChinaDomainFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "maison.cn":
+                    return Page(
+                        url=url,
+                        final_url="https://maison.cn/",
+                        html="<title>Maison China</title><body>Maison official website</body>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            ChinaDomainFetcher(offline=True), verify_limit=1
+        ).resolve("Maison", job_location="Shanghai, China", preferred_url="https://maison.cn")
+
+        self.assertEqual(website_url, "https://maison.cn/")
+        self.assertIn(
+            "regional website matches job location: cn",
+            trace["selected"]["reasons"],
+        )
+
+    def test_official_conflicting_cctld_does_not_publish_regional_inventory(self):
+        linkedin_url = "https://www.linkedin.com/company/maison"
+
+        class OfficialRegionalFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Maison",'
+                            '"sameAs":"https://maison.cn"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "maison.cn":
+                    return Page(
+                        url=url,
+                        final_url="https://maison.cn/",
+                        html=(
+                            "<title>Maison China</title><body>Maison"
+                            '<a href="/careers">China careers</a></body>'
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace, navigation_evidence = CompanyWebsiteResolver(
+            OfficialRegionalFetcher(offline=True), verify_limit=3
+        ).resolve_with_navigation_evidence(
+            "Maison",
+            linkedin_url,
+            "New York, NY",
+        )
+
+        self.assertEqual(website_url, "https://maison.cn/")
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
+        self.assertIsNone(navigation_evidence)
 
     def test_navigation_evidence_comes_only_from_the_selected_verified_homepage(self):
         class CandidateFetcher(Fetcher):
@@ -352,6 +531,7 @@ class WebsiteResolverTests(unittest.TestCase):
             sum(domain_of(url) == "acme.com" for url in fetcher.homepage_calls),
             1,
         )
+        self.assertEqual(fetcher.homepage_calls.count("https://acme.com"), 1)
         self.assertIn(
             "LinkedIn official website accepted without homepage response",
             trace["selected"]["reasons"],
@@ -568,6 +748,39 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertIn("LinkedIn slug confirms domain", scored.reasons)
         self.assertIn("LinkedIn marketing-prefix slug is TLD-ambiguous", scored.reasons)
 
+    def test_find_slug_does_not_allow_speculative_bare_brand_domain_to_win(self):
+        linkedin_url = "https://www.linkedin.com/company/find-mirage"
+
+        class AmbiguousBrandFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "mirage.com":
+                    return Page(
+                        url=url,
+                        final_url="https://mirage.com/",
+                        html=(
+                            '<html><head><title>Enterprise platform</title>'
+                            '<link rel="canonical" href="https://mirage.com/"></head>'
+                            '<body>Technology for event-driven enterprises</body></html>'
+                        ),
+                    )
+                raise FetchError("identity evidence unavailable")
+
+        resolver = CompanyWebsiteResolver(
+            AmbiguousBrandFetcher(offline=True),
+            verify_limit=3,
+        )
+
+        website_url, trace = resolver.resolve("Mirage", linkedin_url, "United States")
+
+        self.assertIsNone(website_url)
+        mirage_candidate = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "mirage.com"
+        )
+        self.assertIn(
+            "LinkedIn marketing-prefix slug is TLD-ambiguous",
+            mirage_candidate["reasons"],
+        )
+
     def test_marketing_prefix_slug_loads_official_linkedin_evidence_before_fast_selection(self):
         linkedin_url = "https://www.linkedin.com/company/trymirage"
 
@@ -688,7 +901,11 @@ class WebsiteResolverTests(unittest.TestCase):
                     return Page(
                         url=url,
                         final_url="https://www.deloitte.com/southeast-asia/en.html",
-                        html="<html><head><title>Deloitte</title></head><body>Deloitte</body></html>",
+                        html=(
+                            "<html><head><title>Deloitte</title></head><body>Deloitte"
+                            '<a href="https://www.deloitte.com/us/en.html">United States</a>'
+                            "</body></html>"
+                        ),
                     )
                 if url == us_root:
                     return Page(
@@ -716,6 +933,570 @@ class WebsiteResolverTests(unittest.TestCase):
                 "regional website conflicts with job location: sea vs us" in item["reasons"]
                 for item in trace["candidates"]
             )
+        )
+
+    def test_us_job_location_recovers_modern_en_us_storefront(self):
+        us_root = "https://skims.com/en-us"
+
+        class RegionalFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                if url.rstrip("/") in {"https://skims.com", "https://www.skims.com"}:
+                    return Page(
+                        url=url,
+                        final_url="https://skims.com/en-sg",
+                        html=(
+                            "<title>SKIMS</title><body>SKIMS"
+                            '<a href="https://skims.com/en-us">United States</a>'
+                            "</body>"
+                        ),
+                    )
+                if url.rstrip("/") in {us_root, "https://www.skims.com/en-us"}:
+                    return Page(
+                        url=url,
+                        final_url=us_root,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"SKIMS"}</script>'
+                            "<title>SKIMS US</title><body>SKIMS "
+                            '<a href="https://skims.pinpointhq.com/">Careers</a>'
+                            "</body>"
+                        ),
+                    )
+                raise FetchError(f"not this candidate: {url}")
+
+        resolver = CompanyWebsiteResolver(RegionalFetcher(offline=True), verify_limit=3)
+
+        website_url, _trace = resolver.resolve(
+            "SKIMS",
+            "https://www.linkedin.com/company/skimsbody",
+            "Los Angeles, CA",
+            "https://skims.com",
+        )
+
+        self.assertEqual(website_url, us_root)
+
+    def test_us_location_follows_declared_same_site_gateway_locale(self):
+        gateway_url = "https://caudalie.com/en-fr"
+        us_url = "https://us.caudalie.com/"
+
+        class CaudalieGatewayFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls: list[str] = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url.rstrip("/") in {"https://caudalie.com", "https://www.caudalie.com"}:
+                    return Page(
+                        url=url,
+                        final_url=gateway_url,
+                        html=(
+                            "<title>Caudalie France</title><body>Caudalie"
+                            f'<a href="{us_url}">United States</a>'
+                            "</body>"
+                        ),
+                    )
+                if url == us_url:
+                    return Page(
+                        url=url,
+                        final_url=us_url,
+                        html="<title>Caudalie United States</title><body>Caudalie</body>",
+                    )
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                raise FetchError(f"not this candidate: {url}")
+
+        fetcher = CaudalieGatewayFetcher()
+        website_url, trace = CompanyWebsiteResolver(fetcher, verify_limit=3).resolve(
+            "Caudalie",
+            "https://www.linkedin.com/company/caudalie",
+            "New York, NY",
+        )
+
+        self.assertEqual(website_url, us_url)
+        self.assertIn(us_url, fetcher.calls)
+        gateway = next(
+            candidate
+            for candidate in trace["candidates"]
+            if candidate["url"] == gateway_url
+        )
+        self.assertIn("regional gateway declares US locale link", gateway["reasons"])
+
+    def test_us_location_recovers_root_from_hreflang_alternate(self):
+        gateway_url = "https://www.lacoste.com/fr/"
+        candidate = WebsiteCandidate(
+            gateway_url,
+            1,
+            [
+                "homepage verified",
+                "homepage title confirms company identity",
+                "regional website conflicts with job location: fr vs us",
+            ],
+            Page(
+                url=gateway_url,
+                final_url=gateway_url,
+                html=(
+                    '<LINK HREF="https://www.lacoste.com/" '
+                    'HREFLANG="EN-us" REL="ALTERNATE">'
+                ),
+            ),
+        )
+
+        self.assertEqual(
+            _regional_root_candidates([candidate], "New York, NY"),
+            ["https://www.lacoste.com/"],
+        )
+
+    def test_us_location_recovers_us_path_from_hreflang_alternate(self):
+        gateway_url = "https://www.skims.com/en-sg"
+        candidate = WebsiteCandidate(
+            gateway_url,
+            1,
+            [
+                "homepage verified",
+                "homepage title confirms company identity",
+                "regional website conflicts with job location: sg vs us",
+            ],
+            Page(
+                url=gateway_url,
+                final_url=gateway_url,
+                html='<link rel="alternate" href="/us/" hreflang="en-US">',
+            ),
+        )
+
+        self.assertEqual(
+            _regional_root_candidates([candidate], "Los Angeles, CA"),
+            ["https://www.skims.com/us/"],
+        )
+
+    def test_us_location_follows_hreflang_from_verified_deployment_gateway(self):
+        gateway_url = "https://prod-deleg-sfcc.lacoste.com/id/en/"
+        candidate = WebsiteCandidate(
+            gateway_url,
+            1,
+            [
+                "homepage verified",
+                "homepage title confirms company identity",
+                "deployment hostname",
+            ],
+            Page(
+                url=gateway_url,
+                final_url=gateway_url,
+                html=(
+                    '<link rel="alternate" href="https://www.lacoste.com/us/" '
+                    'hreflang="en-US">'
+                ),
+            ),
+        )
+
+        self.assertEqual(
+            _regional_root_candidates([candidate], "New York, NY"),
+            ["https://www.lacoste.com/us/"],
+        )
+
+    def test_declared_us_root_survives_same_site_geo_redirect(self):
+        gateway_url = "https://www.skims.com/en-sg"
+        us_url = "https://www.skims.com/"
+
+        class GeoRedirectFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == gateway_url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<title>SKIMS</title><body>SKIMS"
+                            '<link rel="alternate" href="https://www.skims.com/" '
+                            'hreflang="en-US"></body>'
+                        ),
+                    )
+                if url == us_url:
+                    return Page(
+                        url=url,
+                        final_url=gateway_url,
+                        html="<title>SKIMS</title><body>SKIMS</body>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            GeoRedirectFetcher(offline=True), verify_limit=3
+        ).resolve(
+            "SKIMS",
+            "https://www.linkedin.com/company/skimsbody",
+            "Los Angeles, CA",
+            stored_candidate_url=gateway_url,
+        )
+
+        self.assertEqual(website_url, us_url)
+        self.assertIn(
+            "declared regional root geo-redirected within verified company site",
+            trace["selected"]["reasons"],
+        )
+
+    def test_declared_us_root_rejects_cross_site_redirect(self):
+        gateway_url = "https://www.skims.com/en-sg"
+        us_url = "https://www.skims.com/"
+
+        class CrossSiteRedirectFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == gateway_url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<title>SKIMS</title><body>SKIMS"
+                            '<link rel="alternate" href="https://www.skims.com/" '
+                            'hreflang="en-US"></body>'
+                        ),
+                    )
+                if url == us_url:
+                    return Page(
+                        url=url,
+                        final_url="https://example.net/en-us",
+                        html="<title>SKIMS</title><body>SKIMS</body>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            CrossSiteRedirectFetcher(offline=True), verify_limit=3
+        ).resolve(
+            "SKIMS",
+            "https://www.linkedin.com/company/skimsbody",
+            "Los Angeles, CA",
+            preferred_url=gateway_url,
+        )
+
+        self.assertIsNone(website_url)
+        self.assertTrue(
+            any(
+                "regional locale identity continuity rejected" in item["reasons"]
+                for item in trace["candidates"]
+            )
+        )
+
+    def test_declared_us_root_survives_access_control_on_current_fetch(self):
+        gateway_url = "https://prod-deleg-sfcc.lacoste.com/id/en/"
+        us_url = "https://www.lacoste.com/"
+
+        class AccessControlledLocaleFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == gateway_url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<title>Lacoste</title><body>Lacoste"
+                            '<link rel="alternate" href="https://www.lacoste.com/" '
+                            'hreflang="en-US"></body>'
+                        ),
+                    )
+                if url == us_url:
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            AccessControlledLocaleFetcher(offline=True), verify_limit=3
+        ).resolve(
+            "Lacoste",
+            "https://www.linkedin.com/company/lacoste",
+            "New York, NY",
+            stored_candidate_url=gateway_url,
+        )
+
+        self.assertEqual(website_url, us_url)
+        self.assertIn(
+            "verified regional gateway declares access-controlled locale root",
+            trace["selected"]["reasons"],
+        )
+
+    def test_same_brand_global_sibling_survives_access_control_for_current_run(self):
+        foreign_url = "https://www.michaelkors.cn/"
+
+        class AccessControlledSiblingFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "michaelkors.cn":
+                    return Page(
+                        url=url,
+                        final_url=foreign_url,
+                        html=(
+                            "<title>Michael Kors China</title>"
+                            "<body>Michael Kors official store</body>"
+                        ),
+                    )
+                if domain_of(url) == "michaelkors.com":
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        website_url, trace = CompanyWebsiteResolver(
+            AccessControlledSiblingFetcher(offline=True),
+            verify_limit=3,
+        ).resolve(
+            "Michael Kors",
+            job_location="New York, NY",
+            stored_candidate_url=foreign_url,
+        )
+
+        self.assertEqual(website_url, "https://michaelkors.com")
+        self.assertIn(
+            "verified regional gateway supports access-controlled sibling root",
+            trace["selected"]["reasons"],
+        )
+
+    def test_readable_global_tld_beats_access_controlled_dot_com_sibling(self):
+        foreign_url = "https://brand.cn/"
+
+        class GlobalTldFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "brand.cn":
+                    return Page(
+                        url=url,
+                        final_url=foreign_url,
+                        html="<title>Brand China</title><body>Brand official</body>",
+                    )
+                if domain_of(url) == "brand.com":
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                if domain_of(url) == "brand.global":
+                    return Page(
+                        url=url,
+                        final_url="https://brand.global/",
+                        html="<title>Brand</title><body>Brand careers</body>",
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        website_url, trace = CompanyWebsiteResolver(
+            GlobalTldFetcher(offline=True),
+            verify_limit=3,
+        ).resolve(
+            "Brand",
+            job_location="New York, NY",
+            stored_candidate_url=foreign_url,
+        )
+
+        self.assertEqual(website_url, "https://brand.global/")
+        self.assertIn("homepage verified", trace["selected"]["reasons"])
+
+    def test_us_location_rejects_invalid_hreflang_alternates(self):
+        gateway_url = "https://www.example.com/fr/"
+        candidate = WebsiteCandidate(
+            gateway_url,
+            1,
+            [
+                "homepage verified",
+                "homepage title confirms company identity",
+                "regional website conflicts with job location: fr vs us",
+            ],
+            Page(
+                url=gateway_url,
+                final_url=gateway_url,
+                html=(
+                    '<link rel="alternate" hreflang="en-US" href="https://">'
+                    '<link rel="alternate" hreflang="en-US" href="https://[invalid">'
+                    '<link rel="alternate" hreflang="en-US" '
+                    'href="https://www.unrelated.example/us/">'
+                    '<link rel="alternate" hreflang="en-US" href="/fr/">'
+                    '<link rel="alternate" hreflang="en-US" hreflang="en-CA" '
+                    'href="/us/">'
+                ),
+            ),
+        )
+
+        self.assertEqual(_regional_root_candidates([candidate], "New York, NY"), [])
+        self.assertIn(
+            "regional gateway contains no eligible US locale link", candidate.reasons
+        )
+
+    def test_verified_foreign_cctld_can_verify_same_brand_global_root(self):
+        foreign_url = "https://ysl.cn/"
+        global_url = "https://ysl.com/"
+
+        class RegionalSiblingFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "ysl.cn":
+                    return Page(
+                        url=url,
+                        final_url=foreign_url,
+                        html="<title>YSL</title><body>Saint Laurent official</body>",
+                    )
+                if domain_of(url) == "ysl.com":
+                    return Page(
+                        url=url,
+                        final_url=global_url,
+                        html="<title>Saint Laurent</title><body>YSL official</body>",
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        website_url, trace = CompanyWebsiteResolver(
+            RegionalSiblingFetcher(offline=True),
+            verify_limit=3,
+        ).resolve(
+            "Saint Laurent",
+            job_location="Wayne, NJ",
+            stored_candidate_url=foreign_url,
+        )
+
+        self.assertEqual(website_url, global_url)
+        self.assertIn(
+            "candidate source: regional_sibling_recovery",
+            trace["selected"]["reasons"],
+        )
+
+    def test_marketplace_subdomain_cannot_generate_global_brand_sibling(self):
+        candidate = WebsiteCandidate(
+            "https://adidas.jd.com/",
+            90,
+            [
+                "homepage verified",
+                "homepage title confirms company identity",
+                "regional website conflicts with job location: cn vs us",
+            ],
+            Page(
+                url="https://adidas.jd.com/",
+                final_url="https://adidas.jd.com/",
+                html="<title>adidas</title><body>adidas marketplace</body>",
+            ),
+        )
+
+        self.assertEqual(
+            _regional_sibling_root_candidates(candidate, "adidas", "Portland, OR"),
+            [],
+        )
+
+    def test_single_token_brand_can_verify_separate_corporate_group_root(self):
+        group_url = "https://adidas-group.com/"
+
+        class CorporateGroupFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "adidas.jd.com":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<title>adidas</title><body>adidas marketplace</body>",
+                    )
+                if domain_of(url) == "adidas-group.com":
+                    return Page(
+                        url=url,
+                        final_url=group_url,
+                        html=(
+                            "<title>adidas Group</title>"
+                            "<body>adidas company careers and investor relations</body>"
+                        ),
+                    )
+                raise FetchError(f"unavailable: {url}")
+
+        website_url, trace = CompanyWebsiteResolver(
+            CorporateGroupFetcher(offline=True),
+            verify_limit=3,
+        ).resolve(
+            "adidas",
+            job_location="Portland, OR",
+            stored_candidate_url="https://adidas.jd.com",
+        )
+
+        self.assertEqual(website_url, group_url)
+        self.assertIn(
+            "verified corporate group root recovery",
+            trace["selected"]["reasons"],
+        )
+        self.assertEqual(_corporate_group_root_candidates("Acme Labs"), [])
+
+    def test_linkedin_identity_prevents_speculative_group_root_rebinding(self):
+        class AmbiguousGroupFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "haystack.deepset.ai":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<title>Haystack</title><body>Haystack platform</body>",
+                    )
+                if domain_of(url) == "haystack-group.com":
+                    return Page(
+                        url=url,
+                        final_url="https://haystack-group.com/de",
+                        html="<title>Haystack</title><body>Haystack company careers</body>",
+                    )
+                raise FetchError(f"unavailable: {url}")
+
+        website_url, trace = CompanyWebsiteResolver(
+            AmbiguousGroupFetcher(offline=True),
+            verify_limit=3,
+        ).resolve(
+            "Haystack",
+            linkedin_company_url="https://www.linkedin.com/company/wearehaystack",
+            stored_candidate_url="https://haystack.deepset.ai",
+        )
+
+        self.assertNotEqual(website_url, "https://haystack-group.com/de")
+        self.assertFalse(
+            any(
+                "verified corporate group root recovery" in reason
+                for reason in (trace.get("selected") or {}).get("reasons", [])
+            )
+        )
+
+    def test_us_location_gateway_rejects_cross_site_and_conflicting_locale_links(self):
+        gateway_url = "https://caudalie.com/en-fr"
+        cross_site_url = "https://us.unrelated.example/"
+        conflicting_url = "https://fr.caudalie.com/"
+
+        class RejectedGatewayFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls: list[str] = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url.rstrip("/") in {"https://caudalie.com", "https://www.caudalie.com"}:
+                    return Page(
+                        url=url,
+                        final_url=gateway_url,
+                        html=(
+                            "<title>Caudalie France</title><body>Caudalie"
+                            f'<a href="{cross_site_url}">United States</a>'
+                            f'<a href="{conflicting_url}">United States</a>'
+                            "</body>"
+                        ),
+                    )
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    return Page(url=url, html="<html></html>")
+                raise FetchError(f"not this candidate: {url}")
+
+        fetcher = RejectedGatewayFetcher()
+        website_url, trace = CompanyWebsiteResolver(fetcher, verify_limit=3).resolve(
+            "Caudalie",
+            "https://www.linkedin.com/company/caudalie",
+            "New York, NY",
+        )
+
+        self.assertIsNone(website_url)
+        self.assertNotIn(cross_site_url, fetcher.calls)
+        self.assertNotIn(conflicting_url, fetcher.calls)
+        foreign = next(
+            candidate
+            for candidate in trace["candidates"]
+            if candidate["url"] == gateway_url
+        )
+        self.assertIn(
+            "regional gateway contains no eligible US locale link",
+            foreign["reasons"],
         )
 
     def test_linkedin_static_asset_domains_are_blocked(self):
@@ -850,6 +1631,71 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertFalse(any("linkedin.com" in call for call in fetcher.calls))
         self.assertFalse(any("bing.com" in call for call in fetcher.calls))
 
+    def test_generated_slug_domain_waits_for_independent_official_search_evidence(self):
+        class IndependentEvidenceFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                if "bing.com" in url and "format=rss" in url:
+                    return Page(
+                        url=url,
+                        html=(
+                            "<rss><channel><item><link>"
+                            "https://www.northwell.edu/"
+                            "</link></item></channel></rss>"
+                        ),
+                    )
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    return Page(url=url, html="<html></html>")
+                if domain_of(url) == "northwell-health.com":
+                    return Page(
+                        url=url,
+                        final_url="https://northwell-health.com/",
+                        html=(
+                            '<html><head><title>Northwell Health</title>'
+                            '<link rel="canonical" href="https://northwell-health.com/">'
+                            '</head><body>Northwell Health</body></html>'
+                        ),
+                    )
+                if domain_of(url) == "northwell.edu":
+                    return Page(
+                        url=url,
+                        final_url="https://www.northwell.edu/",
+                        html=(
+                            '<html><head><title>Northwell Health</title>'
+                            '<link rel="canonical" href="https://www.northwell.edu/">'
+                            '</head><body>Northwell Health</body></html>'
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = IndependentEvidenceFetcher()
+        website_url, trace = CompanyWebsiteResolver(
+            fetcher,
+            verify_limit=3,
+        ).resolve(
+            "Northwell Health",
+            "https://www.linkedin.com/company/northwell-health",
+        )
+
+        self.assertEqual(website_url, "https://www.northwell.edu/")
+        guessed = next(
+            item
+            for item in trace["candidates"]
+            if domain_of(item["url"]) == "northwell-health.com"
+        )
+        self.assertIn(
+            "fast selection deferred for LinkedIn official evidence: "
+            "generated domain lacks independent identity evidence",
+            guessed["reasons"],
+        )
+        self.assertIn("candidate source: search_evidence", trace["selected"]["reasons"])
+
     def test_linkedin_official_evidence_breaks_verified_fast_domain_tie(self):
         linkedin_url = "https://www.linkedin.com/company/acme"
 
@@ -937,6 +1783,148 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertTrue(any("linkedin.com" in call for call in fetcher.calls))
         self.assertIn("LinkedIn official evidence unavailable", trace["selected"]["reasons"])
         self.assertIn("fast verified domain", trace["selected"]["reasons"])
+
+    def test_same_brand_ai_organization_does_not_beat_verified_dot_com_without_linkedin_evidence(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class CompetingBrandDomainsFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    raise FetchError("HTTP Error 451", status=451)
+                if domain_of(url) == "acme.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.ai/",
+                        html=(
+                            '<link rel="canonical" href="https://acme.ai/">'
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme","url":"https://acme.ai"}'
+                            "</script><title>Acme | Official Company</title>"
+                            "<body>About Acme. Welcome to Acme.</body>"
+                        ),
+                    )
+                if domain_of(url) == "acme.com":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.com/",
+                        html="<title>Acme</title><body>Acme company</body>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            CompetingBrandDomainsFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Acme", linkedin_url)
+
+        self.assertEqual(website_url, "https://acme.com/")
+        self.assertIn(
+            "verified exact-brand .com breaks unresolved same-brand TLD tie",
+            trace["selected"]["reasons"],
+        )
+
+    def test_parked_dot_com_does_not_win_same_brand_tld_tie(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class ParkedDotComFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    raise FetchError("HTTP Error 451", status=451)
+                if domain_of(url) == "acme.com":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.com/",
+                        html="<title>Acme is for sale</title><body>Buy this domain</body>",
+                    )
+                if domain_of(url) == "acme.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.ai/",
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme","url":"https://acme.ai"}'
+                            "</script><title>Acme</title><body>About Acme</body>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, _trace = CompanyWebsiteResolver(
+            ParkedDotComFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Acme", linkedin_url)
+
+        self.assertEqual(website_url, "https://acme.ai/")
+
+    def test_retryable_same_brand_dot_com_failure_rejects_unconfirmed_ai(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class BlockedDotComFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    raise FetchError("HTTP Error 451", status=451)
+                if domain_of(url) == "acme.com":
+                    raise FetchError("timed out", reason_code="NETWORK_TIMEOUT")
+                if domain_of(url) == "acme.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.ai/",
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme","url":"https://acme.ai"}'
+                            "</script><title>Acme</title><body>About Acme</body>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            BlockedDotComFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Acme", linkedin_url)
+
+        self.assertIsNone(website_url)
+        ai_candidate = next(
+            item for item in trace["candidates"] if domain_of(item["url"]) == "acme.ai"
+        )
+        self.assertIn("same-brand .com verification blocked", ai_candidate["reasons"])
+        self.assertEqual(
+            trace["resolution_failure"]["reason_code"],
+            "NETWORK_TIMEOUT",
+        )
+
+    def test_linkedin_official_evidence_accepts_ai_when_same_brand_dot_com_is_blocked(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+
+        class OfficialAiFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme",'
+                            '"sameAs":"https://acme.ai"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "acme.com":
+                    raise FetchError("timed out", reason_code="NETWORK_TIMEOUT")
+                if domain_of(url) == "acme.ai":
+                    return Page(
+                        url=url,
+                        final_url="https://acme.ai/",
+                        html="<title>Acme</title><body>About Acme</body>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            OfficialAiFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Acme", linkedin_url)
+
+        self.assertEqual(website_url, "https://acme.ai/")
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            trace["selected"]["reasons"],
+        )
 
     def test_verified_non_apex_guess_defers_to_linkedin_official_evidence(self):
         linkedin_url = "https://www.linkedin.com/company/acme"
@@ -1203,6 +2191,110 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertEqual(failure["evidence_tier"], 1)
         self.assertEqual(failure["request_identity"], identity)
 
+    def test_forbidden_direct_evidence_is_retained_after_fallbacks_are_exhausted(self):
+        preferred_url = "https://acme.example"
+
+        class ForbiddenVerificationFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == preferred_url:
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                raise FetchError(
+                    "HTTP Error 404: Not Found",
+                    status=404,
+                    reason_code="HTTP_NOT_FOUND",
+                    retryable=False,
+                )
+
+        website_url, trace = CompanyWebsiteResolver(
+            ForbiddenVerificationFetcher(offline=True),
+            verify_limit=1,
+        ).resolve("Acme", preferred_url=preferred_url)
+
+        self.assertIsNone(website_url)
+        failure = trace["resolution_failure"]
+        self.assertEqual(failure["reason_code"], "HTTP_FORBIDDEN")
+        self.assertEqual(failure["status"], 403)
+        self.assertFalse(failure["retryable"])
+
+    def test_forbidden_speculative_candidate_does_not_block_official_fallback(self):
+        linkedin_url = "https://www.linkedin.com/company/acme"
+        official_url = "https://official.example"
+
+        class OfficialFallbackFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if domain_of(url) == "acme.com":
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                if url in {linkedin_url, f"{linkedin_url}/"}:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Acme",'
+                            '"sameAs":["https://official.example"]}'
+                            "</script>"
+                        ),
+                    )
+                if url == official_url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<html><head><title>Acme</title></head><body>Acme</body></html>",
+                    )
+                raise FetchError("HTTP Error 404: Not Found", status=404)
+
+        fetcher = OfficialFallbackFetcher()
+        website_url, trace = CompanyWebsiteResolver(
+            fetcher,
+            verify_limit=1,
+        ).resolve("Acme", linkedin_url)
+
+        self.assertEqual(website_url, official_url)
+        self.assertIn(official_url, fetcher.calls)
+        self.assertNotIn("resolution_failure", trace)
+
+    def test_forbidden_www_candidate_does_not_probe_apex_as_transport_fallback(self):
+        preferred_url = "https://www.acme.example"
+
+        class WafBlockedFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == preferred_url:
+                    raise FetchError(
+                        "challenge denied",
+                        status=403,
+                        reason_code="BOT_PROTECTION",
+                        retryable=False,
+                    )
+                raise FetchError("HTTP Error 404: Not Found", status=404)
+
+        fetcher = WafBlockedFetcher()
+        CompanyWebsiteResolver(fetcher, verify_limit=1).resolve(
+            "Acme",
+            preferred_url=preferred_url,
+        )
+
+        self.assertNotIn("https://acme.example", fetcher.calls)
+
     def test_duckduckgo_search_is_used_when_bing_has_no_results(self):
         class SearchFallbackFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):
@@ -1262,14 +2354,19 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertEqual(clean_search_url(redirect), "https://www.oneok.com")
 
-    def test_top_website_candidates_are_verified_concurrently(self):
+    def test_top_website_candidates_are_verified_deterministically(self):
         class SlowFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
             def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
                 time.sleep(0.2)
                 return Page(url=url, final_url=url, html="<html><body>Acme</body></html>")
 
-        resolver = CompanyWebsiteResolver(SlowFetcher(offline=True), verify_limit=3)
-        started = time.monotonic()
+        fetcher = SlowFetcher()
+        resolver = CompanyWebsiteResolver(fetcher, verify_limit=3)
 
         candidates = resolver._rank_and_verify_candidates(
             ["https://acme.com", "https://acme.ai", "https://acme.io"],
@@ -1277,7 +2374,10 @@ class WebsiteResolverTests(unittest.TestCase):
             None,
         )
 
-        self.assertLess(time.monotonic() - started, 0.45)
+        self.assertEqual(
+            fetcher.calls,
+            ["https://acme.com", "https://acme.ai", "https://acme.io"],
+        )
         self.assertTrue(all("homepage verified" in candidate.reasons for candidate in candidates))
 
     def test_verified_preferred_candidate_skips_speculative_verification_wave(self):
@@ -1867,6 +2967,88 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertIn("incomplete company identity", candidate.reasons)
         self.assertIsNone(resolver._select_verified_candidate([candidate]))
 
+    def test_parent_group_homepage_is_not_exact_subsidiary_identity(self):
+        linkedin_url = "https://www.linkedin.com/company/tata-technologies"
+
+        class TataGroupFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Tata Technologies",'
+                            '"sameAs":"https://www.tata.com/"}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "tata.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.tata.com/",
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Tata"}'
+                            "</script><title>Tata group</title><body>Tata</body>"
+                        ),
+                    )
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    return Page(url=url, html="<html></html>")
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            TataGroupFetcher(offline=True),
+            verify_limit=3,
+        ).resolve(
+            "Tata Technologies",
+            linkedin_url,
+            preferred_url="https://www.tata.com/",
+        )
+
+        self.assertIsNone(website_url)
+        parent_candidate = next(
+            candidate
+            for candidate in trace["candidates"]
+            if domain_of(candidate["url"]) == "tata.com"
+        )
+        self.assertIn(
+            "LinkedIn company page identifies official website",
+            parent_candidate["reasons"],
+        )
+        self.assertIn(
+            "parent/group website requires downstream hiring relationship evidence",
+            parent_candidate["reasons"],
+        )
+
+    def test_exact_multiword_brand_homepage_remains_selectable(self):
+        class ExactBrandFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "tatatechnologies.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.tatatechnologies.com/",
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Tata Technologies"}'
+                            "</script><title>Tata Technologies</title>"
+                            "<body>Tata Technologies</body>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(ExactBrandFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://www.tatatechnologies.com/",
+            "Tata Technologies",
+            verify=True,
+        )
+
+        self.assertNotIn(
+            "parent/group website requires downstream hiring relationship evidence",
+            candidate.reasons,
+        )
+        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
     def test_partial_name_canonical_is_not_trusted_for_multiword_brand(self):
         class ParentCanonicalFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):
@@ -1948,6 +3130,98 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertIn("https://multifactor.com", candidates)
         self.assertFalse(any("yc" in candidate or "f25" in candidate for candidate in candidates))
+
+    def test_exact_brand_dot_org_is_verified_after_dot_com_failure(self):
+        class DotOrgFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.homepage_domains: list[str] = []
+
+            def fetch(self, url, data=None, headers=None):
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    return Page(url=url, html="<html></html>")
+                domain = domain_of(url)
+                self.homepage_domains.append(domain)
+                if domain == "cedarharbor.com":
+                    raise FetchError("domain unavailable")
+                if domain == "cedarharbor.org":
+                    return Page(
+                        url=url,
+                        final_url="https://cedarharbor.org/",
+                        html=(
+                            '<html><head><title>Cedar Harbor</title>'
+                            '<link rel="canonical" href="https://cedarharbor.org/">'
+                            "</head><body>Cedar Harbor</body></html>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = DotOrgFetcher()
+        website_url, trace = CompanyWebsiteResolver(
+            fetcher,
+            verify_limit=3,
+        ).resolve("Cedar Harbor")
+
+        self.assertEqual(website_url, "https://cedarharbor.org/")
+        self.assertIn("cedarharbor.org", fetcher.homepage_domains)
+        self.assertNotIn("getcedarharbor.com", fetcher.homepage_domains)
+        self.assertIn("homepage title confirms company identity", trace["selected"]["reasons"])
+
+    def test_same_name_dot_org_with_conflicting_region_is_rejected(self):
+        class RegionalCollisionFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    return Page(url=url, html="<html></html>")
+                if domain_of(url) == "cedarharbor.org":
+                    return Page(
+                        url=url,
+                        final_url="https://cedarharbor.cn/",
+                        html="<title>Cedar Harbor</title><body>Cedar Harbor</body>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            RegionalCollisionFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Cedar Harbor", job_location="Boston, United States")
+
+        self.assertIsNone(website_url)
+        dot_org = next(
+            candidate
+            for candidate in trace["candidates"]
+            if domain_of(candidate["url"]) == "cedarharbor.cn"
+        )
+        self.assertIn(
+            "regional website conflicts with job location: cn vs us",
+            dot_org["reasons"],
+        )
+
+    def test_exact_brand_dot_org_without_identity_evidence_is_unresolved(self):
+        class NoIdentityFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    return Page(url=url, html="<html></html>")
+                if domain_of(url) == "cedarharbor.org":
+                    return Page(
+                        url=url,
+                        final_url="https://cedarharbor.org/",
+                        html="<title>Welcome</title><body>Community resources</body>",
+                    )
+                raise FetchError("not this candidate")
+
+        website_url, trace = CompanyWebsiteResolver(
+            NoIdentityFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Cedar Harbor")
+
+        self.assertIsNone(website_url)
+        dot_org = next(
+            candidate
+            for candidate in trace["candidates"]
+            if domain_of(candidate["url"]) == "cedarharbor.org"
+        )
+        self.assertIn("company token missing from homepage", dot_org["reasons"])
+        self.assertNotIn("homepage title confirms company identity", dot_org["reasons"])
 
     def test_guess_candidates_can_use_terminal_technology_token_as_tld(self):
         resolver = CompanyWebsiteResolver(Fetcher(offline=True))
@@ -2228,6 +3502,58 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertNotIn("homepage verified", candidate.reasons)
         self.assertIsNone(resolver._select_verified_candidate([candidate]))
 
+    def test_godaddy_parking_lander_with_company_search_terms_is_rejected(self):
+        class GoDaddyParkingFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=f"{url.rstrip('/')}/lander",
+                    html=(
+                        '<script>window.LANDER_SYSTEM="PW"</script>'
+                        '<script src="https://img1.wsimg.com/parking-lander/static/js/main.js"></script>'
+                        '<body><div>Hugh Chatham Health</div>'
+                        '<div>hughchathamhealth.com is parked free, courtesy of GoDaddy.com.</div></body>'
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(GoDaddyParkingFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://hughchathamhealth.com",
+            "Hugh Chatham Health",
+            verify=True,
+        )
+
+        self.assertIn("parked domain rejected", candidate.reasons)
+        self.assertNotIn("homepage verified", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_direct_http_website_evidence_is_verified_over_https(self):
+        class HttpsOnlyFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == "https://acme.example/about":
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<title>Acme</title><main>Acme products</main>",
+                    )
+                raise FetchError("unexpected transport")
+
+        fetcher = HttpsOnlyFetcher()
+        website, _trace = CompanyWebsiteResolver(fetcher).resolve(
+            "Acme",
+            preferred_url="http://www.acme.example/about",
+        )
+
+        self.assertEqual(website, "https://acme.example/about")
+        self.assertIn("https://www.acme.example/about", fetcher.calls)
+        self.assertIn("https://acme.example/about", fetcher.calls)
+        self.assertNotIn("http://www.acme.example/about", fetcher.calls)
+
     def test_redirect_to_hosted_non_company_destination_is_never_selected(self):
         class HostedRedirectFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):
@@ -2285,6 +3611,312 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertNotIn("single-token brand extension domain", candidate.reasons)
         self.assertIsNotNone(resolver._select_verified_candidate([candidate]))
+
+    def test_product_subdomain_on_another_company_site_is_not_same_entity(self):
+        class ProductSubdomainFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://haystack.deepset.ai/",
+                    html=(
+                        "<html><head><title>Haystack by deepset</title></head>"
+                        "<body>Haystack documentation and product resources</body></html>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ProductSubdomainFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://haystack.deepset.ai",
+            "Haystack",
+            linkedin_company_url="https://www.linkedin.com/company/haystack",
+            verify=True,
+        )
+
+        self.assertIn(
+            "registrable domain does not establish company ownership",
+            candidate.reasons,
+        )
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_extension_domain_with_two_strong_page_signals_is_selectable(self):
+        class ExtensionDomainFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://us.squareup.com/",
+                    html=(
+                        '<script type="application/ld+json">'
+                        '{"@type":"Organization","name":"Square"}'
+                        "</script><title>Square | Official Website</title>"
+                        "<body>Square commerce solutions</body>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ExtensionDomainFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://us.squareup.com/",
+            "Square",
+            job_location="United States",
+            verify=True,
+        )
+
+        self.assertIn(
+            "registrable domain does not establish company ownership",
+            candidate.reasons,
+        )
+        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
+    def test_regional_extension_site_with_two_strong_page_signals_is_selectable(self):
+        class RegionalExtensionFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://us.puma.partner-retail.com/en-us/",
+                    html=(
+                        '<script type="application/ld+json">'
+                        '{"@type":"Organization","name":"PUMA"}'
+                        "</script><title>PUMA United States</title>"
+                        "<body>Official PUMA products and stores</body>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(RegionalExtensionFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://us.puma.partner-retail.com/en-us/",
+            "PUMA",
+            job_location="United States",
+            verify=True,
+        )
+
+        self.assertIn("regional website matches job location: us", candidate.reasons)
+        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
+    def test_same_token_on_unrelated_site_does_not_establish_ownership(self):
+        class MarketplaceFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://adidas.jd.com/",
+                    html=(
+                        "<title>Adidas deals</title>"
+                        "<body>Marketplace promotions and seasonal shopping</body>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(MarketplaceFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://adidas.jd.com/",
+            "Adidas",
+            verify=True,
+        )
+
+        self.assertIn(
+            "registrable domain does not establish company ownership",
+            candidate.reasons,
+        )
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_search_snippet_cannot_authorize_extension_domain(self):
+        class SnippetOnlyFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://square.partner-commerce.com/",
+                    html="<title>Payments</title><body>Merchant services</body>",
+                )
+
+        resolver = CompanyWebsiteResolver(SnippetOnlyFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://square.partner-commerce.com/",
+            "Square",
+            verify=True,
+            search_evidence=SearchEvidence(
+                "https://square.partner-commerce.com/",
+                "Square official website",
+                "Square merchant services",
+            ),
+        )
+
+        self.assertIn("search result confirms company identity", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_parent_group_conflict_still_rejects_extension_domain(self):
+        class ParentGroupFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://careers.tata.com/",
+                    html=(
+                        '<script type="application/ld+json">'
+                        '{"@type":"Organization","name":"Tata"}'
+                        "</script><title>Tata Group</title>"
+                        "<body>Tata Technologies careers</body>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ParentGroupFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://careers.tata.com/",
+            "Tata Technologies",
+            verify=True,
+        )
+
+        self.assertIn(
+            "parent/group website requires downstream hiring relationship evidence",
+            candidate.reasons,
+        )
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_region_conflict_still_rejects_strong_extension_identity(self):
+        class ConflictingRegionFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://cn.puma.partner-retail.com/zh-cn/",
+                    html=(
+                        '<script type="application/ld+json">'
+                        '{"@type":"Organization","name":"PUMA"}'
+                        "</script><title>PUMA China</title>"
+                        "<body>Official PUMA products and stores</body>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ConflictingRegionFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://cn.puma.partner-retail.com/zh-cn/",
+            "PUMA",
+            job_location="United States",
+            verify=True,
+        )
+
+        self.assertIn(
+            "regional website conflicts with job location: cn vs us",
+            candidate.reasons,
+        )
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_marketplace_and_deployment_subdomains_are_not_corporate_roots(self):
+        cases = (
+            (
+                "https://adidas.jd.com",
+                "Adidas",
+                "registrable domain does not establish company ownership",
+            ),
+            (
+                "https://prod-deleg-sfcc.lacoste.com",
+                "Lacoste",
+                "deployment hostname",
+            ),
+        )
+
+        for url, company_name, expected_reason in cases:
+            with self.subTest(url=url):
+                class SubdomainFetcher(Fetcher):
+                    def fetch(self, request_url, data=None, headers=None):
+                        return Page(
+                            url=request_url,
+                            final_url=request_url,
+                            html=(
+                                f"<html><head><title>{company_name}</title></head>"
+                                f"<body>{company_name} products</body></html>"
+                            ),
+                        )
+
+                resolver = CompanyWebsiteResolver(SubdomainFetcher(offline=True))
+                candidate = resolver._score_candidate(url, company_name, verify=True)
+
+                self.assertIn(expected_reason, candidate.reasons)
+                self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_company_owned_subdomain_on_multilabel_cctld_remains_eligible(self):
+        class CareersFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://careers.maison.co.uk/",
+                    html="<title>Maison Careers</title><body>Maison jobs</body>",
+                )
+
+        resolver = CompanyWebsiteResolver(CareersFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://careers.maison.co.uk",
+            "Maison",
+            job_location="London, United Kingdom",
+            verify=True,
+        )
+
+        self.assertNotIn(
+            "registrable domain does not establish company ownership",
+            candidate.reasons,
+        )
+        self.assertIsNotNone(resolver._select_verified_candidate([candidate]))
+
+    def test_full_linkedin_slug_keeps_a_verification_slot_against_ambiguous_preferred_site(self):
+        linkedin_url = "https://www.linkedin.com/company/join-blossom-health"
+        full_slug_site = "https://join-blossom-health.com/"
+
+        class BlossomFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls: list[str] = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url.rstrip("/") == linkedin_url:
+                    return Page(url=url, html="<title>Blossom | LinkedIn</title>")
+                if domain_of(url) == "blossom.net":
+                    return Page(
+                        url=url,
+                        final_url="https://blossom.net/",
+                        html="<title>Blossom</title><body>Blossom products</body>",
+                    )
+                if domain_of(url) == "join-blossom-health.com":
+                    return Page(
+                        url=url,
+                        final_url=full_slug_site,
+                        html=(
+                            "<title>Blossom Health | Official Website</title>"
+                            "<body>Blossom Health careers</body>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = BlossomFetcher()
+        website_url, trace = CompanyWebsiteResolver(fetcher, verify_limit=2).resolve(
+            "Blossom",
+            linkedin_url,
+            "United States",
+            "https://blossom.net",
+        )
+
+        self.assertEqual(website_url, full_slug_site)
+        self.assertTrue(
+            any(domain_of(call) == "join-blossom-health.com" for call in fetcher.calls)
+        )
+        self.assertIn("full LinkedIn slug matches domain", trace["selected"]["reasons"])
+
+    def test_plain_slug_prefers_verified_dot_com_company_site_over_dot_ai(self):
+        class TaskCompanyFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) in {"taskrabbit.com", "taskrabbit.ai"}:
+                    return Page(
+                        url=url,
+                        final_url=f"https://{domain_of(url)}/",
+                        html="<title>Taskrabbit</title><body>Taskrabbit</body>",
+                    )
+                if "linkedin.com" in url:
+                    raise FetchError("LinkedIn unavailable")
+                raise FetchError("not this candidate")
+
+        website_url, _trace = CompanyWebsiteResolver(
+            TaskCompanyFetcher(offline=True), verify_limit=3
+        ).resolve(
+            "Taskrabbit",
+            "https://www.linkedin.com/company/taskrabbit",
+            "United States",
+        )
+
+        self.assertEqual(website_url, "https://taskrabbit.com/")
 
 
 if __name__ == "__main__":

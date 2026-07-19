@@ -1,9 +1,67 @@
+import json
 import unittest
 
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
+from job_source_agent.providers.peoplesoft import PeopleSoftAdapter
 
 
 class DiscoveredJobBoardTests(unittest.TestCase):
+    def test_adp_public_locator_round_trips_only_with_bound_tenant_identity(self):
+        cid = "6d761223-04f6-4d39-a498-276f6ca9389f"
+        url = (
+            "https://workforcenow.adp.com/mascsr/default/mdf/recruitment/"
+            f"recruitment.html?cid={cid}&ccId=19000101_000001&type=MP&"
+            "lang=en_US&selectedMenuKey=CurrentOpenings"
+        )
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url=url,
+                provider="adp",
+                identifier=f"wfn|{cid}|19000101_000001|en_US",
+                replay_safe=True,
+            ),
+            detection_method="page_evidence",
+            evidence_url=url,
+        )
+
+        payload = discovered.to_checkpoint_payload()
+
+        self.assertEqual(DiscoveredJobBoard.from_checkpoint_payload(payload), discovered)
+        for invalid_url in (
+            url + "&token=secret",
+            url + f"&cid={cid}",
+            url.replace("selectedMenuKey=CurrentOpenings", "selectedMenuKey=Other"),
+        ):
+            with self.subTest(invalid_url=invalid_url):
+                invalid = DiscoveredJobBoard(
+                    board=JobBoard(
+                        url=invalid_url,
+                        provider="adp",
+                        identifier=discovered.board.identifier,
+                        replay_safe=True,
+                    ),
+                    detection_method="page_evidence",
+                    evidence_url=invalid_url,
+                )
+                with self.assertRaises(ValueError):
+                    invalid.to_checkpoint_payload()
+
+    def test_verified_first_party_action_is_runtime_only_portfolio_evidence(self):
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://opaque-hiring.example/jobs",
+                provider="generic",
+            ),
+            detection_method="verified_first_party_action",
+            evidence_url="https://opaque-hiring.example/jobs",
+            relationship_evidence_url="https://acme.example/careers",
+        )
+
+        portfolio = JobBoardPortfolio((discovered,), eligible_set_complete=True)
+
+        self.assertEqual(portfolio.primary, discovered)
+        self.assertIsNone(discovered.to_checkpoint_payload())
+
     def test_replay_safe_locator_round_trips_strict_payload(self):
         discovered = DiscoveredJobBoard(
             board=JobBoard(
@@ -117,6 +175,15 @@ class DiscoveredJobBoardTests(unittest.TestCase):
                 "identifier": "example.com",
             },
             {
+                "url": "https://careers.example.test/en/annonces",
+                "provider": "digitalrecruiters",
+                "identifier": (
+                    '{"api_base":"https://api.digitalrecruiters.com/public/v1",'
+                    '"board_url":"https://careers.example.test/en/annonces",'
+                    '"locale":"en","tenant":"careers.example.test"}'
+                ),
+            },
+            {
                 "url": "https://jobs.example.test/careers",
                 "provider": "greenhouse",
                 "identifier": "custom:jobs.example.test",
@@ -178,6 +245,24 @@ class DiscoveredJobBoardTests(unittest.TestCase):
 
     def test_checkpoint_payload_rejects_mismatched_public_ats_locators(self):
         invalid_boards = (
+            {
+                "url": "https://careers.example.test:443/en/annonces",
+                "provider": "digitalrecruiters",
+                "identifier": (
+                    '{"api_base":"https://api.digitalrecruiters.com/public/v1",'
+                    '"board_url":"https://careers.example.test:443/en/annonces",'
+                    '"locale":"en","tenant":"careers.example.test"}'
+                ),
+            },
+            {
+                "url": "https://other.example.test/en/annonces",
+                "provider": "digitalrecruiters",
+                "identifier": (
+                    '{"api_base":"https://api.digitalrecruiters.com/public/v1",'
+                    '"board_url":"https://careers.example.test/en/annonces",'
+                    '"locale":"en","tenant":"careers.example.test"}'
+                ),
+            },
             {
                 "url": "https://jobs.smartrecruiters.com/Other",
                 "provider": "smartrecruiters",
@@ -258,13 +343,237 @@ class JobBoardPortfolioTests(unittest.TestCase):
         self.assertEqual(JobBoardPortfolio.from_checkpoint_payload(payload), portfolio)
         self.assertIs(portfolio.primary, first)
 
-    def test_runtime_only_member_makes_whole_portfolio_non_persistable(self):
+    def test_peoplesoft_replay_locator_round_trips_and_rejects_tampering(self):
+        url = (
+            "https://www.cnd.nd.gov/psc/recruit/EMPLOYEE/HRMS/c/"
+            "HRS_HRAM_FL.HRS_CG_SEARCH_FL.GBL?Page=HRS_APP_SCHJOB_FL&"
+            "Action=U&SiteId=11000&FOCUS=Applicant"
+        )
+        board = PeopleSoftAdapter().identify_board(url)
+        self.assertIsNotNone(board)
+        discovered = DiscoveredJobBoard(
+            board=board,
+            detection_method="url_evidence",
+            evidence_url=url,
+        )
+
+        payload = discovered.to_checkpoint_payload()
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(
+            DiscoveredJobBoard.from_checkpoint_payload(payload),
+            discovered,
+        )
+        tampered = json.loads(board.identifier)
+        tampered["site_id"] = "22000"
+        with self.assertRaisesRegex(ValueError, "not replay-safe"):
+            DiscoveredJobBoard(
+                board=JobBoard(
+                    url=board.url,
+                    provider="peoplesoft",
+                    identifier=json.dumps(
+                        tampered,
+                        separators=(",", ":"),
+                        sort_keys=True,
+                    ),
+                    replay_safe=True,
+                ),
+                detection_method="url_evidence",
+                    evidence_url=board.url,
+            ).to_checkpoint_payload()
+
+    def test_healthcaresource_replay_locator_is_tenant_bound(self):
+        board_url = "https://redlandscommunityhospital.hcshiring.com/jobs"
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url=board_url,
+                provider="healthcaresource",
+                identifier="redlandscommunityhospital",
+                replay_safe=True,
+            ),
+            detection_method="url_evidence",
+            evidence_url=board_url,
+        )
+
+        payload = discovered.to_checkpoint_payload()
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(DiscoveredJobBoard.from_checkpoint_payload(payload), discovered)
+        for url, identifier in (
+            ("https://other.hcshiring.com/jobs", "redlandscommunityhospital"),
+            (board_url + "/123", "redlandscommunityhospital"),
+            (board_url + "?tenant=other", "redlandscommunityhospital"),
+            (board_url, "other"),
+        ):
+            with self.subTest(url=url, identifier=identifier), self.assertRaisesRegex(
+                ValueError, "not replay-safe"
+            ):
+                DiscoveredJobBoard(
+                    board=JobBoard(
+                        url=url,
+                        provider="healthcaresource",
+                        identifier=identifier,
+                        replay_safe=True,
+                    ),
+                    detection_method="url_evidence",
+                    evidence_url=url,
+                ).to_checkpoint_payload()
+
+    def test_pinpoint_replay_locator_is_tenant_bound(self):
+        board_url = "https://skims.pinpointhq.com/"
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url=board_url,
+                provider="pinpoint",
+                identifier="skims",
+                replay_safe=True,
+            ),
+            detection_method="url_evidence",
+            evidence_url=board_url,
+        )
+
+        payload = discovered.to_checkpoint_payload()
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(DiscoveredJobBoard.from_checkpoint_payload(payload), discovered)
+        for url, identifier in (
+            ("https://other.pinpointhq.com/", "skims"),
+            (board_url + "jobs", "skims"),
+            (board_url + "?tenant=other", "skims"),
+            (board_url, "other"),
+        ):
+            with self.subTest(url=url, identifier=identifier), self.assertRaisesRegex(
+                ValueError, "not replay-safe"
+            ):
+                DiscoveredJobBoard(
+                    board=JobBoard(
+                        url=url,
+                        provider="pinpoint",
+                        identifier=identifier,
+                        replay_safe=True,
+                    ),
+                    detection_method="url_evidence",
+                    evidence_url=url,
+                ).to_checkpoint_payload()
+
+    def test_cws_replay_locator_accepts_frozen_search_protocol_and_rejects_tampering(self):
+        identity = {
+            "api_url": "https://jobsapi-google.m-cloud.io/api/",
+            "board_url": "https://jobs.example.test/job-search-results/",
+            "boost": "description:0,title:100",
+            "detail_path": "/job-description",
+            "filters": ["brand:Example Health~Example"],
+            "limit": 12,
+            "org_id": "companies/example",
+            "smartpost_org": "1962",
+            "sort": ["open_date", "ascending"],
+        }
+        board = DiscoveredJobBoard(
+            board=JobBoard(
+                url=identity["board_url"],
+                provider="cws",
+                identifier=json.dumps(
+                    identity,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+                replay_safe=True,
+            ),
+            detection_method="page_evidence",
+            evidence_url=identity["board_url"],
+        )
+
+        portfolio = JobBoardPortfolio(boards=(board,), eligible_set_complete=True)
+        self.assertEqual(
+            JobBoardPortfolio.from_checkpoint_payload(portfolio.to_checkpoint_payload()),
+            portfolio,
+        )
+
+        legacy_identity = {**identity}
+        legacy_identity.pop("smartpost_org")
+        legacy_board = DiscoveredJobBoard(
+            board=JobBoard(
+                url=legacy_identity["board_url"],
+                provider="cws",
+                identifier=json.dumps(
+                    legacy_identity,
+                    ensure_ascii=True,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ),
+                replay_safe=True,
+            ),
+            detection_method="page_evidence",
+            evidence_url=legacy_identity["board_url"],
+        )
+        legacy_portfolio = JobBoardPortfolio(
+            boards=(legacy_board,),
+            eligible_set_complete=True,
+        )
+        self.assertEqual(
+            JobBoardPortfolio.from_checkpoint_payload(
+                legacy_portfolio.to_checkpoint_payload()
+            ),
+            legacy_portfolio,
+        )
+
+        for key, value in (
+            ("filters", ["brand:Example", "brand:Example"]),
+            ("boost", "title:100\nunsafe"),
+            ("smartpost_org", "1962/other"),
+            ("sort", ["open_date", "sideways"]),
+        ):
+            tampered = {**identity, key: value}
+            with self.subTest(key=key), self.assertRaisesRegex(
+                ValueError, "not replay-safe"
+            ):
+                JobBoardPortfolio(
+                    boards=(
+                        DiscoveredJobBoard(
+                            board=JobBoard(
+                                url=identity["board_url"],
+                                provider="cws",
+                                identifier=json.dumps(
+                                    tampered,
+                                    ensure_ascii=True,
+                                    separators=(",", ":"),
+                                    sort_keys=True,
+                                ),
+                                replay_safe=True,
+                            ),
+                            detection_method="page_evidence",
+                            evidence_url=identity["board_url"],
+                        ),
+                    ),
+                    eligible_set_complete=True,
+                )
+
+    def test_runtime_only_suffix_preserves_replay_safe_primary_as_incomplete(self):
         portfolio = JobBoardPortfolio(
             boards=(self._board(), self._board(
                 url="https://jobs.example.test/runtime",
                 identifier='{"api_key":"runtime-only"}',
                 replay_safe=False,
             )),
+            eligible_set_complete=False,
+        )
+
+        payload = portfolio.to_checkpoint_payload()
+
+        self.assertIsNotNone(payload)
+        restored = JobBoardPortfolio.from_checkpoint_payload(payload)
+        self.assertEqual(restored.boards, (portfolio.primary,))
+        self.assertFalse(restored.eligible_set_complete)
+
+    def test_runtime_only_primary_does_not_promote_lower_ranked_replay_board(self):
+        runtime_primary = self._board(
+            url="https://jobs.example.test/runtime",
+            identifier='{"api_key":"runtime-only"}',
+            replay_safe=False,
+        )
+        portfolio = JobBoardPortfolio(
+            boards=(runtime_primary, self._board()),
             eligible_set_complete=False,
         )
 

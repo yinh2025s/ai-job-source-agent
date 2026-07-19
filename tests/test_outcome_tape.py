@@ -5,6 +5,7 @@ import unittest
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import FrozenInstanceError, replace
 
+from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.evidence_scope import EvidenceScopeRef
 from job_source_agent.outcome_tape import (
     OFFLINE_TAPE_DIVERGENCE,
@@ -28,7 +29,14 @@ URL = "https://example.com/jobs?page=1"
 
 
 class OutcomeTapeTests(unittest.TestCase):
-    def page(self, ordinal: int, *, url: str = URL, html: str = "<p>jobs</p>"):
+    def page(
+        self,
+        ordinal: int,
+        *,
+        url: str = URL,
+        html: str = "<p>jobs</p>",
+        interaction=None,
+    ):
         return PageOutcomeTapeEntry(
             snapshot_store_id=STORE,
             scope_id=SCOPE_ID,
@@ -36,7 +44,7 @@ class OutcomeTapeTests(unittest.TestCase):
             execution_fingerprint=EXECUTION,
             stage=STAGE,
             request_ordinal=ordinal,
-            request=build_request_identity(url),
+            request=build_request_identity(url, interaction=interaction),
             page_url=url,
             html=html,
             final_url=url,
@@ -95,6 +103,27 @@ class OutcomeTapeTests(unittest.TestCase):
         self.assertEqual(error.request_identity, build_request_identity(URL).as_dict())
         self.assertEqual(fetcher.fetch(URL).html, "third")
         self.assertIsNone(fetcher.finish())
+
+    def test_forced_render_capability_tracks_consecutive_identical_gets(self):
+        acorns_url = "https://www.acorns.com/career-opportunities"
+        other_url = "https://www.acorns.com/careers/teams"
+        fetcher = OutcomeTapeFetcher(
+            self.tape(
+                [
+                    self.page(1, url=acorns_url, html="static"),
+                    self.page(2, url=acorns_url, html="rendered"),
+                    self.page(3, url=other_url, html="other"),
+                ]
+            )
+        )
+
+        self.assertFalse(fetcher.supports_forced_render)
+        self.assertEqual(fetcher.fetch(acorns_url).html, "static")
+        self.assertTrue(fetcher.supports_forced_render)
+        self.assertEqual(fetcher.fetch(acorns_url).html, "rendered")
+        self.assertFalse(fetcher.supports_forced_render)
+        self.assertEqual(fetcher.fetch(other_url).html, "other")
+        fetcher.finish()
 
     def test_entries_are_immutable_and_payload_round_trips_strictly(self):
         entry = self.page(1)
@@ -155,6 +184,27 @@ class OutcomeTapeTests(unittest.TestCase):
         self.assertEqual(fetcher.fetch(other).url, other)
         self.assertEqual(fetcher.fetch(URL).url, URL)
         fetcher.finish()
+
+    def test_interaction_identity_isolated_from_ordinary_get(self):
+        interaction = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="q",
+            target_title="Secret Staff Engineer",
+            submit_text="Search",
+        )
+        entries = [
+            self.page(1, html="interactive", interaction=interaction),
+            self.page(2, html="ordinary"),
+        ]
+        fetcher = OutcomeTapeFetcher(self.tape(entries))
+
+        self.assertEqual(fetcher.fetch(URL).html, "ordinary")
+        self.assertEqual(
+            fetcher.fetch(URL, interaction=interaction).html,
+            "interactive",
+        )
+        fetcher.finish()
+        self.assertNotIn(interaction.target_title, repr(self.tape(entries).as_payload()))
 
     def test_mismatch_does_not_consume_a_remaining_entry(self):
         fetcher = OutcomeTapeFetcher(self.tape([self.page(1)]))

@@ -5,7 +5,8 @@ from html.parser import HTMLParser
 import json
 import re
 from typing import Any
-from urllib.parse import parse_qsl, unquote, urlparse, urlunparse
+import unicodedata
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
 from ..web import FetchError
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
@@ -20,6 +21,9 @@ _LOCALE = re.compile(r"^[A-Za-z]{2,3}(?:-[A-Za-z]{2})?$")
 _SITE = re.compile(r"^[A-Za-z0-9_-]{1,100}$")
 _OPENING_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _LOCATOR_VERSION = 1
+_INVENTORY_LIMIT = 25
+_MAX_INVENTORY_PAGES = 10
+_MAX_INVENTORY_ROWS = _INVENTORY_LIMIT * _MAX_INVENTORY_PAGES
 _SENSITIVE_QUERY_KEYS = frozenset(
     {
         "access_token",
@@ -82,10 +86,7 @@ class OracleHCMAdapter:
         detail_url = locator.get("detail_url")
         opening_id = locator.get("opening_id")
         if not isinstance(detail_url, str) or not isinstance(opening_id, str):
-            return _incomplete(
-                board,
-                "Oracle HCM board inventory API has not been verified",
-            )
+            return _list_inventory(fetcher, board, locator, query)
 
         try:
             page = fetcher.fetch(detail_url)
@@ -221,6 +222,233 @@ class OracleHCMAdapter:
         )
 
 
+def _list_inventory(
+    fetcher,
+    board: JobBoard,
+    locator: dict[str, Any],
+    query: JobQuery,
+) -> AdapterResult:
+    title = _text(query.title)
+    if (
+        title is None
+        or len(title) > 500
+        or any(unicodedata.category(character).startswith("C") for character in title)
+        or any(character in {",", ";"} for character in title)
+    ):
+        return _incomplete(board, "bounded Oracle HCM title query is required")
+    api_urls: list[str] = []
+    response_sources: list[str] = []
+    rows: list[dict[str, str | None]] = []
+    seen_ids: set[str] = set()
+    expected_total: int | None = None
+    offset = 0
+    while expected_total is None or offset < expected_total:
+        endpoint = _inventory_endpoint(locator, title, offset)
+        api_urls.append(endpoint)
+        try:
+            page = fetcher.fetch(endpoint, headers={"Accept": "application/json"})
+        except (FetchError, OSError, TimeoutError) as error:
+            return _incomplete(
+                board,
+                str(error),
+                reason_code="PROVIDER_FETCH_FAILED",
+                retryable=True,
+                api_urls=api_urls,
+            )
+        response_url = page.final_url or page.url
+        if not _same_inventory_endpoint(response_url, locator["host"]):
+            return _incomplete(
+                board,
+                "Oracle HCM inventory redirect broke tenant continuity",
+                api_urls=api_urls,
+                rejected_response_url=response_url,
+            )
+        response_sources.append(page.source)
+        try:
+            payload = json.loads(page.html)
+        except (TypeError, json.JSONDecodeError):
+            return _incomplete(
+                board,
+                "Oracle HCM inventory returned malformed JSON",
+                reason_code="INVALID_STRUCTURED_DATA",
+                api_urls=api_urls,
+            )
+        parsed = _inventory_rows(payload, locator)
+        if isinstance(parsed, str):
+            return _incomplete(
+                board,
+                parsed,
+                reason_code="INVALID_STRUCTURED_DATA",
+                api_urls=api_urls,
+            )
+        page_rows, total = parsed
+        if expected_total is None:
+            expected_total = total
+            if total > _MAX_INVENTORY_ROWS:
+                return _incomplete(
+                    board,
+                    "Oracle HCM inventory exceeds the bounded pagination limit",
+                    api_urls=api_urls,
+                    total=total,
+                    candidate_count=0,
+                    stop_reason="result_cap_reached",
+                )
+        elif total != expected_total:
+            return _incomplete(
+                board,
+                "Oracle HCM inventory total changed during pagination",
+                reason_code="INVALID_STRUCTURED_DATA",
+                api_urls=api_urls,
+            )
+        expected_page_size = min(_INVENTORY_LIMIT, expected_total - offset)
+        if len(page_rows) != expected_page_size:
+            return _incomplete(
+                board,
+                "Oracle HCM inventory page is incomplete",
+                reason_code="INVALID_STRUCTURED_DATA",
+                api_urls=api_urls,
+            )
+        for row in page_rows:
+            folded_id = row["id"].casefold()
+            if folded_id in seen_ids:
+                return _incomplete(
+                    board,
+                    "Oracle HCM inventory repeats a job across pages",
+                    reason_code="INVALID_STRUCTURED_DATA",
+                    api_urls=api_urls,
+                )
+            seen_ids.add(folded_id)
+            rows.append(row)
+        offset += len(page_rows)
+
+    total = expected_total or 0
+    candidates = [
+        JobCandidate(
+            title=row["title"],
+            url=_candidate_url(locator, row["id"]),
+            provider="oracle_hcm",
+            location=row["location"],
+            raw={"job_id": row["id"], "posted_date": row["posted_date"]},
+        )
+        for row in rows
+    ]
+    reason_code = None if candidates else "EMPTY_PROVIDER_RESPONSE"
+    return AdapterResult(
+        provider="oracle_hcm",
+        board=board,
+        candidates=candidates,
+        reason_code=reason_code,
+        inventory_scope="title_filtered",
+        inventory_complete=True,
+        trace={
+            "adapter": "oracle_hcm",
+            "variant": "candidate_experience_public_inventory",
+            "api_urls": api_urls,
+            "response_sources": response_sources,
+            "tenant": locator["tenant"],
+            "site": locator["site"],
+            "total": total,
+            "candidate_count": len(candidates),
+            "inventory_scope": "title_filtered",
+            "inventory_complete": True,
+            "stop_reason": "complete",
+        },
+    )
+
+
+def _inventory_endpoint(locator: dict[str, Any], title: str, offset: int) -> str:
+    finder = (
+        f"findReqs;siteNumber={locator['site']},keyword={title},"
+        f"limit={_INVENTORY_LIMIT},offset={offset}"
+    )
+    return urlunparse(
+        (
+            "https",
+            locator["host"],
+            "/hcmRestApi/resources/latest/recruitingCEJobRequisitions",
+            "",
+            urlencode(
+                {
+                    "onlyData": "true",
+                    "expand": "requisitionList",
+                    "finder": finder,
+                }
+            ),
+            "",
+        )
+    )
+
+
+def _same_inventory_endpoint(url: str, expected_host: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return False
+    return (
+        parsed.scheme.casefold() == "https"
+        and (parsed.hostname or "").casefold() == expected_host
+        and port in {None, 443}
+        and parsed.username is None
+        and parsed.password is None
+        and parsed.path.rstrip("/")
+        in {
+            "/hcmRestApi/resources/latest/recruitingCEJobRequisitions",
+            "/hcmRestApi/resources/11.13.18.05/recruitingCEJobRequisitions",
+        }
+    )
+
+
+def _inventory_rows(
+    payload: Any,
+    locator: dict[str, Any],
+) -> tuple[list[dict[str, str | None]], int] | str:
+    if not isinstance(payload, dict) or not isinstance(payload.get("items"), list):
+        return "Oracle HCM inventory envelope is invalid"
+    if len(payload["items"]) != 1 or not isinstance(payload["items"][0], dict):
+        return "Oracle HCM inventory search envelope is ambiguous"
+    search = payload["items"][0]
+    if search.get("SiteNumber") != locator["site"]:
+        return "Oracle HCM inventory site conflicts with the board locator"
+    total = search.get("TotalJobsCount")
+    rows = search.get("requisitionList")
+    if (
+        isinstance(total, bool)
+        or not isinstance(total, int)
+        or total < 0
+        or not isinstance(rows, list)
+        or len(rows) > _INVENTORY_LIMIT
+        or len(rows) > total
+    ):
+        return "Oracle HCM inventory counts are invalid"
+    parsed: list[dict[str, str | None]] = []
+    seen_ids: set[str] = set()
+    for row in rows:
+        if not isinstance(row, dict):
+            return "Oracle HCM inventory contains a malformed row"
+        opening_id = _text(row.get("Id"))
+        title = _text(row.get("Title"))
+        location = _text(row.get("PrimaryLocation"))
+        posted_date = _text(row.get("PostedDate"))
+        if (
+            opening_id is None
+            or not _OPENING_ID.fullmatch(opening_id)
+            or opening_id.casefold() in seen_ids
+            or title is None
+        ):
+            return "Oracle HCM inventory contains an invalid job identity"
+        seen_ids.add(opening_id.casefold())
+        parsed.append(
+            {
+                "id": opening_id,
+                "title": title,
+                "location": location,
+                "posted_date": posted_date,
+            }
+        )
+    return parsed, total
+
+
 def _parse_candidate_url(url: str) -> dict[str, str | None] | None:
     try:
         parsed = urlparse(url)
@@ -252,13 +480,16 @@ def _parse_candidate_url(url: str) -> dict[str, str | None] | None:
         for raw, decoded in zip(raw_parts, parts)
     ):
         return None
-    if len(parts) not in {5, 7} or parts[:2] != ["hcmUI", "CandidateExperience"]:
+    if len(parts) not in {5, 6, 7} or parts[:2] != ["hcmUI", "CandidateExperience"]:
         return None
     locale, sites, site = parts[2:5]
     if sites != "sites" or not _LOCALE.fullmatch(locale) or not _SITE.fullmatch(site):
         return None
     opening_id = None
-    if len(parts) == 7:
+    if len(parts) == 6:
+        if parts[5] != "jobs":
+            return None
+    elif len(parts) == 7:
         if parts[5] != "job" or not _OPENING_ID.fullmatch(parts[6]):
             return None
         opening_id = parts[6]

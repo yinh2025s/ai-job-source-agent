@@ -5,12 +5,14 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
+from scripts import extension_bridge as extension_bridge_script
 from job_source_agent.composition import (
     LINKEDIN_EVIDENCE_CACHE_FILENAME,
     FetcherConfig,
     build_application,
 )
 from job_source_agent.extension_bridge import (
+    COMPANY_DISCOVERY_EVIDENCE_FILENAME,
     MAX_RECORDS,
     ExtensionBridgeConfig,
     ExtensionRunManager,
@@ -56,7 +58,7 @@ class ExtensionBridgeTests(unittest.TestCase):
                         "company_name": "Aurora Data",
                         "company_website_url": "https://aurora-data.example",
                         "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
-                        "job_title": "AI Engineer",
+                        "job_title": "AI Algorithm Engineer Intern",
                         "job_location": "Remote",
                         "source": "linkedin_browser_extension",
                     }
@@ -93,7 +95,7 @@ class ExtensionBridgeTests(unittest.TestCase):
             "company_name": "Aurora Data",
             "company_website_url": "https://aurora-data.example",
             "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
-            "job_title": "AI Engineer",
+            "job_title": "AI Algorithm Engineer Intern",
             "source": "linkedin_browser_extension",
         }
         with tempfile.TemporaryDirectory() as directory:
@@ -121,11 +123,82 @@ class ExtensionBridgeTests(unittest.TestCase):
                 manager.close()
 
         expected_path = output_dir / LINKEDIN_EVIDENCE_CACHE_FILENAME
+        expected_company_evidence_path = (
+            output_dir / COMPANY_DISCOVERY_EVIDENCE_FILENAME
+        )
         self.assertEqual(build.call_count, 2)
         self.assertEqual(
             [call.kwargs["linkedin_evidence_cache_path"] for call in build.call_args_list],
             [expected_path, expected_path],
         )
+        self.assertEqual(
+            [
+                call.kwargs["company_discovery_evidence_path"]
+                for call in build.call_args_list
+            ],
+            [expected_company_evidence_path, expected_company_evidence_path],
+        )
+
+    def test_manager_uses_explicit_company_discovery_evidence_path(self):
+        record = {
+            "company_name": "Aurora Data",
+            "company_website_url": "https://aurora-data.example",
+            "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
+            "job_title": "AI Algorithm Engineer Intern",
+            "source": "linkedin_browser_extension",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "runs"
+            evidence_path = Path(directory) / "shared" / "verified-evidence.json"
+            manager = ExtensionRunManager(
+                ExtensionBridgeConfig(
+                    fetcher=FetcherConfig(
+                        fixtures_dir=ROOT / "samples" / "sites",
+                        offline=True,
+                    ),
+                    workers=1,
+                    output_dir=output_dir,
+                    company_discovery_evidence_path=evidence_path,
+                )
+            )
+            try:
+                with patch(
+                    "job_source_agent.extension_bridge.build_application",
+                    wraps=build_application,
+                ) as build:
+                    run_id = manager.submit([record])
+                    self._wait_for_run(manager, run_id)
+            finally:
+                manager.close()
+
+        self.assertEqual(
+            build.call_args.kwargs["company_discovery_evidence_path"],
+            evidence_path,
+        )
+
+    def test_script_passes_explicit_company_discovery_evidence_path(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory) / "runs"
+            evidence_path = Path(directory) / "shared-evidence.json"
+            with (
+                patch.object(extension_bridge_script, "ExtensionRunManager") as manager,
+                patch.object(extension_bridge_script, "ExtensionBridgeServer") as server,
+            ):
+                extension_bridge_script.main([
+                    "--token",
+                    "test-token",
+                    "--offline",
+                    "--output-dir",
+                    str(output_dir),
+                    "--company-discovery-evidence-store",
+                    str(evidence_path),
+                ])
+
+        config = manager.call_args.args[0]
+        self.assertEqual(config.output_dir, output_dir)
+        self.assertEqual(config.company_discovery_evidence_path, evidence_path)
+        server.return_value.serve_forever.assert_called_once_with()
+        manager.return_value.close.assert_called_once_with()
 
     def test_bridge_auth_contract_allows_only_extension_origin_and_exact_token(self):
         self.assertTrue(is_allowed_origin(None))

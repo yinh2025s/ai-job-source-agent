@@ -11,6 +11,13 @@ FIXTURES = Path(__file__).parents[1] / "samples" / "sites" / "apply.workable.com
 LIVE_SHAPE_FIXTURES = (
     Path(__file__).parents[1] / "samples" / "sites" / "apply.workable.com" / "huzzle"
 )
+CUSTOM_DOMAIN_FIXTURES = (
+    Path(__file__).parents[1]
+    / "samples"
+    / "sites"
+    / "apply.workable.com"
+    / "custom-domain"
+)
 
 
 class StubFetcher:
@@ -269,6 +276,108 @@ class WorkableAdapterTests(unittest.TestCase):
         self.assertTrue(result.trace["exact_title_found"])
         self.assertEqual(result.trace["api_page_count"], 2)
         self.assertEqual(result.trace["total_found"], 516)
+        self.assertFalse(result.inventory_complete)
+
+    def test_verified_custom_domain_uses_account_api_and_closes_pagination(self):
+        shell = (CUSTOM_DOMAIN_FIXTURES / "public-shell.html").read_text(encoding="utf-8")
+        page_1 = (CUSTOM_DOMAIN_FIXTURES / "jobs-page-1.json").read_text(encoding="utf-8")
+        page_2 = (CUSTOM_DOMAIN_FIXTURES / "jobs-page-2.json").read_text(encoding="utf-8")
+        board = self.adapter.identify_board("https://apply.workable.com/customco/")
+        fetcher = RoutingFetcher(
+            [
+                Page(
+                    url=board.url,
+                    final_url="https://careers.customco.example/",
+                    html=shell,
+                    source="workable-custom-domain-fixture",
+                ),
+                page_1,
+                page_2,
+            ]
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Clinical Systems Engineer"),
+        )
+
+        self.assertEqual(len(fetcher.requests), 3)
+        self.assertEqual(
+            fetcher.requests[1]["url"],
+            "https://apply.workable.com/api/v3/accounts/customco/jobs",
+        )
+        self.assertEqual(fetcher.requests[1]["data"]["query"], "Clinical Systems Engineer")
+        self.assertEqual(fetcher.requests[2]["data"]["token"], "custom-domain-page-2")
+        self.assertEqual(
+            [candidate.url for candidate in result.candidates],
+            [
+                "https://apply.workable.com/customco/j/FIRST2001/",
+                "https://apply.workable.com/customco/j/TARGET2002/",
+            ],
+        )
+        self.assertIsNone(result.reason_code)
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["exact_title_found"])
+        self.assertEqual(
+            result.trace["account_uid"],
+            "12345678-1234-4123-8123-123456789abc",
+        )
+
+    def test_custom_domain_requires_matching_workable_tenant_metadata(self):
+        shell = (CUSTOM_DOMAIN_FIXTURES / "public-shell.html").read_text(encoding="utf-8")
+        board = self.adapter.identify_board("https://apply.workable.com/customco/")
+        mismatched_shell = shell.replace(
+            'content="customco"',
+            'content="another-account"',
+        )
+        fetcher = RoutingFetcher(
+            [
+                Page(
+                    url=board.url,
+                    final_url="https://careers.customco.example/",
+                    html=mismatched_shell,
+                )
+            ]
+        )
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(len(fetcher.requests), 1)
+
+    def test_custom_domain_rejects_api_records_from_another_account(self):
+        shell = (CUSTOM_DOMAIN_FIXTURES / "public-shell.html").read_text(encoding="utf-8")
+        board = self.adapter.identify_board("https://apply.workable.com/customco/")
+        foreign_page = json.dumps(
+            {
+                "total": 1,
+                "results": [
+                    {
+                        "title": "Foreign Role",
+                        "shortcode": "FOREIGN1",
+                        "accountUid": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    }
+                ],
+                "nextPage": None,
+            }
+        )
+        fetcher = RoutingFetcher(
+            [
+                Page(
+                    url=board.url,
+                    final_url="https://careers.customco.example/",
+                    html=shell,
+                ),
+                foreign_page,
+            ]
+        )
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertEqual(result.candidates, [])
         self.assertFalse(result.inventory_complete)
 
     def test_cursor_api_is_bounded_and_repeated_token_stops_pagination(self):

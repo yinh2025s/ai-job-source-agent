@@ -5,6 +5,7 @@ from dataclasses import replace
 from threading import Lock
 from urllib.parse import urlsplit
 
+from .browser_interaction import BrowserInteraction
 from .web import Page
 
 
@@ -28,8 +29,15 @@ class PageCacheFetcher:
         url: str,
         data: bytes | None = None,
         headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
     ) -> Page:
-        cacheable = self.max_entries > 0 and data is None and not headers
+        cacheable = (
+            self.max_entries > 0
+            and data is None
+            and not headers
+            and interaction is None
+        )
         if cacheable:
             with self._lock:
                 entry_id = self._aliases.get(_canonical_cache_alias(url))
@@ -40,7 +48,15 @@ class PageCacheFetcher:
                     return _copy_page(cached)
                 self.cache_misses += 1
 
-        page = self.fetcher.fetch(url, data=data, headers=headers)
+        if interaction is None:
+            page = self.fetcher.fetch(url, data=data, headers=headers)
+        else:
+            page = self.fetcher.fetch(
+                url,
+                data=data,
+                headers=headers,
+                interaction=interaction,
+            )
         if cacheable:
             with self._lock:
                 self._next_entry_id += 1

@@ -1,5 +1,6 @@
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from job_source_agent.acquired_brand_portal import (
     AcquiredBrandPortalEvidence,
@@ -193,6 +194,25 @@ class AcquiredBrandPortalTests(unittest.TestCase):
                 "Source Brand",
             )
         )
+
+    def test_skips_full_parser_without_acquisition_markers(self):
+        html = (
+            '<main><h1>Careers</h1><a href="/jobs">View Open Positions</a></main>'
+            + '<style>'
+            + ('body { color: black; }' * 30_000)
+            + '</style>'
+        )
+
+        with patch(
+            "job_source_agent.acquired_brand_portal._PortalParser.feed",
+            side_effect=AssertionError("full parser should not run"),
+        ):
+            evidence = parse_acquired_brand_portal_evidence(
+                self.page(html),
+                "Source Brand",
+            )
+
+        self.assertIsNone(evidence)
 
 
 if __name__ == "__main__":

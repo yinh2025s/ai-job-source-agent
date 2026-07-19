@@ -27,7 +27,13 @@ class ScoringTests(unittest.TestCase):
             with self.subTest(text=text):
                 self.assertTrue(is_explicit_job_list_command(text))
 
-        for text in ("Meet our team", "Explore Bosch", "Job benefits"):
+        for text in (
+            "Meet our team",
+            "Explore Bosch",
+            "Job benefits",
+            "Can’t find a role that fits right now?",
+            "Join our talent community",
+        ):
             with self.subTest(text=text):
                 self.assertFalse(is_explicit_job_list_command(text))
 
@@ -70,6 +76,63 @@ class ScoringTests(unittest.TestCase):
         self.assertIn("explicit job-list command", candidate.reasons)
         self.assertGreaterEqual(candidate.score, 55)
         self.assertTrue(is_likely_job_listing_page(candidate))
+
+    def test_job_offers_route_is_traversable_when_visible_label_is_shortened(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://caudalie.career/home/our-job-offers",
+                text="Our Offers",
+                source_url="https://caudalie.career/",
+            ),
+            career_page_url="https://caudalie.career/",
+        )
+
+        self.assertIn("job-listing route name", candidate.reasons)
+        self.assertTrue(is_likely_job_listing_page(candidate))
+
+    def test_first_party_apply_offer_slug_is_a_detail_not_a_listing(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://careers.example.com/apply/offer/CJ5G5Z",
+                text="Account Executive, NYC",
+                source_url="https://careers.example.com/home/our-job-offers",
+            ),
+            career_page_url="https://careers.example.com/home/our-job-offers",
+        )
+
+        self.assertTrue(is_likely_job_detail(candidate))
+
+    def test_first_party_scoped_job_offer_slug_is_a_detail(self):
+        source = (
+            "https://www.kering.example/en/talent/job-offers/"
+            "saint-laurent-careers/"
+        )
+        detail = score_job_link(
+            RawLink(
+                url=(
+                    "https://www.kering.example/en/talent/job-offers/"
+                    "northern-america/saint-laurent-financial-analyst/"
+                ),
+                text="SAINT LAURENT Financial Analyst",
+                source_url=source,
+            ),
+            career_page_url=source,
+        )
+        category = score_job_link(
+            RawLink(
+                url=(
+                    "https://www.kering.example/en/talent/job-offers/"
+                    "northern-america/"
+                ),
+                text="Northern America",
+                source_url=source,
+            ),
+            career_page_url=source,
+        )
+
+        self.assertTrue(is_likely_job_detail(detail))
+        self.assertFalse(is_likely_job_detail(category))
+        self.assertFalse(is_likely_job_listing_page(detail))
 
     def test_registered_nurse_card_has_job_detail_evidence(self):
         candidate = score_job_link(
@@ -117,6 +180,43 @@ class ScoringTests(unittest.TestCase):
 
         self.assertEqual(candidate.score, -500)
         self.assertEqual(candidate.reasons, ["static/resource URL"])
+
+    def test_career_keyword_does_not_match_product_path_substrings(self):
+        for path in ("/products/jobsite-fans", "/guides/jobs-to-be-done"):
+            with self.subTest(path=path):
+                candidate = score_career_link(
+                    RawLink(
+                        url=f"https://example.com{path}",
+                        text="Product information",
+                        source_url="https://example.com",
+                    )
+                )
+
+                self.assertFalse(
+                    any(reason.startswith("career keyword") for reason in candidate.reasons)
+                )
+
+    def test_editorial_career_article_ranks_below_career_portal(self):
+        article = score_career_link(
+            RawLink(
+                url=(
+                    "https://www.example.com/en/magazine/careers/"
+                    "how-our-team-built-a-product"
+                ),
+                text="",
+                source_url="https://www.example.com/en/",
+            )
+        )
+        portal = score_career_link(
+            RawLink(
+                url="https://careers.example.com/",
+                text="Careers",
+                source_url="https://www.example.com/en/",
+            )
+        )
+
+        self.assertIn("negative keyword 'magazine'", article.reasons)
+        self.assertGreater(portal.score, article.score)
 
     def test_job_link_prefers_ats_job_detail(self):
         candidate = score_job_link(
@@ -389,6 +489,50 @@ class ScoringTests(unittest.TestCase):
         self.assertTrue(is_likely_job_detail(candidate))
         self.assertIn("first-party numeric job detail route", candidate.reasons)
 
+    def test_first_party_listing_opaque_child_is_job_detail(self):
+        source_url = "https://jobs.example.com/job-search"
+        candidate = score_job_link(
+            RawLink(
+                url=source_url + "/bcf896f7352f1001b167c46dc9d00000",
+                text="National Account Manager - Hotels",
+                source_url=source_url,
+            ),
+            career_page_url=source_url,
+        )
+
+        self.assertTrue(is_likely_job_detail(candidate))
+
+    def test_sibling_job_query_with_requisition_id_is_job_detail(self):
+        source_url = "https://careers.example.com/jobs"
+        candidate = score_job_link(
+            RawLink(
+                url="https://careers.example.com/job?id=R0046024",
+                text="Product Design Engineer",
+                source_url=source_url,
+            ),
+            career_page_url=source_url,
+        )
+
+        self.assertTrue(is_likely_job_detail(candidate))
+
+    def test_opaque_child_contract_rejects_ambiguous_routes(self):
+        source_url = "https://jobs.example.com/job-search"
+        invalid_urls = (
+            "https://unrelated.example.com/job-search/bcf896f7352f1001b167c46dc9d00000",
+            source_url + "/engineering",
+            source_url + "/short123",
+            source_url + "/bcf896f7352f1001b167c46dc9d00000/extra",
+            "http://jobs.example.com/job-search/bcf896f7352f1001b167c46dc9d00000",
+        )
+
+        for url in invalid_urls:
+            with self.subTest(url=url):
+                candidate = score_job_link(
+                    RawLink(url=url, text="Engineering", source_url=source_url),
+                    career_page_url=source_url,
+                )
+                self.assertFalse(is_likely_job_detail(candidate))
+
     def test_all_jobs_numeric_detail_contract_rejects_ambiguous_routes(self):
         source_url = "https://careers.example.com/en/all-jobs/"
         invalid_urls = (
@@ -421,6 +565,20 @@ class ScoringTests(unittest.TestCase):
                 source_url="https://example.com/en/careers",
             ),
             career_page_url="https://example.com/en/careers",
+        )
+
+        self.assertFalse(is_likely_job_detail(candidate))
+        self.assertTrue(is_likely_job_listing_page(candidate))
+        self.assertIn("job-listing route name", candidate.reasons)
+
+    def test_joblisting_route_is_a_listing_not_a_detail(self):
+        candidate = score_job_link(
+            RawLink(
+                url="https://example.com/careers/jobs/joblisting",
+                text="Search Now",
+                source_url="https://example.com/careers/jobs",
+            ),
+            career_page_url="https://example.com/careers/jobs",
         )
 
         self.assertFalse(is_likely_job_detail(candidate))

@@ -10,7 +10,7 @@ from .source_posting import source_posting_fingerprint_payload
 
 
 CHECKPOINT_SCHEMA_VERSION = "1.7"
-ADAPTER_VERSION = "2026-07-17.94"
+ADAPTER_VERSION = "2026-07-19.172"
 
 FINGERPRINT_FIELDS = (
     "company_name",
@@ -34,8 +34,20 @@ def input_fingerprint(record: dict[str, Any]) -> str:
     source_posting = source_posting_fingerprint_payload(record.get("source_trace"))
     if source_posting:
         payload["source_posting"] = source_posting
+    evidence_revision = _company_discovery_evidence_revision(record.get("source_trace"))
+    if evidence_revision:
+        payload["company_discovery_evidence_revision"] = evidence_revision
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True).encode("utf-8")
     return hashlib.sha256(encoded).hexdigest()
+
+
+def _company_discovery_evidence_revision(source_trace: Any) -> str | None:
+    if not isinstance(source_trace, dict):
+        return None
+    value = source_trace.get("company_discovery_evidence_revision")
+    if isinstance(value, str) and re.fullmatch(r"[0-9a-f]{64}", value):
+        return value
+    return None
 
 
 def execution_fingerprint(record: dict[str, Any], run_configuration_digest: str) -> str:

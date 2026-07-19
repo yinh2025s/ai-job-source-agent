@@ -1,6 +1,7 @@
 import unittest
 from concurrent.futures import ThreadPoolExecutor
 
+from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.career_transport_budget import CareerTransportBudgetFetcher
 from job_source_agent.page_cache import PageCacheFetcher
 from job_source_agent.retrying_fetcher import RetryingFetcher
@@ -14,9 +15,11 @@ class RecordingFetcher:
     def __init__(self, failures=0):
         self.failures = failures
         self.calls = []
+        self.interactions = []
 
-    def fetch(self, url, data=None, headers=None):
+    def fetch(self, url, data=None, headers=None, *, interaction=None):
         self.calls.append((url, data, headers))
+        self.interactions.append(interaction)
         if len(self.calls) <= self.failures:
             raise FetchError("temporary timeout", retryable=True)
         return Page(url=url, html="ok")
@@ -179,6 +182,25 @@ class CareerTransportBudgetFetcherTests(unittest.TestCase):
         self.assertEqual(budget.snapshot()["dispatched"], 1)
         self.assertEqual(fetcher.cache_hits, 1)
 
+    def test_interaction_dispatch_is_forwarded_and_charged_normally(self):
+        base = RecordingFetcher()
+        fetcher = CareerTransportBudgetFetcher(base)
+        interaction = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="q",
+            target_title="Secret Staff Engineer",
+            submit_text="Search",
+        )
+
+        with fetcher.career_discovery_scope(1) as budget:
+            fetcher.fetch("https://example.test/jobs", interaction=interaction)
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://example.test/jobs", interaction=interaction)
+
+        self.assertEqual(base.interactions, [interaction])
+        self.assertEqual(budget.snapshot()["dispatched"], 1)
+        self.assertEqual(budget.snapshot()["rejected"], 1)
+
     def test_outer_retry_makes_each_attempt_cost_one(self):
         base = RecordingFetcher(failures=1)
         budgeted = CareerTransportBudgetFetcher(base)
@@ -202,6 +224,132 @@ class CareerTransportBudgetFetcherTests(unittest.TestCase):
         self.assertEqual(len(base.calls), 1)
         self.assertEqual(budget.snapshot()["dispatched"], 1)
         self.assertEqual(budget.snapshot()["rejected"], 1)
+
+    def test_repeated_403_denials_open_a_scope_local_host_circuit(self):
+        class ForbiddenFetcher(RecordingFetcher):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                self.calls.append((url, data, headers))
+                self.interactions.append(interaction)
+                raise FetchError(
+                    "HTTP Error 403: Forbidden",
+                    status=403,
+                    reason_code="HTTP_FORBIDDEN",
+                    retryable=False,
+                )
+
+        base = ForbiddenFetcher()
+        fetcher = CareerTransportBudgetFetcher(base)
+
+        with fetcher.career_discovery_scope(10) as budget:
+            for url in (
+                "https://www.example.test/careers",
+                "https://example.test/jobs",
+            ):
+                with self.assertRaises(FetchError):
+                    fetcher.fetch(url)
+            with self.assertRaises(FetchError) as blocked:
+                fetcher.fetch(
+                    "https://www.example.test/open-positions?token=private",
+                    headers={"Authorization": "secret"},
+                )
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://search.test/?q=example")
+
+        self.assertEqual(len(base.calls), 3)
+        self.assertEqual(blocked.exception.status, 403)
+        self.assertEqual(blocked.exception.reason_code, "HTTP_FORBIDDEN")
+        self.assertFalse(blocked.exception.retryable)
+        self.assertEqual(
+            blocked.exception.request_identity["sanitized_url"],
+            "https://www.example.test/open-positions?token=%5BREDACTED%5D",
+        )
+        self.assertEqual(budget.snapshot()["dispatched"], 3)
+        self.assertEqual(budget.snapshot()["remaining"], 7)
+        self.assertEqual(
+            budget.snapshot()["host_circuit"],
+            {
+                "denial_limit": 2,
+                "opened": 1,
+                "rejected": 1,
+                "hosts": {
+                    "example.test": {
+                        "denials": 2,
+                        "statuses": [403],
+                        "reason_codes": ["HTTP_FORBIDDEN"],
+                    }
+                },
+            },
+        )
+        self.assertNotIn("private", repr(budget.snapshot()))
+        self.assertNotIn("secret", repr(blocked.exception.request_identity))
+
+    def test_denial_circuit_is_isolated_by_host(self):
+        class HostFetcher(RecordingFetcher):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                self.calls.append((url, data, headers))
+                self.interactions.append(interaction)
+                if "blocked.test" in url:
+                    raise FetchError("403 Forbidden", status=403)
+                return Page(url=url, html="ok")
+
+        base = HostFetcher()
+        fetcher = CareerTransportBudgetFetcher(base)
+
+        with fetcher.career_discovery_scope(5) as budget:
+            for path in ("careers", "jobs"):
+                with self.assertRaises(FetchError):
+                    fetcher.fetch(f"https://blocked.test/{path}")
+            page = fetcher.fetch("https://other.test/jobs")
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://blocked.test/openings")
+
+        self.assertEqual(page.html, "ok")
+        self.assertEqual(len(base.calls), 3)
+        self.assertEqual(budget.snapshot()["dispatched"], 3)
+
+    def test_404_and_retryable_network_failures_do_not_open_denial_circuit(self):
+        class FailureFetcher(RecordingFetcher):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                self.calls.append((url, data, headers))
+                self.interactions.append(interaction)
+                if "/missing" in url:
+                    raise FetchError("HTTP Error 404: Not Found", status=404)
+                raise FetchError("temporary timeout", retryable=True)
+
+        base = FailureFetcher()
+        fetcher = CareerTransportBudgetFetcher(base)
+
+        with fetcher.career_discovery_scope(6) as budget:
+            for index in range(3):
+                with self.assertRaises(FetchError):
+                    fetcher.fetch(f"https://example.test/missing-{index}")
+            for index in range(3):
+                with self.assertRaises(FetchError):
+                    fetcher.fetch(f"https://example.test/retry-{index}")
+
+        self.assertEqual(len(base.calls), 6)
+        self.assertEqual(budget.snapshot()["dispatched"], 6)
+        self.assertNotIn("host_circuit", budget.snapshot())
+
+    def test_success_resets_host_denial_streak(self):
+        class RecoveringFetcher(RecordingFetcher):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                self.calls.append((url, data, headers))
+                self.interactions.append(interaction)
+                if len(self.calls) in {1, 3}:
+                    raise FetchError("403 Forbidden", status=403)
+                return Page(url=url, html="ok")
+
+        fetcher = CareerTransportBudgetFetcher(RecoveringFetcher())
+
+        with fetcher.career_discovery_scope(3) as budget:
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://example.test/careers")
+            fetcher.fetch("https://www.example.test/careers")
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://example.test/jobs")
+
+        self.assertNotIn("host_circuit", budget.snapshot())
 
     def test_composed_cache_and_retry_charge_attempts_but_not_cached_reuse(self):
         base = RecordingFetcher(failures=1)

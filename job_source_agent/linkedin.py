@@ -1,14 +1,16 @@
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 from dataclasses import fields
 from html import unescape
 from html.parser import HTMLParser
 from pathlib import Path
-from urllib.parse import urlparse, urlunparse
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 from .models import CompanyInput
+from .request_identity import is_sensitive_key
 from .web import normalize_url
 
 
@@ -20,6 +22,8 @@ def load_company_inputs(path: str | Path) -> list[CompanyInput]:
     crawler/API adapter that emits the same records.
     """
     records = json.loads(Path(path).read_text(encoding="utf-8"))
+    if isinstance(records, dict) and "postings" in records:
+        records = records["postings"]
     return company_inputs_from_records(records)
 
 
@@ -102,6 +106,20 @@ def parse_linkedin_html(path: Path) -> dict[str, str]:
     return data
 
 
+def parse_visible_external_apply_url(html: str) -> str:
+    """Return a public External Apply URL from a visible, explicitly labelled link."""
+
+    parser = _LinkedInHTMLParser()
+    parser.feed(html)
+    return parser.external_apply_url
+
+
+def sanitize_public_external_apply_url(url: str) -> str:
+    """Normalize a public HTTPS apply URL, rejecting private or sensitive values."""
+
+    return _safe_external_apply_url(url)
+
+
 class _LinkedInHTMLParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
@@ -124,7 +142,7 @@ class _LinkedInHTMLParser(HTMLParser):
                 self.company_name = _clean_linkedin_title(content)
         if tag.lower() == "a":
             href = attrs_dict.get("href", "")
-            if href:
+            if href and not _is_hidden_anchor(attrs_dict):
                 self._active_href = href
                 self._active_text = []
         elif tag.lower() == "script":
@@ -247,17 +265,50 @@ def _is_apply_label(text: str) -> bool:
     return " ".join(text.casefold().split()) in {"apply", "apply now", "apply for this job"}
 
 
+def _is_hidden_anchor(attrs: dict[str, str]) -> bool:
+    classes = set(attrs.get("class", "").casefold().split())
+    style = re.sub(r"\s+", "", attrs.get("style", "").casefold())
+    return bool(
+        "hidden" in attrs
+        or attrs.get("aria-hidden", "").casefold() == "true"
+        or classes.intersection({"hidden", "visually-hidden", "sr-only"})
+        or "display:none" in style
+        or "visibility:hidden" in style
+    )
+
+
 def _safe_external_apply_url(url: str) -> str:
+    try:
+        if urlparse(unescape(url).strip()).fragment:
+            return ""
+    except (TypeError, ValueError):
+        return ""
     normalized = _safe_http_url(url)
     if not normalized:
         return ""
     parsed = urlparse(normalized)
     host = (parsed.hostname or "").casefold()
+    if parsed.scheme != "https" or parsed.fragment or not _is_public_host(host):
+        return ""
+    if any(is_sensitive_key(key) for key, _value in parse_qsl(parsed.query, keep_blank_values=True)):
+        return ""
     if host == "linkedin.com" or host.endswith(".linkedin.com"):
         return ""
     if host == "licdn.com" or host.endswith(".licdn.com") or host == "lnkd.in":
         return ""
     return normalized
+
+
+def _is_public_host(host: str) -> bool:
+    host = host.rstrip(".")
+    if not host or host == "localhost" or host.endswith(
+        (".localhost", ".local", ".internal", ".lan", ".home", ".private")
+    ):
+        return False
+    try:
+        return ipaddress.ip_address(host).is_global
+    except ValueError:
+        return "." in host
 
 
 def _safe_linkedin_company_url(url: str) -> str:

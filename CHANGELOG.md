@@ -10,11 +10,247 @@
 
 ### Added
 
-- Complete the six-round annotation-driven remediation without company-specific runtime rules. Candidate discovery now merges External Apply, bounded targeted ATS search, and official Website/Career leads as untrusted inputs; candidate-scoped hiring relationship evidence, native provider/tenant verification, complete-inventory semantics, title/location matching, and S7 identity continuity remain mandatory before publication. SmartRecruiters, CWS, iSolved, Oracle HCM and generic first-party inventory paths gain end-to-end contract coverage. Explicit job-list commands and bounded first-party route bundles recover deeper Career surfaces. The single frozen **observed development** 40-company final live improves website/career/job-list/exact from 35/26/20/13 to 38/29/22/18. On ten manually confirmed eligible system gaps, conditional exact recall improves from 0/10 to 4/10 and system defects fall from 10/10 to 6/10; all three frozen expected URLs match, with zero wrong expected or unsafe exact URLs. Whole-output exact precision remains not reportable because 15 exact records lack independent frozen URL labels.
+- `.159-.172` continues evidence-led closure of the frozen 100 while keeping focused results
+  separate from the formal unified benchmark. A governance audit restores 13 `.162` live/replay
+  closures that were already evidenced but missing from the matrix, initially producing a
+  conservative ledger of 66 Exact, 19 Verified Not Found, and 15 System Gaps after also restoring the already
+  gated Blossom, SpaceX, Taskrabbit, and Haystack closures. L'OCCITANE follows the verified Group career
+  chain while rejecting sibling-brand tenants, and its complete SuccessFactors inventory proves
+  the frozen contract role is no longer present. NexCare preserves Applicant Manager row-local
+  location and admits only the parser-attested same-origin `jobs?pos=<id>` detail, recovering the
+  S7 Exact Saginaw opening. Generic search fallback preserves existing board scope and can consume
+  a title-bound SvelteKit SSR inventory through a non-executing, bounded literal parser with strict
+  shape, query-echo, completeness, same-origin detail, and malformed-input gates. Square's live
+  official inventory returns four current title matches outside New York; all are location-rejected,
+  so the record closes as `VERIFIED_NOT_FOUND` with no output URL rather than a false Exact.
+  Square focused live and automatic replay pass 1/1; the related 184-test gate and `git diff --check`
+  pass. `.172` preserves bounded first-party Career action chains through same-site intermediate
+  pages, so a stronger observed handoff is no longer discarded in favor of an ATS self-link.
+  Elderwood now publishes its S7-verified iCIMS opening and replays 1/1. A verified provider tenant
+  probe can also bind to the exact registrable-domain identity of an already verified official
+  website; substring tenants, guessed paths, multi-part tenants, and non-website sources remain
+  rejected. MrBeast consequently verifies all 84 Greenhouse records and publishes the exact New
+  York opening, with 1/1 replay. The 145-test identity/portfolio gate passes. A subsequent strict
+  Exact audit rejects two historical false positives: Intuit `Software Engineer 1` had resolved to
+  `Principal Software Engineer`, and Meta `Product Design Engineer` had resolved to `Battery Product
+  Design Engineer`. Manual no-job/access observations also remain diagnostic until their failure
+  clusters pass replayable Phase C.
+  The `.172` S2 22+6 Phase C gate now completes all 28 live records and reproduces all 28 from
+  scoped snapshots with zero mismatch and zero fixture gap. Replay honors recorded same-attempt
+  continuation boundaries even when an upstream stage finalized as failed, and restores a dynamic
+  typed board only from a fully verified provider identity chain; generic and inconsistent tenants
+  remain fail-closed. All 14 Exact results pass company, hiring-entity, provider, tenant, title and
+  location audit. Strict publication title identity rejects level and specialty expansion while
+  leaving S6 recall-oriented ranking intact. Intuit now resolves the exact `Software Engineer 1`
+  multi-location opening whose official location set includes New York; Meta Sunnyvale's Battery
+  specialty mismatch remains rejected. The conservative ledger is therefore 67 Exact, 19 Verified
+  Not Found, and 14 System Gaps. Final gates pass 2377 tests (3 skipped), 25/25 provider cases,
+  6/6 resolver cases, and 43 native adapters with zero architecture issues. `ADAPTER_VERSION` is
+  `2026-07-19.172`.
+
+- `.158` starts evidence-led closure of the frozen 100 without converting Partial into success.
+  The exhaustive diagnostic run reached 45 Exact and 62 verified Job Lists in 4191.8 seconds;
+  product staged routing on the same 100 inputs reached 51 Exact and 68 Job Lists in 2411.1
+  seconds, confirming that exhaustive route attribution must not consume the product opening
+  budget. Revalidated stored Career evidence can now recover same-entity hiring identity while
+  cache hits, redirects and mismatches remain non-authoritative. Company evidence updates are
+  monotonic by observation time, so older migration runs cannot erase newer Website/Career layers.
+  Generic detail hydration preserves nested location and strict listing-to-detail continuity;
+  POST/browser searches must demonstrate route, payload or listing-fingerprint progress; explicit
+  scoped Opportunity links can prove a fully attempted multi-board portfolio. A fixed seven-record
+  live gate recovered S7 Exact for both hackajob postings, Lacoste, Bacardi and Randstad, classified
+  Steve Madden's two complete empty ADP inventories as `NO_PUBLIC_OPENINGS`, and retained EVONA as
+  `SYSTEM_GAP`; all seven Job Lists and 7/7 same-version replay passed with zero wrong URLs. The
+  conservative 100-record closure ledger is 56 Exact, 9 Verified Not Found and 35 System Gaps;
+  it is not a replacement for the next unified 100-record run. `ADAPTER_VERSION` is
+  `2026-07-19.158`. Release gates pass 2334 tests (3 skipped), 25/25 provider cases, 6/6 resolver
+  cases, and 43 native adapters with zero architecture issues.
+
+- `.154-.157` completes the next recovery-cluster stabilization without inflating Partial into
+  Exact. LinkedIn company slugs can seed bounded provider-tenant candidates, regional Career
+  scheduling preserves explicit target locales, stored provider inventory is revalidated, and
+  budget rejection no longer burns retries inside one fetch call. A same-version 17-record gate
+  reached 10 Exact, 7 evidence-backed Partial, 0 Failed, 17/17 Job Lists and 17/17 replay. Declared
+  first-party inventories now preserve the most specific scalar location (`metro`, named location,
+  or city/state) through listing extraction and S7; Solomon Page opening `458677` is therefore
+  verified as Austin. Generic HTML pagination now uses configured `max_job_pages` instead of a
+  hidden three-page cap. Semantic SSR cards preserve explicit card-local locations and admit only
+  bounded same-origin job-family UUID details with one unambiguous title. Haystack live consequently
+  read all four filtered pages and 64 candidates with zero missing locations, found no Tampa match,
+  and returned evidence-backed `OPENING_NOT_FOUND`; replay passed 1/1. Broad locations such as
+  `United States` no longer satisfy a city target without verified detail evidence. Diagnostics now
+  distinguish title/location no-match from title no-match. `ADAPTER_VERSION` is
+  `2026-07-19.157`. The same-version 17-record gate is 11 Exact, 6 evidence-backed Partial,
+  0 Failed, 17/17 Job Lists and 17/17 replay in 595.3 seconds. Compared with `.155`, Solomon Page
+  gained Exact, both Haystack records became conclusive title/location no-match, and the other
+  14 outcomes stayed stable. The formal frozen-100 baseline remains `.125` at `46/100` Exact until
+  the unified 100-record rerun.
+
+- `.141-.153` closes the remaining three-brand regional focused cohort without changing the
+  formal frozen-100 baseline. The three records were `0/3` Exact under `.140`; `.141` reached
+  `1/3` Job List, and `.142` reached `3/3` Website with adidas Exact. Regional recovery now
+  admits a verified ccTLD sibling and a currently access-controlled sibling handoff only under
+  the existing same-brand, regional, registrable-site and identity gates. Explicit URL location
+  qualifiers may supply bounded location evidence. Verified official hiring relationships connect
+  Michael Kors to Capri Holdings and Saint Laurent to Kering, while non-production Eightfold
+  tenants remain rejected. Existing opening inventory is consumed before a redundant CTA;
+  negative talent-community CTAs are filtered; and first-party `/job-offers/<scope>/<slug>`
+  details are recognized under the normal opening verification contract. Michael Kors reached
+  focused Exact in `.144`. Saint Laurent remained polluted by a sandbox route in `.148`, reached
+  Career and Job List without Exact in `.149`, and reached Exact in `.151` while replay still
+  failed identity because a generic-board temporary search query drifted. `.152` keeps that query
+  out of tenant identity: Saint Laurent is focused Exact `1/1`, same-version replay is `1/1`, and
+  the run completes in 16.8 seconds. `.153` records adidas Group's verified official website and
+  Career handoff in the existing company-identity registry without storing an opening URL, avoiding
+  repeated low-evidence `adidas.com` verification timeouts. A clean same-version three-brand batch
+  is Website/Career/Job List/Exact `3/3`, passes S7 for Michael Kors, Saint Laurent and adidas, and
+  replays `3/3` successfully in 31.9 seconds. `ADAPTER_VERSION` is `2026-07-19.153`. These focused
+  results are not a new 100-record aggregate; the formal frozen-100 result remains `.125` at
+  `46/100` Exact until the 17-record recovery cohort and unified frozen-100 gate run. Generic
+  speculative-domain retry scheduling remains a separate open latency item.
+
+- `.140` completes Lacoste's stored regional-gateway path end to end. Stored website
+  evidence now receives the same bounded regional recovery as preferred/search evidence.
+  An access-controlled locale root explicitly declared by a currently verified same-site
+  gateway may be used in the current run, but cannot replace the durable verified gateway
+  record. After an official host denial, web-search leads are limited to ATS hosts or the
+  same registrable official site. Career scheduler v8 reserves one bounded `careers.`/`jobs.`
+  concrete-host probe so several higher-scoring same-host guessed paths cannot consume every
+  slot. A clean Lacoste focused live resolved the US root, verified the DigitalRecruiters
+  Career and Job List, and published S7-verified opening `4371325-account-executive-10016-new-york`
+  in 13.1 seconds; full automatic replay reproduces 1/1 with zero gaps or mismatches.
+  `ADAPTER_VERSION` is `2026-07-19.140`; at that version the remaining three regional brands
+  were still pending measurement before the recovery and unified frozen-100 gates.
+
+- `.136` closes the first regional-brand product loop. S2 accepts a declared US locale
+  root that is geo-redirected by the current network only when the declaration came from
+  the already verified regional gateway, the redirect remains on the same registrable
+  company site and the current page still supplies positive company identity. Pinpoint is
+  now reachable from both targeted ATS search and the verified-company-slug tenant probe;
+  this is provider-wide discovery wiring, not a SKIMS exception. A clean SKIMS focused live
+  resolved the US website, verified the public Pinpoint board and published the S7-verified
+  `Account Executive, Franchise Partnerships` UUID opening in 38.2 seconds. Scoped replay
+  now treats a source `replay_input` as authoritative original input semantics, preventing
+  a prior run's derived website output from bypassing the frozen evidence-store path; the
+  previously divergent two-record `.135` bundle replays 2/2 with zero gaps or mismatches.
+  `ADAPTER_VERSION` is `2026-07-19.136`; Lacoste and the remaining three regional brands
+  are still open work, and the formal frozen-100 score remains `.125` at 46 Exact.
+
+- `.133` closes the declared first-party inventory handoff from S5 to S6. Evidence-derived
+  same-origin detail templates validate their constrained job route and record ID directly,
+  instead of reusing navigation-link text penalties that rejected valid titles such as
+  `Benefits Manager` and invalidated an entire inventory. Generic opening matching rebuilds
+  bounded public declared inventory even when a runtime-only `DiscoveredJobBoard` does not
+  survive a stage/checkpoint boundary. Solomon Page now reads all 326 official anonymous
+  records and publishes the S7-verified `Data Analyst` opening `458677`; same-version full
+  replay reproduces 1/1 with zero gaps or mismatches. Automatic replay freezes the public
+  company-evidence store before live workers mutate it, preventing future evidence from
+  changing the current replay path. Completion resume keeps a retryable record only when it
+  already publishes a non-empty Job List or Exact opening, the identity assertion is verified,
+  and final result validation succeeded. `ADAPTER_VERSION` is `2026-07-19.133`; the next
+  focused cluster is standards-based US locale handoff for five region-conflicting stored
+  websites before the unified frozen-100 rerun.
+
+- `.130` completes the first ADR-0028 recovery loop. Historical migration may recover a
+  provider-board candidate from an independently verified result identity when the hiring chain,
+  provider relationship, canonical provider/tenant/board and approved first-party method all
+  agree; current native inventory is still mandatory before publication. Stored Website/Career
+  evidence is retained across transport failures and hosted-domain warnings when current page
+  title/body/canonical evidence positively confirms the company. When S2 is unavailable and a
+  verified stored provider candidate exists, S4 defers immediately to S5/S6 instead of consuming
+  the opening budget. A complete stored Website -> Career -> first-party handoff chain can bind a
+  brand to a different parent tenant, but incomplete or mismatched chains remain rejected. The
+  Gucci/Haystack focused cohort improved from 0/3 to 2/3 verified Job Lists: both Haystack records
+  reached current complete Ashby inventory and verified no-match; Gucci reached the correct Kering
+  Workday board but its current API timed out, so no URL was published. Result projection now
+  preserves that specific S6 terminal instead of replacing it with identity mismatch. Replay
+  bundles freeze only selected public discovery records and inject the frozen store into scoped
+  and legacy replay, excluding HTML, inventory, openings and credentials. `ADAPTER_VERSION` is
+  `2026-07-19.130`; the 17-record recovery gate and unified frozen-100 rerun remain pending.
+
+- `.127` introduces ADR-0028's persistent verified company-discovery evidence store after a
+  record-by-record diff showed that 17 frozen postings across 11 companies had verified website
+  evidence in `.120` but regressed behind LinkedIn HTTP 451/999 or transport failures in `.125`.
+  Website, Career and provider-board evidence are stored as separate 30-day public candidate
+  layers keyed by normalized company identity and LinkedIn company URL. Stored values never
+  bypass current network and identity validation; retryable failures retain them, deterministic
+  identity rejection invalidates the affected layer and descendants, and corruption recovers
+  fail-closed. Exact openings, inventories, HTML, cookies, tokens and durable negative results are
+  excluded. S2 and S4 consume stored candidates only through their existing validation paths;
+  S5 persists only adapter-recognized provider/tenant/canonical-board evidence backed by current
+  External Apply, first-party handoff or provider-page identity. Search snippets and tenant-name
+  similarity alone cannot be written. CLI, live evaluator and extension bridge expose the store,
+  with a stable extension output path by default. Generic `.org` website rotation and branded
+  Career microsite discovery are included without company branches. `ADAPTER_VERSION` is
+  `2026-07-19.127`; focused and unified live metrics remain pending.
+
+- `.126` makes same-brand website ambiguity fail closed under transport uncertainty. Before a
+  non-`.com` exact-brand domain can be published without direct website evidence, the resolver
+  verifies the matching `.com` candidate in a reserved slot. A retryable `.com` verification
+  failure now blocks the alternate TLD until LinkedIn supplies official website evidence; a
+  parked `.com` still cannot displace a verified real site. This removes the Taskrabbit-shaped
+  wrong-website outcome without a company exception. The `.125` frozen-100 live and retry
+  stabilized at 57 websites, 50 Career pages, 49 verified Job Lists and 46 S7 Exact openings;
+  Snap and Randstad were Exact, while network failures dominated upstream coverage. Provider
+  board publication now canonicalizes the complete typed `JobBoard` before constructing
+  portfolio evidence, so legacy Greenhouse links cannot pair a `boards.greenhouse.io` board
+  with a `job-boards.greenhouse.io` evidence URL and crash the worker. The strict same-origin
+  contract remains unchanged. Fresh live validation resolves Sezzle to its S7-verified Financial
+  Analyst opening and resolves Taskrabbit through the correct `.com` to a complete-inventory
+  `OPENING_NOT_FOUND`; both full-outcome captures replay 2/2 with the strict gate passing.
+
+- `.125` resolves a same-brand website ambiguity without company-specific rules: when multiple
+  verified domains align with the LinkedIn slug but LinkedIn's official website field is
+  unavailable, a verified exact-brand `.com` may break the TLD tie. Parked, deployment,
+  marketplace, wrong-brand, and unverified `.com` candidates remain ineligible. This prevents a
+  product-focused `.ai` page from outranking an independently verified corporate `.com` solely
+  because it publishes richer Organization metadata. First-party embedded inventory cards now
+  retain their public Career source as typed relationship evidence; exhaustive route merging
+  cannot pair an ATS job-list URL with a stale generic provider identity, and only promotes the
+  derived provider/tenant when the normal relationship gate verifies it.
+  A verified first-party listing inventory may now promote its native ATS detail links directly
+  to a canonical provider board, preserving each card's Career source URL as relationship
+  evidence. This avoids repeating a network-sensitive tenant probe after the official Career
+  page has already exposed provider-bound inventory; unverified, unknown-provider, and
+  source-less cross-site links remain ineligible.
+
+- Stabilize the frozen-100 failure clusters without publishing stale or cross-identity openings. S2 now rejects region-conflicting ccTLD and locale fast selections, marketplace/deployment subdomains that do not establish registrable-domain ownership, and ambiguous product-subdomain identity while reserving one bounded verification slot for a complete LinkedIn company slug. A discovered first-party dynamic inventory endpoint that fails verification retains a typed incomplete/transport terminal instead of collapsing to `JOB_BOARD_NOT_FOUND`. Generic exact-title links receive at most three same-site detail checks and can contribute location only from a canonical self-bound `JobPosting` or bounded public controller-cache record with matching page ID, title and first-party employer. Fresh live capture plus offline replay restores Randstad Malvern and Snap Los Angeles to 2/2 Exact while rejecting Snap's same-title Taiwan opening. Scoped replay restores multi-board, replay-safe singleton and URL-only custom/generic boundaries without ignoring outcome-tape entries; ADP and LTIMindtree focused replay pass. `ADAPTER_VERSION` is `2026-07-19.122`; the formal frozen-100 score remains `.120` at 46 Exact until the unified gate is rerun.
+
+- Make ADP public board locators safely resumable instead of repeatedly spending the company budget before S6. WFN and SRCCAR boards are checkpointable only when canonical host, path, ordered query, public client/site/locale identity and the provider identifier agree exactly; duplicate parameters, secret-bearing queries, host or tenant drift and noncanonical variants remain rejected. An isolated Steve Madden run now persists S5 and an `opening_match` resume drops from 82.3 to 16.7 seconds while checking both official Corporate and Retail inventories. Both are currently verified empty, so the frozen posting remains non-Exact rather than publishing a stale URL. `ADAPTER_VERSION` is `2026-07-18.120`.
+
+- Complete the `.120` frozen-100 live gate and its checkpoint-aware retry. The first pass reaches website/career/job-list/exact `70/58/55/45`; retrying only 36 compatible retryable completions reaches `70/58/57/46`, improving `.117` by `+13/+14/+17/+19`. SpaceX recovers Exact and Snap reaches its verified board while remaining fail-closed at S7. The stable 54 non-Exact records are now dominated by 29 S2 fetch failures and 11 additional pre-inventory failures, not by missing title search. The post-run automatic failure bundle still fails strict ADP scoped replay with unconsumed inventory requests; live artifacts remain valid, but deterministic replay remains release-blocking.
+
+- Preserve a verified replay-safe primary board across S6 retries without persisting runtime-only portfolio state. S5 checkpoint serialization now stores only the contiguous replay-safe prefix from the existing primary rank and forces the restored portfolio incomplete when a suffix is omitted; a runtime-only primary still makes the portfolio non-persistable, so lower-ranked boards are never promoted. Checkpoint tests assert that runtime identifiers are absent on disk. `ADAPTER_VERSION` is `2026-07-18.119`.
+
+- Start `.118` from the first unified frozen-100 regression rather than focused projections. The `.117` run completes all 100 network records at website/career/job-list/exact `57/44/40/27`; 42 S2 LinkedIn company requests are denied by HTTP 999/451 and 50 records are transport/budget retryable, while repeated-company postings expose missing company-level S2-S5 evidence reuse. Strict review keeps all eight S7 identity rejections fail closed and separates verified no-match/external constraints from SmartRecruiters storefront, location-evidence, replay-handoff and S6 budget defects. S6 now reserves up to 25 seconds and refuses to enter provider inventory when process cleanup has eroded the usable window, preserving the verified board for an `opening_match` resume. `ADAPTER_VERSION` is `2026-07-18.118`.
+
+- Harden the frozen-100 evaluation entry and S5 route merge. Versioned cohort wrappers with a `postings` array are accepted by the shared LinkedIn input adapter while unrecognized object shapes remain invalid. Candidate and legacy Website routes now preserve rank while deduplicating the same public board identity by provider and canonical board URL before constructing the strict portfolio; different providers or boards remain distinct. This fixes a generic `batch_worker_failed` raised when equivalent route evidence was represented by different objects. An isolated Notion live rerun reaches its official Ashby opening through S7. `ADAPTER_VERSION` is `2026-07-18.117`; failed `.116` batch completions are not reused.
+
+- Close the next frozen-100 Career-navigation and first-party inventory cluster without company branches. Localized hackajob SSR cards recognize locale-prefixed job details, deduplicate repeated CTA links to one detail, exclude company/location/description headings, and reject cards containing multiple distinct detail URLs; focused live restores both the Apollo Platform and Registered Nurse postings to S7 Exact. Regional gateways retain their traversal role even when already inside the fetch window and may follow one visible HTTPS Career handoff while unsafe destinations remain rejected. Generic traversal recognizes explicit `job-offers` routes. A same-origin anonymous `data-ajax` POST is executable only when the HTML also declares empty-default bounded fields and a slug detail template; sensitive fields, field overflow, non-empty defaults, redirects, unsafe slugs and malformed payloads fail closed. Full empty-filter inventory carries `scope=full`. An explicit official title location qualifier may refine a coarse inventory region at S7 (`NYC` matches New York; `D.C.` does not). Caudalie focused live reads 42 official records and publishes `https://caudalie.career/apply/offer/CJ5G5Z` only after S7. `ADAPTER_VERSION` is `2026-07-18.116`; the deduplicated evidence ledger is projected at 61 Exact pending the unified frozen-100 gate. Relevant regression slices pass 372 tests, and focused network artifacts remain under isolated `/private/tmp` roots.
+
+- Continue frozen-100 product closure with verified first-party opening recovery rather than company exceptions. A high-confidence first-party Career action that was actually visited remains in the typed board portfolio when its page also embeds a provider locator, so a non-production nested shell cannot erase the real hiring portal. Bounded same-site title search uses the registrable corporate site across sibling subdomains, while every lead still requires a live same-site `JobPosting`, canonical self URL, first-party hiring organization, title and location identity. S7 counts only the selected URL's verified site-search page as non-empty filtered selection evidence; snippets and unmatched leads remain ineligible. Gucci focused live advances from the rejected Kering Eightfold sandbox to the official Kering Financial Analyst opening and passes S7 with zero false URL/tenant output. Generic declared jTable inventory supports bounded paging, strict same-origin GET, deterministic detail URL construction and at most one extra JSON-string encoding layer; deeper and malformed payloads fail closed. Yamaha focused live reads all 35 anonymous jTable records and publishes the official UUID detail only after S7 verification. Explicit same-origin search-route helpers can be recovered from bounded page-declared job/search chunks and followed as inventory navigation without treating the helper response as opening evidence. Randstad proves that navigation alone is insufficient: an incomplete unknown-scope selection with multiple same-title candidates and no location evidence now fails closed as `OPENING_LOCATION_UNVERIFIED`, preventing a current replacement posting from impersonating the frozen LinkedIn job. Regional website recovery follows at most three visible HTTPS locale links from a verified identity-continuous gateway, requires the same corporate registrable site and an explicit target-region final URL, and never guesses locale paths or follows cross-site/script-only leads. `ADAPTER_VERSION` is `2026-07-18.115`. The evidence ledger is projected at 58 Exact pending a unified frozen-100 live gate; focused improvements remain separate from formal cohort metrics.
+
+- Make S7 rejection a first-class product terminal. A rejected candidate remains absent from `open_position_url`, while the top-level result now carries `RESULT_IDENTITY_MISMATCH` instead of forcing consumers to inspect stage traces; the rejected identity assertion retains the candidate chain only as diagnostic evidence. Bounded title-query portfolios try the complete title first and at most two deterministic core/Product-Team variants for first-party search, record query provenance, and never relax final title, location, provider, tenant or S7 validation. The first `.115` focused run confirms SKIMS Exact and Randstad false-Exact suppression; two hackajob records reach their reduced one-page searches but expose a separate SSR card parser gap, while Caudalie exposes a separate S4 locale-handoff scheduling gap. Neither intermediate Job List is counted as repaired.
+
+- Stabilize the observed-72 failure clusters without company branches. S5 now preserves verified first-party Career-to-ATS chains through same-site intermediate pages and officially linked recruiting microsites, while guessed microsites remain rejected. Official-host denial pruning skips futile same-host and sitemap work but preserves External Apply and ATS routes; repeated official denial outranks a later deadline in final failure projection. When no high-confidence visible Career link exists, bounded first-party bundle navigation runs before speculative common paths. Navigation asset scheduling now favors route-bearing application chunks over framework/theme bundles, independently of dynamic-inventory asset priority, so a three-asset budget cannot displace a visible Career command. Dynamic first-party inventory supports bounded declared JSON, HTML-wrapped JTable titles, prioritized application bundles, and Applicant Manager table rows; Meta Careers uses title-directed bounded sampling without claiming completeness; SuccessFactors rejects unscoped shared roots and recovers tenant-bearing page evidence. Multi-tenant Career pages retain observed provider boards and rank company-aligned scope, visible multi-opening pages remain the Job List instead of promoting the first detail URL, and an explicit first-party handoff to a scoped cross-site job-search route can publish board-only evidence without inventing an opening. High-confidence semantic Career actions now establish the same verified handoff regardless of exact button wording, while all existing visible-link, official-source, same-origin landing, HTTPS and real-inventory gates remain mandatory. Late ADP links survive bounded extraction on navigation-heavy pages, score as provider listings, and canonicalize strict `RTI.home` tenant locators without a preliminary network fetch. Redirects can recover an action only by exact normalized final-URL equality with the original observed link. Editorial `/magazine/` pages are demoted below real Career portals, and Ashby inventory now combines primary and `secondaryLocations` so a valid secondary city can satisfy S7 without weakening company or tenant identity. `ADAPTER_VERSION` is `2026-07-18.111`; `.109` matched live reached website/career/job-list/exact `67/53/41/12`, and `.110` reached `67/54/45/11`. The four-board gain includes Gucci, LTIMindtree and Steve Madden; the one exact decrease was an adidas company-deadline timeout, not an identity regression. Focused `.111` live restores Middesk to Exact from verified Ashby secondary-location evidence and routes adidas to the real portal first, where the upstream portal still times out. Final gates pass 2,063 tests (3 skipped), provider benchmark 25/25, resolver 6/6, and architecture 43/0.
+
+- Continue the observed-72 stabilization by repairing complete evidence chains rather than adding company branches. Exact standalone Career actions retain late link labels across URL deduplication, `Employment` and Pinpoint URLs survive S2 navigation evidence, US regional recovery rewrites an observed foreign locale root, and blind ATS discovery includes Pinpoint. Bounded ATS tenant verification now runs after direct homepage, bundle and official sitemap evidence but before lower-authority generic search, preventing a late provider candidate from being starved without displacing first-party sitemap evidence. Pinpoint replay locators strictly bind the lowercase tenant to the exact tenant root. First-party opening search executes bounded declared Solr and hidden GET forms, recognizes strict linked job cards, permits verified sibling-host details, and treats complete title-filtered empty inventory as `OPENING_NOT_FOUND`. Native HealthcareSource and ADP adapters validate tenant-bound anonymous inventory; Meta Careers recovers its verified board through bounded public evidence without treating sampling as complete inventory. The matched `.99`/`.103` observed-72 funnel improves website/career/job-list/exact from `70/55/37/8` to `71/60/43/10`; SKIMS, Bacardi, and adidas are new Exact while PUMA remains a current `NETWORK_TIMEOUT` after an isolated retry. Post-benchmark safety hardening opens a scope-local circuit after two same-host 401/403 denials and projects repeated official-host denial truthfully, prevents `guessed_path` candidates from establishing hiring relationship through tenant-name equality, and rejects broad parent/group websites as exact subsidiary identity without explicit evidence. Targeted `.104` live classifies Tidelands as `HTTP_FORBIDDEN` with 11 circuit rejections and 20 transport calls preserved, resolves Tata Technologies to its exact first-party site and verified RippleHire board instead of Tata group inventory, and rejects LinkedIn's speculative Greenhouse board. `ADAPTER_VERSION` is `2026-07-18.104`; final gates pass 2,030 tests (3 skipped), provider benchmark 25/25, resolver 6/6, and architecture 43/0. Detailed evidence is in `docs/OBSERVED_72_V103_STABILIZATION_REPORT.md`.
+
+- Complete another annotation-driven fresh-100 remediation slice without company-name branches. New native ApplicantPro, CATS One, PeopleSoft and WP Job Manager adapters validate public tenant/page identities, canonical boards, anonymous inventories, redirects, pagination, detail IDs and replay policy; the provider registry now contains 41 native adapters. S5 admits explicit `vacancies` routes only after strict first-party evidence and can attest a bounded same-origin anonymous HTML inventory transport declared by page JavaScript. S6 executes target-title search, extracts title/location-bound records, and rejects explicit foreign locations before S7. Targeted live restores Northern Clearing and Alaska Commercial Company to exact; North Dakota IT reaches its verified PeopleSoft board and correctly reports no matching current opening; Conrad reaches its official list and executes a 48-candidate `Project Manager` search, but correctly returns partial because the frozen Toledo posting is absent from current official inventory. SDS International reaches its official WP Job Manager board, executes the declared title/location POST, and returns authoritative `OPENING_NOT_FOUND` from a complete filtered empty response. Dechert reaches its declared official inventory. CATS replay policy fixes the Alaska runtime crash instead of projecting it as a network failure. `ADAPTER_VERSION` is `2026-07-18.99`; gates pass 1985 tests (3 skipped), provider benchmark 25/25, resolver 6/6, architecture 41 adapters / 0 issues, and `git diff --check`.
+
+- Continue the annotation-driven fresh-100 remediation without company-name branches. Bounded traversal now reserves one strictly verified official Career destination beyond the ordinary candidate cap, carries the first-party action chain through S7, and derives BambooHR boards only when an exact tenant `data-domain` agrees with the official `embed.js` host. Generic first-party inventory recognizes bounded semantic job cards, Ashby accepts exact public posting-API evidence while preserving safe board/embed/detail variants, iCIMS expands hosted `/jobs` roots, Paylocity validates slugless UUID tenants, and observed HTTP ATS anchors receive a constrained HTTPS upgrade before native provider validation. Failure projection preserves company-deadline and official-403 evidence instead of reporting deterministic Not Found. Targeted live restores Equifax and Team Royal to exact, plus WalkMe, Aperia, StatRad, Ivo, and Steampunk; Adapture reaches a complete Paylocity inventory and correctly remains `OPENING_NOT_FOUND`. `ADAPTER_VERSION` is `2026-07-18.97`; gates pass 1933 tests (3 skipped), provider benchmark 25/25, resolver 6/6, architecture 38 adapters / 0 issues, and `git diff --check`.
+
+- Remediate the fresh 100-posting failure clusters without company-name runtime rules. Explicit global Career actions now outrank scoped category links; a first-party search page can become a generic board only after one bounded, same-origin, anonymous JS inventory transport is statically attested. S6 executes that transport with the target title and carries complete inventory, title, location and endpoint provenance through the existing `verified_declared_inventory` S7 contract, including a verified Career-to-search-page handoff. Lever strictly recognizes canonical public `/v0/postings/<tenant>` inventory evidence and canonicalizes it to `jobs.lever.co`; SuccessFactors accepts its legacy `jobId` detail key. New native GovernmentJobs/NEOGOV, Pinpoint and SaaSHR/UKG Ready adapters own tenant, redirect, pagination, completeness and unsafe-URL validation. Targeted live restores Jushi Holdings and Aramark to exact, Stuller to exact, and the two municipal GovernmentJobs samples plus OneApp to verified boards. Route attribution now agrees with the frozen product exact count at 25/100 with zero malformed traces, and Hawaiian Electric's two-record scoped replay consumes the complete tape without divergence. `ADAPTER_VERSION` is `2026-07-18.96`; final gates pass 1908 tests, 38 native adapters / 0 architecture issues, and `git diff --check`.
+
+- Record a second observed 100-posting three-route live evaluation using five new job families and 100 distinct LinkedIn job IDs with zero job-ID overlap against the July 17 cohort. After retryable completion recovery, the frozen final funnel is 94 websites, 67 Career pages, 43 verified Job Boards, and 25 S7 exact openings. Public LinkedIn detail pages again expose no External Apply inputs. The original route report under-counted six valid exact results; the corrected evaluator attributes all 25 to Website/Career and reports a 25/100 OR-union without changing the frozen product outcomes. Provider-targeted search contributes no exact result. The 75 non-exact records are exported as an 11-category manual-review checklist and structured CSV.
+
+- Add a benchmark-only exhaustive three-route evaluation mode (`evaluate_all_candidate_routes`, deterministic run schema `1.4`) and preserve distinct LinkedIn postings by job ID for live cohorts. Route traces measure input coverage, candidate production, provider/tenant board verification, hiring-relationship verification, exact attribution, and overlap without treating search snippets or ranking as success. The frozen observed 100-posting live run spans 73 companies and 10 job families: provider-targeted search attributes 11 exact openings, Website/Career attributes 24, seven overlap, and the verified OR-union is 28/100. Public LinkedIn detail pages exposed zero usable External Apply inputs, so its conditional success rate is N/A. All 100 traces are structurally valid; scoped replay reproduces 98/100 outcomes with two mismatches retained as a release risk. The cohort, metrics, per-posting CSV, report, and a blank 72-record non-exact manual-review checklist are committed under `samples/evaluation/` and `docs/`.
+
+- Continue annotation-driven remediation without a numeric round limit or company-specific runtime rules. Candidate discovery merges External Apply, bounded targeted ATS search, and official Website/Career leads as untrusted inputs; candidate-scoped hiring relationship evidence, native provider/tenant verification, complete-inventory semantics, title/location matching, and S7 identity continuity remain mandatory before publication. Product entry points now enable the staged three-route architecture by default, with an explicit disable switch; lower-level library defaults and legacy replay remain conservative. Career URLs that are already provider boards preserve first-party provenance, CWS supports a validated SmartPost fallback, Greenhouse owns old/new board canonicalization, and S7 rejects explicit URL/location conflicts. Focused live acceptance recovers Northwell, Texas Children's, Gary and Mary West PACE, System One, SpaceX, and Kodiak Cakes at 6/6 exact; the subsequent serial product-default 40-company regression reaches website/career/job-list/exact `40/32/28/22`, up `+2/+3/+6/+4` from the first remediation checkpoint. After Hugh Chatham is reclassified for missing hiring-entity evidence, all nine eligible manually confirmed simple gaps recover exact. Four frozen expected URLs match 4/4, wrong expected and unsafe exact counts remain zero, and full-outcome replay reproduces 40/40 with zero mismatches or fixture gaps. Whole-output exact precision remains unreported because 18 exact records lack independent frozen URL labels.
 
 - Harden candidate identity and scoped replay after the final live exposed two fail-closed infrastructure defects. `ProviderCandidate` and `HiringRelationshipEvidence` now share strict URL canonicalization, so tracking/trailing variants normalize while control-bearing evidence is rejected before portfolio construction. Generic page-derived boards are recognized from captured page provenance, and scoped replay follows the complete website-to-Career-to-board producer chain instead of seeding incomplete intermediate context. The original 40-record automatic replay manifest remains failed because one live worker crashed before finalizing its S5 scope; no tape is fabricated. Every replayable record subsequently passes full outcome identity replay at 39/39 reproduced and zero mismatches, including success 18/18 and partial 10/10.
 
-- Add `docs/OBSERVED_40_EXACT13_FAILURE_CHECKLIST.md`, a persistent manual-review checklist bound to the observed 35/26/20/13 regression. It lists all 27 non-exact records by stage reason code, preserves the frozen automated evidence, separates later targeted recoveries from the historical aggregate, and provides explicit manual-disposition labels. Manual review now covers 23/27 records: 10 confirmed system gaps, three verified closed postings, five without public openings, three externally blocked flows, one rejected same-name identity, and one eligibility-unknown record; PUMA, Dior, Electrolux, and Gucci remain pending. Targeted live evidence has already recovered three of the 10 system gaps without changing the frozen aggregate.
+- Add `docs/OBSERVED_40_EXACT13_FAILURE_CHECKLIST.md`, a persistent manual-review checklist bound to the observed 35/26/20/13 regression. It lists all 27 non-exact records by stage reason code, preserves the frozen automated evidence, separates later targeted recoveries from the historical aggregate, and provides explicit manual-disposition labels. Manual review covers 23/27 records: nine confirmed system gaps, three verified closed postings, five without public openings, three externally blocked flows, one rejected same-name identity, and two eligibility-unknown records; PUMA, Dior, Electrolux, and Gucci remain pending. All nine eligible system gaps now have later exact live evidence without rewriting the frozen aggregate.
 
 - Stabilize the observed 40-company regression without introducing company-specific branches. The serialized pre-fix regression improved the original `33/23/15/4` website/career/job-list/exact baseline to `35/26/20/13`; remaining clusters were homepage-host evidence reuse, candidate ordering, scoped-replay producer coverage, unsupported ATS inventory, insufficient board evidence, explicit portal traversal, and transport-budget exhaustion. Homepage navigation evidence now treats HTTPS apex and `www` forms with the same path as equivalent while rejecting other subdomains. S4 schedules direct evidence and explicit same-site job portals ahead of speculative families. Scoped replay starts at the producer stage when a downstream stage depends on producer-owned evidence and fails preflight when that producer tape is absent. ApplicantStack is a listing-capable, tenant-bound adapter for canonical `/x/openings` inventory and same-tenant `/x/detail/<id>` URLs. S5 may promote multiple visible detail links only when they resolve to one provider/tenant board, and explicitly labeled same-site job portals outrank generic traversal. Targeted live reruns reached exact openings for CHC, Aarris Healthcare, and System One, recovered Northwell Health's board, and left Resonate AI honestly classified as budget exhausted. Because only those targeted regressions ran after the fixes, no post-fix 40-company aggregate is claimed. Full offline gates pass 1570 tests, 25/25 provider benchmark cases, 6/6 resolver cases, and architecture validation with 29 adapters / 0 issues.
 

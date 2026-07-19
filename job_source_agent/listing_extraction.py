@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from .card_listing_extraction import extract_card_listing_candidates
 from .scoring import is_ats_url, is_likely_job_detail, score_job_link
@@ -23,10 +23,16 @@ TITLE_FIELDS = ("title", "name", "jobTitle", "job_title", "positionTitle")
 URL_FIELDS = (
     "url", "absolute_url", "absoluteUrl", "hostedUrl", "applyUrl", "jobUrl",
     "job_url", "externalPath", "externalUrl", "detailUrl", "detail_url", "canonicalUrl", "link",
+    "wdUrl",
+)
+LOCATION_FIELDS = (
+    "metro", "locationName", "jobLocation", "job_location", "location", "Location",
 )
 EXPLICIT_EMPTY_INVENTORY = re.compile(
     r"\b(?:"
     r"no open (?:jobs?|roles?|positions?|openings?)(?: are)? available "
+    r"(?:at the moment|right now|currently)"
+    r"|no open (?:jobs?|roles?|positions?|openings?) "
     r"(?:at the moment|right now|currently)"
     r"|there are (?:currently )?no open (?:jobs?|roles?|positions?|openings?)"
     r"|we (?:currently )?(?:have no|do not have|don't have) open "
@@ -42,9 +48,16 @@ class ListingCandidate:
     url: str
     source_url: str
     origin: str
+    location: str | None = None
 
     def as_raw_link(self) -> RawLink:
-        return RawLink(self.url, self.title, self.source_url, self.origin)
+        return RawLink(
+            self.url,
+            self.title,
+            self.source_url,
+            self.origin,
+            location=self.location,
+        )
 
 
 class _VisibleTextParser(HTMLParser):
@@ -155,7 +168,13 @@ def explicit_empty_inventory_evidence(html: str) -> str | None:
     return match.group(0) if match else None
 
 
-def validate_output_url(url: str, source_url: str, *, title: str = "") -> str | None:
+def validate_output_url(
+    url: str,
+    source_url: str,
+    *,
+    title: str = "",
+    origin: str = "",
+) -> str | None:
     """Return a normalized URL only when it is a plausible official job detail."""
     normalized = safe_normalize_url(url, source_url)
     if not normalized:
@@ -171,16 +190,55 @@ def validate_output_url(url: str, source_url: str, *, title: str = "") -> str | 
         return None
     link = RawLink(normalized, title, source_url)
     scored = score_job_link(link, source_url)
-    if not is_likely_job_detail(scored) and not _title_bound_same_origin_detail(
-        parsed,
-        source,
-        title,
+    if (
+        not is_likely_job_detail(scored)
+        and not _title_bound_same_origin_detail(parsed, source, title)
+        and not _trusted_structured_detail(parsed, source, origin)
     ):
         return None
     same_origin = parsed.hostname == source.hostname and parsed.port == source.port
-    if same_origin or is_ats_url(normalized):
+    if same_origin or _same_registrable_site(parsed.hostname, source.hostname) or is_ats_url(normalized):
         return normalized
     return None
+
+
+def _trusted_structured_detail(parsed, source, origin: str) -> bool:
+    if origin != "applicant_manager_table":
+        return False
+    hostname = (parsed.hostname or "").casefold().rstrip(".")
+    source_hostname = (source.hostname or "").casefold().rstrip(".")
+    if (
+        hostname != source_hostname
+        or not (
+            hostname == "theapplicantmanager.com"
+            or hostname.endswith(".theapplicantmanager.com")
+        )
+        or parsed.path.rstrip("/").casefold() != "/jobs"
+    ):
+        return False
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    return bool(
+        len(query) == 1
+        and query[0][0].casefold() == "pos"
+        and re.fullmatch(r"[A-Za-z][1-9]\d{0,18}", query[0][1])
+    )
+
+
+def _same_registrable_site(left: str | None, right: str | None) -> bool:
+    if not left or not right:
+        return False
+
+    def registrable(host: str) -> str:
+        parts = host.casefold().strip(".").split(".")
+        if len(parts) <= 2:
+            return ".".join(parts)
+        two_level_suffixes = {
+            "co.jp", "co.nz", "co.uk", "com.au", "com.br", "com.sg"
+        }
+        suffix = ".".join(parts[-2:])
+        return ".".join(parts[-3:]) if suffix in two_level_suffixes else suffix
+
+    return registrable(left) == registrable(right)
 
 
 def _title_bound_same_origin_detail(parsed, source, title: str) -> bool:
@@ -193,7 +251,10 @@ def _title_bound_same_origin_detail(parsed, source, title: str) -> bool:
     path_words = {
         word
         for word in re.findall(r"[a-z0-9]+", parsed.path.casefold())
-        if word not in {"career", "careers", "job", "jobs", "role", "roles"}
+        if word not in {
+            "career", "careers", "job", "jobs", "jobdetail", "jobdetails",
+            "role", "roles",
+        }
         and len(word) > 1
     }
     title_words = {
@@ -205,7 +266,10 @@ def _title_bound_same_origin_detail(parsed, source, title: str) -> bool:
     path_parts = [part for part in parsed.path.split("/") if part]
     return (
         len(path_parts) >= 2
-        and bool({"career", "careers", "job", "jobs", "role", "roles"} & {
+        and bool({
+            "career", "careers", "job", "jobs", "jobdetail", "jobdetails",
+            "role", "roles",
+        } & {
             word for word in re.findall(r"[a-z0-9]+", parsed.path.casefold())
         })
         and bool(path_words)
@@ -220,6 +284,7 @@ def extract_listing_candidates(html: str, source_url: str) -> list[ListingCandid
             candidate.url,
             candidate.source_url,
             candidate.origin,
+            location=getattr(candidate, "location", None),
         )
         for candidate in extract_card_listing_candidates(html, source_url)
     ]
@@ -239,6 +304,50 @@ def extract_listing_candidates(html: str, source_url: str) -> list[ListingCandid
     return output
 
 
+def extract_detail_page_candidates(html: str, source_url: str) -> list[ListingCandidate]:
+    """Extract location-bearing records strictly bound to this detail URL."""
+
+    canonical_url = safe_normalize_url(source_url)
+    if not canonical_url:
+        return []
+    output: list[ListingCandidate] = []
+    seen: set[tuple[str, str]] = set()
+    record_count = 0
+    for data in _structured_values(html):
+        for record in _walk_dicts(data):
+            record_count += 1
+            if record_count > MAX_JSON_RECORDS:
+                return output
+            item_type = record.get("@type")
+            item_types = item_type if isinstance(item_type, list) else [item_type]
+            if any(str(value).casefold() == "jobposting" for value in item_types):
+                continue
+            title = _field(record, TITLE_FIELDS)
+            location = _location_field(record)
+            if (
+                not title
+                or not location
+                or not _record_is_bound_to_detail_url(record, canonical_url)
+            ):
+                continue
+            key = (title.casefold(), location.casefold())
+            if key in seen:
+                continue
+            seen.add(key)
+            output.append(
+                ListingCandidate(
+                    title,
+                    canonical_url,
+                    source_url,
+                    "page_bound_structured_detail",
+                    location=location,
+                )
+            )
+            if len(output) >= MAX_CANDIDATES:
+                return output
+    return output
+
+
 def _structured_candidates(html: str, source_url: str):
     count = 0
     candidate_count = 0
@@ -247,9 +356,16 @@ def _structured_candidates(html: str, source_url: str):
             count += 1
             title = _field(record, TITLE_FIELDS)
             raw_url = _field(record, URL_FIELDS)
+            location = _location_field(record)
             url = validate_output_url(raw_url, source_url, title=title) if raw_url else None
             if title and url:
-                yield ListingCandidate(title, url, source_url, "structured_state")
+                yield ListingCandidate(
+                    title,
+                    url,
+                    source_url,
+                    "structured_state",
+                    location=location,
+                )
                 candidate_count += 1
                 if candidate_count >= MAX_CANDIDATES:
                     return
@@ -278,7 +394,10 @@ def _structured_values(html: str):
                 yield json.loads(payload)
             except (json.JSONDecodeError, RecursionError, TypeError):
                 continue
-        flight_chunks.extend(_next_f_string_chunks(body))
+        script_chunks = _next_f_string_chunks(body)
+        flight_chunks.extend(script_chunks)
+        for chunk in script_chunks:
+            yield from _flight_json_values(chunk)
 
     flight_data = "".join(flight_chunks)
     if len(flight_data) > MAX_SCRIPT_CHARS:
@@ -370,6 +489,78 @@ def _walk_records(value, depth: int = 0, in_job_container: bool = False):
     elif isinstance(value, list):
         for child in value:
             yield from _walk_records(child, depth + 1, in_job_container)
+
+
+def _walk_dicts(value, depth: int = 0):
+    if depth > MAX_JSON_DEPTH:
+        return
+    if isinstance(value, dict):
+        yield value
+        for child in value.values():
+            yield from _walk_dicts(child, depth + 1)
+    elif isinstance(value, list):
+        for child in value:
+            yield from _walk_dicts(child, depth + 1)
+
+
+def _record_is_bound_to_detail_url(record: dict, source_url: str) -> bool:
+    parsed = urlparse(source_url)
+    page_tokens = {
+        token.casefold()
+        for token in re.findall(r"[a-z0-9_-]{6,}", f"{parsed.path}?{parsed.query}", re.I)
+    }
+    identifiers = []
+    for key, value in record.items():
+        normalized_key = str(key).casefold().replace("_", "")
+        if normalized_key in {
+            "id", "jobid", "jobreqid", "requisitionid", "reqid", "wdid",
+        } and isinstance(value, (str, int)):
+            identifiers.append(str(value).strip().casefold())
+    if any(identifier in page_tokens for identifier in identifiers if len(identifier) >= 6):
+        return True
+
+    for field in URL_FIELDS:
+        value = record.get(field)
+        if not isinstance(value, str):
+            continue
+        normalized = safe_normalize_url(value, source_url)
+        if normalized and normalized.rstrip("/").casefold() == source_url.rstrip("/").casefold():
+            return True
+    return False
+
+
+def _location_field(record: dict) -> str:
+    for field in LOCATION_FIELDS + ("locations",):
+        location = _location_value(record.get(field))
+        if location:
+            return location
+    return ""
+
+
+def _location_value(value) -> str:
+    if isinstance(value, (str, int)) and str(value).strip():
+        location = str(value).strip()
+        if re.fullmatch(r"\$[a-z0-9]+(?::[a-z0-9_]+)+", location, re.I):
+            return ""
+        return location
+    if isinstance(value, list):
+        if len(value) > 25:
+            return ""
+        locations = [_location_value(item) for item in value]
+        return "; ".join(dict.fromkeys(item for item in locations if item))
+    if not isinstance(value, dict):
+        return ""
+    address = value.get("address")
+    if isinstance(address, dict):
+        locality = _field(address, ("addressLocality", "city"))
+        region = _field(address, ("addressRegion", "state"))
+        combined = ", ".join(item for item in (locality, region) if item)
+        if combined:
+            return combined
+    return _field(
+        value,
+        ("city", "locationName", "name", "formattedAddress", "country"),
+    )
 
 
 def _field(record: dict, fields: tuple[str, ...]) -> str:

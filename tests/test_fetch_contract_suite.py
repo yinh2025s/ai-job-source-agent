@@ -71,8 +71,8 @@ class RecordingSmartFetcher(SmartRenderedFetcher):
             raise self.error
         return self.page
 
-    def _render_live(self, url, reason="manual"):
-        self.render_calls.append((url, reason))
+    def _render_live(self, url, reason="manual", headers=None):
+        self.render_calls.append((url, reason, headers))
         raise AssertionError("content-rich static responses must not render")
 
 

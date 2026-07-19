@@ -5,6 +5,7 @@ import copy
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 import time
@@ -14,6 +15,14 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from job_source_agent.company_identity import CompanyIdentityResolver
+from job_source_agent.company_discovery_evidence import VerifiedWebsiteEvidence
+from job_source_agent.company_discovery_evidence_store import (
+    FilesystemCompanyDiscoveryEvidenceStore,
+    stored_website_deterministically_rejected,
+)
+from job_source_agent.candidate_route_evaluation import (
+    summarize_candidate_route_metrics,
+)
 from job_source_agent.batch_checkpoint import FilesystemBatchCompletionStore
 from job_source_agent.batch_discovery import LinkedInDiscoveryManifestStore
 from job_source_agent.checkpoint import execution_fingerprint
@@ -23,6 +32,7 @@ from job_source_agent.checkpoint_prefix import (
     inspect_complete_checkpoint_prefix,
 )
 from job_source_agent.completion_resume import (
+    CompletionResumeDecision,
     classify_completion_resume,
     completion_resume_marker,
 )
@@ -30,10 +40,12 @@ from job_source_agent.composition import AgentConfig, FetcherConfig, build_appli
 from job_source_agent.contracts import FetchClient, PipelineContext
 from job_source_agent.evaluation import compare_summaries, evaluate_expectations, summarize_results
 from job_source_agent.evaluation_history import cohort_identities_compatible, derive_cohort_identity
-from job_source_agent.evidence_scope import new_capture_attempt_id
+from job_source_agent.evidence_scope import StageEvidenceLineage, new_capture_attempt_id
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.linkedin_discovery import (
     LinkedInJobsDiscoverer,
+    LinkedInSearchQuery,
+    enrich_public_external_apply_urls,
     linkedin_postings_to_company_inputs,
 )
 from job_source_agent.pipeline_application import discovery_result_from_context
@@ -59,9 +71,22 @@ from job_source_agent.run_configuration import (
     combined_configuration_digest,
 )
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
-from job_source_agent.web import normalize_url
+from job_source_agent.web import domain_of, normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
 from scripts.replay_failure_bundle import replay_failure_bundle
+
+
+_NON_RETRYABLE_WORKER_EXCEPTION_NAMES = frozenset(
+    {
+        "AssertionError",
+        "AttributeError",
+        "IndexError",
+        "KeyError",
+        "NotImplementedError",
+        "TypeError",
+        "ValueError",
+    }
+)
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -69,9 +94,36 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--input", help="Optional fixed company input JSON. If omitted, LinkedIn search is used.")
     parser.add_argument("--expectations", help="Optional expectations JSON keyed by company name.")
     parser.add_argument("--linkedin-keywords")
+    parser.add_argument(
+        "--linkedin-keyword",
+        action="append",
+        dest="linkedin_keyword_list",
+        help="Repeat for a stratified multi-keyword LinkedIn benchmark cohort.",
+    )
     parser.add_argument("--linkedin-location", default="United States")
     parser.add_argument("--limit", type=int, default=30)
     parser.add_argument("--linkedin-pages", type=int, default=3)
+    parser.add_argument(
+        "--linkedin-per-query-limit",
+        type=int,
+        default=20,
+        help="Maximum public search cards collected from each repeated keyword.",
+    )
+    parser.add_argument(
+        "--preserve-job-postings",
+        action="store_true",
+        help="Retain distinct LinkedIn jobs from the same company in benchmark cohorts.",
+    )
+    parser.add_argument(
+        "--enrich-public-external-apply",
+        action="store_true",
+        help="Fetch bounded public LinkedIn job details for visible External Apply evidence.",
+    )
+    parser.add_argument(
+        "--require-full-cohort",
+        action="store_true",
+        help="Fail before downstream live work unless discovery freezes exactly --limit records.",
+    )
     parser.add_argument("--fetch-timeout", type=float, default=3)
     parser.add_argument("--fixtures-dir", help="Optional fixture directory for deterministic batch checks.")
     parser.add_argument("--offline", action="store_true", help="Disable live network access.")
@@ -91,10 +143,31 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-ats-board-fetches", type=int, default=5)
     parser.add_argument("--max-job-pages", type=int, default=3)
     parser.add_argument("--max-job-board-attempts", type=int, default=3)
-    parser.add_argument(
+    candidate_discovery_group = parser.add_mutually_exclusive_group()
+    candidate_discovery_group.add_argument(
         "--enable-parallel-candidate-discovery",
+        dest="enable_parallel_candidate_discovery",
         action="store_true",
-        help="Enable the merged S5 candidate portfolio behind its deterministic flag.",
+        default=True,
+        help="Enable the merged S5 candidate portfolio (default).",
+    )
+    candidate_discovery_group.add_argument(
+        "--disable-parallel-candidate-discovery",
+        dest="enable_parallel_candidate_discovery",
+        action="store_false",
+        help="Use the legacy website-first S5 path for rollback or comparison.",
+    )
+    parser.add_argument(
+        "--evaluate-all-candidate-routes",
+        action="store_true",
+        help=(
+            "Run External Apply, provider search, and Website/Career candidate "
+            "routes exhaustively and retain independent attribution trace."
+        ),
+    )
+    parser.add_argument(
+        "--route-evaluation-output",
+        help="Optional JSON report for exhaustive candidate-route metrics.",
     )
     parser.add_argument(
         "--company-time-budget",
@@ -158,6 +231,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="Stage checkpoint directory; defaults beside the result output.",
     )
     parser.add_argument(
+        "--company-discovery-evidence-store",
+        help=(
+            "Optional persistent store of previously verified company discovery "
+            "candidates; every value is revalidated before use."
+        ),
+    )
+    parser.add_argument(
         "--batch-checkpoint-dir",
         help="Atomic company-completion directory; defaults beside the result output.",
     )
@@ -185,13 +265,21 @@ def main() -> None:
         args.checkpoint_dir = str(Path(args.output).with_suffix(".checkpoints"))
     linkedin_fetcher = build_fetcher(FetcherConfig(timeout=max(args.fetch_timeout, 6)))
     companies = load_batch_companies(args, linkedin_fetcher)
+    if bool(getattr(args, "require_full_cohort", False)) and len(companies) != args.limit:
+        raise SystemExit(
+            f"Cohort discovery produced {len(companies)} records; expected exactly {args.limit}."
+        )
     args.cohort_companies_sha256 = _json_digest(
         [dataclass_to_dict(company) for company in companies]
     )
+    _freeze_company_discovery_evidence_revisions(companies, args)
 
     output_path = Path(args.output)
     trace_path = Path(args.trace_output)
     summary_path = Path(args.summary_output)
+    replay_evidence_snapshot_root, replay_evidence_store = (
+        _prepare_automatic_replay_evidence_snapshot(args)
+    )
     run_configuration = _run_configuration(args)
     batch_execution = _batch_execution_configuration(args)
     completion_store = FilesystemBatchCompletionStore(
@@ -217,7 +305,7 @@ def main() -> None:
             started,
         )
     print(
-        f"unique companies: {len(companies)} "
+        f"cohort records: {len(companies)} "
         f"restored: {len(completed)} "
         f"retryable_resubmitted: "
         f"{getattr(args, 'batch_completion_resume_stats', {}).get('retryable_resubmit', 0)} "
@@ -253,10 +341,9 @@ def main() -> None:
                     index, result, elapsed = future.result()
                 except Exception as error:
                     index = expected_index
-                    result = failure_result(
+                    result = _remote_worker_failure_result(
                         company,
-                        "batch_worker_failed",
-                        detail=repr(error),
+                        error,
                         run_configuration=_run_configuration(args),
                     )
                     elapsed = 0.0
@@ -275,6 +362,22 @@ def main() -> None:
                     started,
                 )
 
+    boundary_recapture = _recapture_retryable_missing_boundaries(
+        companies,
+        completed,
+        completion_store,
+        args,
+    )
+    if boundary_recapture["replaced"]:
+        _write_completed_artifacts(
+            completed,
+            output_path,
+            trace_path,
+            summary_path,
+            args,
+            started,
+        )
+
     results, traces = _ordered_records(completed)
     summary = build_summary(
         results,
@@ -282,6 +385,29 @@ def main() -> None:
         elapsed_sec=round(time.time() - started, 1),
         traces=traces,
     )
+    if boundary_recapture["attempted"]:
+        summary["automatic_boundary_recapture"] = boundary_recapture
+    route_report_path = getattr(args, "route_evaluation_output", None)
+    if route_report_path:
+        route_report = summarize_candidate_route_metrics(traces)
+        route_report["cohort_companies_sha256"] = getattr(
+            args, "cohort_companies_sha256", None
+        )
+        route_report["run_configuration_digest"] = summary.get(
+            "run_configuration_digest"
+        )
+        route_report["batch_execution_configuration_digest"] = summary.get(
+            "batch_execution_configuration_digest"
+        )
+        _atomic_write_json(Path(route_report_path), route_report)
+        summary["candidate_route_evaluation"] = {
+            key: value
+            for key, value in route_report.items()
+            if key != "records"
+        }
+        summary["candidate_route_evaluation"]["report_path"] = str(
+            Path(route_report_path)
+        )
     if args.baseline_summary:
         baseline_summary = json.loads(Path(args.baseline_summary).read_text(encoding="utf-8"))
         if cohort_identities_compatible(
@@ -291,23 +417,43 @@ def main() -> None:
             summary["regression"] = compare_summaries(summary, baseline_summary)
         else:
             summary["regression"] = {"comparison_status": "no_compatible_baseline"}
-    bundle_manifest = build_automatic_failure_bundle(args, trace_path)
-    if bundle_manifest is not None:
-        summary["failure_bundle"] = _replay_bundle_summary(
-            bundle_manifest,
-            Path(args.failure_bundle_dir) / "bundle-manifest.json",
+    try:
+        bundle_manifest = build_automatic_failure_bundle(
+            args,
+            trace_path,
+            company_discovery_evidence_store=replay_evidence_store,
+            company_discovery_evidence_source=getattr(
+                args, "company_discovery_evidence_store", None
+            ),
         )
-    replay_manifest = build_automatic_replay_bundle(args, trace_path)
-    if replay_manifest is not None:
-        summary["replay_bundle"] = _replay_bundle_summary(
-            replay_manifest,
-            Path(args.replay_bundle_dir) / "bundle-manifest.json",
+        if bundle_manifest is not None:
+            summary["failure_bundle"] = _replay_bundle_summary(
+                bundle_manifest,
+                Path(args.failure_bundle_dir) / "bundle-manifest.json",
+            )
+        replay_manifest = build_automatic_replay_bundle(
+            args,
+            trace_path,
+            company_discovery_evidence_store=replay_evidence_store,
+            company_discovery_evidence_source=getattr(
+                args, "company_discovery_evidence_store", None
+            ),
         )
+        if replay_manifest is not None:
+            summary["replay_bundle"] = _replay_bundle_summary(
+                replay_manifest,
+                Path(args.replay_bundle_dir) / "bundle-manifest.json",
+            )
+    finally:
+        if replay_evidence_snapshot_root is not None:
+            replay_evidence_snapshot_root.cleanup()
     _atomic_write_json(summary_path, summary)
     print_summary(summary)
     print(f"results: {output_path}", flush=True)
     print(f"trace: {trace_path}", flush=True)
     print(f"summary: {summary_path}", flush=True)
+    if route_report_path:
+        print(f"candidate route evaluation: {route_report_path}", flush=True)
     expectation_checks = summary.get("expectation_checks", {})
     if expectation_checks.get("failed"):
         raise SystemExit("Live expectations failed; see the summary JSON for details.")
@@ -325,6 +471,18 @@ def enforce_bundle_gates(summary: dict) -> None:
 
 
 def validate_artifact_args(args: argparse.Namespace) -> None:
+    if bool(getattr(args, "evaluate_all_candidate_routes", False)) and not bool(
+        getattr(args, "enable_parallel_candidate_discovery", False)
+    ):
+        raise SystemExit(
+            "--evaluate-all-candidate-routes requires parallel candidate discovery."
+        )
+    if getattr(args, "route_evaluation_output", None) and not bool(
+        getattr(args, "evaluate_all_candidate_routes", False)
+    ):
+        raise SystemExit(
+            "--route-evaluation-output requires --evaluate-all-candidate-routes."
+        )
     if (
         getattr(args, "failure_bundle_dir", None)
         or getattr(args, "replay_bundle_dir", None)
@@ -336,7 +494,13 @@ def validate_artifact_args(args: argparse.Namespace) -> None:
         raise SystemExit("--replay-bundle-limit must be greater than zero.")
 
 
-def build_automatic_failure_bundle(args: argparse.Namespace, trace_path: Path) -> dict | None:
+def build_automatic_failure_bundle(
+    args: argparse.Namespace,
+    trace_path: Path,
+    *,
+    company_discovery_evidence_store: str | None = None,
+    company_discovery_evidence_source: str | None = None,
+) -> dict | None:
     output_dir = getattr(args, "failure_bundle_dir", None)
     if not output_dir:
         return None
@@ -352,11 +516,27 @@ def build_automatic_failure_bundle(args: argparse.Namespace, trace_path: Path) -
         limit=int(args.failure_bundle_limit),
         include_missing_website=True,
         legacy_run_config=None,
+        company_discovery_evidence_store=(
+            company_discovery_evidence_store
+            if company_discovery_evidence_store is not None
+            else getattr(args, "company_discovery_evidence_store", None)
+        ),
     )
-    return replay_failure_bundle(replay_args, allow_empty=True)
+    manifest = replay_failure_bundle(replay_args, allow_empty=True)
+    return _restore_automatic_replay_evidence_provenance(
+        manifest,
+        Path(output_dir),
+        company_discovery_evidence_source,
+    )
 
 
-def build_automatic_replay_bundle(args: argparse.Namespace, trace_path: Path) -> dict | None:
+def build_automatic_replay_bundle(
+    args: argparse.Namespace,
+    trace_path: Path,
+    *,
+    company_discovery_evidence_store: str | None = None,
+    company_discovery_evidence_source: str | None = None,
+) -> dict | None:
     output_dir = getattr(args, "replay_bundle_dir", None)
     if not output_dir:
         return None
@@ -372,8 +552,35 @@ def build_automatic_replay_bundle(args: argparse.Namespace, trace_path: Path) ->
         limit=int(args.replay_bundle_limit),
         include_missing_website=True,
         legacy_run_config=None,
+        company_discovery_evidence_store=(
+            company_discovery_evidence_store
+            if company_discovery_evidence_store is not None
+            else getattr(args, "company_discovery_evidence_store", None)
+        ),
     )
-    return replay_failure_bundle(replay_args, allow_empty=True)
+    manifest = replay_failure_bundle(replay_args, allow_empty=True)
+    return _restore_automatic_replay_evidence_provenance(
+        manifest,
+        Path(output_dir),
+        company_discovery_evidence_source,
+    )
+
+
+def _restore_automatic_replay_evidence_provenance(
+    manifest: dict,
+    output_dir: Path,
+    source_path: str | None,
+) -> dict:
+    """Keep bundle provenance tied to the configured store, not its private snapshot."""
+
+    evidence = manifest.get("company_discovery_evidence")
+    if not source_path or not isinstance(evidence, dict):
+        return manifest
+    evidence["source_path_sha256"] = hashlib.sha256(
+        str(Path(source_path).expanduser().resolve()).encode("utf-8")
+    ).hexdigest()
+    _atomic_write_json(output_dir / "bundle-manifest.json", manifest)
+    return manifest
 
 
 def _replay_bundle_summary(manifest: dict, manifest_path: Path) -> dict:
@@ -398,25 +605,72 @@ def _replay_bundle_summary(manifest: dict, manifest_path: Path) -> dict:
 def load_batch_companies(args: argparse.Namespace, linkedin_fetcher: FetchClient) -> list[CompanyInput]:
     if args.input:
         return load_company_inputs(args.input)[: args.limit]
-    if not args.linkedin_keywords:
-        raise SystemExit("Provide either --input or --linkedin-keywords.")
+    keyword_values = tuple(
+        value.strip()
+        for value in (
+            getattr(args, "linkedin_keyword_list", None)
+            or ([args.linkedin_keywords] if args.linkedin_keywords else [])
+        )
+        if isinstance(value, str) and value.strip()
+    )
+    if not keyword_values:
+        raise SystemExit(
+            "Provide either --input, --linkedin-keywords, or repeated --linkedin-keyword."
+        )
     request = {
-        "keywords": args.linkedin_keywords,
+        "keywords": list(keyword_values),
         "location": args.linkedin_location,
         "limit": args.limit,
         "pages": args.linkedin_pages,
+        "per_query_limit": int(
+            getattr(args, "linkedin_per_query_limit", args.limit)
+        ),
+        "preserve_job_postings": bool(
+            getattr(args, "preserve_job_postings", False)
+        ),
+        "enrich_public_external_apply": bool(
+            getattr(args, "enrich_public_external_apply", False)
+        ),
     }
     manifest_path = _linkedin_manifest_path(args)
     store = LinkedInDiscoveryManifestStore(manifest_path)
 
     def discover() -> list[dict]:
-        postings = LinkedInJobsDiscoverer(linkedin_fetcher).search(
-            keywords=args.linkedin_keywords,
-            location=args.linkedin_location,
-            limit=args.limit,
-            pages=args.linkedin_pages,
-        )
-        companies = linkedin_postings_to_company_inputs(postings)[: args.limit]
+        discoverer = LinkedInJobsDiscoverer(linkedin_fetcher)
+        if bool(getattr(args, "preserve_job_postings", False)):
+            postings = discoverer.collect_benchmark_cohort(
+                (
+                    LinkedInSearchQuery(
+                        keywords=keywords,
+                        location=args.linkedin_location,
+                    )
+                    for keywords in keyword_values
+                ),
+                cohort_size=args.limit,
+                per_query_limit=int(
+                    getattr(args, "linkedin_per_query_limit", args.limit)
+                ),
+                pages=args.linkedin_pages,
+            )
+        else:
+            postings = discoverer.search(
+                keywords=keyword_values[0],
+                location=args.linkedin_location,
+                limit=args.limit,
+                pages=args.linkedin_pages,
+            )
+        if bool(getattr(args, "enrich_public_external_apply", False)):
+            postings = enrich_public_external_apply_urls(
+                postings,
+                linkedin_fetcher,
+                max_detail_fetches=args.limit,
+            )
+        companies = linkedin_postings_to_company_inputs(
+            postings,
+            preserve_job_postings=bool(
+                getattr(args, "preserve_job_postings", False)
+            ),
+        )[: args.limit]
         return [dataclass_to_dict(company) for company in companies]
 
     records, action = store.resolve(
@@ -485,7 +739,11 @@ def _json_digest(value) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
-def run_company_timed(index: int, company: CompanyInput, args: argparse.Namespace) -> tuple[int, DiscoveryResult, float]:
+def run_company_timed(
+    index: int,
+    company: CompanyInput,
+    args: argparse.Namespace,
+) -> tuple[int, DiscoveryResult, float]:
     item_started = time.time()
     result = run_company(company, args)
     elapsed = round(time.time() - item_started, 1)
@@ -520,6 +778,14 @@ def _load_completed_companies(
         if completion is None:
             continue
         decision = classify_completion_resume(completion.result, completion.trace)
+        if (
+            decision.action == "retryable_resubmit"
+            and _has_identity_verified_final_output(completion.result, completion.trace)
+        ):
+            decision = CompletionResumeDecision(
+                "completion_restore",
+                "identity_verified_final_output",
+            )
         marker = completion_resume_marker(decision)
         args.batch_completion_resume_decisions[index] = marker
         stats[decision.action] += 1
@@ -537,6 +803,129 @@ def _load_completed_companies(
         trace_payload["batch_completion_resume"] = marker
         completed[index] = (completion.result, restored_trace, completion.elapsed)
     return completed
+
+
+def _has_identity_verified_final_output(result: dict, trace: dict) -> bool:
+    """Return whether persisted final evidence makes an upstream retry unnecessary."""
+
+    identity_assertion = result.get("identity_assertion")
+    if (
+        not isinstance(identity_assertion, dict)
+        or identity_assertion.get("verdict") != "verified"
+    ):
+        return False
+    if not any(
+        isinstance(result.get(field), str) and bool(result[field].strip())
+        for field in ("job_list_page_url", "open_position_url")
+    ):
+        return False
+    stages = trace.get("stages")
+    if not isinstance(stages, list):
+        stages = result.get("stages")
+    if not isinstance(stages, list) or len(stages) != len(PIPELINE_STAGES):
+        return False
+    final_stage = stages[-1]
+    return (
+        isinstance(final_stage, dict)
+        and final_stage.get("stage") == STAGE_RESULT_VALIDATION
+        and final_stage.get("status") == "success"
+    )
+
+
+def _recapture_retryable_missing_boundaries(
+    companies: list[CompanyInput],
+    completed: dict[int, tuple[dict, dict, float]],
+    store: FilesystemBatchCompletionStore,
+    args: argparse.Namespace,
+) -> dict[str, int]:
+    """Run at most one real targeted recapture for each replay-blocked retryable result."""
+
+    stats = {
+        "eligible": 0,
+        "attempted": 0,
+        "replaced": 0,
+        "boundary_still_missing": 0,
+        "execution_failed": 0,
+    }
+    if not (
+        getattr(args, "failure_bundle_dir", None)
+        or getattr(args, "replay_bundle_dir", None)
+    ):
+        return stats
+
+    stage_store = FilesystemCheckpointStore(_checkpoint_dir(args))
+    run_configuration = _run_configuration(args)
+    original_retry_stages = getattr(args, "batch_completion_retry_stages", None)
+    try:
+        for index, company in enumerate(companies, start=1):
+            completion = completed.get(index)
+            if completion is None:
+                continue
+            result_record, trace_record, elapsed = completion
+            decision = classify_completion_resume(result_record, trace_record)
+            retry_stage = decision.retry_stage
+            if (
+                decision.action != "retryable_resubmit"
+                or retry_stage not in PIPELINE_STAGES
+                or _has_finalized_capture_boundary(trace_record, retry_stage)
+            ):
+                continue
+
+            stats["eligible"] += 1
+            stats["attempted"] += 1
+            recapture_company = copy.deepcopy(company)
+            fingerprint = execution_fingerprint(
+                dataclass_to_dict(recapture_company),
+                run_configuration.digest,
+            )
+            stage_store.invalidate_from(fingerprint, retry_stage)
+            args.batch_completion_retry_stages = {fingerprint: retry_stage}
+            recapture_started = time.monotonic()
+            try:
+                recaptured = run_company(recapture_company, args)
+            except Exception:
+                stats["execution_failed"] += 1
+                continue
+            recapture_elapsed = round(time.monotonic() - recapture_started, 1)
+            recaptured_result = recaptured.result_record()
+            recaptured_trace = dataclass_to_dict(recaptured.trace_record())
+            if not _has_finalized_capture_boundary(recaptured_trace, retry_stage):
+                stats["boundary_still_missing"] += 1
+                continue
+
+            total_elapsed = round(elapsed + recapture_elapsed, 1)
+            store.save(
+                dataclass_to_dict(company),
+                recaptured_result,
+                recaptured_trace,
+                total_elapsed,
+            )
+            completed[index] = (
+                recaptured_result,
+                recaptured_trace,
+                total_elapsed,
+            )
+            stats["replaced"] += 1
+    finally:
+        args.batch_completion_retry_stages = original_retry_stages
+    return stats
+
+
+def _has_finalized_capture_boundary(trace_record: dict, stage: str) -> bool:
+    lineage = trace_record.get("stage_evidence_lineage")
+    if lineage is None:
+        trace = trace_record.get("trace")
+        lineage = trace.get("stage_evidence_lineage") if isinstance(trace, dict) else None
+    if not isinstance(lineage, list):
+        return False
+    for payload in lineage:
+        try:
+            restored = StageEvidenceLineage.from_payload(payload)
+        except (TypeError, ValueError):
+            continue
+        if restored.stage == stage:
+            return restored.snapshot_scope is not None
+    return False
 
 
 def _record_company_completion(
@@ -679,6 +1068,65 @@ def _atomic_write_json(path: Path, payload) -> None:
                 pass
 
 
+def _prepare_automatic_replay_evidence_snapshot(
+    args: argparse.Namespace,
+) -> tuple[tempfile.TemporaryDirectory[str] | None, str | None]:
+    """Freeze the configured public evidence store before live workers can update it."""
+
+    source_value = getattr(args, "company_discovery_evidence_store", None)
+    if not source_value or not (
+        getattr(args, "failure_bundle_dir", None)
+        or getattr(args, "replay_bundle_dir", None)
+    ):
+        return None, None
+
+    output_parent = Path(getattr(args, "output", "/tmp/live-batch-results.json")).parent
+    output_parent.mkdir(parents=True, exist_ok=True)
+    snapshot_root = tempfile.TemporaryDirectory(
+        prefix=".live-batch-replay-evidence-",
+        dir=output_parent,
+    )
+    snapshot_path = Path(snapshot_root.name) / "company-discovery-evidence.json"
+    source_path = Path(source_value)
+    try:
+        if source_path.is_symlink() or (
+            source_path.exists() and not source_path.is_file()
+        ):
+            # A directory is deliberately unreadable to the replay freezer too.
+            snapshot_path.mkdir()
+        elif source_path.exists():
+            _atomic_copy_file(source_path, snapshot_path)
+    except OSError:
+        # Preserve fail-closed behavior for a configured but unreadable store.
+        snapshot_path.mkdir(exist_ok=True)
+    return snapshot_root, str(snapshot_path)
+
+
+def _atomic_copy_file(source_path: Path, destination_path: Path) -> None:
+    payload = source_path.read_bytes()
+    temporary_path: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            dir=destination_path.parent,
+            prefix=f".{destination_path.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            temporary_path = handle.name
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_path, destination_path)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            try:
+                os.unlink(temporary_path)
+            except FileNotFoundError:
+                pass
+
+
 def run_company(company: CompanyInput, args: argparse.Namespace):
     rerun_failure = _explicit_rerun_preflight(company, args)
     if rerun_failure is not None:
@@ -735,14 +1183,17 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             )
         except RemoteProcessError as exc:
             recovered = _recover_checkpoint_prefix(company, args)
-            return failure_result(
+            return _remote_worker_failure_result(
                 company,
-                error="batch_worker_failed",
-                detail=str(exc),
+                exc,
                 completed_result=recovered,
                 run_configuration=_run_configuration(args),
             )
-        if not upstream_result.company_website_url and not company.external_apply_url:
+        if (
+            not upstream_result.company_website_url
+            and not company.external_apply_url
+            and not bool(getattr(args, "enable_parallel_candidate_discovery", False))
+        ):
             return upstream_result
 
     if selected_start in {
@@ -764,8 +1215,92 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
             completed_result=upstream_result,
             run_configuration=_run_configuration(args),
         )
+    if _split_opening_phase(downstream_start, remaining):
+        reserved_opening_budget = _opening_phase_reserve(remaining)
+        company.source_trace.setdefault("phase_budget", {}).update(
+            {
+                "remaining_before_job_board_sec": round(remaining, 3),
+                "reserved_opening_sec": round(reserved_opening_budget, 3),
+            }
+        )
+        discovery_budget = max(0.001, remaining - reserved_opening_budget)
+        try:
+            discovery_deadline = time.monotonic() + _phase_deadline_budget(
+                discovery_budget
+            )
+            discovery_result = run_with_process_budget(
+                run_pipeline_phase,
+                (
+                    company,
+                    args,
+                    downstream_start,
+                    STAGE_JOB_BOARD_DISCOVERY,
+                    None if automatic_retry_start else _downstream_rerun_stage(args),
+                    discovery_deadline,
+                    capture_attempt_id,
+                    True,
+                ),
+                timeout=discovery_budget,
+            )
+        except ProcessBudgetExceeded:
+            discovery_result = _recover_checkpoint_prefix(company, args)
+            if (
+                discovery_result is None
+                or discovery_result.stage_status(STAGE_JOB_BOARD_DISCOVERY) != "success"
+                or not discovery_result.job_list_page_url
+            ):
+                return failure_result(
+                    company,
+                    error="company_time_budget_exhausted",
+                    detail=(
+                        "Career and Job List discovery exhausted its bounded phase "
+                        "budget before a verified board was published."
+                    ),
+                    completed_result=discovery_result or upstream_result,
+                    run_configuration=_run_configuration(args),
+                )
+        except RemoteProcessError as exc:
+            discovery_result = _recover_checkpoint_prefix(company, args)
+            if (
+                discovery_result is None
+                or discovery_result.stage_status(STAGE_JOB_BOARD_DISCOVERY) != "success"
+                or not discovery_result.job_list_page_url
+            ):
+                return _remote_worker_failure_result(
+                    company,
+                    exc,
+                    completed_result=discovery_result or upstream_result,
+                    run_configuration=_run_configuration(args),
+                )
+
+        if (
+            discovery_result.stage_status(STAGE_JOB_BOARD_DISCOVERY) != "success"
+            or not discovery_result.job_list_page_url
+        ):
+            return discovery_result
+        upstream_result = discovery_result
+        downstream_start = STAGE_OPENING_MATCH
+        remaining = args.company_time_budget - (time.monotonic() - started)
+        minimum_opening_budget = _minimum_opening_execution_budget(
+            reserved_opening_budget
+        )
+        if remaining < minimum_opening_budget:
+            return failure_result(
+                company,
+                error="company_time_budget_exhausted",
+                detail=(
+                    "Verified Job List discovery completed, but process cleanup eroded "
+                    f"the reserved opening-search window to {max(0.0, remaining):.1f}s "
+                    f"(< {minimum_opening_budget:.1f}s). Resume from opening_match."
+                ),
+                completed_result=discovery_result,
+                run_configuration=_run_configuration(args),
+            )
+
     try:
         downstream_deadline = time.monotonic() + _inner_deadline_budget(remaining)
+        if downstream_start == STAGE_OPENING_MATCH:
+            downstream_deadline = time.monotonic() + _phase_deadline_budget(remaining)
         return run_with_process_budget(
             run_pipeline_phase,
             (
@@ -776,6 +1311,7 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                 None if automatic_retry_start else _downstream_rerun_stage(args),
                 downstream_deadline,
                 capture_attempt_id,
+                True,
             ),
             timeout=remaining,
         )
@@ -792,13 +1328,52 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
         )
     except RemoteProcessError as exc:
         recovered = _recover_checkpoint_prefix(company, args)
-        return failure_result(
+        return _remote_worker_failure_result(
             company,
-            error="batch_worker_failed",
-            detail=str(exc),
+            exc,
             completed_result=recovered or upstream_result,
             run_configuration=_run_configuration(args),
         )
+
+
+def _remote_worker_failure_result(
+    company: CompanyInput,
+    error: BaseException,
+    *,
+    completed_result: DiscoveryResult | None = None,
+    run_configuration: DeterministicRunConfig | None = None,
+) -> DiscoveryResult:
+    detail = str(error)
+    exception_name = _terminal_worker_exception_name(error)
+    if exception_name in _NON_RETRYABLE_WORKER_EXCEPTION_NAMES:
+        return failure_result(
+            company,
+            error="batch_worker_contract_failed",
+            reason_code="INVALID_STRUCTURED_DATA",
+            detail=detail,
+            completed_result=completed_result,
+            run_configuration=run_configuration,
+        )
+    return failure_result(
+        company,
+        error="batch_worker_failed",
+        detail=detail,
+        completed_result=completed_result,
+        run_configuration=run_configuration,
+    )
+
+
+def _terminal_worker_exception_name(error: BaseException) -> str | None:
+    if not isinstance(error, RemoteProcessError):
+        return type(error).__name__
+    for line in reversed(str(error).splitlines()):
+        match = re.fullmatch(
+            r"(?:[A-Za-z_]\w*\.)*([A-Za-z_]\w*)(?::.*)?",
+            line.strip(),
+        )
+        if match:
+            return match.group(1)
+    return None
 
 
 def _automatic_retry_start_stage(
@@ -946,6 +1521,22 @@ def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyI
     fetcher = build_company_fetcher(args)
     identity_resolver = CompanyIdentityResolver()
     website_resolver = CompanyWebsiteResolver(fetcher, verify_limit=args.verify_limit)
+    company_evidence_store = _company_discovery_evidence_store(args)
+    stored_website = None
+    if (
+        company_evidence_store is not None
+        and company.linkedin_company_url
+        and not company.company_website_url
+    ):
+        try:
+            stored_record = company_evidence_store.load(
+                company.company_name,
+                company.linkedin_company_url,
+            )
+        except (OSError, TypeError, ValueError):
+            stored_record = None
+        if stored_record is not None and stored_record.website is not None:
+            stored_website = stored_record.website.url
 
     identity_started = time.perf_counter()
     identity, identity_trace = identity_resolver.resolve(
@@ -958,11 +1549,13 @@ def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyI
         "hiring_identity_resolution_duration_ms"
     ] = round((time.perf_counter() - identity_started) * 1000)
     website_started = time.perf_counter()
+    website_was_verified = False
     if identity:
         company.hiring_entity_name = identity.hiring_entity_name
         company.career_root_url = identity.career_root_url
         if identity.official_website_url:
             company.company_website_url = identity.official_website_url
+            website_was_verified = True
         company.source_trace["website_resolution"] = {
             "selected": {
                 "url": company.company_website_url,
@@ -981,9 +1574,37 @@ def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyI
         website_url, website_trace = website_resolver.resolve(
             company.company_name,
             company.linkedin_company_url,
+            stored_candidate_url=stored_website,
         )
         company.company_website_url = website_url or ""
+        website_was_verified = bool(website_url)
         company.source_trace["website_resolution"] = website_trace
+        if stored_website and not website_url:
+            _invalidate_rejected_stored_website(
+                company_evidence_store,
+                company,
+                stored_website,
+                website_trace,
+            )
+    if (
+        company_evidence_store is not None
+        and company.linkedin_company_url
+        and company.company_website_url
+        and website_was_verified
+    ):
+        try:
+            company_evidence_store.save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=VerifiedWebsiteEvidence(
+                    url=company.company_website_url,
+                    source="verified_resolver",
+                    evidence_url=company.company_website_url,
+                    observed_at=time.time(),
+                ),
+            )
+        except (OSError, TypeError, ValueError):
+            pass
     company.source_trace["stage_metrics"]["website_resolution_duration_ms"] = round(
         (time.perf_counter() - website_started) * 1000
     )
@@ -1005,11 +1626,17 @@ def run_pipeline_phase(
     rerun_from: str | None,
     retry_deadline: float | None = None,
     capture_attempt_id: str | None = None,
+    same_attempt_continuation: bool = False,
 ) -> DiscoveryResult:
     application = build_application(
         _company_fetcher_config(args, retry_deadline=retry_deadline),
         _agent_config(args),
         checkpoint_dir=_checkpoint_dir(args),
+        company_discovery_evidence_path=getattr(
+            args,
+            "company_discovery_evidence_store",
+            None,
+        ),
     )
     result = application.pipeline.discover(
         company,
@@ -1017,6 +1644,7 @@ def run_pipeline_phase(
         stop_after=stop_after,
         rerun_from=rerun_from,
         capture_attempt_id=capture_attempt_id,
+        same_attempt_continuation=same_attempt_continuation,
     )
     fetcher = application.fetcher
     retry_events = getattr(fetcher, "retry_events", None)
@@ -1047,6 +1675,9 @@ def _agent_config(args: argparse.Namespace) -> AgentConfig:
         enable_parallel_candidate_discovery=bool(
             getattr(args, "enable_parallel_candidate_discovery", False)
         ),
+        evaluate_all_candidate_routes=bool(
+            getattr(args, "evaluate_all_candidate_routes", False)
+        ),
         career_search_timeout=(
             None if career_search_timeout is None else float(career_search_timeout)
         ),
@@ -1076,6 +1707,7 @@ def _batch_execution_configuration(args: argparse.Namespace) -> BatchExecutionCo
                 "render_budget": int(getattr(args, "render_budget", 2)),
                 "verify_limit": int(getattr(args, "verify_limit", 3)),
                 "offline": bool(getattr(args, "offline", False)),
+                "opening_phase_policy": "reserved_after_verified_job_list_v1",
             },
         }
     )
@@ -1088,8 +1720,39 @@ def build_company_fetcher(args: argparse.Namespace):
 def _inner_deadline_budget(outer_budget: float) -> float:
     """Leave time to finalize stage results and publish checkpoints before hard kill."""
 
-    reserve = min(2.0, max(0.05, outer_budget * 0.10))
+    # Browser teardown, snapshot finalization, and fsync can take several seconds
+    # after the last bounded fetch returns. Keep a real publication window so a
+    # cooperative timeout is persisted instead of being replaced by the parent
+    # process hard deadline.
+    reserve = min(30.0, max(0.05, outer_budget * 0.50))
     return max(0.001, outer_budget - reserve)
+
+
+def _opening_phase_reserve(remaining_budget: float) -> float:
+    """Reserve a useful S6/S7 window after verified Job List discovery."""
+
+    return min(25.0, max(12.0, remaining_budget * 0.40))
+
+
+def _minimum_opening_execution_budget(reserved_budget: float) -> float:
+    """Fail retryably when parent/child cleanup consumed most of the S6 reserve."""
+
+    return min(10.0, max(5.0, reserved_budget * 0.50))
+
+
+def _phase_deadline_budget(outer_budget: float) -> float:
+    """Use a small publication tail for an already stage-bounded child process."""
+
+    reserve = min(3.0, max(0.05, outer_budget * 0.10))
+    return max(0.001, outer_budget - reserve)
+
+
+def _split_opening_phase(start_at: str, remaining_budget: float) -> bool:
+    if remaining_budget < 24.0:
+        return False
+    return PIPELINE_STAGES.index(start_at) <= PIPELINE_STAGES.index(
+        STAGE_JOB_BOARD_DISCOVERY
+    )
 
 
 def _company_fetcher_config(
@@ -1117,6 +1780,61 @@ def _checkpoint_dir(args: argparse.Namespace) -> str:
         return str(configured)
     output = getattr(args, "output", "/tmp/live-batch-results.json")
     return str(Path(output).with_suffix(".checkpoints"))
+
+
+def _company_discovery_evidence_store(
+    args: argparse.Namespace,
+) -> FilesystemCompanyDiscoveryEvidenceStore | None:
+    path = getattr(args, "company_discovery_evidence_store", None)
+    return FilesystemCompanyDiscoveryEvidenceStore(path) if path else None
+
+
+def _freeze_company_discovery_evidence_revisions(
+    companies: list[CompanyInput],
+    args: argparse.Namespace,
+) -> None:
+    """Bind checkpoints to the public evidence state visible at batch start."""
+
+    store = _company_discovery_evidence_store(args)
+    if store is None:
+        return
+    for company in companies:
+        record = None
+        if company.linkedin_company_url:
+            try:
+                record = store.load(company.company_name, company.linkedin_company_url)
+            except (OSError, TypeError, ValueError):
+                record = None
+        public_state = (
+            dataclass_to_dict(record)
+            if record is not None
+            else {"status": "absent"}
+        )
+        company.source_trace = {
+            **company.source_trace,
+            "company_discovery_evidence_revision": _json_digest(public_state),
+        }
+
+
+def _invalidate_rejected_stored_website(
+    store: FilesystemCompanyDiscoveryEvidenceStore | None,
+    company: CompanyInput,
+    stored_website: str,
+    trace: dict,
+) -> None:
+    if store is None or not company.linkedin_company_url:
+        return
+    if not stored_website_deterministically_rejected(trace, stored_website):
+        return
+    try:
+        store.invalidate(
+            company.company_name,
+            company.linkedin_company_url,
+            layer="website",
+            evidence_url=stored_website,
+        )
+    except (OSError, TypeError, ValueError):
+        return
 
 
 def _batch_checkpoint_dir(args: argparse.Namespace) -> str:
@@ -1216,8 +1934,9 @@ def failure_result(
     detail: str | None = None,
     completed_result: DiscoveryResult | None = None,
     run_configuration: DeterministicRunConfig | None = None,
+    reason_code: str | None = None,
 ) -> DiscoveryResult:
-    error_code = canonical_reason_code(error)
+    error_code = canonical_reason_code(reason_code or error)
     stage_metrics = company.source_trace.get("stage_metrics", {})
     has_linkedin_input = bool(company.linkedin_job_url or company.linkedin_company_url)
     completed_prefix = _completed_stage_prefix(completed_result)

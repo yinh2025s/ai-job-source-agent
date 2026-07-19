@@ -5,6 +5,7 @@ import time
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
+from .browser_interaction import BrowserInteraction
 from .reasons import classify_fetch_error, reason_spec
 from .web import FetchError, Page
 
@@ -50,7 +51,14 @@ class RetryingFetcher:
         self.timeout = getattr(fetcher, "timeout", None)
         self.retry_events: list[dict[str, Any]] = []
 
-    def fetch(self, url: str, data: bytes | None = None, headers: dict[str, str] | None = None) -> Page:
+    def fetch(
+        self,
+        url: str,
+        data: bytes | None = None,
+        headers: dict[str, str] | None = None,
+        *,
+        interaction: BrowserInteraction | None = None,
+    ) -> Page:
         attempt = 1
         last_error: FetchError | None = None
         last_event: dict[str, Any] | None = None
@@ -70,16 +78,27 @@ class RetryingFetcher:
                 if bounded_timeout is not None:
                     self.fetcher.timeout = max(0.001, bounded_timeout)
                 try:
-                    page = self.fetcher.fetch(url, data=data, headers=headers)
+                    if interaction is None:
+                        page = self.fetcher.fetch(
+                            url, data=data, headers=headers
+                        )
+                    else:
+                        page = self.fetcher.fetch(
+                            url,
+                            data=data,
+                            headers=headers,
+                            interaction=interaction,
+                        )
                 finally:
                     if bounded_timeout is not None:
                         self.fetcher.timeout = original_timeout
             except FetchError as exc:
                 reason_code = exc.reason_code or classify_fetch_error(str(exc))
+                spec = reason_spec(reason_code)
                 retryable = (
                     exc.retryable
                     if exc.retryable is not None
-                    else reason_spec(reason_code).retryable
+                    else spec.retryable
                 )
                 event = RetryEvent(
                     url=url,
@@ -93,6 +112,9 @@ class RetryingFetcher:
                 self.retry_events.append(asdict(event))
                 event_record = self.retry_events[-1]
 
+                if retryable and spec.owner == "budget":
+                    event_record["outcome"] = "retry_deferred"
+                    raise
                 if not retryable:
                     event_record["outcome"] = "not_retryable"
                     raise

@@ -1,0 +1,23 @@
+{
+  "data": [
+    {
+      "id": "541549",
+      "title": "Product Designer - Portland Metro",
+      "url": "https://oneapp.pinpointhq.com/en/postings/674c9316-435e-4642-8dca-8960ed3c2075",
+      "path": "/en/postings/674c9316-435e-4642-8dca-8960ed3c2075",
+      "workplace_type": "hybrid",
+      "job": {
+        "id": "545768",
+        "department": {"id": "61822", "name": "Product"}
+      },
+      "location": {
+        "id": "86701",
+        "city": "Portland",
+        "name": "Location Requirement - Must Reside in Portland Metro Area",
+        "postal_code": "",
+        "province": "Oregon",
+        "street_address": ""
+      }
+    }
+  ]
+}

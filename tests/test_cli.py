@@ -15,10 +15,15 @@ class CliTests(unittest.TestCase):
     def test_parallel_candidate_discovery_requires_explicit_cli_flag(self):
         parser = build_parser()
 
-        self.assertFalse(parser.parse_args([]).enable_parallel_candidate_discovery)
+        self.assertTrue(parser.parse_args([]).enable_parallel_candidate_discovery)
         self.assertTrue(
             parser.parse_args(
                 ["--enable-parallel-candidate-discovery"]
+            ).enable_parallel_candidate_discovery
+        )
+        self.assertFalse(
+            parser.parse_args(
+                ["--disable-parallel-candidate-discovery"]
             ).enable_parallel_candidate_discovery
         )
 
@@ -67,6 +72,19 @@ class CliTests(unittest.TestCase):
         with self.assertRaisesRegex(SystemExit, "require --checkpoint-dir"):
             main(common + ["--rerun-stage", "career_discovery"])
 
+    def test_parser_accepts_explicit_company_discovery_evidence_store(self):
+        parser = build_parser()
+
+        self.assertIsNone(
+            parser.parse_args([]).company_discovery_evidence_store
+        )
+        self.assertEqual(
+            parser.parse_args(
+                ["--company-discovery-evidence-store", "company-evidence"]
+            ).company_discovery_evidence_store,
+            "company-evidence",
+        )
+
     def test_cli_passes_explicit_linkedin_evidence_cache_path(self):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "results.json"
@@ -95,6 +113,36 @@ class CliTests(unittest.TestCase):
         self.assertEqual(
             build.call_args.kwargs["linkedin_evidence_cache_path"],
             str(evidence_cache),
+        )
+
+    def test_cli_passes_explicit_company_discovery_evidence_store(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "results.json"
+            trace = Path(directory) / "trace.json"
+            evidence_store = Path(directory) / "company-evidence"
+            with patch(
+                "job_source_agent.cli.build_application",
+                wraps=build_application,
+            ) as build:
+                main(
+                    [
+                        "--input",
+                        str(ROOT / "samples" / "linkedin_jobs.json"),
+                        "--fixtures-dir",
+                        str(ROOT / "samples" / "sites"),
+                        "--offline",
+                        "--company-discovery-evidence-store",
+                        str(evidence_store),
+                        "--output",
+                        str(output),
+                        "--trace-output",
+                        str(trace),
+                    ]
+                )
+
+        self.assertEqual(
+            build.call_args.kwargs["company_discovery_evidence_path"],
+            str(evidence_store),
         )
 
     def test_rerun_checkpoint_prefix_error_exits_without_writing_outputs(self):

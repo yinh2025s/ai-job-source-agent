@@ -1,0 +1,26 @@
+{
+  "jobs": [
+    {
+      "id": "NnBR8EmDjEi-mItnO6htcg",
+      "title": "Registered Nurse (RN) - Surgery Prep",
+      "summary": "Public opening summary",
+      "isInternalOnly": false,
+      "organization": "Community Hospital - Surgery Prep",
+      "street": "350 Example Blvd",
+      "city": "Redlands",
+      "state": "CA",
+      "zip": "92373",
+      "onePage": false,
+      "hasOpening": true,
+      "lastOpening": "2026-07-16T14:06:46Z",
+      "validThrough": null,
+      "publicFieldValues": []
+    }
+  ],
+  "meta": {
+    "page": 2,
+    "perPage": 2,
+    "totalJobs": 3,
+    "totalPages": 2
+  }
+}

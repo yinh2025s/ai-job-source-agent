@@ -124,6 +124,31 @@ def inspect_checkpoint_prefix(
     )
 
 
+def inspect_finalized_checkpoint_prefix(
+    store: CheckpointStore,
+    input_fingerprint: str,
+    context: PipelineContext,
+    requested_start: str,
+) -> CheckpointPrefixInspection:
+    """Inspect a same-attempt continuation, including finalized negative stages.
+
+    This is deliberately separate from resumable checkpoint inspection: a
+    failed or partial stage is not reusable in a later attempt, but its
+    finalized evidence must remain visible when the current attempt continues
+    into an independent downstream discovery path.
+    """
+
+    requested_index = PIPELINE_STAGES.index(requested_start)
+    return _inspect_checkpoint_prefix(
+        store,
+        input_fingerprint,
+        context,
+        requested_start=requested_start,
+        requested_index=requested_index,
+        allow_finalized_non_success=True,
+    )
+
+
 def inspect_complete_checkpoint_prefix(
     store: CheckpointStore,
     input_fingerprint: str,
@@ -147,6 +172,7 @@ def _inspect_checkpoint_prefix(
     *,
     requested_start: str,
     requested_index: int,
+    allow_finalized_non_success: bool = False,
 ) -> CheckpointPrefixInspection:
     simulation = PipelineContext.from_company(context.company)
     executions: list[StageExecution] = []
@@ -155,7 +181,11 @@ def _inspect_checkpoint_prefix(
 
     for stage in PIPELINE_STAGES[:requested_index]:
         execution = store.load(input_fingerprint, stage)
-        defect = _validate_checkpoint(execution, stage)
+        defect = _validate_checkpoint(
+            execution,
+            stage,
+            allow_finalized_non_success=allow_finalized_non_success,
+        )
         if defect is not None:
             defects.append(defect)
             gap_found = True
@@ -190,6 +220,8 @@ def _inspect_checkpoint_prefix(
 def _validate_checkpoint(
     execution: StageExecution | None,
     stage: str,
+    *,
+    allow_finalized_non_success: bool = False,
 ) -> CheckpointPrefixDefect | None:
     if execution is None:
         return CheckpointPrefixDefect(
@@ -208,13 +240,18 @@ def _validate_checkpoint(
             defect_class="semantically_invalid",
             detail="The checkpoint execution does not match the requested stage.",
         )
-    if execution.result.status not in _AUTHORITATIVE_STATUSES:
+    if (
+        not allow_finalized_non_success
+        and execution.result.status not in _AUTHORITATIVE_STATUSES
+    ):
         return CheckpointPrefixDefect(
             stage=stage,
             defect_class="non_authoritative_status",
             detail="Checkpoint status is not authoritative for reuse.",
         )
     if (
+        not allow_finalized_non_success
+        and
         execution.result.status == "not_applicable"
         and stage not in _NOT_APPLICABLE_STAGES
     ):
@@ -246,6 +283,16 @@ def _validate_checkpoint(
             )
     for field_name in _URL_UPDATE_FIELDS:
         if field_name not in execution.updates or execution.updates[field_name] is None:
+            continue
+        if (
+            stage == STAGE_WEBSITE_RESOLUTION
+            and field_name == "company_website_url"
+            and execution.result.status != "success"
+            and execution.updates[field_name] == ""
+        ):
+            # Failed S2 uses the empty string as an explicit clearing sentinel.
+            # It is authoritative in a same-attempt continuation, but never a
+            # successful public URL output.
             continue
         if not _is_safe_normalized_public_url(execution.updates[field_name]):
             return CheckpointPrefixDefect(

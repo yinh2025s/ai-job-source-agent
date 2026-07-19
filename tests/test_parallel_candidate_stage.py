@@ -1,8 +1,11 @@
 import unittest
 
-from job_source_agent.contracts import PipelineContext
+from job_source_agent.contracts import PipelineContext, StageExecution
 from job_source_agent.candidate_portfolio import CompositeCandidateDiscovery
-from job_source_agent.direct_candidate_discovery import ExternalApplyDiscovery
+from job_source_agent.direct_candidate_discovery import (
+    ExternalApplyDiscovery,
+    WebsiteCareerDiscovery,
+)
 from job_source_agent.provider_candidates import (
     CandidateDiscoveryResult,
     ProviderCandidate,
@@ -14,14 +17,73 @@ from job_source_agent.providers import DEFAULT_PROVIDER_REGISTRY
 from job_source_agent.stages.discovery import (
     JobBoardDiscoveryStage,
     OpeningMatchStage,
+    _deduplicate_public_board_identities,
+    _merge_legacy_website_route,
     _opening_identity,
 )
+from job_source_agent.reasons import make_stage_result
 from job_source_agent.stages.validation import ResultValidationStage
 
 
 class _NoNetworkService:
     def find_job_board(self, *args, **kwargs):
         raise AssertionError("S5 must not require career-page discovery for external apply")
+
+
+class _LegacyBoardService:
+    def find_job_board_portfolio(
+        self,
+        career_page_url,
+        company_name=None,
+        target_title=None,
+        target_location=None,
+    ):
+        board = DiscoveredJobBoard(
+            board=JobBoard(
+                "https://jobs.lever.co/acme",
+                "lever",
+                "acme",
+            ),
+            detection_method="linked_url_evidence",
+            evidence_url="https://jobs.lever.co/acme",
+        )
+        from job_source_agent.job_board import JobBoardPortfolio
+
+        return board.board.url, {"provider": "lever"}, JobBoardPortfolio(
+            (board,), True
+        )
+
+
+class _TrackedLegacyBoardService(_LegacyBoardService):
+    def __init__(self, events):
+        self.events = events
+
+    def find_job_board_portfolio(self, *args, **kwargs):
+        self.events.append("website_direct")
+        return super().find_job_board_portfolio(*args, **kwargs)
+
+
+class _FirstPartyEmbeddedInventoryService:
+    def find_job_board_portfolio(
+        self,
+        career_page_url,
+        company_name=None,
+        target_title=None,
+        target_location=None,
+    ):
+        return career_page_url, {
+            "first_party_listing_inventory": {
+                "status": "verified",
+                "source": "semantic_title_url_binding",
+                "candidates": [
+                    {
+                        "title": "Staff Engineer",
+                        "url": "https://job-boards.greenhouse.io/acme/jobs/123",
+                        "source_url": career_page_url,
+                    }
+                ],
+            }
+        }, None
 
 
 class _NoOpeningService:
@@ -89,6 +151,42 @@ class _StaticCandidateDiscovery:
         return CandidateDiscoveryResult(tuple(self.candidates), {"source": "test"})
 
 
+class PortfolioMergeTests(unittest.TestCase):
+    def test_equivalent_route_boards_collapse_without_changing_primary_rank(self):
+        primary = DiscoveredJobBoard(
+            board=JobBoard("https://jobs.lever.co/acme", "lever", "acme"),
+            detection_method="linked_url_evidence",
+            evidence_url="https://jobs.lever.co/acme",
+        )
+        duplicate = DiscoveredJobBoard(
+            board=JobBoard("https://JOBS.LEVER.CO/acme/", "LEVER", "acme"),
+            detection_method="page_evidence",
+            evidence_url="https://JOBS.LEVER.CO/acme/",
+        )
+        distinct = DiscoveredJobBoard(
+            board=JobBoard("https://jobs.ashbyhq.com/acme", "ashby", "acme"),
+            detection_method="linked_url_evidence",
+            evidence_url="https://jobs.ashbyhq.com/acme",
+        )
+
+        merged = _deduplicate_public_board_identities(
+            [primary, duplicate, distinct]
+        )
+
+        self.assertEqual(merged, [primary, distinct])
+
+
+class _TrackedWaveDiscovery(_StaticCandidateDiscovery):
+    def __init__(self, candidate_wave, *candidates):
+        super().__init__(*candidates)
+        self.candidate_wave = candidate_wave
+        self.calls = 0
+
+    def discover(self, request):
+        self.calls += 1
+        return super().discover(request)
+
+
 def _verified_hiring(name="Acme"):
     return HiringIdentityEvidence(
         source_company_name=name,
@@ -112,7 +210,619 @@ def _provider_identity(provider, tenant, board_url):
     )
 
 
+def _guessed_candidate(tenant):
+    return ProviderCandidate(
+        url=f"https://jobs.ashbyhq.com/{tenant}",
+        source_kind="guessed_path",
+        source_url="https://careers.acme.example/jobs",
+        company_name="Acme",
+        target_title="Engineer",
+        provider_hint="ashby",
+    )
+
+
+def _verified_tenant_probe_candidate(tenant):
+    return ProviderCandidate(
+        url=f"https://jobs.ashbyhq.com/{tenant}",
+        source_kind="verified_tenant_probe",
+        source_url="https://www.linkedin.com/company/acme",
+        company_name="Acme",
+        target_title="Engineer",
+        provider_hint="ashby",
+    )
+
+
+def _unrelated_direct_candidate():
+    return ProviderCandidate(
+        url="https://jobs.ashbyhq.com/notion",
+        source_kind="first_party_ats_link",
+        source_url="https://jobs.ashbyhq.com/notion",
+        company_name="Acme",
+        target_title="Engineer",
+        provider_hint="ashby",
+    )
+
+
 class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
+    def test_verified_tenant_probe_binds_exact_official_website_domain(self):
+        website = "https://www.mrbeastyoutube.com/"
+        candidate = ProviderCandidate(
+            url="https://jobs.ashbyhq.com/mrbeastyoutube",
+            source_kind="verified_tenant_probe",
+            source_url=website,
+            company_name="MrBeast",
+            target_title="Account Executive",
+            provider_hint="ashby",
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="MrBeast",
+                company_website_url=website,
+                job_title="Account Executive",
+            )
+        )
+        context.hiring_identity_evidence = _verified_hiring("MrBeast")
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (_StaticCandidateDiscovery(candidate),),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        identity = execution.updates["provider_identity"]
+        self.assertTrue(identity.relationship_verified)
+        self.assertEqual(
+            identity.verification_method,
+            "provider_tenant_match",
+        )
+
+    def test_verified_website_tenant_probe_rejects_substring_tenant_collision(self):
+        website = "https://www.mrbeastyoutube.com/"
+        candidate = ProviderCandidate(
+            url="https://jobs.ashbyhq.com/mrbeastyoutubejobs",
+            source_kind="verified_tenant_probe",
+            source_url=website,
+            company_name="MrBeast",
+            target_title="Account Executive",
+            provider_hint="ashby",
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="MrBeast",
+                company_website_url=website,
+                job_title="Account Executive",
+            )
+        )
+        context.hiring_identity_evidence = _verified_hiring("MrBeast")
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (_StaticCandidateDiscovery(candidate),),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertNotEqual(execution.result.status, "success")
+
+    def test_inventory_revalidated_tenant_probe_can_restore_relationship_without_s2(self):
+        discovery = CompositeCandidateDiscovery(
+            (_StaticCandidateDiscovery(_verified_tenant_probe_candidate("acme")),),
+            limit=12,
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=discovery,
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://jobs.ashbyhq.com/acme",
+        )
+        self.assertTrue(execution.updates["provider_identity"].relationship_verified)
+        self.assertEqual(
+            execution.updates["hiring_identity_evidence"].verification_method,
+            "provider_tenant_match",
+        )
+
+    def test_official_career_direct_handoff_runs_before_search_wave(self):
+        events = []
+
+        class _SearchDiscovery(_StaticCandidateDiscovery):
+            candidate_wave = "search"
+
+            def discover(self, request):
+                events.append("search")
+                return super().discover(request)
+
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.career_page_url = "https://www.acme.example/careers"
+        execution = JobBoardDiscoveryStage(
+            _TrackedLegacyBoardService(events),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (_SearchDiscovery(),), limit=12
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(events, ["website_direct"])
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.trace["candidate_scheduler"],
+            {
+                "strategy": "direct_then_website_then_search",
+                "website_direct_status": "success",
+                "search_wave": "not_run",
+            },
+        )
+
+    def test_exhaustive_route_evaluation_runs_search_after_verified_direct(self):
+        direct = _TrackedWaveDiscovery(
+            "direct",
+            ProviderCandidate(
+                url="https://jobs.lever.co/acme",
+                source_kind="external_apply",
+                source_url="https://jobs.lever.co/acme",
+                company_name="Acme",
+                target_title="Engineer",
+                provider_hint="lever",
+            ),
+        )
+        search = _TrackedWaveDiscovery(
+            "search",
+            ProviderCandidate(
+                url="https://jobs.ashbyhq.com/acme",
+                source_kind="targeted_board_search",
+                source_url="https://www.bing.com/search?q=acme",
+                company_name="Acme",
+                target_title="Engineer",
+                provider_hint="ashby",
+                query='site:jobs.ashbyhq.com "Acme"',
+                result_rank=1,
+            ),
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                job_title="Engineer",
+                external_apply_url="https://jobs.lever.co/acme",
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (direct, search),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+            evaluate_all_candidate_routes=True,
+        ).run(context)
+
+        self.assertEqual((direct.calls, search.calls), (1, 1))
+        self.assertEqual(
+            execution.trace["candidate_discovery"]["strategy"],
+            "exhaustive_route_evaluation",
+        )
+        routes = execution.trace["route_evaluation"]["routes"]
+        self.assertEqual(routes["external_apply"]["relationship_verified_count"], 1)
+        self.assertEqual(routes["provider_search"]["relationship_verified_count"], 1)
+        self.assertFalse(routes["website_career"]["input_available"])
+
+    def test_exhaustive_route_evaluation_records_legacy_website_board(self):
+        search = _TrackedWaveDiscovery(
+            "search",
+            ProviderCandidate(
+                url="https://jobs.ashbyhq.com/acme",
+                source_kind="targeted_board_search",
+                source_url="https://www.bing.com/search?q=acme",
+                company_name="Acme",
+                target_title="Engineer",
+                provider_hint="ashby",
+                query='site:jobs.ashbyhq.com "Acme"',
+                result_rank=1,
+            ),
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.company_website_url = "https://acme.example"
+        context.career_page_url = "https://careers.acme.example/jobs"
+        context.hiring_identity_evidence = _verified_hiring()
+
+        execution = JobBoardDiscoveryStage(
+            _LegacyBoardService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery((search,), limit=12),
+            enable_parallel_candidate_discovery=True,
+            evaluate_all_candidate_routes=True,
+        ).run(context)
+
+        website = execution.trace["route_evaluation"]["routes"]["website_career"]
+        self.assertEqual(website["legacy_status"], "success")
+        self.assertEqual(website["relationship_verified_count"], 1)
+        self.assertEqual(
+            website["verified_relationship_boards"][0]["provider"],
+            "lever",
+        )
+        self.assertEqual(len(execution.updates["job_board_portfolio"].boards), 2)
+
+    def test_first_party_inventory_merge_keeps_provider_identity_with_selected_ats_board(self):
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Staff Engineer")
+        )
+        context.company_website_url = "https://www.acme.com/"
+        context.career_page_url = "https://www.acme.com/careers"
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://www.acme.com",
+        )
+        candidate_board = DiscoveredJobBoard(
+            board=JobBoard(
+                "https://job-boards.greenhouse.io/acme",
+                "greenhouse",
+                "acme",
+            ),
+            detection_method="targeted_search",
+            evidence_url="https://job-boards.greenhouse.io/acme",
+        )
+        candidate_execution = StageExecution(
+            result=make_stage_result("job_board_discovery", "success"),
+            updates={
+                "job_list_page_url": candidate_board.board.url,
+                "provider": "greenhouse",
+                "discovered_job_board": candidate_board,
+                "provider_identity": ProviderIdentity(
+                    hiring_entity_name="Acme",
+                    provider="greenhouse",
+                    tenant="acme",
+                    canonical_board_url=candidate_board.board.url,
+                    evidence_url=candidate_board.board.url,
+                    verification_method="linked_url_only",
+                    relationship_verified=False,
+                ),
+            },
+            trace={"route_evaluation": {"schema_version": "1.0", "routes": {}}},
+        )
+        legacy_execution = StageExecution(
+            result=make_stage_result("job_board_discovery", "success"),
+            updates={
+                "job_list_page_url": context.career_page_url,
+                "provider_identity": ProviderIdentity(
+                    hiring_entity_name="Acme",
+                    provider="generic",
+                    tenant="url:https://www.acme.com/careers",
+                    canonical_board_url="https://www.acme.com/careers",
+                    evidence_url="https://www.acme.com/careers",
+                    verification_method="first_party_same_site",
+                    relationship_verified=True,
+                ),
+            },
+            trace={
+                "first_party_listing_inventory": {
+                    "status": "verified",
+                    "source": "semantic_title_url_binding",
+                    "candidates": [
+                        {
+                            "title": "Staff Engineer",
+                            "url": "https://job-boards.greenhouse.io/acme/jobs/123",
+                            "source_url": context.career_page_url,
+                        }
+                    ],
+                }
+            },
+        )
+
+        execution = _merge_legacy_website_route(
+            context,
+            candidate_execution,
+            legacy_execution,
+            DEFAULT_PROVIDER_REGISTRY,
+        )
+
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://job-boards.greenhouse.io/acme",
+        )
+        identity = execution.updates["provider_identity"]
+        self.assertEqual(identity.provider, "greenhouse")
+        self.assertEqual(identity.tenant, "acme")
+        self.assertEqual(
+            identity.canonical_board_url,
+            "https://job-boards.greenhouse.io/acme",
+        )
+        self.assertTrue(identity.relationship_verified)
+        self.assertEqual(identity.verification_method, "tenant_name_match")
+
+    def test_verified_first_party_inventory_promotes_native_board_without_search_probe(self):
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Staff Engineer")
+        )
+        context.company_website_url = "https://www.acme.com/"
+        context.career_page_url = "https://www.acme.com/careers"
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://www.acme.com",
+        )
+
+        execution = JobBoardDiscoveryStage(
+            _FirstPartyEmbeddedInventoryService(),
+            DEFAULT_PROVIDER_REGISTRY,
+        ).run(context)
+
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://job-boards.greenhouse.io/acme",
+        )
+        self.assertEqual(execution.updates["provider"], "greenhouse")
+        identity = execution.updates["provider_identity"]
+        self.assertEqual(identity.provider, "greenhouse")
+        self.assertEqual(identity.tenant, "acme")
+        self.assertTrue(identity.relationship_verified)
+        self.assertEqual(
+            execution.trace["provider_board_promotion"]["source"],
+            "verified_first_party_listing_inventory",
+        )
+
+    def test_gary_isolved_direct_career_candidate_skips_targeted_search(self):
+        search = _TrackedWaveDiscovery("search")
+        discovery = CompositeCandidateDiscovery(
+            (WebsiteCareerDiscovery(DEFAULT_PROVIDER_REGISTRY), search),
+            limit=12,
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Gary and Mary West PACE")
+        )
+        context.career_page_url = "https://westpace.isolvedhire.com/jobs/"
+        context.hiring_identity_evidence = _verified_hiring(
+            "Gary and Mary West PACE"
+        )
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=discovery,
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.updates["provider"], "isolved")
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://westpace.isolvedhire.com/jobs/",
+        )
+        self.assertEqual(search.calls, 0)
+        self.assertEqual(execution.trace["candidate_wave"], "direct")
+        search_wave = execution.trace["candidate_discovery"]["waves"]["search"]
+        self.assertEqual(search_wave["status"], "skipped")
+        self.assertEqual(search_wave["reason"], "verified_direct_candidate")
+        self.assertEqual(search_wave["sources"][0]["status"], "skipped")
+        direct_sources = execution.trace["candidate_discovery"]["waves"][
+            "direct"
+        ]["sources"]
+        self.assertEqual(direct_sources[1]["status"], "deferred")
+
+    def test_rejected_direct_relationship_runs_search_wave(self):
+        direct = _TrackedWaveDiscovery(
+            "direct",
+            ProviderCandidate(
+                url="https://jobs.ashbyhq.com/notion",
+                source_kind="first_party_ats_link",
+                source_url="https://jobs.ashbyhq.com/notion",
+                company_name="Acme",
+                target_title="Engineer",
+                provider_hint="ashby",
+            ),
+        )
+        search = _TrackedWaveDiscovery(
+            "search",
+            ProviderCandidate(
+                url="https://jobs.ashbyhq.com/acme",
+                source_kind="targeted_board_search",
+                source_url="https://www.bing.com/search?q=acme",
+                company_name="Acme",
+                target_title="Engineer",
+                provider_hint="ashby",
+                query='site:jobs.ashbyhq.com "Acme"',
+                result_rank=1,
+            ),
+        )
+        discovery = CompositeCandidateDiscovery((direct, search), limit=12)
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.career_page_url = "https://careers.acme.example/jobs"
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=discovery,
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual((direct.calls, search.calls), (1, 1))
+        self.assertEqual(execution.trace["candidate_wave"], "search")
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://jobs.ashbyhq.com/acme",
+        )
+        self.assertEqual(
+            execution.trace["candidate_discovery"]["waves"]["search"]["wave"],
+            "search",
+        )
+        self.assertEqual(
+            execution.trace["candidate_discovery"]["waves"]["direct"]["wave"],
+            "direct",
+        )
+        self.assertEqual(
+            execution.trace["relationship_verification"]["direct"]["status"],
+            "rejected",
+        )
+        self.assertTrue(execution.updates["provider_identity"].relationship_verified)
+
+    def test_cross_tenant_fallback_never_becomes_verified_from_search_rank(self):
+        direct = _TrackedWaveDiscovery(
+            "direct",
+            ProviderCandidate(
+                url="https://jobs.ashbyhq.com/notion",
+                source_kind="first_party_ats_link",
+                source_url="https://jobs.ashbyhq.com/notion",
+                company_name="Acme",
+                provider_hint="ashby",
+            ),
+        )
+        search = _TrackedWaveDiscovery(
+            "search",
+            ProviderCandidate(
+                url="https://jobs.ashbyhq.com/linear",
+                source_kind="targeted_board_search",
+                source_url="https://www.bing.com/search?q=acme",
+                company_name="Acme",
+                provider_hint="ashby",
+                query='site:jobs.ashbyhq.com "Acme"',
+                result_rank=1,
+            ),
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = "https://careers.acme.example/jobs"
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (direct, search),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual((direct.calls, search.calls), (1, 1))
+        self.assertEqual(execution.trace["candidate_wave"], "search")
+        self.assertFalse(execution.trace["relationship_verified"])
+        self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+        self.assertEqual(
+            execution.trace["relationship_evidence"]["evidence_type"],
+            "unverified_candidate",
+        )
+        context.apply(execution)
+        validation = ResultValidationStage().run(context)
+        self.assertEqual(validation.result.status, "failed")
+        self.assertEqual(validation.result.reason_code, "RESULT_IDENTITY_MISMATCH")
+
+    def test_guessed_same_name_tenant_stays_untrusted_with_verified_hiring_identity(self):
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.career_page_url = "https://careers.acme.example/jobs"
+        context.hiring_identity_evidence = _verified_hiring()
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (
+                    _TrackedWaveDiscovery("direct", _unrelated_direct_candidate()),
+                    _TrackedWaveDiscovery("search", _guessed_candidate("acme")),
+                ),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertFalse(execution.trace["relationship_evidence"]["verified"])
+        self.assertEqual(
+            execution.trace["relationship_evidence"]["evidence_type"],
+            "unverified_candidate",
+        )
+        self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+        self.assertEqual(
+            execution.updates["provider_identity"].verification_method,
+            "linked_url_only",
+        )
+
+    def test_guessed_cross_tenant_candidate_stays_untrusted(self):
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (
+                    _TrackedWaveDiscovery("direct", _unrelated_direct_candidate()),
+                    _TrackedWaveDiscovery(
+                        "search", _guessed_candidate("linkedin")
+                    ),
+                ),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertFalse(execution.trace["relationship_evidence"]["verified"])
+        self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+
+    def test_verified_first_party_handoff_still_establishes_relationship(self):
+        candidate = ProviderCandidate(
+            url="https://jobs.ashbyhq.com/acme-platform",
+            source_kind="first_party_ats_link",
+            source_url="https://careers.acme.example/jobs",
+            company_name="Acme",
+            target_title="Engineer",
+            provider_hint="ashby",
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.career_page_url = "https://careers.acme.example/jobs"
+        context.hiring_identity_evidence = _verified_hiring()
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (_StaticCandidateDiscovery(candidate),),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.trace["relationship_evidence"]["evidence_type"],
+            "first_party_handoff",
+        )
+        self.assertTrue(execution.trace["relationship_evidence"]["verified"])
+        self.assertTrue(execution.updates["provider_identity"].relationship_verified)
+
     def _oracle_context(self):
         opening = (
             "https://eohh.fa.us2.oraclecloud.com/hcmUI/"

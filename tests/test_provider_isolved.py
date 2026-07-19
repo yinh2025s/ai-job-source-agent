@@ -1,3 +1,4 @@
+import json
 import unittest
 
 from job_source_agent.providers.base import JobBoard, JobQuery, ProviderAdapter
@@ -49,8 +50,8 @@ def board_html(
 
 
 class RecordingFetcher:
-    def __init__(self, page=None, error=None):
-        self.page = page
+    def __init__(self, page=None, error=None, pages=None):
+        self.pages = list(pages) if pages is not None else ([page] if page else [])
         self.error = error
         self.requests = []
 
@@ -58,9 +59,37 @@ class RecordingFetcher:
         self.requests.append((url, data, headers))
         if self.error is not None:
             raise self.error
-        if self.page is None:
+        if not self.pages:
             raise FetchError(f"unexpected URL: {url}")
-        return self.page
+        return self.pages.pop(0)
+
+
+def inventory_page(jobs, *, count=None, **data_overrides):
+    data = {
+        "jobs": jobs,
+        "jobCount": len(jobs) if count is None else count,
+        "domainId": 3495,
+        "subdomainName": TENANT,
+        **data_overrides,
+    }
+    return Page(
+        url=(
+            "https://westpace.isolvedhire.com/core/jobs/3495?"
+            "getParams=%7B%22isInternal%22%3A0%7D"
+        ),
+        html=json.dumps({"success": True, "data": data}),
+        source="synthetic-isolved-inventory",
+    )
+
+
+def job(job_id="123", title="Registered Nurse", **overrides):
+    return {
+        "id": int(job_id),
+        "title": title,
+        "jobUrl": f"https://westpace.isolvedhire.com/jobs/{job_id}",
+        "jobLocation": "San Marcos, CA",
+        **overrides,
+    }
 
 
 class ISolvedAdapterTests(unittest.TestCase):
@@ -98,21 +127,33 @@ class ISolvedAdapterTests(unittest.TestCase):
                 self.assertFalse(self.adapter.recognizes(url))
                 self.assertIsNone(self.adapter.identify_board(url))
 
-    def test_validates_identity_but_keeps_inventory_typed_incomplete(self):
+    def test_validates_identity_and_lists_complete_public_inventory(self):
         fetcher = RecordingFetcher(
-            Page(url=BOARD_URL, html=board_html(), source="frozen-westpace")
+            pages=[
+                Page(url=BOARD_URL, html=board_html(), source="frozen-westpace"),
+                inventory_page([job()]),
+            ]
         )
 
         result = self.adapter.list_jobs(
             fetcher, self.board, JobQuery(title="Registered Nurse")
         )
 
-        self.assertEqual(fetcher.requests, [(BOARD_URL, None, None)])
-        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
-        self.assertEqual(result.candidates, [])
-        self.assertEqual(result.inventory_scope, "unknown")
-        self.assertFalse(result.inventory_complete)
-        self.assertEqual(result.trace["api_urls"], [])
+        self.assertEqual(len(fetcher.requests), 2)
+        self.assertEqual(fetcher.requests[0], (BOARD_URL, None, None))
+        self.assertEqual(
+            fetcher.requests[1][0],
+            "https://westpace.isolvedhire.com/core/jobs/3495?"
+            "getParams=%7B%22isInternal%22%3A0%7D",
+        )
+        self.assertEqual(fetcher.requests[1][2]["Referer"], BOARD_URL)
+        self.assertIsNone(result.reason_code)
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(result.candidates[0].url, "https://westpace.isolvedhire.com/jobs/123")
+        self.assertEqual(result.candidates[0].location, "San Marcos, CA")
+        self.assertEqual(result.inventory_scope, "full")
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(len(result.trace["api_urls"]), 1)
         self.assertEqual(
             result.trace["identity"],
             {
@@ -122,6 +163,94 @@ class ISolvedAdapterTests(unittest.TestCase):
                 "domain_id": "3495",
             },
         )
+
+    def test_accepts_harmless_detail_variants_and_returns_local_canonical_url(self):
+        for detail_url in (
+            "https://westpace.isolvedhire.com/jobs/123",
+            "https://westpace.isolvedhire.com/jobs/123/",
+            "https://westpace.isolvedhire.com:443/jobs/123/",
+        ):
+            with self.subTest(detail_url=detail_url):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(
+                        pages=[
+                            Page(url=BOARD_URL, html=board_html()),
+                            inventory_page([job(jobUrl=detail_url)]),
+                        ]
+                    ),
+                    self.board,
+                    JobQuery(title="Registered Nurse"),
+                )
+
+                self.assertIsNone(result.reason_code)
+                self.assertEqual(len(result.candidates), 1)
+                self.assertEqual(
+                    result.candidates[0].url,
+                    "https://westpace.isolvedhire.com/jobs/123",
+                )
+
+    def test_rejects_noncanonical_detail_paths_and_query_controls(self):
+        invalid_urls = (
+            "https://westpace.isolvedhire.com/jobs/123/apply",
+            "https://westpace.isolvedhire.com/jobs/123/arbitrary",
+            "https://westpace.isolvedhire.com/jobs/123//",
+            "https://westpace.isolvedhire.com//jobs/123",
+            "https://westpace.isolvedhire.com/Jobs/123",
+            "https://westpace.isolvedhire.com/jobs%2F123",
+            "https://westpace.isolvedhire.com/jobs/123%2Fapply",
+            "https://westpace.isolvedhire.com/jobs/123%5Capply",
+            "https://westpace.isolvedhire.com/jobs\\123",
+            "https://westpace.isolvedhire.com/jobs/123?apply=true",
+            "https://westpace.isolvedhire.com/jobs/123?redirect=%2Fjobs%2F999",
+            "https://westpace.isolvedhire.com/jobs/123#apply",
+        )
+        for detail_url in invalid_urls:
+            with self.subTest(detail_url=detail_url):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(
+                        pages=[
+                            Page(url=BOARD_URL, html=board_html()),
+                            inventory_page([job(jobUrl=detail_url)]),
+                        ]
+                    ),
+                    self.board,
+                    JobQuery(),
+                )
+
+                self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+                self.assertEqual(result.candidates, [])
+                self.assertFalse(result.inventory_complete)
+
+    def test_inventory_empty_is_complete_and_malformed_or_cross_tenant_fails_closed(self):
+        empty = self.adapter.list_jobs(
+            RecordingFetcher(
+                pages=[Page(url=BOARD_URL, html=board_html()), inventory_page([])]
+            ),
+            self.board,
+            JobQuery(),
+        )
+        self.assertEqual(empty.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertTrue(empty.inventory_complete)
+
+        invalid_pages = (
+            inventory_page([job()], count=2),
+            inventory_page([job()], domainId=9999),
+            inventory_page([job()], subdomainName="other"),
+            inventory_page([job(jobUrl="https://other.isolvedhire.com/jobs/123")]),
+            inventory_page([job(jobUrl="https://westpace.isolvedhire.com/jobs/999")]),
+        )
+        for invalid_page in invalid_pages:
+            with self.subTest(body=invalid_page.html):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(
+                        pages=[Page(url=BOARD_URL, html=board_html()), invalid_page]
+                    ),
+                    self.board,
+                    JobQuery(),
+                )
+                self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+                self.assertFalse(result.inventory_complete)
+                self.assertEqual(result.candidates, [])
 
     def test_rejects_cross_tenant_and_login_redirects(self):
         for final_url in (
@@ -198,4 +327,3 @@ class ISolvedAdapterTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

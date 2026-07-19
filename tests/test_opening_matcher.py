@@ -2,30 +2,396 @@ import unittest
 import json
 from pathlib import Path
 
+from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.opening_matcher import (
     JobOpeningMatcher,
     build_provider_api_urls,
     build_provider_search_urls,
     build_search_form_urls,
     detect_provider,
+    _opening_candidates_from_links,
+    _is_explicit_location_mismatch,
     score_title_match,
     title_identity_matches,
     structured_job_links,
 )
 from job_source_agent.listing_extraction import (
+    explicit_empty_inventory_evidence,
     extract_listing_candidates,
     validate_output_url,
 )
-from job_source_agent.web import FetchError, Fetcher, Page
+from job_source_agent.opening_availability import diagnose_opening_availability
+from job_source_agent.web import FetchError, Fetcher, Page, RawLink
 from job_source_agent.job_board import DiscoveredJobBoard
 from job_source_agent.providers.base import AdapterResult, JobBoard, JobCandidate
 from job_source_agent.providers.registry import ProviderRegistry
+from job_source_agent.rendered_fetcher import FORCE_RENDER_HEADER
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 class OpeningMatcherTests(unittest.TestCase):
+    def test_explicit_empty_inventory_accepts_right_now_question(self):
+        phrase = explicit_empty_inventory_evidence(
+            "<main><h2>No open positions right now?</h2></main>"
+        )
+
+        self.assertEqual(phrase, "No open positions right now")
+
+    def test_declared_inventory_rejects_explicit_foreign_location_before_s7(self):
+        links = [
+            RawLink(
+                "https://careers.example.com/job/project_manager/scotland/42/",
+                "Project Manager",
+                "https://careers.example.com/jobs",
+                origin="verified_declared_inventory",
+                location="Scotland",
+            ),
+            RawLink(
+                "https://careers.example.com/job/project_manager/ohio/43/",
+                "Project Manager",
+                "https://careers.example.com/jobs",
+                origin="verified_declared_inventory",
+                location="Toledo, OH",
+            ),
+        ]
+
+        candidates = _opening_candidates_from_links(
+            links,
+            page_url="https://careers.example.com/jobs",
+            target_title="Project Manager",
+            target_location="Toledo, OH",
+            provider="generic",
+        )
+
+        self.assertEqual([item.url for item in candidates], [links[1].url])
+
+    def test_declared_inventory_uses_explicit_title_city_qualifier_not_broad_region(self):
+        links = [
+            RawLink(
+                "https://careers.example.com/apply/offer/NYC123",
+                "Account Executive, NYC",
+                "https://careers.example.com/jobs",
+                origin="verified_declared_inventory",
+                location="Americas",
+            ),
+            RawLink(
+                "https://careers.example.com/apply/offer/DC456",
+                "Account Executive, D.C.",
+                "https://careers.example.com/jobs",
+                origin="verified_declared_inventory",
+                location="Americas",
+            ),
+        ]
+
+        candidates = _opening_candidates_from_links(
+            links,
+            page_url="https://careers.example.com/jobs",
+            target_title="Account Executive",
+            target_location="New York, NY",
+            provider="generic",
+        )
+
+        self.assertEqual([item.url for item in candidates], [links[0].url])
+
+    def test_verified_generic_handoff_forces_job_board_render(self):
+        board_url = "https://opaque-hiring.example/jobs"
+
+        class HeaderFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None, **kwargs):
+                self.calls.append((url, headers))
+                if url == board_url:
+                    return Page(url, "<html><main>Search jobs</main></html>")
+                raise FetchError(f"unexpected URL: {url}")
+
+        fetcher = HeaderFetcher()
+        discovered = DiscoveredJobBoard(
+            JobBoard(board_url, "generic"),
+            "verified_first_party_action",
+            board_url,
+            relationship_evidence_url="https://acme.example/careers",
+        )
+
+        JobOpeningMatcher(fetcher).match(
+            board_url,
+            "Registered Nurse",
+            discovered_board=discovered,
+        )
+
+        self.assertEqual(
+            fetcher.calls[0],
+            (board_url, {FORCE_RENDER_HEADER: "force"}),
+        )
+
+    def test_same_site_search_lead_requires_verified_jobposting_page(self):
+        board_url = "https://jobs.acme.example/"
+        detail_url = "https://jobs.acme.example/job-3/123/platform-engineer/"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Platform Engineer",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "Denver",
+                        "addressRegion": "CO",
+                    },
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Acme",
+                    "url": "https://jobs.acme.example/",
+                },
+            }
+        )
+
+        class SearchFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == board_url:
+                    return Page(url, "<html><main>Careers</main></html>")
+                if "bing.com/search" in url:
+                    return Page(
+                        url,
+                        f"<rss><channel><item><link>{detail_url}</link></item></channel></rss>",
+                    )
+                if url == detail_url:
+                    return Page(
+                        url,
+                        f'<script type="application/ld+json">{posting}</script>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        fetcher = SearchFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(
+            board_url,
+            "Platform Engineer",
+            "Denver, CO",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(match.location, "Denver, CO")
+        self.assertEqual(len(trace["verified_site_search"]["verified_pages"]), 1)
+        self.assertEqual(fetcher.calls[-1], detail_url)
+
+    def test_same_site_search_verifies_jobposting_on_sibling_subdomain(self):
+        board_url = "https://careers.acme.example/search"
+        detail_url = "https://www.acme.example/talent/job-offers/platform-engineer/"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Platform Engineer",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "Denver",
+                        "addressRegion": "CO",
+                    },
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Acme",
+                    "url": "https://www.acme.example/",
+                },
+            }
+        )
+
+        class SearchFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if "bing.com/search" in url:
+                    return Page(
+                        url,
+                        f"<rss><channel><item><link>{detail_url}</link></item></channel></rss>",
+                    )
+                if url == board_url or "?q=" in url or "?search=" in url:
+                    return Page(url, "<main>Careers</main>")
+                if url == detail_url:
+                    return Page(
+                        url,
+                        f'<script type="application/ld+json">{posting}</script>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(SearchFetcher()).match(
+            board_url,
+            "Platform Engineer",
+            "Denver, CO",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(len(trace["verified_site_search"]["verified_pages"]), 1)
+
+    def test_same_site_search_rejects_wrong_employer_and_location_then_ranks_valid_page(self):
+        board_url = "https://jobs.acme.example/"
+        wrong_employer = "https://jobs.acme.example/jobs/1/platform-engineer"
+        wrong_location = "https://jobs.acme.example/jobs/2/platform-engineer"
+        valid = "https://jobs.acme.example/jobs/3/platform-engineer"
+
+        def posting(url, location, organization_url):
+            return json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "JobPosting",
+                    "title": "Platform Engineer",
+                    "url": url,
+                    "jobLocation": {
+                        "@type": "Place",
+                        "address": {
+                            "addressLocality": location.split(",")[0],
+                            "addressRegion": location.split(",")[1].strip(),
+                        },
+                    },
+                    "hiringOrganization": {
+                        "@type": "Organization",
+                        "name": "Acme" if "acme" in organization_url else "Other",
+                        "url": organization_url,
+                    },
+                }
+            )
+
+        pages = {
+            wrong_employer: posting(wrong_employer, "Denver, CO", "https://other.example/"),
+            wrong_location: posting(wrong_location, "Boulder, CO", board_url),
+            valid: posting(valid, "Denver, CO", board_url),
+        }
+
+        class SearchFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == board_url:
+                    return Page(url, "<main>Careers</main>")
+                if "bing.com/search" in url:
+                    links = "".join(f"<item><link>{item}</link></item>" for item in pages)
+                    return Page(url, f"<rss><channel>{links}</channel></rss>")
+                if url in pages:
+                    return Page(url, f'<script type="application/ld+json">{pages[url]}</script>')
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(SearchFetcher()).match(
+            board_url,
+            "Platform Engineer",
+            "Denver, CO",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, valid)
+        self.assertEqual(match.hiring_organization_name, "Acme")
+        reasons = {item["reason"] for item in trace["verified_site_search"]["rejected_pages"]}
+        self.assertIn("hiring_organization_not_first_party", reasons)
+        self.assertIn("location_identity_mismatch", reasons)
+
+    def test_same_site_search_snippet_without_jobposting_is_not_success(self):
+        board_url = "https://jobs.acme.example/"
+        detail_url = "https://jobs.acme.example/jobs/123/platform-engineer"
+
+        class SearchFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if "bing.com/search" in url:
+                    return Page(
+                        url,
+                        f"<rss><channel><item><link>{detail_url}</link></item></channel></rss>",
+                    )
+                if url == detail_url:
+                    return Page(url, "<h1>Platform Engineer</h1>")
+                return Page(url, "<html></html>")
+
+        match, trace = JobOpeningMatcher(SearchFetcher()).match(
+            board_url,
+            "Platform Engineer",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["verified_site_search"]["rejected_pages"][0]["reason"],
+            "jobposting_identity_not_verified",
+        )
+
+    def test_declared_search_route_is_followed_as_inventory_not_success_evidence(self):
+        board_url = "https://jobs.example.com/jobs/"
+        helper_url = (
+            "https://jobs.example.com/api/search/get-search-results"
+            "?query=Data+Analyst&text=Data+Analyst"
+        )
+        route_url = "https://jobs.example.com/jobs/q-data-analyst/"
+        detail_url = "https://jobs.example.com/jobs/123/data-analyst"
+
+        class SearchFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == board_url:
+                    return Page(
+                        url,
+                        """<script>
+                        api.get(`/api/search/get-search-results?query=${title}&text=${title}`);
+                        </script>""",
+                    )
+                if url == helper_url:
+                    self.assertEqual(headers, {"Accept": "application/json"})
+                    return Page(url, json.dumps({"searchUrl": "/jobs/q-data-analyst/"}))
+                if url == route_url:
+                    return Page(
+                        url,
+                        f'<a href="{detail_url}">Data Analyst</a>',
+                    )
+                return Page(url, "<main>No matching inventory</main>")
+
+            def assertEqual(self, left, right):
+                if left != right:
+                    raise AssertionError((left, right))
+
+        match, trace = JobOpeningMatcher(SearchFetcher()).match(
+            board_url,
+            "Data Analyst",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(trace["declared_search_route"]["status"], "resolved")
+        self.assertIn(
+            {"url": route_url, "source": "declared_search_route",
+             "query": "Data Analyst", "query_source": "full_title"},
+            trace["search_plan"],
+        )
+
+    def test_verified_declared_inventory_accepts_title_bound_jobdetails_uuid(self):
+        url = (
+            "https://careers.example.com/search/jobdetails/"
+            "mechanical-engineer-i/68b78236-9379-46ed-a166-deb3c5213645"
+        )
+        links = [
+            RawLink(
+                url,
+                "Mechanical Engineer I",
+                "https://careers.example.com/search/searchjobs",
+                origin="verified_declared_inventory",
+                location="Kennesaw, Georgia",
+            )
+        ]
+
+        candidates = _opening_candidates_from_links(
+            links,
+            page_url="https://careers.example.com/search/searchjobs",
+            target_title="Mechanical Engineer I",
+            target_location="Kennesaw, GA",
+            provider="generic",
+        )
+
+        self.assertEqual([item.url for item in candidates], [url])
+
     def test_uses_declared_anonymous_js_post_inventory_after_html_inventory(self):
         job_list_url = "https://careers.example.com/search"
         asset_url = "https://careers.example.com/assets/job-search.js"
@@ -86,6 +452,138 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertEqual(match.url, job_url)
         self.assertEqual(match.location, "Austin, TX")
         self.assertEqual(trace["js_declared_inventory"][0]["status"], "verified")
+
+    def test_rebuilds_declared_get_inventory_without_runtime_board_handoff(self):
+        job_list_url = "https://opportunities.example.com"
+        asset_url = f"{job_list_url}/main.bundle.js"
+        endpoint_url = f"{job_list_url}/api/jobs?v=2&f=o"
+        target_url = f"{job_list_url}/job/458677"
+
+        class RecordingFetcher:
+            def __init__(self):
+                self.requests = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requests.append(url)
+                if url == job_list_url:
+                    return Page(url, f'<script src="{asset_url}"></script>')
+                if url == asset_url:
+                    return Page(
+                        url,
+                        f'''
+                        const api = "{job_list_url}/api";
+                        service.getAll = filter => client.get("/jobs?v=2&f=" + filter);
+                        service.getAll("o");
+                        const detailBase = "{job_list_url}/job/";
+                        ''',
+                    )
+                if url == endpoint_url:
+                    return Page(
+                        url,
+                        json.dumps([
+                            {"id": 458677, "title": "Data Analyst"},
+                            {"id": 458678, "title": "Benefits Manager"},
+                        ]),
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(RecordingFetcher()).match(
+            job_list_url,
+            "Data Analyst",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, target_url)
+        self.assertEqual(
+            trace["provider_api"]["provider_detection"]["method"],
+            "verified_declared_inventory",
+        )
+        self.assertEqual(
+            trace["provider_api"]["provider_detection"]["inventory_count"],
+            2,
+        )
+
+    def test_empty_complete_declared_title_inventory_is_a_verified_no_match(self):
+        job_list_url = "https://careers.example.com/jobs"
+        asset_url = "https://careers.example.com/assets/job-search.js"
+        endpoint_url = "https://careers.example.com/bin/public/jobs"
+
+        class RecordingFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(url, f'<script src="{asset_url}"></script>')
+                if url == asset_url:
+                    return Page(
+                        url,
+                        '''
+                        const pageLimit = 25;
+                        $.ajax({
+                            url: "/bin/public/jobs", type: "POST",
+                            data: {searchMode: "search", searchTerm: requestedTitle,
+                                   paginationStart: 0, paginationLimit: pageLimit},
+                            success: response => render(response.jobPostings)
+                        });
+                        ''',
+                    )
+                if url == endpoint_url:
+                    return Page(url, json.dumps({"jobPostings": []}))
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(RecordingFetcher()).match(
+            job_list_url,
+            "Missing Engineer",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["provider_api"]["inventory"]["status"],
+            "verified_filtered_empty",
+        )
+        diagnostic = diagnose_opening_availability(trace)
+        self.assertEqual(diagnostic.reason_code, "OPENING_NOT_FOUND")
+
+    def test_filtered_svelte_inventory_rejects_same_title_wrong_location(self):
+        job_list_url = (
+            "https://block.example/careers/jobs?businessUnits%5B%5D=square"
+        )
+        target_title = "SMB Account Executive"
+        payload = (
+            '<script type="application/json">{type:"data",data:{jobs:'
+            '{currentPage:['
+            '{id:5282973008,title:"SMB Account Executive",bu:"square",'
+            'location:"Bay Area, CA, US"},'
+            '{id:5287754008,title:"SMB Account Executive - Canada",bu:"square",'
+            'location:"Toronto, Ontario, Canada"}'
+            '],total:2},initialJobsListRequest:{page:1,pageLimit:50,'
+            'query:"SMB Account Executive",businessUnits:["square"]}}}</script>'
+        )
+
+        class RecordingFetcher:
+            def __init__(self):
+                self.requested = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested.append(url)
+                if "query=SMB+Account+Executive" in url:
+                    return Page(url=url, html=payload)
+                return Page(url=url, html="<main>Search jobs</main>")
+
+        fetcher = RecordingFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(
+            job_list_url,
+            target_title,
+            "New York, NY",
+        )
+
+        self.assertIsNone(match)
+        self.assertTrue(any("query=SMB+Account+Executive" in url for url in fetcher.requested))
+        self.assertEqual(trace["provider_api"]["inventory"]["scope"], "filtered")
+        self.assertEqual(trace["provider_api"]["inventory"]["status"], "verified")
+        self.assertTrue(trace["provider_api"]["inventory"]["complete"])
+        self.assertEqual(trace["provider_api"]["inventory"]["candidate_count"], 2)
+        diagnostic = diagnose_opening_availability(trace)
+        self.assertEqual(diagnostic.reason_code, "OPENING_NOT_FOUND")
 
     def test_generic_inventory_does_not_fetch_next_page_when_initial_page_matches(self):
         job_list_url = "https://careers.example.com/jobs"
@@ -162,6 +660,377 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertEqual(match.location, "Oxnard, CA")
         self.assertEqual(trace["selected"]["location"], "Oxnard, CA")
 
+    def test_generic_exact_link_enriches_location_from_same_site_jobposting_detail(self):
+        job_list_url = "https://careers.example.com/jobs"
+        detail_url = "https://careers.example.com/job?id=R0045464"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Product Design Engineer",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "Los Angeles",
+                        "addressRegion": "CA",
+                    },
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Example",
+                    "url": "https://careers.example.com/",
+                },
+            }
+        )
+
+        class DetailFetcher:
+            def __init__(self):
+                self.requested = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested.append(url)
+                if url == job_list_url:
+                    return Page(
+                        url,
+                        f'<a href="{detail_url}">Product Design Engineer</a>',
+                    )
+                if url == detail_url:
+                    return Page(
+                        url,
+                        f'<script type="application/ld+json">{posting}</script>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        fetcher = DetailFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(
+            job_list_url,
+            "Product Design Engineer",
+            "Los Angeles, CA",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(match.location, "Los Angeles, CA")
+        self.assertIn("verified same-site JobPosting detail", match.reasons)
+        self.assertEqual(trace["detail_enrichment"]["verified_count"], 1)
+        self.assertEqual(fetcher.requested[:2], [job_list_url, detail_url])
+
+    def test_generic_listing_continuity_accepts_jobposting_without_organization_url(self):
+        job_list_url = "https://careers.example.com/jobs"
+        detail_url = "https://careers.example.com/jobs/42/platform-engineer"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Platform Engineer",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {"addressLocality": "New York"},
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Confidential Client",
+                },
+            }
+        )
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(url, f'<a href="{detail_url}">Platform Engineer</a>')
+                if url == detail_url:
+                    return Page(url, f'<script type="application/ld+json">{posting}</script>')
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            job_list_url,
+            "Platform Engineer",
+            "New York, NY",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(match.location, "New York")
+        self.assertEqual(trace["detail_enrichment"]["verified_count"], 1)
+
+    def test_generic_listing_continuity_rejects_foreign_organization_url(self):
+        job_list_url = "https://careers.example.com/jobs"
+        detail_url = "https://careers.example.com/jobs/42/platform-engineer"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Platform Engineer",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "New York",
+                        "addressRegion": "NY",
+                    },
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Foreign Employer",
+                    "url": "https://jobs.foreign.example/",
+                },
+            }
+        )
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(url, f'<a href="{detail_url}">Platform Engineer</a>')
+                if url == detail_url:
+                    return Page(url, f'<script type="application/ld+json">{posting}</script>')
+                return Page(url, "<main>No matching jobs</main>")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            job_list_url,
+            "Platform Engineer",
+            "New York, NY",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(trace["detail_enrichment"]["verified_count"], 0)
+
+    def test_generic_opaque_detail_uses_page_bound_hydration_location(self):
+        job_list_url = "https://careers.example.com/job-search"
+        detail_url = "https://careers.example.com/job-search/abc123def456"
+        record = {
+            "props": {
+                "job": {
+                    "wdId": "abc123def456",
+                    "title": "National Account Manager - Hotels",
+                    "locations": [
+                        {"city": "Chicago, IL"},
+                        {"city": "New York, NY"},
+                    ],
+                }
+            }
+        }
+        frame = "9:" + json.dumps(record, separators=(",", ":")) + "\n"
+        detail_html = (
+            "<script>self.__next_f.push("
+            + json.dumps([1, frame], separators=(",", ":"))
+            + ")</script>"
+        )
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(
+                        url,
+                        f'<a href="{detail_url}">National Account Manager - Hotels</a>',
+                    )
+                if url == detail_url:
+                    return Page(url, detail_html)
+                return Page(url, "<main>No matches</main>")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            job_list_url,
+            "National Account Manager - Hotels",
+            "New York, NY",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(match.location, "Chicago, IL; New York, NY")
+        self.assertEqual(trace["detail_enrichment"]["verified_count"], 1)
+
+    def test_generic_remote_detail_requires_exact_country_evidence(self):
+        job_list_url = "https://careers.example.com/jobs"
+        detail_url = "https://careers.example.com/jobs/42/remote-nurse"
+
+        def posting(description):
+            return json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "JobPosting",
+                    "title": "Remote Nurse",
+                    "url": detail_url,
+                    "jobLocationType": "TELECOMMUTE",
+                    "description": description,
+                    "hiringOrganization": {"name": "Confidential Client"},
+                }
+            )
+
+        class DetailFetcher:
+            def __init__(self, description):
+                self.description = description
+
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(url, f'<a href="{detail_url}">Remote Nurse</a>')
+                return Page(
+                    url,
+                    '<script type="application/ld+json">'
+                    + posting(self.description)
+                    + "</script>",
+                )
+
+        positive, _ = JobOpeningMatcher(
+            DetailFetcher("<p>Applicants must be based in the United States.</p>")
+        ).match(job_list_url, "Remote Nurse", "United States")
+        wrong_country, _ = JobOpeningMatcher(
+            DetailFetcher("<p>Applicants must be based in Canada.</p>")
+        ).match(job_list_url, "Remote Nurse", "United States")
+        broad_for_city, _ = JobOpeningMatcher(
+            DetailFetcher("<p>Applicants must be based in the United States.</p>")
+        ).match(job_list_url, "Remote Nurse", "New York, NY")
+
+        self.assertIsNotNone(positive)
+        self.assertIsNone(wrong_country)
+        self.assertIsNone(broad_for_city)
+
+    def test_generic_detail_enrichment_rejects_wrong_location(self):
+        job_list_url = "https://careers.example.com/jobs"
+        detail_url = "https://careers.example.com/jobs/42/data-analyst"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Data Analyst",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "Lake Forest",
+                        "addressRegion": "IL",
+                    },
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Example",
+                    "url": "https://careers.example.com/",
+                },
+            }
+        )
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(url, f'<a href="{detail_url}">Data Analyst</a>')
+                if url == detail_url:
+                    return Page(
+                        url,
+                        f'<script type="application/ld+json">{posting}</script>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            job_list_url,
+            "Data Analyst",
+            "Malvern, PA",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(trace["detail_enrichment"]["verified_count"], 0)
+        self.assertEqual(
+            trace["detail_enrichment"]["attempts"][0]["status"],
+            "jobposting_identity_not_verified",
+        )
+        self.assertEqual(
+            trace["location_unverified_candidate_rejected"]["url"],
+            detail_url,
+        )
+
+    def test_generic_broad_location_does_not_satisfy_specific_target(self):
+        job_list_url = "https://careers.example.com/jobs"
+        detail_url = "https://careers.example.com/jobs/42/data-analyst"
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(
+                        url,
+                        (
+                            f'<a class="job-card" href="{detail_url}">'
+                            '<h3>Data Analyst</h3>'
+                            '<span class="job-location">United States</span>'
+                            '</a>'
+                        ),
+                    )
+                return Page(url, "<main>Job detail without structured location</main>")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            job_list_url,
+            "Data Analyst",
+            "Greater Tampa Bay Area",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["location_unverified_candidate_rejected"],
+            {
+                "url": detail_url,
+                "candidate_location": "United States",
+                "target_location": "Greater Tampa Bay Area",
+                "reason": "generic candidate location was broader than the target",
+            },
+        )
+
+    def test_generic_detail_enrichment_reads_page_bound_controller_cache(self):
+        job_list_url = "https://careers.example.com/jobs"
+        taipei_url = "https://careers.example.com/job?id=R0045464"
+        los_angeles_url = "https://careers.example.com/job?id=R0046024"
+
+        def detail_html(job_id, location):
+            payload = {
+                f"job-{job_id}": {
+                    "data": {
+                        "body": {
+                            "id": job_id,
+                            "title": "Product Design Engineer",
+                            "jobPostingSite": "Example Inc.",
+                            "offices": [{"location": location}],
+                        }
+                    }
+                }
+            }
+            return (
+                "<script>window.ASYNC_DATA_CONTROLLER_CACHE = "
+                + json.dumps(payload)
+                + ";</script>"
+            )
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(
+                        url,
+                        (
+                            f'<a href="{taipei_url}">Product Design Engineer</a>'
+                            f'<a href="{los_angeles_url}">Product Design Engineer</a>'
+                        ),
+                    )
+                if url == taipei_url:
+                    return Page(url, detail_html("R0045464", "Taipei City, Taiwan"))
+                if url == los_angeles_url:
+                    return Page(url, detail_html("R0046024", "Los Angeles, California"))
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            job_list_url,
+            "Product Design Engineer",
+            "Los Angeles, CA",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, los_angeles_url)
+        self.assertEqual(match.location, "Los Angeles, California")
+        self.assertEqual(trace["detail_enrichment"]["verified_count"], 1)
+        self.assertEqual(
+            [item["status"] for item in trace["detail_enrichment"]["attempts"]],
+            ["jobposting_identity_not_verified", "verified"],
+        )
+
     def test_generic_inventory_follows_bounded_next_page_to_exact_opening(self):
         job_list_url = "https://careers.example.com/jobs"
         second_url = job_list_url + "?page=2"
@@ -200,6 +1069,50 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertEqual(fetcher.requested, [job_list_url, second_url])
         self.assertTrue(trace["provider_api"]["inventory"]["complete"])
         self.assertEqual(trace["generic_inventory"][0]["pages_fetched"], 2)
+
+    def test_generic_inventory_uses_configured_page_budget_beyond_three_pages(self):
+        job_list_url = "https://careers.example.com/jobs"
+        job_url = "https://careers.example.com/jobs/42/ai-engineer"
+
+        class MappingFetcher:
+            def __init__(self):
+                self.requested = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.requested.append(url)
+                page = 1 if "page=" not in url else int(url.rsplit("=", 1)[1])
+                if page < 4:
+                    next_url = f"{job_list_url}?page={page + 1}"
+                    return Page(url=url, html=f'<a href="{next_url}">Next page</a>')
+                if page == 4:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<article class="job-card"><h3>AI Engineer</h3>'
+                            f'<a href="{job_url}">View job</a></article>'
+                        ),
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        fetcher = MappingFetcher()
+        match, trace = JobOpeningMatcher(
+            fetcher,
+            max_generic_job_pages=8,
+        ).match(job_list_url, "AI Engineer")
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, job_url)
+        self.assertEqual(
+            fetcher.requested,
+            [
+                job_list_url,
+                f"{job_list_url}?page=2",
+                f"{job_list_url}?page=3",
+                f"{job_list_url}?page=4",
+            ],
+        )
+        self.assertEqual(trace["generic_inventory"][0]["pages_fetched"], 4)
 
     def test_single_generic_page_does_not_claim_complete_inventory(self):
         job_list_url = "https://careers.example.com/jobs"
@@ -266,6 +1179,51 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertIsNone(missing)
         self.assertNotIn("inventory", missing_trace["provider_api"])
 
+    def test_generic_sibling_job_query_matches_exact_opening(self):
+        job_list_url = "https://careers.example.com/jobs"
+        job_url = "https://careers.example.com/job?id=R0046024"
+
+        class StaticFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=job_list_url,
+                    html=f'<a href="{job_url}">Product Design Engineer</a>',
+                    source="fixture",
+                )
+
+        match, _trace = JobOpeningMatcher(StaticFetcher()).match(
+            job_list_url,
+            "Product Design Engineer",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, job_url)
+
+    def test_generic_opaque_job_child_matches_title_with_card_metadata(self):
+        job_list_url = "https://jobs.example.com/job-search"
+        job_url = job_list_url + "/bcf896f7352f1001b167c46dc9d00000"
+
+        class StaticFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=job_list_url,
+                    html=(
+                        f'<a href="{job_url}">National Account Manager - Hotels '
+                        "Multiple locations Commercial Full time</a>"
+                    ),
+                    source="fixture",
+                )
+
+        match, _trace = JobOpeningMatcher(StaticFetcher()).match(
+            job_list_url,
+            "National Account Manager - Hotels",
+        )
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, job_url)
+
     def test_nested_anchor_title_matches_workable_detail(self):
         job_list_url = "https://awesomemotive.com/careers/"
         job_url = "https://apply.workable.com/awesomemotive/j/ABC123/"
@@ -317,6 +1275,7 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertTrue(title_identity_matches("AI Algorithm Engineer Intern", "AI Engineer"))
         self.assertTrue(title_identity_matches("Senior Data Scientist", "Sr Data Scientist"))
         self.assertTrue(title_identity_matches("Engineer, AI", "AI Engineer"))
+        self.assertTrue(title_identity_matches("Software Engineer I", "Software Engineer 1"))
         self.assertTrue(title_identity_matches("Engineer II", "Engineer"))
         self.assertFalse(title_identity_matches("Platform Engineer", "Engineer"))
 
@@ -421,6 +1380,15 @@ class OpeningMatcherTests(unittest.TestCase):
                 urls = build_provider_search_urls(url, "Data Analyst")
                 self.assertTrue(any(expected_query in search_url for search_url in urls))
 
+    def test_generic_search_urls_preserve_existing_scope_and_try_query_contract(self):
+        board = "https://careers.example.com/jobs?businessUnits%5B%5D=square"
+
+        urls = build_provider_search_urls(board, "SMB Account Executive")
+
+        self.assertIn(board, urls)
+        query_url = next(url for url in urls if "query=SMB+Account+Executive" in url)
+        self.assertIn("businessUnits%5B%5D=square", query_url)
+
     def test_rippling_board_matches_static_job_link(self):
         matcher = JobOpeningMatcher(
             Fetcher(fixtures_dir=ROOT / "samples" / "sites", offline=True)
@@ -468,7 +1436,7 @@ class OpeningMatcherTests(unittest.TestCase):
 
         match, trace = JobOpeningMatcher(JibeFetcher()).match(
             board_url,
-            "Registered Nurse",
+            "Registered Nurse / RN IMC",
         )
 
         self.assertIsNotNone(match)
@@ -509,6 +1477,414 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertEqual(match.url, "https://staff.example.com/jobs/17810432-ai-engineer-ii")
         self.assertEqual(fetcher.calls, [board_url, search_url])
         self.assertEqual(trace["search_plan"][1]["source"], "declared_get_form")
+
+    def test_declared_get_search_uses_title_query_portfolio_with_trace_provenance(self):
+        board_url = "https://staff.example.com/jobs/search/"
+        title = "Registered Nurse (RN) - Apollo Platform"
+        queries = (
+            "Registered+Nurse+%28RN%29+-+Apollo+Platform",
+            "Registered+Nurse",
+            "Apollo+Platform",
+        )
+        search_urls = [f"{board_url}?q={query}" for query in queries]
+        detail_url = "https://staff.example.com/jobs/registered-nurse-rn-apollo-platform"
+        landing_html = ('<form action="/jobs/search/" method="GET">'
+                        '<input type="search" name="q"></form>')
+
+        class RecordingFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == board_url:
+                    return Page(url=url, final_url=url, html=landing_html, source="fixture")
+                if url == search_urls[2]:
+                    return Page(url=url, final_url=url,
+                                html=f'<a href="{detail_url}">{title}</a>', source="fixture")
+                if url in search_urls[:2]:
+                    return Page(url=url, final_url=url, html="<main>No matches</main>")
+                raise AssertionError(f"unexpected speculative fetch: {url}")
+
+        fetcher = RecordingFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(board_url, title)
+
+        self.assertIsNotNone(match)
+        self.assertEqual(fetcher.calls, [board_url, *search_urls])
+        self.assertEqual(
+            [item["query_source"] for item in trace["search_plan"][1:4]],
+            ["full_title", "core_title", "product_or_team"],
+        )
+        self.assertEqual(
+            [item["query"] for item in trace["search_plan"][1:4]],
+            [title, "Registered Nurse", "Apollo Platform"],
+        )
+
+    def test_declared_post_search_uses_verified_submission_transport(self):
+        board_url = "https://careers.example.com/jobs"
+        search_url = "https://careers.example.com/jobs/search"
+        detail_url = "https://careers.example.com/jobs/42/data-analyst"
+        landing_html = (
+            '<form action="/jobs/search" method="POST">'
+            '<input type="search" name="keyword">'
+            '<input type="hidden" name="department" value="all">'
+            "</form>"
+        )
+
+        class PostFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append((url, data, headers))
+                if url == board_url:
+                    return Page(url, landing_html, final_url=board_url)
+                if url == search_url:
+                    return Page(
+                        url,
+                        f'<a class="job-card" href="{detail_url}"><h3>Data Analyst</h3></a>',
+                        final_url=board_url,
+                    )
+                return Page(url, "<main>No matches</main>")
+
+        fetcher = PostFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(board_url, "Data Analyst")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(
+            fetcher.calls[1],
+            (
+                search_url,
+                b"department=all&keyword=Data+Analyst",
+                {
+                    "Accept": "application/json, text/html",
+                    "Content-Type": "application/x-www-form-urlencoded",
+                },
+            ),
+        )
+        self.assertEqual(trace["job_search_submissions"][0]["status"], "submitted")
+        self.assertEqual(
+            trace["job_search_submissions"][0]["change_kind"],
+            "listing_fingerprint",
+        )
+
+    def test_declared_post_unchanged_transport_is_typed_in_matcher_trace(self):
+        board_url = "https://careers.example.com/jobs"
+        landing_html = (
+            '<form action="/jobs/search" method="POST">'
+            '<input type="search" name="keyword"></form>'
+        )
+
+        class UnchangedFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == board_url and data is None:
+                    return Page(url, landing_html, final_url=board_url)
+                if data is not None:
+                    return Page(url, landing_html, final_url=board_url)
+                return Page(url, "<main>No matches</main>")
+
+        match, trace = JobOpeningMatcher(UnchangedFetcher()).match(
+            board_url,
+            "Data Analyst",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["job_search_submissions"][0]["status"],
+            "transport_unchanged",
+        )
+
+    def test_js_only_search_fills_exact_title_and_matches_rendered_candidate(self):
+        board_url = "https://www.randstadusa.com/jobs/"
+        job_url = "https://www.randstadusa.com/jobs/123/data-analyst/"
+        landing_html = (
+            '<form id="job-search-form">'
+            '<input id="job-title" name="jobTitle" type="text" '
+            'placeholder="Search by job title or keyword">'
+            '<button type="button"><span>Search</span></button>'
+            "</form>"
+        )
+        result_html = (
+            f'<article class="job-card"><h3>Data Analyst</h3>'
+            f'<a href="{job_url}">View job</a></article>'
+        )
+
+        class InteractiveFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                self.calls.append((url, interaction))
+                if interaction is None:
+                    return Page(url, landing_html, final_url=board_url, source="fixture")
+                self.assert_interaction(interaction)
+                return Page(url, result_html, final_url=board_url, source="browser")
+
+            @staticmethod
+            def assert_interaction(interaction):
+                assert interaction == JobSearchInteraction(
+                    form_ordinal=0,
+                    query_name="jobTitle",
+                    query_id="job-title",
+                    target_title="Data Analyst",
+                    submit_text="Search",
+                )
+
+        fetcher = InteractiveFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(board_url, "Data Analyst")
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, job_url)
+        self.assertEqual(len(fetcher.calls), 2)
+        self.assertIsNone(fetcher.calls[0][1])
+        self.assertEqual(fetcher.calls[1][1].target_title, "Data Analyst")
+        self.assertEqual(
+            [item["source"] for item in trace["search_plan"][:2]],
+            ["reused_landing_page", "interactive_job_search"],
+        )
+        self.assertEqual(trace["interactive_search"]["disposition"], "matched")
+
+    def test_interactive_capability_failure_stays_typed_and_uses_fallback_afterward(self):
+        board_url = "https://jobs.example.com/jobs/"
+        landing_html = (
+            '<form><input id="job-title" name="jobTitle" '
+            'placeholder="Search by job title">'
+            '<button type="button">Search</button></form>'
+        )
+
+        class CapabilityFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                self.calls.append((url, interaction))
+                if interaction is not None:
+                    raise FetchError(
+                        "browser interaction unavailable",
+                        reason_code="OPENING_DISCOVERY_INCOMPLETE",
+                        retryable=False,
+                    )
+                if url == board_url:
+                    return Page(url, landing_html, final_url=board_url, source="fixture")
+                return Page(url, "", final_url=url, source="fixture")
+
+        fetcher = CapabilityFetcher()
+        match, trace = JobOpeningMatcher(fetcher).match(board_url, "Data Analyst")
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["interactive_search"]["reason_code"],
+            "OPENING_DISCOVERY_INCOMPLETE",
+        )
+        self.assertEqual(trace["interactive_search"]["disposition"], "fetch_failed")
+        self.assertEqual(trace["errors"][0]["phase"], "interactive_job_search")
+        interaction_index = next(
+            index for index, (_url, interaction) in enumerate(fetcher.calls)
+            if interaction is not None
+        )
+        fallback_index = next(
+            index for index, (url, _interaction) in enumerate(fetcher.calls)
+            if "?q=" in url
+        )
+        self.assertLess(interaction_index, fallback_index)
+
+    def test_interactive_unchanged_transport_uses_shared_verifier_status(self):
+        board_url = "https://jobs.example.com/jobs/"
+        landing_html = (
+            '<form><input id="job-title" name="jobTitle" '
+            'placeholder="Search by job title">'
+            '<button type="button">Search</button></form>'
+        )
+
+        class UnchangedInteractiveFetcher:
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                if interaction is not None:
+                    return Page(
+                        url,
+                        landing_html + "<script>window.requestId='new'</script>",
+                        final_url=board_url,
+                    )
+                if url == board_url:
+                    return Page(url, landing_html, final_url=board_url)
+                return Page(url, "<main>No matches</main>")
+
+        match, trace = JobOpeningMatcher(UnchangedInteractiveFetcher()).match(
+            board_url,
+            "Data Analyst",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["interactive_search"]["disposition"],
+            "transport_unchanged",
+        )
+
+    def test_interactive_search_page_cannot_be_its_own_opening(self):
+        board_url = "https://jobs.example.com/jobs/"
+        landing_html = (
+            '<form><input name="jobTitle" placeholder="Search by job title">'
+            '<button type="button">Search</button></form>'
+        )
+
+        class SelfLinkFetcher:
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                if interaction is not None:
+                    return Page(
+                        url,
+                        f'<a href="{board_url}">Data Analyst</a>',
+                        final_url=board_url,
+                        source="browser",
+                    )
+                if url == board_url:
+                    return Page(url, landing_html, final_url=board_url, source="fixture")
+                return Page(url, "", final_url=url, source="fixture")
+
+        match, trace = JobOpeningMatcher(SelfLinkFetcher()).match(
+            board_url,
+            "Data Analyst",
+        )
+
+        self.assertIsNone(match)
+        self.assertNotIn(board_url, [item["url"] for item in trace["candidates"]])
+        self.assertEqual(
+            trace["interactive_search"]["disposition"],
+            "transport_unchanged",
+        )
+
+    def test_url_location_tokens_only_break_exact_title_ties(self):
+        board_url = "https://jobs.example.com/search"
+        wrong = "https://jobs.example.com/job/mechanical-design-engineer-bellevue-washington/1"
+        right = "https://jobs.example.com/job/mechanical-design-engineer-york-pa/2"
+
+        class FixtureFetcher:
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=board_url,
+                    final_url=board_url,
+                    html=(
+                        f'<a href="{wrong}">Mechanical Design Engineer</a>'
+                        f'<a href="{right}">Mechanical Design Engineer</a>'
+                    ),
+                    source="fixture",
+                )
+
+        match, trace = JobOpeningMatcher(FixtureFetcher()).match(
+            board_url,
+            "Mechanical Design Engineer",
+            "York, PA",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, right)
+        self.assertIn("opening URL location token overlap", match.reasons)
+
+    def test_native_inventory_skips_wrong_location_and_continues(self):
+        board_url = "https://jobs.example.com/board"
+
+        class LocationAdapter:
+            name = "location_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return url == board_url
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Data Analyst",
+                            location="San Francisco, CA",
+                            url="https://jobs.example.com/job/1",
+                            provider=self.name,
+                        ),
+                        JobCandidate(
+                            title="Data Analyst",
+                            location="New York, NY",
+                            url="https://jobs.example.com/job/2",
+                            provider=self.name,
+                        ),
+                    ],
+                    inventory_scope="full",
+                    inventory_complete=True,
+                )
+
+        match, trace = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([LocationAdapter()]),
+        ).match(board_url, "Data Analyst", "New York, NY")
+
+        self.assertIsNotNone(match)
+        self.assertEqual(match.url, "https://jobs.example.com/job/2")
+        self.assertEqual(
+            trace["provider_api"]["rejected_candidates"][0]["reason"],
+            "location_identity_mismatch",
+        )
+
+    def test_location_identity_accepts_city_in_full_street_address(self):
+        self.assertFalse(
+            _is_explicit_location_mismatch(
+                "2224 Bay Area Boulevard, Houston, TX, USA",
+                "Houston, TX",
+            )
+        )
+
+    def test_location_identity_accepts_opaque_facility_label_in_target_state(self):
+        self.assertFalse(
+            _is_explicit_location_mismatch("C Forks PA", "Easton, PA")
+        )
+
+    def test_location_identity_rejects_explicit_conflicting_city(self):
+        self.assertTrue(
+            _is_explicit_location_mismatch("Pittsburgh, PA", "Easton, PA")
+        )
+
+    def test_location_identity_rejects_explicit_conflicting_state(self):
+        self.assertTrue(
+            _is_explicit_location_mismatch("Houston, CA", "Houston, TX")
+        )
+
+    def test_location_filter_keeps_remote_and_multiple_location_candidates(self):
+        board_url = "https://jobs.example.com/board"
+
+        class FlexibleLocationAdapter:
+            name = "flexible_location_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return url == board_url
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Data Analyst",
+                            location="Remote - Multiple locations",
+                            url="https://jobs.example.com/job/remote",
+                            provider=self.name,
+                        )
+                    ],
+                    inventory_scope="full",
+                    inventory_complete=True,
+                )
+
+        match, _trace = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([FlexibleLocationAdapter()]),
+        ).match(board_url, "Data Analyst", "New York, NY")
+
+        self.assertIsNotNone(match)
 
     def test_generic_landing_fetch_failure_is_preserved_for_availability_diagnostics(self):
         board_url = "https://staff.example.com/"
@@ -690,6 +2066,148 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertNotEqual(
             missing_trace.get("search_skipped"),
             "verified_native_inventory_no_match",
+        )
+
+    def test_incomplete_native_inventory_uses_strict_same_site_detail_search(self):
+        board_url = "https://jobs.acme.example/job-search-results/"
+        detail_url = "https://jobs.acme.example/job-3/42/platform-engineer/"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Platform Engineer",
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "Denver",
+                        "addressRegion": "CO",
+                    },
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Acme",
+                    "sameAs": "https://acme.example/",
+                },
+            }
+        )
+
+        class PartialAdapter:
+            name = "cws"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return url.startswith("https://jobs.acme.example/")
+
+            def identify_board(self, url):
+                return JobBoard(url=board_url, provider=self.name, identifier="acme")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    reason_code="NETWORK_TIMEOUT",
+                    retryable=True,
+                    inventory_scope="title_filtered",
+                    inventory_complete=False,
+                )
+
+        class SearchFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if "bing.com/search" in url:
+                    return Page(
+                        url,
+                        f"<rss><channel><item><link>{detail_url}</link></item></channel></rss>",
+                    )
+                if url == detail_url:
+                    return Page(
+                        url,
+                        f'<script type="application/ld+json">{posting}</script>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(
+            SearchFetcher(),
+            ProviderRegistry([PartialAdapter()]),
+        ).match(board_url, "Platform Engineer", "Denver, CO")
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(match.provider, "cws")
+        self.assertEqual(
+            trace["provider_api"]["inventory"]["status"],
+            "incomplete",
+        )
+        self.assertEqual(len(trace["verified_site_search"]["verified_pages"]), 1)
+
+    def test_incomplete_native_inventory_rejects_closed_indexed_detail(self):
+        board_url = "https://jobs.acme.example/job-search-results/"
+        detail_url = "https://jobs.acme.example/job-3/42/platform-engineer/"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "Platform Engineer",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "Denver",
+                        "addressRegion": "CO",
+                    },
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Acme",
+                    "url": "https://jobs.acme.example/",
+                },
+            }
+        )
+
+        class PartialAdapter:
+            name = "cws"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return url.startswith("https://jobs.acme.example/")
+
+            def identify_board(self, url):
+                return JobBoard(url=board_url, provider=self.name, identifier="acme")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    reason_code="NETWORK_TIMEOUT",
+                    retryable=True,
+                    inventory_scope="title_filtered",
+                    inventory_complete=False,
+                )
+
+        class SearchFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if "bing.com/search" in url:
+                    return Page(
+                        url,
+                        f"<rss><channel><item><link>{detail_url}</link></item></channel></rss>",
+                    )
+                if url == detail_url:
+                    return Page(
+                        url,
+                        "The job you are trying to apply for does not exist!"
+                        f'<script type="application/ld+json">{posting}</script>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(
+            SearchFetcher(),
+            ProviderRegistry([PartialAdapter()]),
+        ).match(board_url, "Platform Engineer", "Denver, CO")
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["verified_site_search"]["rejected_pages"][0]["reason"],
+            "opening_closed_or_unavailable",
         )
 
     def test_acquired_brand_handoff_requires_exact_normalized_title(self):
@@ -1071,6 +2589,51 @@ class OpeningMatcherTests(unittest.TestCase):
                 title="Mid-Market Account Executive",
             )
         )
+
+    def test_output_url_validation_accepts_title_bound_sibling_job_host(self):
+        source = "https://careers.example.com/jobs"
+        opening = "https://jobs.example.com/job/Portland-Financial-Analyst/123"
+
+        self.assertEqual(
+            validate_output_url(opening, source, title="Financial Analyst"),
+            opening,
+        )
+        self.assertIsNone(
+            validate_output_url(
+                "https://jobs.other-example.com/job/Portland-Financial-Analyst/123",
+                source,
+                title="Financial Analyst",
+            )
+        )
+
+    def test_output_url_validation_accepts_only_attested_applicant_manager_position(self):
+        source = "https://theapplicantmanager.com/careers?co=n5"
+        opening = "https://theapplicantmanager.com/jobs?pos=n513775"
+
+        self.assertEqual(
+            validate_output_url(
+                opening,
+                source,
+                title="Registered Nurse RN - $40.55 per hour",
+                origin="applicant_manager_table",
+            ),
+            opening,
+        )
+        for rejected, origin in (
+            (opening, "anchor"),
+            ("https://evil.example/jobs?pos=n513775", "applicant_manager_table"),
+            ("https://theapplicantmanager.com/jobs?pos=../../secret", "applicant_manager_table"),
+            ("https://theapplicantmanager.com/jobs?pos=n513775&next=evil", "applicant_manager_table"),
+        ):
+            with self.subTest(url=rejected, origin=origin):
+                self.assertIsNone(
+                    validate_output_url(
+                        rejected,
+                        source,
+                        title="Registered Nurse RN - $40.55 per hour",
+                        origin=origin,
+                    )
+                )
 
     def test_declared_get_search_form_accepts_term_field(self):
         page = Page(

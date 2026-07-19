@@ -50,6 +50,50 @@ class HomepageNavigationEvidenceTests(unittest.TestCase):
         self.assertTrue(evidence.matches("https://company.example/"))
         self.assertEqual(evidence.raw_links()[0].origin, "verified_homepage_navigation")
 
+    def test_preserves_visible_external_ats_footer_link_across_homepage_slash_variants(self):
+        evidence = evidence_from_verified_homepage(
+            Page(
+                url="https://retailer.example/",
+                final_url="https://retailer.example/",
+                html=(
+                    '<footer><a href="https://jobs.lever.co/retailer">'
+                    "Careers</a></footer>"
+                ),
+            ),
+            homepage_url="https://retailer.example/",
+        )
+
+        self.assertEqual(
+            evidence.candidate_urls,
+            ("https://jobs.lever.co/retailer",),
+        )
+        self.assertTrue(evidence.matches("https://retailer.example"))
+        self.assertTrue(evidence.matches("https://retailer.example/"))
+
+    def test_does_not_match_navigation_evidence_for_a_different_homepage_path(self):
+        evidence = HomepageNavigationEvidence(
+            homepage_url="https://retailer.example/",
+            candidate_urls=("https://jobs.lever.co/retailer",),
+        )
+
+        self.assertFalse(evidence.matches("https://retailer.example/about"))
+        self.assertFalse(evidence.matches("https://retailer.example/?source=search"))
+
+    def test_verified_homepage_preserves_employment_route_as_url_only_evidence(self):
+        evidence = evidence_from_verified_homepage(
+            Page(
+                url="https://srdlc.example/",
+                html='<a href="/staff/employment/">Employment</a>',
+            ),
+            homepage_url="https://srdlc.example/",
+        )
+
+        self.assertEqual(
+            evidence.candidate_urls,
+            ("https://srdlc.example/staff/employment/",),
+        )
+        self.assertNotIn("Employment", str(evidence.to_checkpoint_payload()))
+
     def test_rejects_unknown_fields_unsafe_urls_duplicates_and_oversized_lists(self):
         valid = {
             "schema_version": HOMEPAGE_NAVIGATION_SCHEMA_VERSION,

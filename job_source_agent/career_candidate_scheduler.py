@@ -3,10 +3,10 @@ from __future__ import annotations
 from urllib.parse import urlparse
 
 from .models import LinkCandidate
-from .scoring import is_ats_url
+from .scoring import ATS_DOMAINS, is_ats_url
 
 
-SCHEDULE_VERSION = "4"
+SCHEDULE_VERSION = "9"
 
 _LANGUAGE_SEGMENTS = {
     "ar", "cs", "da", "de", "en", "es", "fi", "fr", "he", "id", "it",
@@ -30,6 +30,8 @@ def schedule_career_candidates(
     family_count = 0
     roles_by_url: dict[str, str] = {}
     speculative_host_fallbacks: list[LinkCandidate] = []
+    speculative_subdomain_probes: list[LinkCandidate] = []
+    regional_gateway_candidates: list[LinkCandidate] = []
     stronger_evidence_count = 0
     for tier in sorted(tiers):
         groups: dict[tuple[str, str], list[LinkCandidate]] = {}
@@ -61,16 +63,54 @@ def schedule_career_candidates(
         scheduled.extend(aliases)
         if tier < 3:
             stronger_evidence_count += len(representatives) + len(aliases)
+        regional_gateway_candidates.extend(
+            candidate
+            for candidate in representatives + aliases
+            if _is_target_region_gateway_page_link(candidate)
+        )
+        if tier == 3:
+            speculative_subdomain_probes.extend(
+                candidate
+                for candidate in representatives + aliases
+                if candidate.origin == "subdomain_probe"
+            )
 
     reserved_host_fallback = None
     if fetch_limit >= 3 and speculative_host_fallbacks:
         reserved_host_fallback = speculative_host_fallbacks[0]
         current_index = scheduled.index(reserved_host_fallback)
-        reservation_index = max(stronger_evidence_count, fetch_limit - 1)
+        host_reservation_offset = (
+            2 if fetch_limit >= 4 and speculative_subdomain_probes else 1
+        )
+        reservation_index = max(
+            stronger_evidence_count,
+            fetch_limit - host_reservation_offset,
+        )
         if reservation_index < fetch_limit and current_index >= fetch_limit:
             scheduled.pop(current_index)
             scheduled.insert(reservation_index, reserved_host_fallback)
             roles_by_url[reserved_host_fallback.url] = "reserved_host_fallback"
+
+    reserved_subdomain_probe = None
+    if fetch_limit >= 2 and speculative_subdomain_probes:
+        speculative_subdomain_probes.sort(key=_candidate_rank)
+        reserved_subdomain_probe = speculative_subdomain_probes[0]
+        current_index = scheduled.index(reserved_subdomain_probe)
+        reservation_index = max(stronger_evidence_count, fetch_limit - 1)
+        if reservation_index < fetch_limit and current_index >= fetch_limit:
+            scheduled.pop(current_index)
+            scheduled.insert(reservation_index, reserved_subdomain_probe)
+        roles_by_url[reserved_subdomain_probe.url] = "reserved_subdomain_probe"
+
+    reserved_regional_gateway = None
+    if fetch_limit >= 2 and regional_gateway_candidates:
+        reserved_regional_gateway = regional_gateway_candidates[0]
+        current_index = scheduled.index(reserved_regional_gateway)
+        reservation_index = min(stronger_evidence_count, fetch_limit - 1)
+        if reservation_index < fetch_limit and current_index >= fetch_limit:
+            scheduled.pop(current_index)
+            scheduled.insert(reservation_index, reserved_regional_gateway)
+        roles_by_url[reserved_regional_gateway.url] = "reserved_regional_gateway"
 
     return scheduled, {
         "policy": "evidence_then_host_route_diversity",
@@ -80,6 +120,12 @@ def schedule_career_candidates(
         "family_count": family_count,
         "deferred_alias_count": deferred_alias_count,
         "reserved_host_fallback": reserved_host_fallback.url if reserved_host_fallback else None,
+        "reserved_subdomain_probe": (
+            reserved_subdomain_probe.url if reserved_subdomain_probe else None
+        ),
+        "reserved_regional_gateway": (
+            reserved_regional_gateway.url if reserved_regional_gateway else None
+        ),
         "roles_by_url": roles_by_url,
     }
 
@@ -106,17 +152,21 @@ def candidate_evidence_tier(candidate: LinkCandidate) -> int:
             "verified_homepage_navigation",
             "first_party_bundle_navigation",
         }
+        and urlparse(candidate.url).scheme.casefold() == "https"
         and has_explicit_career_semantics
     ):
         return 1
     if (
         candidate.origin == "unknown"
+        and urlparse(candidate.url).scheme.casefold() == "https"
         and "homepage navigation link" in candidate.reasons
         and has_explicit_career_semantics
     ):
         return 1
     if _is_first_party_embedded_job_list(candidate):
         return 1
+    if _is_observed_http_ats_anchor(candidate):
+        return 2
     if candidate.origin in {"path_probe", "subdomain_probe", "blind_ats_probe"}:
         return 3
     if candidate.origin == "unknown" and "generated path probe" in candidate.reasons:
@@ -177,12 +227,13 @@ def _candidate_rank(candidate: LinkCandidate) -> tuple[int]:
     return (-(candidate.score + _evidence_priority_boost(candidate)),)
 
 
-def _candidate_family_rank(candidate: LinkCandidate) -> tuple[int, int, int, int]:
+def _candidate_family_rank(candidate: LinkCandidate) -> tuple[int, int, int, int, int]:
     parsed = urlparse(candidate.url)
     source_host = candidate_concrete_host(candidate.source_url)
     candidate_host = candidate_concrete_host(candidate.url)
     locale_depth = candidate_locale_depth(parsed.path)
     return (
+        0 if _has_unconflicted_target_region_match(candidate) else 1,
         locale_depth if "generated path probe" in candidate.reasons else 0,
         0 if candidate_host == source_host else 1,
         len([part for part in parsed.path.split("/") if part]),
@@ -202,6 +253,58 @@ def _candidate_alias_role(representative: LinkCandidate, alias: LinkCandidate) -
     return "locale_alias"
 
 
+def _is_target_region_gateway_page_link(candidate: LinkCandidate) -> bool:
+    if candidate.origin != "page_link":
+        return False
+    target = urlparse(candidate.url)
+    source = urlparse(candidate.source_url)
+    try:
+        target_port = target.port
+        source_port = source.port
+    except ValueError:
+        return False
+    if (
+        target.scheme.casefold() != "https"
+        or source.scheme.casefold() != "https"
+        or not target.hostname
+        or not source.hostname
+        or target.username
+        or target.password
+        or source.username
+        or source.password
+        or target_port not in {None, 443}
+        or source_port not in {None, 443}
+        or _registrable_site(target.hostname) != _registrable_site(source.hostname)
+        or not _is_regional_or_locale_root(target.path)
+    ):
+        return False
+    return _has_unconflicted_target_region_match(candidate)
+
+
+def _has_unconflicted_target_region_match(candidate: LinkCandidate) -> bool:
+    return any(
+        reason.startswith("matches target location region '")
+        for reason in candidate.reasons
+    ) and not any(
+        reason.startswith("conflicts with target location region '")
+        for reason in candidate.reasons
+    )
+
+
+def _is_regional_or_locale_root(path: str) -> bool:
+    parts = [part.casefold() for part in path.split("/") if part]
+    return not parts or candidate_locale_depth(path) == len(parts)
+
+
+def _registrable_site(host: str) -> str:
+    labels = candidate_concrete_host(f"https://{host}").split(".")
+    if len(labels) <= 2:
+        return ".".join(labels)
+    two_level_suffixes = {"co.uk", "com.au", "com.br", "com.sg", "co.jp", "co.nz"}
+    suffix = ".".join(labels[-2:])
+    return ".".join(labels[-3:]) if suffix in two_level_suffixes else suffix
+
+
 def _evidence_priority_boost(candidate: LinkCandidate) -> int:
     if any(
         reason.startswith("identity-supplied") or reason == "derived provider configuration"
@@ -215,6 +318,7 @@ def _evidence_priority_boost(candidate: LinkCandidate) -> int:
             candidate.origin in {"page_link", "verified_homepage_navigation"}
             or "homepage navigation link" in candidate.reasons
         )
+        and urlparse(candidate.url).scheme.casefold() == "https"
         and any(
             reason.startswith("career keyword")
             or reason in {
@@ -229,7 +333,11 @@ def _evidence_priority_boost(candidate: LinkCandidate) -> int:
 
 
 def _is_high_evidence_job_list_candidate(candidate: LinkCandidate) -> bool:
-    if candidate.origin not in {"page_link", "verified_homepage_navigation"}:
+    if candidate.origin not in {
+        "form_action",
+        "page_link",
+        "verified_homepage_navigation",
+    }:
         return False
     target = urlparse(candidate.url)
     source = urlparse(candidate.source_url)
@@ -268,4 +376,27 @@ def _is_first_party_embedded_job_list(candidate: LinkCandidate) -> bool:
         and bool(candidate_host)
         and candidate_host == candidate_concrete_host(source.geturl())
         and "explicit job-list route" in candidate.reasons
+    )
+
+
+def _is_observed_http_ats_anchor(candidate: LinkCandidate) -> bool:
+    if candidate.origin not in {"page_link", "verified_homepage_navigation"}:
+        return False
+    target = urlparse(candidate.url)
+    source = urlparse(candidate.source_url)
+    try:
+        target_port = target.port
+    except ValueError:
+        return False
+    return (
+        target.scheme.casefold() == "http"
+        and source.scheme.casefold() == "https"
+        and bool(target.hostname)
+        and bool(source.hostname)
+        and candidate_concrete_host(candidate.url) in ATS_DOMAINS
+        and target_port in {None, 80}
+        and not target.username
+        and not target.password
+        and not source.username
+        and not source.password
     )

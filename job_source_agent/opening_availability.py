@@ -46,7 +46,7 @@ def diagnose_opening_availability(
     """Classify an opening miss without treating missing search results as proof of expiry."""
 
     source_status = explicit_closed_source_status(source_trace or {})
-    if source_status in {"closed", "expired", "unavailable"}:
+    if source_status in {"closed", "expired"}:
         return OpeningAvailabilityDiagnostic(
             disposition="source_posting_closed",
             confidence="high",
@@ -57,7 +57,20 @@ def diagnose_opening_availability(
 
     provider_errors = _provider_errors(trace)
     provider_failure_reason = _provider_failure_reason(trace, provider_errors)
-    if provider_errors or provider_failure_reason:
+    provider_api = trace.get("provider_api")
+    inventory = provider_api.get("inventory") if isinstance(provider_api, dict) else None
+    verified_inventory = _has_verified_inventory_conclusion(inventory)
+    inventory_failure = (
+        inventory.get("reason_code") in _INCOMPLETE_REASON_PRIORITY
+        if isinstance(inventory, dict)
+        else False
+    )
+    only_fallback_errors = bool(provider_errors) and all(
+        error.get("provenance") == ["generic_search"] for error in provider_errors
+    )
+    if (provider_errors or provider_failure_reason) and not (
+        verified_inventory and only_fallback_errors and not inventory_failure
+    ):
         reason_code = provider_failure_reason or "OPENING_DISCOVERY_INCOMPLETE"
         return OpeningAvailabilityDiagnostic(
             disposition="discovery_incomplete",
@@ -71,8 +84,6 @@ def diagnose_opening_availability(
             },
         )
 
-    provider_api = trace.get("provider_api")
-    inventory = provider_api.get("inventory") if isinstance(provider_api, dict) else None
     if (
         isinstance(inventory, dict)
         and inventory.get("complete") is True
@@ -86,16 +97,27 @@ def diagnose_opening_availability(
     ):
         candidate_count = _nonnegative_int(inventory.get("candidate_count"))
         strongest_score = _nonnegative_int(inventory.get("strongest_title_score"))
+        location_rejected = _has_location_rejection(trace)
         return OpeningAvailabilityDiagnostic(
             disposition="verified_inventory_no_match",
             confidence="medium",
             reason_code="OPENING_NOT_FOUND",
-            detail="The official provider inventory was read successfully, but no title met the match threshold.",
+            detail=(
+                "The official provider inventory contained matching titles, but none "
+                "matched the target location."
+                if location_rejected
+                else "The official provider inventory was read successfully, but no title met the match threshold."
+            ),
             evidence={
                 "inventory_source": inventory.get("source"),
                 "inventory_scope": inventory.get("scope", "full"),
                 "candidate_count": candidate_count,
                 "strongest_title_score": strongest_score,
+                "match_basis": (
+                    "title_location_no_match"
+                    if location_rejected
+                    else "title_no_match"
+                ),
             },
         )
 
@@ -124,6 +146,27 @@ def diagnose_opening_availability(
     )
 
 
+def _has_location_rejection(trace: dict[str, Any]) -> bool:
+    if isinstance(trace.get("location_unverified_candidate_rejected"), dict):
+        return True
+    rejected = trace.get("rejected_candidates")
+    if isinstance(rejected, list) and any(
+        isinstance(item, dict) and item.get("reason") == "location_identity_mismatch"
+        for item in rejected
+    ):
+        return True
+    provider_api = trace.get("provider_api")
+    return bool(
+        isinstance(provider_api, dict)
+        and isinstance(provider_api.get("rejected_candidates"), list)
+        and any(
+            isinstance(item, dict)
+            and item.get("reason") == "location_identity_mismatch"
+            for item in provider_api["rejected_candidates"]
+        )
+    )
+
+
 def _provider_errors(trace: dict[str, Any]) -> list[dict[str, Any]]:
     provider_api = trace.get("provider_api")
     channels: list[tuple[str, Any, bool]] = [("generic_search", trace, False)]
@@ -144,7 +187,7 @@ def _provider_errors(trace: dict[str, Any]) -> list[dict[str, Any]]:
         records = container.get("errors")
         if isinstance(records, list):
             for record in records:
-                if isinstance(record, dict) and record.get("error"):
+                if isinstance(record, dict) and _is_failure_record(record):
                     _add_provider_error(aggregated, positions, record, provenance)
         if include_singular and container.get("error"):
             _add_provider_error(
@@ -174,6 +217,24 @@ def _provider_failure_reason(
                 candidates.append(reason_code)
 
     for record in provider_errors:
+        reason_code = record.get("reason_code")
+        if (
+            isinstance(reason_code, str)
+            and reason_code in REASON_SPECS
+            and reason_code in _INCOMPLETE_REASON_PRIORITY
+        ):
+            candidates.append(reason_code)
+            continue
+        status = record.get("status")
+        if status == 403:
+            candidates.append("HTTP_FORBIDDEN")
+            continue
+        if status == 429:
+            candidates.append("RATE_LIMITED")
+            continue
+        if type(status) is int and 500 <= status <= 599:
+            candidates.append("SERVER_ERROR")
+            continue
         detail = record.get("error")
         if isinstance(detail, str) and detail.strip():
             candidates.append(classify_fetch_error(detail))
@@ -181,6 +242,27 @@ def _provider_failure_reason(
     if not candidates:
         return None
     return max(candidates, key=lambda code: _INCOMPLETE_REASON_PRIORITY.get(code, 0))
+
+
+def _is_failure_record(record: dict[str, Any]) -> bool:
+    return bool(
+        record.get("error")
+        or record.get("reason_code") in _INCOMPLETE_REASON_PRIORITY
+        or (
+            type(record.get("status")) is int
+            and record["status"] >= 400
+        )
+    )
+
+
+def _has_verified_inventory_conclusion(inventory: Any) -> bool:
+    if not isinstance(inventory, dict) or inventory.get("complete") is not True:
+        return False
+    status = inventory.get("status")
+    if status in {"verified_empty", "verified_filtered_empty"}:
+        return True
+    candidate_count = _nonnegative_int(inventory.get("candidate_count")) or 0
+    return status == "verified" and candidate_count > 0
 
 
 def _add_provider_error(

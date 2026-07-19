@@ -4,6 +4,30 @@ from job_source_agent.opening_availability import diagnose_opening_availability
 
 
 class OpeningAvailabilityTests(unittest.TestCase):
+    def test_verified_title_with_location_rejection_reports_location_no_match(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "inventory": {
+                        "source": "generic_html",
+                        "scope": "filtered",
+                        "status": "verified",
+                        "complete": True,
+                        "candidate_count": 64,
+                        "strongest_title_score": 150,
+                    }
+                },
+                "location_unverified_candidate_rejected": {
+                    "candidate_location": "United States",
+                    "target_location": "Greater Tampa Bay Area",
+                },
+            }
+        )
+
+        self.assertEqual(diagnostic.reason_code, "OPENING_NOT_FOUND")
+        self.assertEqual(diagnostic.evidence["match_basis"], "title_location_no_match")
+        self.assertIn("none matched the target location", diagnostic.detail)
+
     def test_verified_inventory_without_title_match_is_not_called_closed(self):
         diagnostic = diagnose_opening_availability(
             {
@@ -144,6 +168,86 @@ class OpeningAvailabilityTests(unittest.TestCase):
             diagnostic.evidence["provider_failure_reason"],
             "HTTP_FORBIDDEN",
         )
+
+    def test_typed_bot_protection_beats_generic_error_text(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "errors": [
+                        {
+                            "error": "request rejected",
+                            "reason_code": "BOT_PROTECTION",
+                            "status": 403,
+                        }
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "discovery_incomplete")
+        self.assertEqual(diagnostic.reason_code, "BOT_PROTECTION")
+
+    def test_typed_forbidden_without_error_text_is_preserved(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "errors": [
+                        {"reason_code": "HTTP_FORBIDDEN", "status": 403}
+                    ]
+                }
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "discovery_incomplete")
+        self.assertEqual(diagnostic.reason_code, "HTTP_FORBIDDEN")
+
+    def test_verified_official_empty_inventory_beats_blocked_generic_fallback(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "errors": [
+                    {
+                        "error": "HTTP Error 403: Forbidden",
+                        "reason_code": "HTTP_FORBIDDEN",
+                        "status": 403,
+                    }
+                ],
+                "provider_api": {
+                    "inventory": {
+                        "source": "native_adapter",
+                        "status": "verified_empty",
+                        "complete": True,
+                        "candidate_count": 0,
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "verified_inventory_empty")
+        self.assertEqual(diagnostic.reason_code, "NO_PUBLIC_OPENINGS")
+
+    def test_verified_closed_source_beats_forbidden_discovery(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "errors": [
+                        {"reason_code": "HTTP_FORBIDDEN", "status": 403}
+                    ]
+                }
+            },
+            {"linkedin_posting": {"availability": "closed"}},
+        )
+
+        self.assertEqual(diagnostic.disposition, "source_posting_closed")
+        self.assertEqual(diagnostic.reason_code, "OPENING_CLOSED")
+
+    def test_inaccessible_source_is_not_reported_as_closed_or_no_public(self):
+        diagnostic = diagnose_opening_availability(
+            {},
+            {"linkedin_posting": {"availability": "unavailable"}},
+        )
+
+        self.assertEqual(diagnostic.disposition, "discovery_incomplete")
+        self.assertEqual(diagnostic.reason_code, "OPENING_DISCOVERY_INCOMPLETE")
 
     def test_missing_replay_fixture_is_not_reported_as_a_network_failure(self):
         diagnostic = diagnose_opening_availability(

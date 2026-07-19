@@ -190,6 +190,80 @@ BRAND_HIRING_RULES = {
         official_website_url="https://www.modmed.com/",
         reasons=["ModMed publishes roles through its ModMed12 Workday career site"],
     ),
+    "michael kors": CompanyIdentity(
+        brand_name="Michael Kors",
+        hiring_entity_name="Capri Holdings",
+        career_root_url="https://capri.wd1.myworkdayjobs.com/Michael_Kors",
+        official_website_url="https://www.michaelkors.global/",
+        reasons=["Michael Kors routes official vacancies through Capri Workday"],
+        relationship_type="brand_parent",
+        relationship_verified=True,
+        verification_method="official_brand_career_handoff",
+        evidence_url="https://www.michaelkors.global/us/en/careers.html",
+    ),
+    "saint laurent": CompanyIdentity(
+        brand_name="Saint Laurent",
+        hiring_entity_name="Kering",
+        career_root_url=(
+            "https://www.kering.com/en/talent/job-offers/saint-laurent-careers/"
+        ),
+        official_website_url="https://www.ysl.com/en-us",
+        reasons=["Saint Laurent publishes official vacancies through Kering Careers"],
+        relationship_type="brand_parent",
+        relationship_verified=True,
+        verification_method="official_parent_career_handoff",
+        evidence_url=(
+            "https://www.kering.com/en/talent/job-offers/saint-laurent-careers/"
+        ),
+    ),
+    "gucci": CompanyIdentity(
+        brand_name="Gucci",
+        hiring_entity_name="Kering",
+        career_root_url="https://www.kering.com/en/talent/job-offers/gucci-careers/",
+        official_website_url="https://www.gucci.com/",
+        reasons=["Gucci publishes official vacancies through Kering Careers"],
+        relationship_type="brand_parent",
+        relationship_verified=True,
+        verification_method="official_parent_career_handoff",
+        evidence_url="https://www.kering.com/en/talent/job-offers/gucci-careers/",
+    ),
+    # The rule key intentionally matches only the LinkedIn company slug. The
+    # display name alone is ambiguous with several unrelated Haystack brands.
+    "wearehaystack": CompanyIdentity(
+        brand_name="Haystack",
+        hiring_entity_name="Haystack",
+        official_website_url="https://www.haystackapp.io/",
+        reasons=["LinkedIn's wearehaystack company identity names haystackapp.io"],
+        relationship_type="same_entity",
+        relationship_verified=True,
+        verification_method="linkedin_company_official_website",
+        evidence_url="https://www.linkedin.com/company/wearehaystack",
+    ),
+    # As with wearehaystack, the display name is ambiguous. The LinkedIn slug
+    # is the durable identity key and its official company page publishes both
+    # hadrian.co and the hadrian-automation Ashby board.
+    "hadrianautomation": CompanyIdentity(
+        brand_name="Hadrian",
+        hiring_entity_name="Hadrian",
+        career_root_url="https://jobs.ashbyhq.com/hadrian-automation",
+        official_website_url="https://www.hadrian.co/",
+        reasons=["LinkedIn's hadrianautomation identity publishes its Ashby board"],
+        relationship_type="same_entity",
+        relationship_verified=True,
+        verification_method="linkedin_company_official_career",
+        evidence_url="https://www.linkedin.com/company/hadrianautomation",
+    ),
+    "adidas": CompanyIdentity(
+        brand_name="adidas",
+        hiring_entity_name="adidas",
+        career_root_url="https://careers.adidas-group.com/",
+        official_website_url="https://www.adidas-group.com/en/",
+        reasons=["adidas publishes official vacancies through adidas Group Careers"],
+        relationship_type="same_entity",
+        relationship_verified=True,
+        verification_method="official_company_career_handoff",
+        evidence_url="https://www.adidas-group.com/en/careers/",
+    ),
 }
 
 

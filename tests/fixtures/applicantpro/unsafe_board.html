@@ -1,0 +1,22 @@
+<!doctype html>
+<html>
+  <body>
+    <script>
+      mountingData.courierCurrentRouteData = {
+        "domain_id": "4242",
+        "career_site_name": "Bastion Technologies",
+        "organization_id": "1701"
+      };
+    </script>
+    <script>
+      window.bootstrapVue("#job_listings", ["JobListings"], {
+        componentData: {
+          organizationId: 1701,
+          domainId: 4242,
+          domainName: "evil.test",
+          subdomainName: "bastiontechnologies"
+        }
+      });
+    </script>
+  </body>
+</html>

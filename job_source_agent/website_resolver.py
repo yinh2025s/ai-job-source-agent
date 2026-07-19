@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import re
 from base64 import urlsafe_b64decode
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from html import unescape as html_unescape
 from html.parser import HTMLParser
@@ -15,7 +14,7 @@ from .contracts import FetchClient
 from .fetch_failure import project_fetch_error
 from .homepage_navigation import HomepageNavigationEvidence, evidence_from_verified_homepage
 from .identity_evidence import LinkedInWebsiteEvidenceStore
-from .web import FetchError, Page, domain_of, normalize_url
+from .web import FetchError, Page, domain_of, extract_links, normalize_url
 
 
 SEARCH_ENDPOINT = "https://www.bing.com/search"
@@ -81,6 +80,7 @@ PARKED_DOMAIN_TEXT_MARKERS = (
     "buy this domain",
     "domain is for sale",
     "domain marketplace",
+    "is parked free, courtesy of godaddy.com",
     " for sale | spaceship.com",
     " is for sale on spaceship",
     "make an offer on this domain",
@@ -89,11 +89,16 @@ PARKED_DOMAIN_TEXT_MARKERS = (
 
 PARKED_DOMAIN_INFRASTRUCTURE_MARKERS = (
     "data-adblockkey=",
+    "window.lander_system=",
+    "window._trfd.push({ap:\"parking\"})",
+    "img1.wsimg.com/parking-lander/",
     "sedoparking.com",
     "iseaskies.com",
     "assets.squarespace.com/universal/scripts-compressed/parking-page-",
     "assets.squarespace.com/universal/styles-compressed/parking-page-",
 )
+
+MAX_REGIONAL_LOCALE_CANDIDATES = 3
 
 
 @dataclass
@@ -137,12 +142,14 @@ class CompanyWebsiteResolver:
         linkedin_company_url: str | None = None,
         job_location: str | None = None,
         preferred_url: str | None = None,
+        stored_candidate_url: str | None = None,
     ) -> tuple[str | None, dict]:
         website_url, trace, _navigation_evidence = self.resolve_with_navigation_evidence(
             company_name,
             linkedin_company_url,
             job_location,
             preferred_url,
+            stored_candidate_url,
         )
         return website_url, trace
 
@@ -152,6 +159,7 @@ class CompanyWebsiteResolver:
         linkedin_company_url: str | None = None,
         job_location: str | None = None,
         preferred_url: str | None = None,
+        stored_candidate_url: str | None = None,
     ) -> tuple[str | None, dict, HomepageNavigationEvidence | None]:
         normalized_name = normalize_company_key(company_name)
         trace = {
@@ -159,20 +167,94 @@ class CompanyWebsiteResolver:
             "linkedin_company_url": linkedin_company_url,
             "job_location": job_location,
             "preferred_url": preferred_url,
+            "stored_candidate_url": stored_candidate_url,
             "target_region": location_region(job_location),
             "candidates": [],
             "fetch_errors": [],
         }
         fetch_errors = trace["fetch_errors"]
+        marketplace_or_hosted_brand_evidence = False
 
         if normalized_name in self.overrides:
             url = normalize_url(self.overrides[normalized_name])
             trace["selected"] = {"url": url, "reason": "override"}
             return url, trace, None
 
+        if stored_candidate_url:
+            stored_candidates = [_prefer_https_candidate(stored_candidate_url)]
+            stored_scored = self._rank_and_verify_candidates(
+                stored_candidates,
+                company_name,
+                linkedin_company_url,
+                job_location=job_location,
+                candidate_sources=_candidate_source_map(
+                    ("stored_verified_company_evidence", stored_candidates),
+                ),
+                fetch_errors=fetch_errors,
+            )
+            trace["candidates"].extend(
+                {
+                    "url": candidate.url,
+                    "score": candidate.score,
+                    "reasons": candidate.reasons,
+                }
+                for candidate in stored_scored
+            )
+            marketplace_or_hosted_brand_evidence = any(
+                "homepage verified" in candidate.reasons
+                and _has_positive_page_identity(candidate)
+                and "registrable domain does not establish company ownership"
+                in candidate.reasons
+                for candidate in stored_scored
+            )
+            stored_selected = self._select_verified_candidate(stored_scored)
+            if stored_selected is not None:
+                trace["selected"] = {
+                    "url": stored_selected.url,
+                    "score": stored_selected.score,
+                    "reasons": stored_selected.reasons
+                    + ["stored company evidence revalidated"],
+                }
+                return (
+                    stored_selected.url,
+                    trace,
+                    self._navigation_evidence_for_selected(stored_selected),
+                )
+            if stored_scored:
+                stored_regional_selected = self._recover_regional_selection(
+                    stored_scored[0],
+                    company_name,
+                    linkedin_company_url,
+                    job_location,
+                    fetch_errors,
+                )
+                if stored_regional_selected is not None:
+                    trace["candidates"].append(
+                        {
+                            "url": stored_regional_selected.url,
+                            "score": stored_regional_selected.score,
+                            "reasons": stored_regional_selected.reasons,
+                        }
+                    )
+                    trace["selected"] = {
+                        "url": stored_regional_selected.url,
+                        "score": stored_regional_selected.score,
+                        "reasons": stored_regional_selected.reasons
+                        + ["stored regional company evidence recovered"],
+                    }
+                    return (
+                        stored_regional_selected.url,
+                        trace,
+                        self._navigation_evidence_for_selected(
+                            stored_regional_selected
+                        ),
+                    )
+
         guessed_candidates = self._guess_domain_candidates(company_name)
 
-        preferred_candidates = [preferred_url] if preferred_url else []
+        preferred_candidates = (
+            [_prefer_https_candidate(preferred_url)] if preferred_url else []
+        )
         linkedin_official_candidates: list[str] = []
         linkedin_candidates: list[str] = []
         linkedin_official_source: str | None = None
@@ -187,7 +269,10 @@ class CompanyWebsiteResolver:
                 company_name,
                 fetch_errors=fetch_errors,
             )
-            linkedin_official_candidates = list(linkedin_evidence.official_urls)
+            linkedin_official_candidates = [
+                _prefer_https_candidate(url)
+                for url in linkedin_evidence.official_urls
+            ]
             linkedin_candidates = list(linkedin_evidence.outbound_urls)
             linkedin_official_source = linkedin_evidence.official_source
             if linkedin_official_source:
@@ -221,6 +306,43 @@ class CompanyWebsiteResolver:
             fast_scored,
             require_fast_confidence=True,
         )
+        fast_identity_candidate = fast_selected or self._select_verified_candidate(
+            fast_scored
+        )
+        dot_com_competitor = (
+            _same_brand_dot_com_candidate(fast_identity_candidate, fast_scored)
+            if fast_identity_candidate
+            and not _has_direct_identity_source(fast_identity_candidate)
+            else None
+        )
+        if (
+            dot_com_competitor is not None
+            and "homepage verified" not in dot_com_competitor.reasons
+            and "homepage fetch failed" not in dot_com_competitor.reasons
+        ):
+            verified_competitor = self._rank_and_verify_candidates(
+                [dot_com_competitor.url],
+                company_name,
+                linkedin_company_url,
+                job_location=job_location,
+                candidate_sources=fast_sources,
+                fetch_errors=fetch_errors,
+            )[0]
+            competitor_domain = domain_of(dot_com_competitor.url)
+            fast_scored = [
+                verified_competitor
+                if domain_of(candidate.url) == competitor_domain
+                else candidate
+                for candidate in fast_scored
+            ]
+            fast_scored.sort(key=lambda candidate: candidate.score, reverse=True)
+            fast_selected = self._select_verified_candidate(
+                fast_scored,
+                require_fast_confidence=True,
+            )
+            fast_identity_candidate = fast_selected or self._select_verified_candidate(
+                fast_scored
+            )
         selectable_fast_domains = {
             domain_of(candidate.url)
             for candidate in fast_scored
@@ -228,13 +350,37 @@ class CompanyWebsiteResolver:
             and self._select_verified_candidate([candidate])
         }
         fast_selection_defer_reason: str | None = None
-        if fast_selected and linkedin_company_url and not linkedin_evidence_loaded:
+        same_brand_dot_com_blocked = bool(
+            fast_identity_candidate
+            and _same_brand_dot_com_verification_blocked(
+                fast_identity_candidate,
+                fast_scored,
+                fetch_errors,
+            )
+            and not _has_direct_identity_source(fast_identity_candidate)
+        )
+        same_brand_blocked_domain = (
+            domain_of(fast_identity_candidate.url)
+            if same_brand_dot_com_blocked and fast_identity_candidate
+            else ""
+        )
+        if same_brand_dot_com_blocked:
+            fast_selection_defer_reason = "same-brand .com verification blocked"
+            for candidate in fast_scored:
+                if domain_of(candidate.url) == same_brand_blocked_domain:
+                    candidate.reasons.append(fast_selection_defer_reason)
+        elif fast_selected and linkedin_company_url and not linkedin_evidence_loaded:
             if len(selectable_fast_domains) >= 2:
                 fast_selection_defer_reason = "multiple verified same-brand domains"
             elif _has_non_www_subdomain(fast_selected.url) and not _has_direct_identity_source(
                 fast_selected
             ):
                 fast_selection_defer_reason = "verified non-apex domain"
+            elif _looks_like_mechanical_hyphenated_slug_domain(
+                fast_selected,
+                company_name,
+            ):
+                fast_selection_defer_reason = "generated domain lacks independent identity evidence"
         fast_selection_deferred = fast_selection_defer_reason is not None
         if fast_selection_deferred:
             deferred_domains = set(selectable_fast_domains)
@@ -268,7 +414,23 @@ class CompanyWebsiteResolver:
             else _regional_root_candidates(fast_scored, job_location)
         )
         if regional_candidates:
-            regional_sources = _candidate_source_map(("regional_recovery", regional_candidates))
+            inherited_regional_sources = {
+                reason.removeprefix("candidate source: ")
+                for candidate in fast_scored
+                if any(
+                    item.startswith("regional website conflicts with job location:")
+                    for item in candidate.reasons
+                )
+                for reason in candidate.reasons
+                if reason.startswith("candidate source: ")
+            }
+            regional_sources = _candidate_source_map(
+                ("regional_recovery", regional_candidates),
+                *(
+                    (source, regional_candidates)
+                    for source in sorted(inherited_regional_sources)
+                ),
+            )
             regional_scored = self._rank_and_verify_candidates(
                 regional_candidates,
                 company_name,
@@ -294,6 +456,54 @@ class CompanyWebsiteResolver:
                     self._navigation_evidence_for_selected(regional_selected),
                 )
 
+        marketplace_or_hosted_brand_evidence = (
+            marketplace_or_hosted_brand_evidence
+            or any(
+                "homepage verified" in candidate.reasons
+                and _has_positive_page_identity(candidate)
+                and "registrable domain does not establish company ownership"
+                in candidate.reasons
+                for candidate in fast_scored
+            )
+        )
+        corporate_group_candidates = (
+            _corporate_group_root_candidates(company_name)
+            if marketplace_or_hosted_brand_evidence and not linkedin_company_url
+            else []
+        )
+        if corporate_group_candidates:
+            group_scored = self._rank_and_verify_candidates(
+                corporate_group_candidates,
+                company_name,
+                linkedin_company_url,
+                job_location=job_location,
+                candidate_sources=_candidate_source_map(
+                    ("corporate_group_root_probe", corporate_group_candidates),
+                ),
+                fetch_errors=fetch_errors,
+            )
+            trace["candidates"].extend(
+                {
+                    "url": candidate.url,
+                    "score": candidate.score,
+                    "reasons": candidate.reasons,
+                }
+                for candidate in group_scored
+            )
+            group_selected = self._select_verified_candidate(group_scored)
+            if group_selected is not None:
+                trace["selected"] = {
+                    "url": group_selected.url,
+                    "score": group_selected.score,
+                    "reasons": group_selected.reasons
+                    + ["verified corporate group root recovery"],
+                }
+                return (
+                    group_selected.url,
+                    trace,
+                    self._navigation_evidence_for_selected(group_selected),
+                )
+
         loaded_linkedin_evidence_after_fast_path = False
         if not linkedin_evidence_loaded:
             linkedin_evidence = self._linkedin_company_candidates(
@@ -301,7 +511,10 @@ class CompanyWebsiteResolver:
                 company_name,
                 fetch_errors=fetch_errors,
             )
-            linkedin_official_candidates = list(linkedin_evidence.official_urls)
+            linkedin_official_candidates = [
+                _prefer_https_candidate(url)
+                for url in linkedin_evidence.official_urls
+            ]
             linkedin_candidates = list(linkedin_evidence.outbound_urls)
             linkedin_official_source = linkedin_evidence.official_source
             if linkedin_official_source:
@@ -360,17 +573,37 @@ class CompanyWebsiteResolver:
                 sorted(recovered, key=lambda candidate: candidate.score, reverse=True)
             )
             if official_selected:
+                regional_selected = self._recover_regional_selection(
+                    official_selected,
+                    company_name,
+                    linkedin_company_url,
+                    job_location,
+                    fetch_errors,
+                )
+                if regional_selected is not None:
+                    official_selected = regional_selected
                 trace["selected"] = {
                     "url": official_selected.url,
                     "score": official_selected.score,
-                    "reasons": official_selected.reasons,
+                    "reasons": official_selected.reasons
+                    + (["verified regional root recovery"] if regional_selected else []),
                 }
                 return (
                     official_selected.url,
                     trace,
                     self._navigation_evidence_for_selected(official_selected),
                 )
-        if fast_selection_deferred and fast_selected:
+        if (
+            fast_selection_deferred
+            and fast_selected
+            and fast_selection_defer_reason
+            != "generated domain lacks independent identity evidence"
+        ):
+            if fast_selection_defer_reason == "multiple verified same-brand domains":
+                fast_selected = self._prefer_verified_dot_com_fallback(
+                    fast_scored,
+                    fast_selected,
+                )
             trace["selected"] = {
                 "url": fast_selected.url,
                 "score": fast_selected.score,
@@ -416,6 +649,15 @@ class CompanyWebsiteResolver:
             candidate_sources=candidate_sources,
             fetch_errors=fetch_errors,
         )
+        if same_brand_dot_com_blocked:
+            for candidate in scored:
+                if (
+                    domain_of(candidate.url) == same_brand_blocked_domain
+                    and "LinkedIn company page identifies official website"
+                    not in candidate.reasons
+                    and "same-brand .com verification blocked" not in candidate.reasons
+                ):
+                    candidate.reasons.append("same-brand .com verification blocked")
         seen_domains = {domain_of(str(item.get("url") or "")) for item in trace["candidates"]}
         trace["candidates"].extend(
             {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
@@ -425,30 +667,133 @@ class CompanyWebsiteResolver:
 
         selected = self._select_verified_candidate(scored)
         if selected:
+            regional_selected = self._recover_regional_selection(
+                selected,
+                company_name,
+                linkedin_company_url,
+                job_location,
+                fetch_errors,
+            )
+            if regional_selected is not None:
+                selected = regional_selected
             trace["selected"] = {
                 "url": selected.url,
                 "score": selected.score,
-                "reasons": selected.reasons,
+                "reasons": selected.reasons
+                + (["verified regional root recovery"] if regional_selected else []),
             }
             return selected.url, trace, self._navigation_evidence_for_selected(selected)
 
-        retryable_failure = _strongest_retryable_fetch_failure(fetch_errors)
-        if retryable_failure is not None:
+        dot_com_failures = (
+            [
+                failure
+                for failure in fetch_errors
+                if domain_of(str(failure.get("url") or ""))
+                == domain_of(dot_com_competitor.url)
+            ]
+            if same_brand_dot_com_blocked and dot_com_competitor is not None
+            else []
+        )
+        retained_failure = _strongest_retained_fetch_failure(
+            dot_com_failures or fetch_errors
+        )
+        if retained_failure is not None:
             trace["resolution_failure"] = {
                 "kind": "verification_blocked",
-                **retryable_failure,
+                **retained_failure,
             }
         return None, trace, None
+
+    def _prefer_verified_dot_com_fallback(
+        self,
+        scored: list[WebsiteCandidate],
+        selected: WebsiteCandidate,
+    ) -> WebsiteCandidate:
+        """Break an unresolved same-brand tie without trusting TLD alone."""
+
+        if domain_of(selected.url).endswith(".com"):
+            return selected
+        for candidate in scored:
+            if not domain_of(candidate.url).endswith(".com"):
+                continue
+            if not any(
+                reason in candidate.reasons
+                for reason in (
+                    "LinkedIn slug confirms domain",
+                    "LinkedIn slug exactly matches domain",
+                    "full LinkedIn slug matches domain",
+                )
+            ):
+                continue
+            if self._select_verified_candidate(
+                [candidate],
+                require_fast_confidence=True,
+            ) is None:
+                continue
+            candidate.reasons.append(
+                "verified exact-brand .com breaks unresolved same-brand TLD tie"
+            )
+            return candidate
+        return selected
 
     @staticmethod
     def _navigation_evidence_for_selected(
         selected: WebsiteCandidate,
     ) -> HomepageNavigationEvidence | None:
-        if "homepage verified" not in selected.reasons or selected.verified_page is None:
+        if (
+            "homepage verified" not in selected.reasons
+            or selected.verified_page is None
+            or any(
+                reason.startswith("regional website conflicts with job location:")
+                for reason in selected.reasons
+            )
+        ):
             return None
         return evidence_from_verified_homepage(
             selected.verified_page,
             homepage_url=selected.url,
+        )
+
+    def _recover_regional_selection(
+        self,
+        selected: WebsiteCandidate,
+        company_name: str,
+        linkedin_company_url: str | None,
+        job_location: str | None,
+        fetch_errors: list[dict],
+    ) -> WebsiteCandidate | None:
+        declared_candidates = _regional_root_candidates([selected], job_location)
+        sibling_candidates = _regional_sibling_root_candidates(
+            selected,
+            company_name,
+            job_location,
+        )
+        candidates = dedupe_urls(declared_candidates + sibling_candidates)
+        if not candidates:
+            return None
+        inherited_sources = [
+            reason.removeprefix("candidate source: ")
+            for reason in selected.reasons
+            if reason.startswith("candidate source: ")
+        ]
+        sources = _candidate_source_map(
+            ("regional_recovery", declared_candidates),
+            ("regional_sibling_recovery", sibling_candidates),
+            *((source, declared_candidates) for source in inherited_sources),
+        )
+        scored = self._rank_and_verify_candidates(
+            candidates,
+            company_name,
+            linkedin_company_url,
+            job_location=job_location,
+            candidate_sources=sources,
+            fetch_errors=fetch_errors,
+        )
+        readable = [
+            candidate for candidate in scored if "homepage verified" in candidate.reasons
+        ]
+        return self._select_verified_candidate(readable) or self._select_verified_candidate(
+            scored
         )
 
     def _rank_and_verify_candidates(
@@ -497,11 +842,25 @@ class CompanyWebsiteResolver:
             for candidate in to_verify
             if _has_direct_identity_source(candidate)
         ]
-        remaining_to_verify = [
+        non_direct_to_verify = [
             candidate for candidate in to_verify if candidate not in direct_to_verify
         ]
+        reserved_slug_to_verify = [
+            candidate
+            for candidate in non_direct_to_verify
+            if "full LinkedIn slug matches domain" in candidate.reasons
+        ][:1]
+        remaining_to_verify = [
+            candidate
+            for candidate in non_direct_to_verify
+            if candidate not in reserved_slug_to_verify
+        ]
 
-        def verify_wave(wave: list[WebsiteCandidate]) -> list[WebsiteCandidate]:
+        def verify_wave(
+            wave: list[WebsiteCandidate],
+            *,
+            stop_on_selectable: bool = False,
+        ) -> list[WebsiteCandidate]:
             if not wave:
                 return []
 
@@ -524,26 +883,112 @@ class CompanyWebsiteResolver:
                     ),
                     candidate_sources.get(domain_of(candidate.url), set()),
                 )
+                source_set = candidate_sources.get(domain_of(candidate.url), set())
+                if "regional_recovery" in source_set:
+                    requested_site = _registrable_site_from_url(candidate.url)
+                    resolved_site = _registrable_site_from_url(verified_candidate.url)
+                    resolved_region = url_region(verified_candidate.url)
+                    target_region = location_region(job_location)
+                    access_controlled_declared_locale = (
+                        bool(requested_site)
+                        and requested_site == resolved_site
+                        and "homepage fetch failed" in verified_candidate.reasons
+                        and any(
+                            failure.get("reason_code")
+                            in {"BOT_PROTECTION", "HTTP_FORBIDDEN"}
+                            for failure in candidate_fetch_errors
+                        )
+                    )
+                    geo_redirected_declared_locale = (
+                        bool(requested_site)
+                        and requested_site == resolved_site
+                        and resolved_region != target_region
+                        and "homepage verified" in verified_candidate.reasons
+                        and _has_positive_page_identity(verified_candidate)
+                    )
+                    if access_controlled_declared_locale:
+                        verified_candidate.score += 45
+                        verified_candidate.reasons.append(
+                            "verified regional gateway declares access-controlled locale root"
+                        )
+                    elif geo_redirected_declared_locale:
+                        regional_conflict = next(
+                            (
+                                reason
+                                for reason in verified_candidate.reasons
+                                if reason.startswith(
+                                    "regional website conflicts with job location:"
+                                )
+                            ),
+                            None,
+                        )
+                        if regional_conflict is not None:
+                            verified_candidate.reasons.remove(regional_conflict)
+                            verified_candidate.score += 120
+                        verified_candidate.url = candidate.url
+                        verified_candidate.score += 25
+                        verified_candidate.reasons.append(
+                            "declared regional root geo-redirected within verified company site"
+                        )
+                        verified_candidate.reasons.append(
+                            f"regional website matches job location: {target_region}"
+                        )
+                    elif (
+                        not requested_site
+                        or requested_site != resolved_site
+                        or resolved_region != target_region
+                    ):
+                        verified_candidate.score -= 200
+                        verified_candidate.reasons.append(
+                            "regional locale identity continuity rejected"
+                        )
+                elif "regional_sibling_recovery" in source_set:
+                    access_controlled_sibling = (
+                        "homepage fetch failed" in verified_candidate.reasons
+                        and any(
+                            failure.get("reason_code")
+                            in {"BOT_PROTECTION", "HTTP_FORBIDDEN"}
+                            for failure in candidate_fetch_errors
+                        )
+                    )
+                    if access_controlled_sibling:
+                        verified_candidate.score += 45
+                        verified_candidate.reasons.append(
+                            "verified regional gateway supports access-controlled sibling root"
+                        )
                 return verified_candidate, candidate_fetch_errors
 
-            with ThreadPoolExecutor(
-                max_workers=len(wave),
-                thread_name_prefix="website-verify",
-            ) as executor:
-                outcomes = list(executor.map(verify_candidate, wave))
-            if fetch_errors is not None:
-                for _candidate, candidate_fetch_errors in outcomes:
+            verified_wave: list[WebsiteCandidate] = []
+            selectable_base_score: int | None = None
+            for candidate in wave:
+                if (
+                    stop_on_selectable
+                    and selectable_base_score is not None
+                    and candidate.score < selectable_base_score - 20
+                ):
+                    break
+                verified_candidate, candidate_fetch_errors = verify_candidate(candidate)
+                if fetch_errors is not None:
                     fetch_errors.extend(candidate_fetch_errors)
-            return [candidate for candidate, _errors in outcomes]
+                verified_wave.append(verified_candidate)
+                if (
+                    stop_on_selectable
+                    and self._select_verified_candidate([verified_candidate]) is not None
+                ):
+                    selectable_base_score = candidate.score
+            return verified_wave
 
         verified = verify_wave(direct_to_verify)
+        verified.extend(verify_wave(reserved_slug_to_verify))
         directly_selectable_domains = {
             domain_of(candidate.url)
             for candidate in verified
             if self._select_verified_candidate([candidate]) is not None
         }
         if len(directly_selectable_domains) != 1:
-            verified.extend(verify_wave(remaining_to_verify))
+            verified.extend(
+                verify_wave(remaining_to_verify, stop_on_selectable=True)
+            )
         verified_domains = {domain_of(candidate.url) for candidate in verified}
         refined = verified + [
             candidate for candidate in base_scored if domain_of(candidate.url) not in verified_domains
@@ -672,7 +1117,9 @@ class CompanyWebsiteResolver:
         compact = "".join(tokens)
         dashed = "-".join(tokens)
         prefixes = ["", "www.", "get", "go", "try", "join"]
-        tlds = [".com", ".ai", ".io", ".co", ".org", ".tech"]
+        # Keep exact-brand TLDs ahead of mechanical .com variants so the
+        # resolver's bounded verification window can sample more than .com.
+        tlds = [".com", ".org", ".ai", ".io", ".co", ".tech"]
         bases = [compact]
         if dashed != compact:
             bases.append(dashed)
@@ -687,7 +1134,7 @@ class CompanyWebsiteResolver:
         if institutional_acronym:
             urls.append(f"https://{institutional_acronym}.edu")
         for base in bases:
-            for tld in tlds[:4]:
+            for tld in tlds:
                 urls.append(f"https://{base}{tld}")
             for prefix in prefixes[2:4]:
                 urls.append(f"https://{prefix}{base}.com")
@@ -706,7 +1153,7 @@ class CompanyWebsiteResolver:
         base = re.sub(r"(inc|llc|ltd|corp|corporation|company|co|hq)$", "", base)
         compact = base.replace("-", "")
         product_suffix_base = re.sub(r"-(ai|app|tech)$", "", base)
-        prefix_stripped_base = re.sub(r"^(get|go|join|try|use)-?", "", base)
+        prefix_stripped_base = re.sub(r"^(find|get|go|join|try|use)-?", "", base)
         candidates = [base, compact, product_suffix_base, prefix_stripped_base]
         return [
             f"https://{candidate}.{tld}"
@@ -734,6 +1181,14 @@ class CompanyWebsiteResolver:
             linkedin_official = (
                 "LinkedIn company page identifies official website" in candidate.reasons
             )
+            declared_access_controlled_locale = (
+                "verified regional gateway declares access-controlled locale root"
+                in candidate.reasons
+            )
+            access_controlled_sibling_root = (
+                "verified regional gateway supports access-controlled sibling root"
+                in candidate.reasons
+            )
             access_controlled_institution = (
                 "access-controlled institutional acronym" in candidate.reasons
             )
@@ -742,13 +1197,31 @@ class CompanyWebsiteResolver:
                 for reason in (
                     "hosted non-company destination rejected",
                     "parked domain rejected",
+                    "parent/group website requires downstream hiring relationship evidence",
+                    "regional locale identity continuity rejected",
+                    "deployment hostname",
+                    "same-brand .com verification blocked",
                 )
             ):
+                continue
+            if (
+                "registrable domain does not establish company ownership"
+                in candidate.reasons
+                and not linkedin_official
+                and not _verified_page_establishes_extension_ownership(candidate)
+            ):
+                continue
+            if any(
+                reason.startswith("regional website conflicts with job location:")
+                for reason in candidate.reasons
+            ) and not linkedin_official:
                 continue
             if (
                 "homepage verified" not in candidate.reasons
                 and not linkedin_official
                 and not access_controlled_institution
+                and not declared_access_controlled_locale
+                and not access_controlled_sibling_root
             ):
                 continue
             if access_controlled_institution and authoritative_identity_available:
@@ -766,6 +1239,8 @@ class CompanyWebsiteResolver:
             if (
                 not linkedin_official
                 and not access_controlled_institution
+                and not declared_access_controlled_locale
+                and not access_controlled_sibling_root
                 and not _has_positive_page_identity(candidate)
                 and not preferred_core_identity
             ):
@@ -776,14 +1251,33 @@ class CompanyWebsiteResolver:
                 and not _has_strong_identity_evidence(candidate)
             ):
                 continue
-            if "single-token brand extension domain" in candidate.reasons and not any(
-                reason in candidate.reasons
-                for reason in (
-                    "LinkedIn slug confirms domain",
-                    "LinkedIn slug exactly matches domain",
-                    "homepage canonical confirms company identity",
-                    "LinkedIn company page identifies official website",
+            if (
+                "LinkedIn marketing-prefix slug is TLD-ambiguous" in candidate.reasons
+                and not linkedin_official
+                and "candidate source: preferred_input" not in candidate.reasons
+                and any(
+                    reason in candidate.reasons
+                    for reason in (
+                        "candidate source: linkedin_slug",
+                        "candidate source: speculative_guess",
+                    )
                 )
+                and "homepage title confirms company identity" not in candidate.reasons
+            ):
+                continue
+            if (
+                "single-token brand extension domain" in candidate.reasons
+                and not any(
+                    reason in candidate.reasons
+                    for reason in (
+                        "LinkedIn slug confirms domain",
+                        "LinkedIn slug exactly matches domain",
+                        "full LinkedIn slug matches domain",
+                        "homepage canonical confirms company identity",
+                        "LinkedIn company page identifies official website",
+                    )
+                )
+                and not _verified_page_establishes_extension_ownership(candidate)
             ):
                 continue
             if "ambiguous company name" in candidate.reasons:
@@ -791,6 +1285,7 @@ class CompanyWebsiteResolver:
                     reason in candidate.reasons
                     for reason in (
                         "search result confirms company identity",
+                        "homepage organization data confirms company identity",
                         "homepage title confirms company identity",
                         "homepage canonical confirms company identity",
                         "LinkedIn company page identifies official website",
@@ -839,7 +1334,7 @@ class CompanyWebsiteResolver:
         score = 0
         reasons: list[str] = []
         domain = domain_of(url)
-        company_tokens = tokenize_company_name(company_name)
+        company_tokens = _exact_identity_tokens(company_name)
         core_company_tokens = _core_company_tokens(company_tokens)
         ambiguous_name = _is_ambiguous_company_name(company_tokens)
         if ambiguous_name:
@@ -888,6 +1383,14 @@ class CompanyWebsiteResolver:
             score += 75
             reasons.append("LinkedIn slug exactly matches domain")
 
+        if _full_linkedin_slug_matches_domain(
+            domain,
+            company_tokens,
+            linkedin_company_url,
+        ):
+            score += 75
+            reasons.append("full LinkedIn slug matches domain")
+
         if search_evidence and _text_confirms_company_identity(
             f"{search_evidence.title} {search_evidence.snippet}", company_tokens
         ):
@@ -898,9 +1401,12 @@ class CompanyWebsiteResolver:
             reasons.append("domain-only score")
             return WebsiteCandidate(url, score, reasons)
 
+        page: Page | None = None
+        primary_error: FetchError | None = None
         try:
             page = self.fetcher.fetch(url)
         except FetchError as exc:
+            primary_error = exc
             _retain_fetch_error(
                 fetch_errors,
                 exc,
@@ -919,6 +1425,28 @@ class CompanyWebsiteResolver:
                     f"({exc.status})"
                 )
                 return WebsiteCandidate(url, score, reasons)
+            alternate_url = (
+                _alternate_apex_www_candidate(url)
+                if _is_transport_recovery_failure(primary_error)
+                else None
+            )
+            if alternate_url is not None:
+                try:
+                    page = self.fetcher.fetch(alternate_url)
+                except FetchError as alternate_exc:
+                    _retain_fetch_error(
+                        fetch_errors,
+                        alternate_exc,
+                        phase="homepage_apex_www_fallback",
+                        url=alternate_url,
+                        evidence_tier=evidence_tier,
+                    )
+                else:
+                    url = alternate_url
+                    domain = domain_of(alternate_url)
+                    reasons.append("same-domain apex/www transport fallback")
+        if page is None:
+            assert primary_error is not None
             if domain.endswith(".com"):
                 score += 10
                 reasons.append("preferred .com domain despite fetch failure")
@@ -962,6 +1490,12 @@ class CompanyWebsiteResolver:
             score -= 200
             reasons.append("parked domain rejected")
             return WebsiteCandidate(resolved_url, score, reasons)
+        subdomain_rejection = _subdomain_identity_rejection_reason(
+            resolved_url,
+            core_company_tokens,
+        )
+        if subdomain_rejection:
+            reasons.append(subdomain_rejection)
         reasons.append("homepage verified")
         canonical_url = _canonical_company_url(page.html, resolved_url, company_tokens)
         if canonical_url:
@@ -1001,6 +1535,14 @@ class CompanyWebsiteResolver:
             core_company_tokens != company_tokens
             and _body_confirms_company_identity(page.html, core_company_tokens)
         )
+        if _homepage_has_parent_group_identity(
+            page.html,
+            resolved_url,
+            company_name,
+        ):
+            reasons.append(
+                "parent/group website requires downstream hiring relationship evidence"
+            )
         if structured_identity:
             score += 35
             reasons.append("homepage organization data confirms company identity")
@@ -1379,9 +1921,12 @@ def _is_single_token_brand_extension_domain(domain: str, company_tokens: list[st
         f"get{token}",
         f"go{token}",
         f"join{token}",
+        f"find{token}",
         f"try{token}",
         f"use{token}",
         f"{token}corp",
+        f"{token}-group",
+        f"{token}group",
         f"{token}hq",
     }:
         return False
@@ -1410,6 +1955,7 @@ def _linkedin_slug_confirms_domain(
         f"get{compact_name}",
         f"go{compact_name}",
         f"join{compact_name}",
+        f"find{compact_name}",
         f"try{compact_name}",
         f"use{compact_name}",
     }
@@ -1423,7 +1969,10 @@ def _linkedin_slug_uses_marketing_prefix(linkedin_company_url: str | None) -> bo
     if len(path_parts) < 2 or path_parts[0].casefold() != "company":
         return False
     slug = re.sub(r"[^a-z0-9]", "", path_parts[1].casefold())
-    return any(slug.startswith(prefix) and len(slug) > len(prefix) for prefix in ("get", "go", "join", "try", "use"))
+    return any(
+        slug.startswith(prefix) and len(slug) > len(prefix)
+        for prefix in ("find", "get", "go", "join", "try", "use")
+    )
 
 
 def _linkedin_slug_exactly_matches_domain(
@@ -1447,6 +1996,33 @@ def _linkedin_slug_exactly_matches_domain(
         and slug == domain_label
         and domain_label != compact_name
         and compact_name in domain_label
+    )
+
+
+def _full_linkedin_slug_matches_domain(
+    domain: str,
+    company_tokens: list[str],
+    linkedin_company_url: str | None,
+) -> bool:
+    if (
+        not linkedin_company_url
+        or not company_tokens
+        or _is_ambiguous_company_name(company_tokens)
+    ):
+        return False
+    path_parts = [part for part in urlparse(linkedin_company_url).path.split("/") if part]
+    if len(path_parts) < 2 or path_parts[0].casefold() != "company":
+        return False
+    slug = re.sub(r"[^a-z0-9]", "", path_parts[1].casefold())
+    site = _registrable_site(domain)
+    site_label = site.split(".", 1)[0]
+    normalized_label = re.sub(r"[^a-z0-9]", "", site_label)
+    compact_name = "".join(company_tokens)
+    return bool(
+        slug
+        and slug == normalized_label
+        and normalized_label != compact_name
+        and compact_name in normalized_label
     )
 
 
@@ -1581,6 +2157,14 @@ def _structured_organization_confirms_identity(
     html: str,
     company_tokens: list[str],
 ) -> bool:
+    return any(
+        _text_confirms_company_identity(identity, company_tokens)
+        for identity in _structured_organization_identities(html)
+    )
+
+
+def _structured_organization_identities(html: str) -> list[str]:
+    identities: list[str] = []
     for attrs, body in re.findall(
         r"<script\b([^>]*)>(.*?)</script>",
         html[:200000],
@@ -1594,11 +2178,66 @@ def _structured_organization_confirms_identity(
             continue
         for organization in _walk_linkedin_organizations(payload):
             for field in ("name", "legalName"):
-                if _text_confirms_company_identity(
-                    str(organization.get(field) or ""), company_tokens
-                ):
-                    return True
-    return False
+                identity = str(organization.get(field) or "").strip()
+                if identity:
+                    identities.append(identity)
+    return identities
+
+
+def _homepage_has_parent_group_identity(
+    html: str,
+    resolved_url: str,
+    company_name: str,
+) -> bool:
+    requested_tokens = [
+        token for token in _exact_identity_tokens(company_name) if token != "group"
+    ]
+    if len(requested_tokens) < 2:
+        return False
+
+    exact_identities = _structured_organization_identities(html)
+    title = _html_title(_bounded_html_head(html))
+    if title:
+        exact_identities.append(title)
+    identity_token_sets = [
+        set(_exact_identity_tokens(identity))
+        for identity in exact_identities
+    ]
+    identity_token_sets = [tokens for tokens in identity_token_sets if tokens]
+    requested = set(requested_tokens)
+    if any(requested.issubset(tokens) for tokens in identity_token_sets):
+        return False
+
+    host = domain_of(resolved_url).casefold()
+    missing_from_host = {
+        token for token in requested if token not in re.sub(r"[^a-z0-9]", "", host)
+    }
+    if not missing_from_host:
+        return False
+
+    return any(
+        tokens.intersection(requested) and not requested.issubset(tokens)
+        for tokens in identity_token_sets
+    )
+
+
+def _exact_identity_tokens(company_name: str) -> list[str]:
+    company_name = _strip_non_brand_qualifiers(company_name)
+    legal_or_group_suffixes = {
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "inc",
+        "llc",
+        "ltd",
+        "plc",
+    }
+    return [
+        token
+        for token in re.findall(r"[a-z0-9]+", company_name.casefold())
+        if token not in legal_or_group_suffixes
+    ]
 
 
 def _has_positive_page_identity(candidate: WebsiteCandidate) -> bool:
@@ -1639,6 +2278,51 @@ def _has_strong_identity_evidence(candidate: WebsiteCandidate) -> bool:
             "LinkedIn slug confirms domain",
             "LinkedIn slug exactly matches domain",
         )
+    )
+
+
+def _verified_page_establishes_extension_ownership(
+    candidate: WebsiteCandidate,
+) -> bool:
+    if "homepage verified" not in candidate.reasons:
+        return False
+    if (
+        "parent/group website requires downstream hiring relationship evidence"
+        in candidate.reasons
+    ):
+        return False
+    if any(
+        reason.startswith("regional website conflicts with job location:")
+        for reason in candidate.reasons
+    ):
+        return False
+
+    identity_signals = {
+        signal
+        for signal, reasons in (
+            (
+                "structured_organization",
+                (
+                    "homepage organization data confirms company identity",
+                ),
+            ),
+            (
+                "title",
+                (
+                    "homepage title confirms company identity",
+                    "homepage title confirms company abbreviation",
+                ),
+            ),
+            ("body", ("homepage body confirms company identity",)),
+            ("canonical", ("homepage canonical confirms company identity",)),
+            ("search", ("search result confirms company identity",)),
+        )
+        if any(reason in candidate.reasons for reason in reasons)
+    }
+    page_ownership_anchors = {"structured_organization", "canonical"}
+    return (
+        len(identity_signals) >= 2
+        and bool(identity_signals.intersection(page_ownership_anchors))
     )
 
 
@@ -1692,7 +2376,15 @@ def _strip_non_brand_qualifiers(company_name: str) -> str:
             r"(?:incorporated|inc\.?|llc|ltd\.?|limited|corp\.?|corporation|plc)",
             normalized,
         ) is not None
-        return " " if is_funding_or_batch or is_legal_only else match.group(0)
+        is_certification_only = re.fullmatch(
+            r"(?:certified\s+)?b\s+corp(?:oration)?(?:\s+certified)?",
+            normalized,
+        ) is not None
+        return (
+            " "
+            if is_funding_or_batch or is_legal_only or is_certification_only
+            else match.group(0)
+        )
 
     return re.sub(r"\(([^()]*)\)", replace_parenthetical, company_name)
 
@@ -1725,13 +2417,64 @@ def _has_non_www_subdomain(url: str) -> bool:
     return len(labels) > apex_label_count
 
 
+def _subdomain_identity_rejection_reason(
+    url: str,
+    company_tokens: list[str],
+) -> str | None:
+    if not _has_non_www_subdomain(url):
+        return None
+    host = (urlparse(url).hostname or "").casefold().strip(".")
+    site = _registrable_site(host)
+    site_label = site.split(".", 1)[0]
+    normalized_site_label = re.sub(r"[^a-z0-9]", "", site_label)
+    compact_name = "".join(company_tokens)
+    if (
+        normalized_site_label != compact_name
+        and site_label != "-".join(company_tokens)
+        and not _domain_uses_brand_token_as_tld(site, company_tokens)
+    ):
+        return "registrable domain does not establish company ownership"
+    subdomain = host[: -(len(site) + 1)] if host.endswith(f".{site}") else ""
+    deployment_markers = {
+        "deleg",
+        "dev",
+        "prod",
+        "qa",
+        "sfcc",
+        "stage",
+        "staging",
+        "uat",
+    }
+    subdomain_tokens = set(re.findall(r"[a-z0-9]+", subdomain))
+    if subdomain_tokens.intersection(deployment_markers):
+        return "deployment hostname"
+    return None
+
+
 def _has_direct_identity_source(candidate: WebsiteCandidate) -> bool:
     direct_sources = {
         "candidate source: linkedin_official_website",
         "candidate source: linkedin_cached_official_website",
         "candidate source: preferred_input",
+        "candidate source: stored_verified_company_evidence",
     }
     return any(reason in direct_sources for reason in candidate.reasons)
+
+
+def _looks_like_mechanical_hyphenated_slug_domain(
+    candidate: WebsiteCandidate,
+    company_name: str,
+) -> bool:
+    if _has_direct_identity_source(candidate):
+        return False
+    label = domain_of(candidate.url).split(".", 1)[0].removeprefix("www.")
+    company_tokens = tokenize_company_name(company_name)
+    return bool(
+        len(company_tokens) >= 2
+        and "-" in label
+        and label.split("-") == company_tokens
+        and "candidate source: linkedin_slug" in candidate.reasons
+    )
 
 
 def _candidate_evidence_tier(sources: set[str]) -> int:
@@ -1740,6 +2483,7 @@ def _candidate_evidence_tier(sources: set[str]) -> int:
             "linkedin_cached_official_website",
             "linkedin_official_website",
             "preferred_input",
+            "stored_verified_company_evidence",
         }
     ):
         return 1
@@ -1775,16 +2519,99 @@ def _retain_fetch_error(
     )
 
 
-def _strongest_retryable_fetch_failure(fetch_errors: list[dict]) -> dict | None:
-    retryable = [
+_RETAINED_RESOLUTION_FAILURE_PRIORITY = {
+    "CAPTCHA_REQUIRED": 100,
+    "LOGIN_REQUIRED": 95,
+    "BOT_PROTECTION": 90,
+    "HTTP_FORBIDDEN": 85,
+    "RATE_LIMITED": 80,
+    "NETWORK_TIMEOUT": 70,
+    "DNS_FAILED": 65,
+    "CONNECTION_FAILED": 60,
+    "SERVER_ERROR": 55,
+    "FETCH_FAILED": 50,
+}
+
+
+def _strongest_retained_fetch_failure(fetch_errors: list[dict]) -> dict | None:
+    retained = [
         failure
         for failure in fetch_errors
-        if failure.get("retryable") is True
-        and failure.get("evidence_tier") in {1, 2}
+        if failure.get("evidence_tier") in {1, 2}
+        and failure.get("reason_code") in _RETAINED_RESOLUTION_FAILURE_PRIORITY
     ]
-    if not retryable:
+    if not retained:
         return None
-    return dict(min(retryable, key=lambda failure: failure["evidence_tier"]))
+    return dict(
+        min(
+            retained,
+            key=lambda failure: (
+                failure["evidence_tier"],
+                -_RETAINED_RESOLUTION_FAILURE_PRIORITY[failure["reason_code"]],
+            ),
+        )
+    )
+
+
+def _same_brand_dot_com_verification_blocked(
+    selected: WebsiteCandidate,
+    scored: list[WebsiteCandidate],
+    fetch_errors: list[dict],
+) -> bool:
+    selected_site = _registrable_site(domain_of(selected.url))
+    if selected_site.endswith(".com") or "." not in selected_site:
+        return False
+    selected_label = selected_site.rsplit(".", 1)[0]
+    blocked_dot_com_domains = {
+        domain_of(str(failure.get("url") or ""))
+        for failure in fetch_errors
+        if failure.get("reason_code") in _RETAINED_RESOLUTION_FAILURE_PRIORITY
+        and domain_of(str(failure.get("url") or "")).endswith(".com")
+    }
+    for candidate in scored:
+        candidate_domain = domain_of(candidate.url)
+        candidate_site = _registrable_site(candidate_domain)
+        if not candidate_site.endswith(".com") or "." not in candidate_site:
+            continue
+        if candidate_site.rsplit(".", 1)[0] != selected_label:
+            continue
+        if "homepage fetch failed" not in candidate.reasons:
+            continue
+        if candidate_domain in blocked_dot_com_domains:
+            return True
+    return False
+
+
+def _same_brand_dot_com_candidate(
+    selected: WebsiteCandidate,
+    scored: list[WebsiteCandidate],
+) -> WebsiteCandidate | None:
+    selected_site = _registrable_site(domain_of(selected.url))
+    if selected_site.endswith(".com") or "." not in selected_site:
+        return None
+    selected_label = selected_site.rsplit(".", 1)[0]
+    return next(
+        (
+            candidate
+            for candidate in scored
+            if (
+                (site := _registrable_site(domain_of(candidate.url))).endswith(".com")
+                and "." in site
+                and site.rsplit(".", 1)[0] == selected_label
+            )
+        ),
+        None,
+    )
+
+
+def _is_transport_recovery_failure(error: FetchError) -> bool:
+    return project_fetch_error(error)["reason_code"] in {
+        "CONNECTION_FAILED",
+        "DNS_FAILED",
+        "FETCH_FAILED",
+        "NETWORK_TIMEOUT",
+        "SERVER_ERROR",
+    }
 
 
 def _candidate_source_map(*groups: tuple[str, list[str]]) -> dict[str, set[str]]:
@@ -1813,7 +2640,7 @@ def _append_candidate_sources(
 
 
 def _linkedin_json_ld_websites(html: str, company_name: str) -> list[str]:
-    company_tokens = tokenize_company_name(company_name)
+    company_tokens = _exact_identity_tokens(company_name)
     websites: list[str] = []
     for attrs, body in re.findall(
         r"<script\b([^>]*)>(.*?)</script>",
@@ -1994,6 +2821,7 @@ _LOCATION_REGION_NAMES = {
     "australia": "au",
     "belgium": "be",
     "canada": "ca",
+    "china": "cn",
     "france": "fr",
     "germany": "de",
     "india": "in",
@@ -2001,6 +2829,31 @@ _LOCATION_REGION_NAMES = {
     "japan": "jp",
     "spain": "es",
     "united kingdom": "uk",
+}
+_REGIONAL_CCTLDS = {
+    "au",
+    "be",
+    "br",
+    "ca",
+    "ch",
+    "cn",
+    "de",
+    "es",
+    "fr",
+    "hk",
+    "ie",
+    "in",
+    "jp",
+    "kr",
+    "mx",
+    "nl",
+    "nz",
+    "ru",
+    "se",
+    "sg",
+    "tw",
+    "uk",
+    "za",
 }
 
 
@@ -2028,8 +2881,16 @@ def url_region(url: str) -> str | None:
     except (TypeError, ValueError):
         return None
     host_labels = (parsed.hostname or "").casefold().split(".")
+    if host_labels and host_labels[-1] in _REGIONAL_CCTLDS:
+        return host_labels[-1]
     if any(label in {"jobsus", "usjobs"} for label in host_labels):
         return "us"
+    if host_labels:
+        host_region = host_labels[0]
+        if host_region == "us":
+            return "us"
+        if host_region in _NON_US_REGION_SEGMENTS:
+            return _NON_US_REGION_SEGMENTS[host_region]
     segments = [unquote(part).casefold() for part in parsed.path.split("/") if part]
     if not segments:
         return None
@@ -2055,27 +2916,181 @@ def _regional_root_candidates(
             candidate
             for candidate in scored
             if "homepage verified" in candidate.reasons
-            and any(
-                reason.startswith("regional website conflicts with job location:")
-                for reason in candidate.reasons
+            and (
+                "deployment hostname" in candidate.reasons
+                or any(
+                    reason.startswith("regional website conflicts with job location:")
+                    for reason in candidate.reasons
+                )
             )
         ),
         None,
     )
     if conflicting is None:
         return []
+    if not _has_positive_page_identity(conflicting) or conflicting.verified_page is None:
+        conflicting.reasons.append(
+            "regional gateway lacks continuous company identity evidence"
+        )
+        return []
+    gateway_url = conflicting.verified_page.final_url or conflicting.verified_page.url
+    gateway_site = _registrable_site_from_url(gateway_url)
+    if not gateway_site:
+        conflicting.reasons.append("regional gateway lacks registrable corporate identity")
+        return []
+
+    candidates: list[str] = []
+
+    def add_candidate(
+        locale_url: str,
+        *,
+        declares_us_locale: bool,
+        base_url: str | None = None,
+    ) -> None:
+        try:
+            locale_url = normalize_url(locale_url, base_url)
+        except (TypeError, ValueError):
+            return
+        parsed = urlparse(locale_url)
+        if parsed.scheme != "https" or not parsed.hostname:
+            return
+        if _registrable_site(parsed.hostname) != gateway_site:
+            return
+        candidate_region = url_region(locale_url)
+        if candidate_region and candidate_region != target_region:
+            return
+        if candidate_region != target_region and not declares_us_locale:
+            return
+        if locale_url in candidates:
+            return
+        candidates.append(locale_url)
+
+    for link in extract_links(conflicting.verified_page):
+        if link.origin == "page_link":
+            add_candidate(
+                link.url,
+                declares_us_locale=_link_declares_region(link.text, target_region),
+            )
+        if len(candidates) == MAX_REGIONAL_LOCALE_CANDIDATES:
+            break
+
+    if len(candidates) < MAX_REGIONAL_LOCALE_CANDIDATES:
+        for href in _us_hreflang_alternate_hrefs(conflicting.verified_page.html):
+            add_candidate(
+                href,
+                declares_us_locale=True,
+                base_url=gateway_url,
+            )
+            if len(candidates) == MAX_REGIONAL_LOCALE_CANDIDATES:
+                break
+
+    if candidates:
+        conflicting.reasons.append("regional gateway declares US locale link")
+    else:
+        conflicting.reasons.append("regional gateway contains no eligible US locale link")
+    return candidates
+
+
+def _regional_sibling_root_candidates(
+    conflicting: WebsiteCandidate,
+    company_name: str,
+    job_location: str | None,
+) -> list[str]:
+    """Produce a same-brand global-root lead from a verified foreign ccTLD.
+
+    This is discovery evidence only. The sibling still has to pass the normal
+    homepage and company-identity verification before it can be selected.
+    """
+
+    if location_region(job_location) != "us":
+        return []
+    if (
+        "homepage verified" not in conflicting.reasons
+        or conflicting.verified_page is None
+        or not _has_positive_page_identity(conflicting)
+        or not any(
+            reason.startswith("regional website conflicts with job location:")
+            for reason in conflicting.reasons
+        )
+        or _has_non_www_subdomain(conflicting.url)
+    ):
+        return []
+
+    site = _registrable_site(domain_of(conflicting.url))
+    if "." not in site:
+        return []
+    label, suffix = site.rsplit(".", 1)
+    if len(suffix) != 2 or suffix == "us":
+        return []
+
+    # The current ccTLD page itself has already re-established company
+    # identity. Requiring the label to be derivable from the display name
+    # would reject legitimate abbreviations such as ysl.cn. Exact label
+    # continuity across TLDs is the only inference made here.
+    if not label or not company_name.strip():
+        return []
+    return [f"https://{label}.com", f"https://{label}.global"]
+
+
+def _corporate_group_root_candidates(company_name: str) -> list[str]:
+    tokens = _exact_identity_tokens(company_name)
+    if len(tokens) != 1 or len(tokens[0]) < 4:
+        return []
+    return [f"https://{tokens[0]}-group.com"]
+
+
+def _link_declares_region(text: str, target_region: str) -> bool:
+    normalized = " ".join(text.casefold().split())
+    if target_region == "us":
+        return bool(re.search(r"\b(united states|u\.s\.?a?\.?|usa)\b", normalized))
+    return False
+
+
+class _UsHreflangAlternateParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.hrefs: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "link":
+            return
+        values: dict[str, list[str]] = {}
+        for name, value in attrs:
+            if value is not None:
+                values.setdefault(name.casefold(), []).append(value)
+        if any(len(values.get(name, ())) != 1 for name in ("rel", "hreflang", "href")):
+            return
+        rel = values["rel"][0]
+        hreflang = values["hreflang"][0]
+        href = values["href"][0]
+        if "alternate" not in {value.casefold() for value in rel.split()}:
+            return
+        if hreflang.strip().casefold() != "en-us" or not href.strip():
+            return
+        if len(self.hrefs) < MAX_REGIONAL_LOCALE_CANDIDATES:
+            self.hrefs.append(href)
+
+
+def _us_hreflang_alternate_hrefs(html: str) -> list[str]:
+    parser = _UsHreflangAlternateParser()
+    parser.feed(html)
+    return parser.hrefs
+
+
+def _registrable_site(host: str) -> str:
+    labels = host.casefold().strip(".").split(".")
+    if len(labels) <= 2:
+        return ".".join(labels)
+    two_level_suffixes = {"co.jp", "co.nz", "co.uk", "com.au", "com.br", "com.sg"}
+    suffix = ".".join(labels[-2:])
+    return ".".join(labels[-3:]) if suffix in two_level_suffixes else suffix
+
+
+def _registrable_site_from_url(url: str) -> str:
     try:
-        parsed = urlparse(conflicting.url)
+        return _registrable_site(urlparse(url).hostname or "")
     except (TypeError, ValueError):
-        return []
-    if parsed.scheme != "https" or not parsed.netloc:
-        return []
-    origin = f"https://{parsed.netloc}"
-    return [
-        f"{origin}/us/en.html",
-        f"{origin}/us/en/",
-        f"{origin}/us/en/careers.html",
-    ]
+        return ""
 
 
 def is_blocked_domain(url: str) -> bool:
@@ -2103,3 +3118,44 @@ def dedupe_urls(urls: list[str]) -> list[str]:
         seen.add(domain)
         deduped.append(url)
     return deduped
+
+
+def _prefer_https_candidate(url: str) -> str:
+    """Upgrade a direct website claim without changing its authority or path."""
+
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return url
+    if (
+        parsed.scheme != "http"
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or port not in {None, 80}
+    ):
+        return url
+    netloc = parsed.hostname
+    return parsed._replace(scheme="https", netloc=netloc).geturl()
+
+
+def _alternate_apex_www_candidate(url: str) -> str | None:
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return None
+    hostname = (parsed.hostname or "").casefold().strip(".")
+    if (
+        parsed.scheme != "https"
+        or parsed.username
+        or parsed.password
+        or port is not None
+        or hostname.count(".") < 1
+    ):
+        return None
+    if not hostname.startswith("www."):
+        return None
+    alternate = hostname[4:]
+    return parsed._replace(netloc=alternate).geturl()

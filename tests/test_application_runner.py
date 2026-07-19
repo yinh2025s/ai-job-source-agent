@@ -6,6 +6,7 @@ from job_source_agent.application_runner import ApplicationRunner
 from job_source_agent.checkpoint_prefix import (
     CheckpointPrefixError,
     CheckpointPrefixInspection,
+    inspect_finalized_checkpoint_prefix,
     inspect_checkpoint_prefix,
 )
 from job_source_agent.contracts import PipelineContext, StageExecution
@@ -120,6 +121,60 @@ class MemoryCheckpointStore:
 
 
 class ApplicationRunnerTests(unittest.TestCase):
+    def test_same_attempt_continuation_preserves_finalized_negative_prefix(self):
+        fingerprint = "input-v1"
+        store = MemoryCheckpointStore()
+        store.executions[(fingerprint, STAGE_LINKEDIN_DISCOVERY)] = (
+            authoritative_execution(STAGE_LINKEDIN_DISCOVERY)
+        )
+        store.executions[(fingerprint, STAGE_WEBSITE_RESOLUTION)] = StageExecution(
+            StageResult(
+                stage=STAGE_WEBSITE_RESOLUTION,
+                status="failed",
+                reason_code="WEBSITE_NOT_RESOLVED",
+            ),
+            updates={"company_website_url": ""},
+        )
+        store.executions[(fingerprint, STAGE_HIRING_IDENTITY_RESOLUTION)] = StageExecution(
+            StageResult(stage=STAGE_HIRING_IDENTITY_RESOLUTION, status="not_run")
+        )
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+
+        normal = inspect_checkpoint_prefix(
+            store,
+            fingerprint,
+            context,
+            STAGE_CAREER_DISCOVERY,
+        )
+        continuation = inspect_finalized_checkpoint_prefix(
+            store,
+            fingerprint,
+            context,
+            STAGE_CAREER_DISCOVERY,
+        )
+
+        self.assertEqual(normal.effective_start, STAGE_WEBSITE_RESOLUTION)
+        self.assertEqual(continuation.effective_start, STAGE_CAREER_DISCOVERY)
+        self.assertEqual(continuation.defects, ())
+
+        calls = []
+        ApplicationRunner(
+            [RecordingStage(STAGE_CAREER_DISCOVERY, calls)],
+            checkpoint_store=store,
+        ).run(
+            context,
+            start_at=STAGE_CAREER_DISCOVERY,
+            stop_after=STAGE_CAREER_DISCOVERY,
+            input_fingerprint=fingerprint,
+            same_attempt_continuation=True,
+        )
+
+        self.assertEqual(calls, [STAGE_CAREER_DISCOVERY])
+        self.assertEqual(
+            [result.status for result in context.stage_results[:3]],
+            ["not_applicable", "failed", "not_run"],
+        )
+
     def test_reports_whether_checkpointing_is_enabled(self):
         self.assertFalse(ApplicationRunner([]).checkpointing_enabled)
         self.assertTrue(

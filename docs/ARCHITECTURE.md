@@ -109,9 +109,18 @@ bounded 模式，多组 provider 查询共享预算，snippet 永远不能成为
 company/provider tenant 可以建立招聘关系；模糊 token、substring、title 相似和搜索排名不能。
 S6 在 portfolio 后续 board 命中时切换到真实命中 board 的 provider identity，并发布 typed
 `OpeningSelectionEvidence`。S7 除原有 company/provider/tenant/board/opening URL 连续性外，还
-验证 selected title，公开 location classification，并对新候选路径的明确 location mismatch
-fail closed。该路径由 deterministic schema 1.3 的 `enable_parallel_candidate_discovery` 控制，
-默认关闭；旧路径和 1.0-1.2 replay 配置保持兼容。
+验证 selected title，公开 location classification，并对明确 location mismatch fail closed。该路径由
+deterministic schema 1.3 的 `enable_parallel_candidate_discovery` 控制。CLI、live evaluator 和 extension
+bridge 默认启用；`--disable-parallel-candidate-discovery` 提供回滚。底层 library 默认与旧 1.0-1.2
+replay 配置保持关闭，以维持嵌入方与历史 checkpoint 兼容。Provider 可通过自己的可选 canonicalization
+hook 统一旧/新 board 域名；中央 candidate builder 不包含 provider 名称分支。
+
+正常产品运行保留 staged direct-then-search 调度，减少已验证 direct handoff 存在时的网络开销。
+确定性配置 schema `1.4` 另提供 benchmark-only `evaluate_all_candidate_routes`：它强制三路独立
+产出并记录 route probe，再把所有候选送入同一 adapter、relationship、S6 和 S7 gate。Reporting
+只能把最终 typed S7 exact 反向归因给具备 verified board 与 relationship 的 route；候选数、搜索
+排名或 job-list 成功都不能算 exact。该模式用于 route recall/overlap 测量，不改变默认产品成功
+语义。
 
 Scoped full-outcome replay 必须从产生下游证据的最早 producer stage 开始。Career evidence 依赖
 website resolution；page-derived generic board evidence 继续依赖 Career producer，因此 replay
@@ -145,6 +154,14 @@ Greenhouse、JazzHR、Lever、Workday 等变体仍通过相同 registry contract
 `if company == ...`。官网脚本声明 native XHR form transport以及官网 `script-src` 暴露
 Greenhouse board 都属于通用证据形状；Tata Technologies 和 Banks Power 只是对应 live 样本，
 不会进入生产分支、provider locator 或持久化 identity。
+
+同站显式 `Search Jobs` 页面若不含静态岗位，只能在最多三个同源脚本中静态证明唯一、匿名、
+same-origin GET inventory 后提升为 `verified_declared_inventory` generic board；S5 只保存 endpoint
+和字段 contract，S6 才注入目标 title、读取有界完整 JSON，并由 S7 验证 Career action、board、
+endpoint 与跨域 ATS opening 的连续关系。GovernmentJobs/NEOGOV、Pinpoint 和 SaaSHR/UKG Ready
+通过独立 native adapter 接入；Lever 的官方 public inventory URL 只在精确 `api.lever.co/v0/postings/<tenant>`
+形状下识别并立即 canonicalize 为 `jobs.lever.co/<tenant>`。这些规则都由 provider/transport 形状
+驱动，不保存公司名映射。
 
 所有 URL 必须是无 credential、无敏感 query/fragment、非 private host 的 public HTTPS；asset、
 endpoint 和 response redirect 必须满足各自 same-origin/tenant contract。Trace 只保存受限 URL、
@@ -347,7 +364,7 @@ Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、ow
 ## Current Technical Debt
 
 - S2-S7 均有独立 stage，通用 `ApplicationRunner` 已支持顺序执行、范围重跑和上游结果复用；`JobSourceAgent` 仍保留 discovery helper 和兼容 facade。
-- 24 个 provider module 已自动发现；其中 23 个提供原生 inventory 或受约束 positive evidence，仅 Talemetry 提供 detection-only typed incomplete semantics。Meta 仍只接受 visible-page positive evidence；CEIPAL 与 WhiteCarrot 已冻结并验证 public inventory schema，Talemetry 仍需完成同等 contract 才能升级为可支持 candidate/no-match 的 adapter。
+- 38 个 provider module 已自动发现并通过 architecture validation；Talemetry 仍提供 detection-only typed incomplete semantics。Meta 仍只接受 visible-page positive evidence；CEIPAL 与 WhiteCarrot 已冻结并验证 public inventory schema，Talemetry 仍需完成同等 contract 才能升级为可支持 candidate/no-match 的 adapter。
 - S2 根据输入 provenance 区分用户当前声明与历史回放证据：普通 direct input 可直接采用显式官网；`replay_input` 官网只能作为优先候选，必须通过 bounded verification，停放、托管或身份不符时继续进入 LinkedIn/search/guess resolver。验证槽分配保证历史候选确实被请求，同时保留严格的 verified-homepage 选择门槛。
 - S2 success 表示“可访问性 + 肯定公司身份”，不是 HTTP 成功。域名 token、TLD、历史 LinkedIn slug 与搜索 snippet 只用于排序；非 authoritative 候选还必须由 title/body、结构化 Organization/legalName 或 canonical identity确认。有限 client-side redirect-only shell 同源最多跟随一跳并重新验证，跨域目标只作为 migration hint，不能直接成为官网。
 - 独立 `content_probe.py` 可供 S4/S5 从官网自己声明的同站 module bundle 读取公开 Magnolia Delivery payload，但只在 endpoint、app base、品牌一致 CMS host、HTTPS 标准端口和同 host response 全部验证后合并内容；该 probe 只补充页面证据，provider URL 仍进入原生 adapter 做 board/inventory 验证。

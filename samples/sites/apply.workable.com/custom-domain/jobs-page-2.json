@@ -1,0 +1,12 @@
+{
+  "total": 2,
+  "results": [
+    {
+      "shortcode": "TARGET2002",
+      "title": "Clinical Systems Engineer",
+      "location": {"country": "United States", "city": "Madison"},
+      "accountUid": "12345678-1234-4123-8123-123456789abc"
+    }
+  ],
+  "nextPage": null
+}

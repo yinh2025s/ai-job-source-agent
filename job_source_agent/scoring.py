@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 from urllib.parse import parse_qsl, urlparse
 
+from .job_actions import is_explicit_career_action
 from .models import LinkCandidate
 from .web import EXPLICIT_JOB_LIST_COMMANDS, RawLink, domain_of, path_depth
 
@@ -23,12 +24,18 @@ ATS_DOMAINS = (
     "icims.com",
     "careers.icims.com",
     "successfactors.com",
+    "successfactors.eu",
     "sapsf.com",
+    "sapsf.eu",
     "myworkdayjobs.com",
     "ats.rippling.com",
     "eightfold.ai",
     "careers.oracle.com",
     "oraclecloud.com",
+    "pinpointhq.com",
+    "recruiting.adp.com",
+    "workforcenow.adp.com",
+    "hcshiring.com",
     "ultipro.com",
     "recruiting.paylocity.com",
     "recruitingbypaycor.com",
@@ -52,6 +59,7 @@ CAREER_KEYWORDS = {
     "hiring": 45,
     "recruiting": 35,
     "vacancies": 35,
+    "employment": 55,
 }
 
 JOB_TITLE_KEYWORDS = {
@@ -80,6 +88,7 @@ NEGATIVE_KEYWORDS = {
     "blog": -45,
     "press": -45,
     "news": -45,
+    "magazine": -180,
     "about": -35,
     "contact": -35,
     "benefits": -120,
@@ -167,12 +176,23 @@ GENERIC_JOB_LISTING_PARTS = {
     "positions",
     "openings",
     "job-openings",
+    "job-offers",
+    "our-job-offers",
     "job-results",
+    "joblisting",
     "search-results",
     "candidateexperience",
 }
 
-_DETAIL_QUERY_KEYS = {"jid", "jobid", "job_id"}
+_DETAIL_QUERY_KEYS = {
+    "id",
+    "jid",
+    "jobid",
+    "job_id",
+    "jobreqid",
+    "reqid",
+    "requisitionid",
+}
 _UUID_DETAIL_ID = re.compile(
     r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
 )
@@ -189,12 +209,13 @@ def score_career_link(link: RawLink) -> LinkCandidate:
     if is_resource_url(link.url):
         return LinkCandidate(link.url, link.text, link.source_url, -500, ["static/resource URL"], link.origin)
 
-    haystack = f"{urlparse(link.url).path.lower()} {link.text.lower()} {domain_of(link.url)}"
+    parsed = urlparse(link.url)
+    haystack = f"{parsed.path.lower()} {link.text.lower()} {domain_of(link.url)}"
     score = 0
     reasons: list[str] = []
 
     for keyword, weight in CAREER_KEYWORDS.items():
-        if keyword in haystack:
+        if _matches_career_keyword(parsed, link.text, keyword):
             score += weight
             reasons.append(f"career keyword '{keyword}'")
 
@@ -211,6 +232,33 @@ def score_career_link(link: RawLink) -> LinkCandidate:
             reasons.append(f"negative keyword '{keyword}'")
 
     return LinkCandidate(link.url, link.text, link.source_url, score, reasons, link.origin)
+
+
+def _matches_career_keyword(parsed, text: str, keyword: str) -> bool:
+    text_tokens = _KEYWORD_TOKEN.findall(text.casefold())
+    host_tokens = [token for token in (parsed.hostname or "").casefold().split(".") if token]
+    path_segments = [segment.casefold() for segment in parsed.path.split("/") if segment]
+    path_tokens: list[str] = []
+    for segment in path_segments:
+        normalized_segment = " ".join(_KEYWORD_TOKEN.findall(segment))
+        if normalized_segment == "jobs to be done" or normalized_segment.startswith("jobsite"):
+            continue
+        path_tokens.extend(_KEYWORD_TOKEN.findall(segment))
+
+    keyword_tokens = _KEYWORD_TOKEN.findall(keyword.casefold())
+    if not keyword_tokens:
+        return False
+    if len(keyword_tokens) == 1:
+        token = keyword_tokens[0]
+        observed_tokens = set(text_tokens + host_tokens + path_tokens)
+        return token in observed_tokens or (
+            token == "career" and "careers" in observed_tokens
+        )
+    phrase = " ".join(keyword_tokens)
+    return any(
+        phrase in " ".join(tokens)
+        for tokens in (text_tokens, path_tokens)
+    )
 
 
 def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
@@ -309,7 +357,10 @@ def score_job_link(link: RawLink, career_page_url: str) -> LinkCandidate:
 
 def is_explicit_job_list_command(text: str) -> bool:
     normalized_text = " ".join(text.casefold().split())
-    return any(phrase in normalized_text for phrase in EXPLICIT_JOB_LIST_COMMANDS)
+    return bool(
+        any(phrase in normalized_text for phrase in EXPLICIT_JOB_LIST_COMMANDS)
+        or is_explicit_career_action(text)
+    )
 
 
 def _contains_keyword_phrase(text: str, keyword: str) -> bool:
@@ -333,6 +384,10 @@ def is_likely_job_detail(candidate: LinkCandidate) -> bool:
     if _looks_like_same_page_detail_query(candidate.url, candidate.source_url):
         return True
     if _looks_like_first_party_numeric_detail_route(candidate.url, candidate.source_url):
+        return True
+    if _looks_like_first_party_opaque_detail_route(candidate.url, candidate.source_url):
+        return True
+    if _looks_like_first_party_slug_detail_route(candidate):
         return True
     if normalize_for_compare(candidate.url) == normalize_for_compare(candidate.source_url):
         return False
@@ -396,7 +451,11 @@ def _looks_like_same_page_detail_query(url: str, source_url: str) -> bool:
         parsed.scheme.lower() != source.scheme.lower()
         or parsed.netloc.lower() != source.netloc.lower()
         or detail_path.split("/")[-1].lower() != "job"
-        or detail_path not in {source_path, f"{source_path}/job"}
+        or detail_path not in {
+            source_path,
+            f"{source_path}/job",
+            f"{source_path.rstrip('s')}",
+        }
     ):
         return False
 
@@ -412,6 +471,59 @@ def _looks_like_same_page_detail_query(url: str, source_url: str) -> bool:
         _OPAQUE_DETAIL_ID.fullmatch(value)
         and any(character.isalpha() for character in value)
         and any(character.isdigit() for character in value)
+    )
+
+
+def _looks_like_first_party_opaque_detail_route(url: str, source_url: str) -> bool:
+    """Recognize a listing URL extended by one opaque requisition identifier."""
+
+    parsed = urlparse(url)
+    source = urlparse(source_url)
+    if (
+        parsed.scheme.casefold() != "https"
+        or parsed.scheme.casefold() != source.scheme.casefold()
+        or parsed.netloc.casefold() != source.netloc.casefold()
+        or parsed.query
+        or parsed.fragment
+    ):
+        return False
+    target_parts = [part for part in parsed.path.split("/") if part]
+    source_parts = [part for part in source.path.split("/") if part]
+    if (
+        len(target_parts) >= 3
+        and target_parts[-3].casefold() == "apply"
+        and target_parts[-2].casefold() in {"job", "offer", "position", "role"}
+    ):
+        identifier = target_parts[-1]
+        return bool(
+            re.fullmatch(r"[A-Za-z0-9_-]{6,128}", identifier)
+            and any(character.isalpha() for character in identifier)
+            and any(character.isdigit() for character in identifier)
+        )
+    if (
+        not source_parts
+        or len(target_parts) != len(source_parts) + 1
+        or target_parts[: len(source_parts)] != source_parts
+    ):
+        return False
+    listing_words = set(_KEYWORD_TOKEN.findall(source_parts[-1].casefold()))
+    if not listing_words.intersection(
+        {"career", "careers", "job", "jobs", "opening", "openings", "position", "positions"}
+    ):
+        return False
+    identifier = target_parts[-1]
+    return bool(
+        _UUID_DETAIL_ID.fullmatch(identifier)
+        or (identifier.isdigit() and 4 <= len(identifier) <= 24)
+        or (
+            _OPAQUE_DETAIL_ID.fullmatch(identifier)
+            and len(identifier) >= 12
+            and any(character.isdigit() for character in identifier)
+            and (
+                any(character.isalpha() for character in identifier)
+                or len(set(identifier.casefold())) >= 6
+            )
+        )
     )
 
 
@@ -444,6 +556,51 @@ def _looks_like_first_party_numeric_detail_route(url: str, source_url: str) -> b
         return False
     key, value = query[0]
     return key.casefold() in {"gh_jid", "jid", "jobid", "job_id"} and value == job_id
+
+
+def _looks_like_first_party_slug_detail_route(candidate: LinkCandidate) -> bool:
+    """Recognize first-party /job-offers/<scope>/<title-slug> detail routes."""
+
+    parsed = urlparse(candidate.url)
+    source = urlparse(candidate.source_url)
+    if (
+        parsed.scheme.casefold() != "https"
+        or parsed.scheme.casefold() != source.scheme.casefold()
+        or parsed.netloc.casefold() != source.netloc.casefold()
+        or parsed.query
+        or parsed.fragment
+        or not candidate.text.strip()
+    ):
+        return False
+    target_parts = [part.casefold() for part in parsed.path.split("/") if part]
+    source_parts = [part.casefold() for part in source.path.split("/") if part]
+    marker_index = next(
+        (
+            index
+            for index, part in enumerate(target_parts)
+            if part in {"job-offers", "our-job-offers"}
+        ),
+        None,
+    )
+    if (
+        marker_index is None
+        or marker_index >= len(target_parts) - 2
+        or target_parts[: marker_index + 1]
+        != source_parts[: marker_index + 1]
+    ):
+        return False
+    slug = target_parts[-1]
+    slug_tokens = _KEYWORD_TOKEN.findall(slug)
+    label_tokens = set(_KEYWORD_TOKEN.findall(candidate.text.casefold()))
+    meaningful_slug_tokens = {
+        token
+        for token in slug_tokens
+        if token not in {"a", "an", "and", "at", "for", "in", "of", "or", "the"}
+    }
+    return bool(
+        len(slug_tokens) >= 3
+        and len(meaningful_slug_tokens & label_tokens) >= 2
+    )
 
 
 def _looks_like_generic_listing_leaf(leaf: str) -> bool:
@@ -488,7 +645,15 @@ def _looks_like_ats_job_detail(url: str) -> bool:
         return "job" in parts or "jobdetail" in parts
     if "successfactors.com" in host or "sapsf.com" in host:
         query = urlparse(url).query.lower()
-        return "career_job_req_id" in query or "jobreqid" in query or "job" in parts
+        return (
+            "career_job_req_id" in query
+            or "jobid=" in query
+            or "jobreqid" in query
+            or "job" in parts
+        )
+    if host == "recruiting.adp.com":
+        query = dict(parse_qsl(parsed.query, keep_blank_values=True))
+        return bool(query.get("r"))
     if "rippling.com" in host:
         return "jobs" in parts and len(parts) >= 4 and parts[0] != "embed"
     if "bamboohr.com" in host:

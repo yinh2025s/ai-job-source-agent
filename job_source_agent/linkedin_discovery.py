@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from html.parser import HTMLParser
-from typing import Any
+from typing import Any, Iterable
 from urllib.parse import urlencode, urlparse, urlunparse
 
+from .contracts import FetchClient
+from .linkedin import parse_visible_external_apply_url, sanitize_public_external_apply_url
 from .models import CompanyInput
-from .web import Fetcher, normalize_url
+from .web import FetchError, normalize_url
 
 
 LINKEDIN_JOBS_ENDPOINT = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
@@ -25,8 +27,14 @@ class LinkedInJobPosting:
     source_trace: dict[str, Any] | None = None
 
 
+@dataclass(frozen=True)
+class LinkedInSearchQuery:
+    keywords: str
+    location: str = "United States"
+
+
 class LinkedInJobsDiscoverer:
-    def __init__(self, fetcher: Fetcher) -> None:
+    def __init__(self, fetcher: FetchClient) -> None:
         self.fetcher = fetcher
 
     def search(
@@ -54,19 +62,66 @@ class LinkedInJobsDiscoverer:
 
         return postings
 
+    def collect_benchmark_cohort(
+        self,
+        queries: Iterable[LinkedInSearchQuery],
+        *,
+        cohort_size: int = 100,
+        per_query_limit: int = 100,
+        pages: int = 4,
+    ) -> list[LinkedInJobPosting]:
+        """Collect an ordered cohort of distinct postings, retaining company repeats."""
+
+        if cohort_size < 0 or per_query_limit < 0:
+            raise ValueError("LinkedIn cohort limits must be non-negative")
+        cohort: list[LinkedInJobPosting] = []
+        seen_jobs: set[str] = set()
+        for query_index, query in enumerate(queries):
+            if len(cohort) >= cohort_size:
+                break
+            postings = self.search(
+                keywords=query.keywords,
+                location=query.location,
+                limit=per_query_limit,
+                pages=pages,
+            )
+            for posting in postings:
+                if posting.job_id in seen_jobs:
+                    continue
+                seen_jobs.add(posting.job_id)
+                trace = dict(posting.source_trace or {})
+                trace["benchmark_collection"] = {
+                    "cohort_ordinal": len(cohort),
+                    "distinct_by": "linkedin_job_id",
+                    "evidence_source": "public_search_card",
+                    "query_index": query_index,
+                    "keywords": query.keywords,
+                    "location": query.location,
+                }
+                cohort.append(replace(posting, source_trace=trace))
+                if len(cohort) >= cohort_size:
+                    break
+        return cohort
+
     def _search_url(self, keywords: str, location: str, start: int) -> str:
         query = urlencode({"keywords": keywords, "location": location, "start": start})
         return f"{LINKEDIN_JOBS_ENDPOINT}?{query}"
 
 
-def linkedin_postings_to_company_inputs(postings: list[LinkedInJobPosting]) -> list[CompanyInput]:
+def linkedin_postings_to_company_inputs(
+    postings: list[LinkedInJobPosting],
+    *,
+    preserve_job_postings: bool = False,
+) -> list[CompanyInput]:
+    """Convert cards, optionally retaining distinct postings from the same company."""
+
     companies: list[CompanyInput] = []
-    seen_companies: set[str] = set()
+    seen_identities: set[str] = set()
     for posting in postings:
-        company_key = posting.company_name.lower().strip()
-        if not company_key or company_key in seen_companies:
+        identity = posting.job_id.strip() if preserve_job_postings else posting.company_name.lower().strip()
+        if not identity or identity in seen_identities:
             continue
-        seen_companies.add(company_key)
+        seen_identities.add(identity)
         source_trace = dict(posting.source_trace or {})
         source_trace["linkedin_posting"] = {
             "availability": "listed",
@@ -87,6 +142,54 @@ def linkedin_postings_to_company_inputs(postings: list[LinkedInJobPosting]) -> l
             )
         )
     return companies
+
+
+def enrich_public_external_apply_urls(
+    postings: list[LinkedInJobPosting],
+    fetcher: FetchClient,
+    *,
+    max_detail_fetches: int = 100,
+) -> list[LinkedInJobPosting]:
+    """Bound public detail fetches and retain only visible, sanitized apply links."""
+
+    if max_detail_fetches < 0:
+        raise ValueError("max_detail_fetches must be non-negative")
+    enriched: list[LinkedInJobPosting] = []
+    fetch_count = 0
+    for posting in postings:
+        trace = dict(posting.source_trace or {})
+        detail_trace: dict[str, Any] = {
+            "evidence_source": "public_job_detail",
+            "job_url": posting.linkedin_job_url,
+        }
+        external_apply_url = sanitize_public_external_apply_url(posting.external_apply_url)
+        if external_apply_url:
+            detail_trace.update(status="found", reason="already_present")
+        elif not _safe_linkedin_path_url(posting.linkedin_job_url, "jobs/view"):
+            detail_trace.update(status="unavailable", reason="unsafe_job_url")
+        elif fetch_count >= max_detail_fetches:
+            detail_trace.update(status="not_attempted", reason="fetch_limit_reached")
+        else:
+            fetch_count += 1
+            try:
+                page = fetcher.fetch(posting.linkedin_job_url)
+            except (FetchError, OSError, RuntimeError, ValueError):
+                detail_trace.update(status="unavailable", reason="fetch_failed")
+            else:
+                external_apply_url = parse_visible_external_apply_url(page.html)
+                if external_apply_url:
+                    detail_trace.update(status="found", reason="visible_external_apply_link")
+                else:
+                    detail_trace.update(status="unavailable", reason="no_visible_external_apply_link")
+        trace["linkedin_job_detail"] = detail_trace
+        enriched.append(
+            replace(
+                posting,
+                external_apply_url=external_apply_url,
+                source_trace=trace,
+            )
+        )
+    return enriched
 
 
 def parse_linkedin_job_cards(html: str) -> list[LinkedInJobPosting]:

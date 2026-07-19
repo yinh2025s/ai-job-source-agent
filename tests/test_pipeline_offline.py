@@ -6,8 +6,11 @@ from job_source_agent.content_probe import (
     probe_first_party_cms_payload,
 )
 from job_source_agent.career_search import CareerSearchResult
+from job_source_agent.career_candidate_scheduler import candidate_concrete_host
+from job_source_agent.career_transport_budget import CareerTransportBudgetFetcher
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.linkedin import load_company_inputs
+from job_source_agent.job_board import JobBoard
 from job_source_agent.models import CompanyInput, LinkCandidate, dataclass_to_dict
 from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.web import FetchError, Fetcher, Page, RawLink
@@ -17,6 +20,278 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfflinePipelineTests(unittest.TestCase):
+    def test_non_production_eightfold_tenant_is_not_promoted_from_embedded_url(self):
+        class Adapter:
+            name = "eightfold"
+
+        self.assertFalse(
+            JobSourceAgent._provider_board_candidate_allowed(
+                Adapter(),
+                JobBoard(
+                    "https://kering-sandbox.eightfold.ai/careers",
+                    "eightfold",
+                    "kering-sandbox",
+                ),
+            )
+        )
+        self.assertTrue(
+            JobSourceAgent._provider_board_candidate_allowed(
+                Adapter(),
+                JobBoard(
+                    "https://acme.eightfold.ai/careers",
+                    "eightfold",
+                    "acme",
+                ),
+            )
+        )
+        agent = JobSourceAgent(Fetcher(offline=True))
+        self.assertFalse(
+            agent._provider_url_candidate_allowed(
+                "https://kering-sandbox.eightfold.ai/careers"
+            )
+        )
+        self.assertTrue(
+            agent._provider_url_candidate_allowed("https://acme.eightfold.ai/careers")
+        )
+
+    def test_non_production_provider_link_is_not_requeued_on_deferred_page_pass(self):
+        career = "https://careers.kering.example/careers?filter_house=Brand"
+        sandbox = "https://kering-sandbox.eightfold.ai/careers"
+
+        class KeringFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == career:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<html><title>Brand jobs</title><main>"
+                            "<h1>Open positions</h1>"
+                            f'<a href="{sandbox}">Search jobs</a>'
+                            "</main></html>"
+                        ),
+                    )
+                raise AssertionError(f"disallowed provider URL was fetched: {url}")
+
+        fetcher = KeringFetcher()
+        with self.assertRaises(DiscoveryError) as raised:
+            JobSourceAgent(
+                fetcher,
+                max_job_pages=4,
+                max_ats_board_fetches=0,
+            ).find_job_board(career)
+
+        self.assertEqual(fetcher.calls, [career])
+        self.assertEqual(
+            raised.exception.trace["provider_candidate_rejections"],
+            [{"url": sandbox, "reason": "non_production_provider_tenant"}],
+        )
+
+    def test_visible_first_party_inventory_precedes_talent_community_cta(self):
+        career = "https://www.parent.example/talent/job-offers/brand-careers/"
+        join = "https://careers.parent.example/careers/join"
+        first = f"{career}northern-america/brand-financial-analyst/"
+        second = f"{career}europe/brand-pricing-analyst/"
+
+        class InventoryFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == career:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            '<article class="job-card"><h3>Financial Analyst</h3>'
+                            f'<a href="{first}">Brand Financial Analyst</a></article>'
+                            '<article class="job-card"><h3>Pricing Analyst</h3>'
+                            f'<a href="{second}">Brand Pricing Analyst</a></article>'
+                            f'<a href="{join}">Can’t find a role that fits right now?</a>'
+                        ),
+                    )
+                raise AssertionError(f"lower-priority CTA was fetched: {url}")
+
+        fetcher = InventoryFetcher()
+        job_list_url, trace = JobSourceAgent(
+            fetcher,
+            max_job_pages=4,
+            max_ats_board_fetches=0,
+        ).find_job_board(career)
+
+        self.assertEqual(job_list_url, career)
+        self.assertEqual(fetcher.calls, [career])
+        self.assertEqual(
+            trace["selected_from"],
+            "verified_first_party_listing_inventory",
+        )
+
+    def test_target_region_gateway_follows_one_visible_nested_career_action(self):
+        homepage = "https://brand.example"
+        gateway = "https://us.brand.example/"
+        career = "https://brand.career/"
+
+        class GatewayFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if url == homepage:
+                    return Page(
+                        url=url,
+                        html=f'<a href="{gateway}">United States</a>',
+                    )
+                if url.rstrip("/") == gateway.rstrip("/"):
+                    return Page(
+                        url=url,
+                        final_url=gateway,
+                        html=f'<a href="{career}">Recruitment &amp; Careers</a>',
+                    )
+                if url.rstrip("/") == career.rstrip("/"):
+                    return Page(
+                        url=url,
+                        final_url=career,
+                        html="<title>Careers</title><main>Open positions and jobs</main>",
+                    )
+                raise FetchError(f"unexpected speculative path: {url}")
+
+        fetcher = GatewayFetcher()
+        selected, trace = JobSourceAgent(
+            fetcher,
+            max_career_candidate_fetches=3,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+            max_ats_board_fetches=0,
+        ).find_career_page(
+            homepage,
+            company_name="Brand",
+            target_location="New York, NY",
+        )
+
+        self.assertEqual(selected, career)
+        self.assertEqual(trace["selected_from"], "regional_gateway_navigation")
+        self.assertEqual(fetcher.calls[:3], [homepage, gateway, career])
+
+    def test_region_gateway_rejects_unlabelled_cross_site_navigation(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+        candidate = LinkCandidate(
+            "https://unrelated.example/",
+            "Learn more",
+            "https://us.brand.example/",
+            100,
+            [],
+            origin="page_link",
+        )
+
+        self.assertFalse(agent._is_explicit_cross_site_job_portal(candidate))
+        self.assertFalse(agent._is_safe_traversal_target(candidate, candidate.source_url))
+
+    def test_first_party_bundle_precedes_speculative_paths_without_visible_career_link(self):
+        homepage = "https://bundle.example"
+        asset = f"{homepage}/main.js"
+        career = "https://opportunities.bundle.example"
+
+        class BundleFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == homepage:
+                    return Page(
+                        url=url,
+                        html=f'<script type="module" src="{asset}"></script>',
+                    )
+                if url == asset:
+                    return Page(
+                        url=url,
+                        html=f'<a href="{career}">Job Opportunities</a>',
+                    )
+                if url == career:
+                    return Page(url=url, html="<main>Careers and open jobs</main>")
+                raise FetchError(f"unexpected speculative path: {url}")
+
+        selected, trace = JobSourceAgent(
+            BundleFetcher(offline=True),
+            max_career_candidate_fetches=10,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+            max_ats_board_fetches=0,
+        ).find_career_page(homepage)
+
+        self.assertEqual(selected, career)
+        self.assertEqual(trace["selected_from"], "bundle_navigation_discovery")
+        self.assertEqual(
+            trace["sitemap_discovery"]["reason"],
+            "first-party bundle navigation verified before speculative path fanout",
+        )
+
+    def test_blind_ats_verification_follows_sitemap_but_precedes_search_fanout(self):
+        events = []
+
+        class HomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(url=url, final_url=url, html="<html>Company</html>")
+
+        class OrderedAgent(JobSourceAgent):
+            def _select_verified_career_candidate(
+                self,
+                candidates,
+                trace,
+                *,
+                schedule_source,
+                **kwargs,
+            ):
+                events.append(schedule_source)
+                if schedule_source == "blind_ats":
+                    trace["selected"] = dataclass_to_dict(candidates[0])
+                    return candidates[0].url
+                return None
+
+            def _sitemap_candidates(self, *args, **kwargs):
+                events.append("sitemap_transport")
+                return [], {}
+
+            def _search_career_candidates(self, *args, **kwargs):
+                events.append("search_transport")
+                return CareerSearchResult(candidates=[], trace={})
+
+        agent = OrderedAgent(HomepageFetcher(offline=True), max_ats_board_fetches=1)
+
+        _career_url, trace = agent.find_career_page(
+            "https://acme.example",
+            company_name="Acme",
+        )
+
+        self.assertEqual(
+            events,
+            [
+                "homepage_and_common_paths",
+                "sitemap_transport",
+                "sitemap",
+                "blind_ats",
+            ],
+        )
+        self.assertEqual(trace["selected_from"], "ats_board_discovery")
+        self.assertTrue(trace["search_discovery"]["skipped"])
+
+    def test_blind_ats_candidates_include_registered_pinpoint_tenant_shape(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+
+        candidates = agent._ats_board_candidates("SKIMS", "https://skims.com")
+
+        pinpoint = next(
+            item for item in candidates
+            if item.url == "https://skims.pinpointhq.com/"
+        )
+        self.assertIn("derived Pinpoint board candidate", pinpoint.reasons)
+        self.assertEqual(pinpoint.origin, "blind_ats_probe")
+
     def test_official_visible_empty_state_is_terminal_without_company_exception(self):
         career = "https://empty.example/careers"
 
@@ -132,6 +407,274 @@ class OfflinePipelineTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "career_page_not_found")
         self.assertNotIn("candidate_fetch_budget_exhausted", raised.exception.trace)
+
+    def test_official_career_forbidden_is_not_reported_as_not_found(self):
+        homepage = "https://forbidden.example"
+        career = f"{homepage}/careers"
+
+        class ForbiddenFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=f'<a href="{career}">Careers</a>',
+                    )
+                if url.rstrip("/") == career:
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                raise FetchError("not found", reason_code="HTTP_NOT_FOUND")
+
+        agent = JobSourceAgent(
+            ForbiddenFetcher(offline=True),
+            max_career_candidate_fetches=8,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(raised.exception.code, "HTTP_FORBIDDEN")
+
+    def test_repeated_official_host_denials_are_not_reported_as_not_found(self):
+        homepage = "https://blocked.example"
+
+        class DeniedPathsFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                if url.rstrip("/") == homepage:
+                    return Page(url=url, final_url=homepage, html="<html>Company</html>")
+                if candidate_concrete_host(url) == "blocked.example":
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                raise FetchError("not found", reason_code="HTTP_NOT_FOUND")
+
+        agent = JobSourceAgent(
+            CareerTransportBudgetFetcher(DeniedPathsFetcher(offline=True)),
+            max_career_candidate_fetches=5,
+            max_career_discovery_transport_calls=12,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(raised.exception.code, "HTTP_FORBIDDEN")
+        self.assertLess(
+            raised.exception.trace["transport_budget"]["dispatched"],
+            6,
+        )
+        self.assertTrue(raised.exception.trace["official_host_denial_skips"])
+
+    def test_repeated_official_denial_prunes_first_party_fanout_but_keeps_provider_routes(self):
+        homepage = "https://denied.example"
+        provider = "https://jobs.lever.co/denied"
+
+        class DeniedFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.official_calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                if candidate_concrete_host(url).removeprefix("www.") == "denied.example":
+                    self.official_calls.append(url)
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                raise FetchError("not found", reason_code="HTTP_NOT_FOUND")
+
+        class ProviderRouteAgent(JobSourceAgent):
+            def __init__(self, fetcher):
+                super().__init__(
+                    fetcher,
+                    max_career_candidate_fetches=8,
+                    max_ats_board_fetches=1,
+                )
+                self.search_ats_only = None
+                self.blind_ats_checked = False
+
+            def _select_verified_career_candidate(self, candidates, trace, *, schedule_source, **kwargs):
+                if schedule_source == "blind_ats":
+                    self.blind_ats_checked = True
+                    return None
+                if schedule_source == "search":
+                    self.assert_search_candidates = list(candidates)
+                    return provider
+                return super()._select_verified_career_candidate(
+                    candidates,
+                    trace,
+                    schedule_source=schedule_source,
+                    **kwargs,
+                )
+
+            def _search_career_candidates(self, company_name, homepage_url, *, ats_only=False):
+                self.search_ats_only = ats_only
+                return CareerSearchResult(
+                    candidates=[
+                        LinkCandidate(
+                            provider,
+                            "Jobs",
+                            homepage_url,
+                            500,
+                            [],
+                            "search_result",
+                        ),
+                        LinkCandidate(
+                            "https://careers.unrelated.example/jobs",
+                            "Jobs",
+                            homepage_url,
+                            500,
+                            [],
+                            "search_result",
+                        ),
+                    ],
+                    trace={},
+                )
+
+        fetcher = DeniedFetcher()
+        agent = ProviderRouteAgent(fetcher)
+
+        career_url, trace = agent.find_career_page(homepage, company_name="Denied")
+
+        self.assertEqual(career_url, provider)
+        self.assertTrue(agent.blind_ats_checked)
+        self.assertFalse(agent.search_ats_only)
+        self.assertEqual(
+            [candidate.url for candidate in agent.assert_search_candidates],
+            [provider],
+        )
+        self.assertEqual(trace["selected_from"], "search_discovery")
+        self.assertEqual(
+            trace["sitemap_discovery"]["reason"],
+            "repeated deterministic denial on official host",
+        )
+        self.assertEqual(
+            trace["search_discovery"]["official_host_denial_policy"]["search_scope"],
+            "ats_or_same_official_site",
+        )
+        self.assertEqual(len(fetcher.official_calls), 2)
+        self.assertTrue(trace["official_host_denial_skips"])
+
+    def test_identity_career_root_survives_existing_official_host_denial(self):
+        homepage = "https://denied.example"
+        external_apply = "https://apply.example/jobs"
+
+        class ExternalApplyFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url == external_apply:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html="<html><title>Careers</title><h1>Careers</h1><p>Open jobs</p></html>",
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        trace = {
+            "candidate_fetch_errors": [
+                {"url": homepage, "reason_code": "HTTP_FORBIDDEN"},
+                {"url": f"{homepage}/careers", "reason_code": "HTTP_FORBIDDEN"},
+            ]
+        }
+        candidate = LinkCandidate(
+            external_apply,
+            "Apply",
+            homepage,
+            500,
+            ["identity-supplied career root requiring verification"],
+            "identity_career_root",
+        )
+        agent = JobSourceAgent(ExternalApplyFetcher(offline=True))
+
+        selected = agent._select_verified_career_candidate(
+            [candidate],
+            trace,
+            homepage_url=homepage,
+        )
+
+        self.assertEqual(selected, external_apply)
+        self.assertNotIn("official_host_denial_skips", trace)
+
+    def test_login_required_precedes_forbidden_for_repeated_official_denial(self):
+        homepage = "https://login.example"
+
+        class LoginFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    raise FetchError(
+                        "authentication required",
+                        status=401,
+                        reason_code="LOGIN_REQUIRED",
+                        retryable=False,
+                    )
+                if candidate_concrete_host(url).removeprefix("www.") == "login.example":
+                    raise FetchError(
+                        "HTTP Error 403: Forbidden",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                raise FetchError("not found", reason_code="HTTP_NOT_FOUND")
+
+        agent = JobSourceAgent(
+            LoginFetcher(offline=True),
+            max_career_candidate_fetches=8,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(raised.exception.code, "LOGIN_REQUIRED")
+        self.assertTrue(raised.exception.trace["official_host_denial_skips"])
+
+    def test_caller_deadline_precedes_not_found_and_fetch_budget_projection(self):
+        homepage = "https://deadline.example"
+        career = f"{homepage}/careers"
+
+        class DeadlineFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == homepage:
+                    return Page(
+                        url=url,
+                        final_url=homepage,
+                        html=f'<a href="{career}">Careers</a>',
+                    )
+                raise FetchError(
+                    "operation timed out at caller deadline",
+                    reason_code="NETWORK_TIMEOUT",
+                    retryable=True,
+                )
+
+        agent = JobSourceAgent(
+            DeadlineFetcher(offline=True),
+            max_career_candidate_fetches=1,
+            max_ats_board_fetches=0,
+            enable_sitemap_discovery=False,
+            enable_career_search=False,
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            agent.find_career_page(homepage)
+
+        self.assertEqual(
+            raised.exception.code,
+            "COMPANY_TIME_BUDGET_EXHAUSTED",
+        )
 
     def test_explicit_offline_fixture_gap_survives_career_failure_aggregation(self):
         homepage = "https://fixture-gap.example"
@@ -981,7 +1524,46 @@ class OfflinePipelineTests(unittest.TestCase):
             candidate.url,
             "https://www.secure.example/en-us/careers/job-results",
         )
-        self.assertIn("upgraded same-site HTTP link to HTTPS", candidate.reasons)
+        self.assertIn("upgraded observed HTTP link to HTTPS", candidate.reasons)
+
+    def test_https_homepage_upgrades_observed_exact_http_ats_anchor(self):
+        homepage = "https://www.aperia.com/"
+        candidate = JobSourceAgent(Fetcher(offline=True))._score_career_candidate(
+            RawLink(
+                url="http://job-boards.greenhouse.io/aperiasolutions",
+                text="Join Our Team",
+                source_url=homepage,
+                origin="page_link",
+            ),
+            homepage,
+        )
+
+        self.assertEqual(
+            candidate.url,
+            "https://job-boards.greenhouse.io/aperiasolutions",
+        )
+        self.assertIn("upgraded observed HTTP link to HTTPS", candidate.reasons)
+
+    def test_does_not_upgrade_untrusted_cross_site_http_link(self):
+        homepage = "https://www.aperia.com/"
+        agent = JobSourceAgent(Fetcher(offline=True))
+        for url in (
+            "http://evil.job-boards.greenhouse.io/aperiasolutions",
+            "http://user:secret@job-boards.greenhouse.io/aperiasolutions",
+            "http://job-boards.greenhouse.io:8080/aperiasolutions",
+            "http://unrelated.example/jobs",
+        ):
+            with self.subTest(url=url):
+                candidate = agent._score_career_candidate(
+                    RawLink(
+                        url=url,
+                        text="Join Our Team",
+                        source_url=homepage,
+                        origin="page_link",
+                    ),
+                    homepage,
+                )
+                self.assertEqual(candidate.url, url)
 
     def test_job_board_stops_after_first_verified_first_party_listing_route(self):
         career = "https://routes.example/en/careers"

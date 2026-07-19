@@ -10,7 +10,10 @@ from ..web import FetchError, Page, safe_normalize_url
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
-_ICIMS_HOST = re.compile(r"^careers-[a-z0-9.-]+\.icims\.com$", re.IGNORECASE)
+_ICIMS_HOST = re.compile(
+    r"^careers-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.icims\.com$",
+    re.IGNORECASE,
+)
 _JOB_CONTAINER_KEYS = {
     "jobs",
     "jobpostings",
@@ -45,8 +48,10 @@ class ICIMSAdapter:
         except (TypeError, ValueError):
             return False
         parts = [part.lower() for part in parsed.path.split("/") if part]
-        if not _is_safe_icims_origin(parsed) or len(parts) < 2 or parts[0] != "jobs":
+        if not _is_safe_icims_origin(parsed) or not parts or parts[0] != "jobs":
             return False
+        if len(parts) == 1:
+            return True
         return parts[1].startswith("search") or (
             parts[1].isdigit() and "job" in parts[2:]
         )
@@ -57,7 +62,8 @@ class ICIMSAdapter:
         parsed = urlparse(url)
         parts = [part for part in parsed.path.split("/") if part]
         is_detail = len(parts) >= 2 and parts[1].isdigit()
-        path = "/jobs/search" if is_detail else parsed.path.rstrip("/")
+        is_root = len(parts) == 1
+        path = "/jobs/search" if is_root or is_detail else parsed.path.rstrip("/")
         board_url = urlunparse(
             (parsed.scheme or "https", parsed.netloc, path, "", "", "")
         )
@@ -612,11 +618,9 @@ def _is_safe_icims_origin(parsed, expected_host: str | None = None) -> bool:
     except ValueError:
         return False
     host = (parsed.hostname or "").casefold()
-    standard_port = port is None or (parsed.scheme == "https" and port == 443) or (
-        parsed.scheme == "http" and port == 80
-    )
+    standard_port = port is None or port == 443
     return (
-        parsed.scheme in {"http", "https"}
+        parsed.scheme == "https"
         and parsed.username is None
         and parsed.password is None
         and standard_port

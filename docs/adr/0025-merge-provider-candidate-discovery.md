@@ -1,6 +1,6 @@
 # ADR-0025: Merge Provider Candidate Discovery Before Verification
 
-- Status: accepted behind feature flag
+- Status: accepted; enabled by default at product entry points
 - Date: 2026-07-15
 
 ## Context
@@ -37,8 +37,16 @@ ranking and provider identity were difficult to audit as separate decisions.
    location classification. New candidate paths reject an explicit location mismatch; missing
    location remains visible rather than being silently converted into a match.
 9. `enable_parallel_candidate_discovery` is part of deterministic run configuration schema 1.3.
-   It defaults to false and is exposed by the CLI/live evaluator. Legacy 1.0-1.2 payloads remain
-   readable and restore the flag as false.
+   CLI, live evaluator, and extension bridge defaults are true; CLI/live expose a disable switch
+   for rollback and controlled comparison. The lower-level library default and legacy 1.0-1.2
+   payloads remain false so embedded callers and historical checkpoint fingerprints are not
+   silently changed.
+10. Schema 1.4 adds benchmark-only `evaluate_all_candidate_routes`. It disables the normal
+    direct-route search short circuit so External Apply, provider-targeted search, and
+    Website/Career discovery are measured on the same posting. Per-route exact attribution
+    still requires a verified provider/tenant board, hiring relationship, and the final typed
+    S7 exact identity. Product scheduling and success semantics are unchanged when the flag is
+    false.
 
 ## Security And Privacy
 
@@ -67,6 +75,18 @@ criteria. Flag off produced 29 websites, 19 career pages, 12 job lists, and 3 ex
 identical and identity-verified in both runs. The only funnel delta was not attributable to the
 candidate path because that company's merged pool was empty. Provider-targeted discovery made
 162 source dispatches with 28 errors and emitted zero search candidates; one explicit career ATS
-URL entered the pool and preserved an existing exact result. Therefore the flag remains disabled
-by default. The next decision must improve and measure `SearchBackend` recall and request cost,
-not weaken tenant/identity verification or add company exceptions.
+URL entered the pool and preserved an existing exact result, so the flag initially remained off.
+Subsequent generic work added verified provider-tenant probes, staged direct-then-search execution,
+candidate-scoped hiring evidence, provider-owned canonical board normalization, and strict S7
+selection validation. A focused default-command live acceptance recovered Texas Children's through
+Oracle HCM and SpaceX through Greenhouse at 2/2 exact with 2/2 replay; the production provider
+benchmark remained 25/25 for both output and identity expectations. Product entry points are now
+enabled by default, while the lower-level library and old replay payloads remain conservative. This
+graduation does not weaken tenant/identity verification or permit company-specific runtime rules.
+
+A later observed 100-posting exhaustive evaluation covered 73 companies and ten job families.
+Provider-targeted search attributed 11 exact openings and Website/Career attributed 24; seven
+were shared, producing a 28/100 OR-union. No public LinkedIn detail page exposed a usable External
+Apply input, so that route's conditional rate is N/A rather than zero. All route traces were
+well-formed. Scoped replay reproduced 98/100 outcomes and retained two mismatches as an explicit
+residual risk. See `docs/LIVE_100_THREE_ROUTE_REPORT.md`.

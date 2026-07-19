@@ -70,6 +70,13 @@ class SourcePostingTests(unittest.TestCase):
 
         self.assertEqual(status, "closed")
 
+    def test_inaccessible_status_is_not_treated_as_closed(self):
+        status = explicit_closed_source_status(
+            {"linkedin_posting": {"availability": "unavailable"}}
+        )
+
+        self.assertIsNone(status)
+
 
 if __name__ == "__main__":
     unittest.main()

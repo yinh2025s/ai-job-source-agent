@@ -14,6 +14,8 @@ from .providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
 class ExternalApplyDiscovery:
     """Turn LinkedIn's declared external apply target into an untrusted lead."""
 
+    candidate_wave = "direct"
+
     def __init__(self, provider_registry: ProviderRegistry | None = None) -> None:
         self._provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
 
@@ -31,6 +33,8 @@ class ExternalApplyDiscovery:
 
 class WebsiteCareerDiscovery:
     """Use declared first-party URLs only when their URL identifies an ATS."""
+
+    candidate_wave = "direct"
 
     def __init__(self, provider_registry: ProviderRegistry | None = None) -> None:
         self._provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY

@@ -23,14 +23,16 @@ from .models import dataclass_to_dict
 
 MAX_REQUEST_BYTES = 256 * 1024
 MAX_RECORDS = 30
+COMPANY_DISCOVERY_EVIDENCE_FILENAME = "company-discovery-evidence.json"
 
 
 @dataclass(frozen=True)
 class ExtensionBridgeConfig:
     fetcher: FetcherConfig
-    agent: AgentConfig = AgentConfig()
+    agent: AgentConfig = AgentConfig(enable_parallel_candidate_discovery=True)
     workers: int = 2
     output_dir: Path | None = None
+    company_discovery_evidence_path: Path | None = None
 
 
 class ExtensionRunManager:
@@ -76,6 +78,15 @@ class ExtensionRunManager:
                     self.config.output_dir / LINKEDIN_EVIDENCE_CACHE_FILENAME
                     if self.config.output_dir is not None
                     else None
+                ),
+                company_discovery_evidence_path=(
+                    self.config.company_discovery_evidence_path
+                    if self.config.company_discovery_evidence_path is not None
+                    else (
+                        self.config.output_dir / COMPANY_DISCOVERY_EVIDENCE_FILENAME
+                        if self.config.output_dir is not None
+                        else None
+                    )
                 ),
             )
             results = [application.pipeline.discover(company) for company in companies]

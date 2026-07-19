@@ -1,15 +1,18 @@
 import json
 import unittest
 
+from job_source_agent.contracts import PipelineContext
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.first_party_inventory import (
     AssetSource,
     MAX_INVENTORY_BYTES,
     probe_first_party_job_inventory,
 )
-from job_source_agent.pipeline import JobSourceAgent
+from job_source_agent.models import CompanyInput
 from job_source_agent.opening_matcher import structured_job_links
+from job_source_agent.pipeline import JobSourceAgent
 from job_source_agent.snapshot import sanitize_snapshot_body
+from job_source_agent.stages import JobBoardDiscoveryStage
 from job_source_agent.web import FetchError, Page
 
 
@@ -656,6 +659,106 @@ class FirstPartyInventoryPipelineTests(unittest.TestCase):
 
         self.assertEqual(raised.exception.code, "job_board_not_found")
 
+    def test_pipeline_does_not_promote_content_cards_as_job_inventory(self):
+        content_routes = (
+            "/careers/blog/how-an-ai-engineer-builds-products",
+            "/careers/news/platform-engineer-award",
+            "/careers/stories/meet-our-data-scientist",
+            "/careers/articles/software-engineer-career-guide",
+            "/careers/employee-profile/product-manager-jane-doe",
+        )
+        html = "<main>" + "".join(
+            (
+                f'<a class="careers-card" href="{route}">'
+                f"<h3>{title}</h3>"
+                "<p>Meet our team and learn about their work.</p>"
+                "</a>"
+            )
+            for title, route in zip(
+                (
+                    "AI Engineer",
+                    "Platform Engineer",
+                    "Data Scientist",
+                    "Software Engineer",
+                    "Product Manager",
+                ),
+                content_routes,
+            )
+        ) + "</main>"
+        fetcher = RecordingFetcher(
+            {self.career: Page(url=self.career, html=html)}
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            JobSourceAgent(fetcher, max_job_pages=1).find_job_board(self.career)
+
+        self.assertEqual(raised.exception.code, "job_board_not_found")
+        self.assertNotIn(
+            "first_party_listing_inventory",
+            raised.exception.trace,
+        )
+
+    def test_pipeline_prioritizes_explicit_openings_route_over_content_cards(self):
+        openings = "https://www.example.com/career/jobs"
+        html = f"""
+            <main>
+              <article class="card">
+                <h3>AI Engineer</h3>
+                <a href="/blog/ai-engineer-story">Read more</a>
+              </article>
+              <a href="{openings}">View openings</a>
+            </main>
+        """
+        fetcher = RecordingFetcher(
+            {
+                self.career: Page(url=self.career, html=html),
+                openings: Page(url=openings, html="<main>Current openings</main>"),
+            }
+        )
+
+        job_list, trace = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board(self.career)
+
+        self.assertEqual(job_list, openings)
+        self.assertEqual(trace["selected_from"], "explicit_first_party_listing_route")
+        self.assertEqual(
+            [url for url, _data, _headers in fetcher.requests],
+            [self.career, openings],
+        )
+
+    def test_pipeline_still_verifies_explicit_search_jobs_route(self):
+        search = "https://www.example.com/career/explore"
+        html = f"""
+            <main>
+              <article class="card">
+                <h3>Platform Engineer</h3>
+                <a href="/news/platform-engineer-award">Read more</a>
+              </article>
+              <a href="{search}">Search jobs</a>
+            </main>
+        """
+        fetcher = RecordingFetcher(
+            {
+                self.career: Page(url=self.career, html=html),
+                search: Page(url=search, html="<main>Explore our teams</main>"),
+            }
+        )
+
+        with self.assertRaises(DiscoveryError) as raised:
+            JobSourceAgent(fetcher, max_job_pages=2).find_job_board(self.career)
+
+        self.assertEqual(raised.exception.code, "job_board_not_found")
+        self.assertEqual(
+            [url for url, _data, _headers in fetcher.requests],
+            [self.career, search],
+        )
+        self.assertNotIn(
+            "first_party_listing_inventory",
+            raised.exception.trace,
+        )
+
     def test_pipeline_prioritizes_tail_route_chunk_with_three_asset_cap(self):
         opening = "https://jobs.ashbyhq.com/example/11111111-1111-1111-1111-111111111111"
         decoys = [f"https://www.example.com/_nuxt/hash-{index}.js" for index in range(4)]
@@ -717,6 +820,84 @@ class FirstPartyInventoryPipelineTests(unittest.TestCase):
         failure = raised.exception.trace["fetch_errors"][-1]
         self.assertEqual(failure["origin"], "first_party_dynamic_inventory")
         self.assertEqual(failure["reason_code"], "NETWORK_TIMEOUT")
+
+
+class DynamicInventoryStageTaxonomyTests(unittest.TestCase):
+    career = "https://www.example.com/careers"
+
+    def _run_with_trace(self, trace):
+        class MissingBoardService:
+            def find_job_board(self, *args, **kwargs):
+                raise DiscoveryError(
+                    "job_board_not_found",
+                    "No verified job board found",
+                    trace=trace,
+                )
+
+        context = PipelineContext.from_company(CompanyInput(company_name="Example"))
+        context.career_page_url = self.career
+        return JobBoardDiscoveryStage(MissingBoardService()).run(context)
+
+    def test_unverified_discovered_dynamic_endpoint_is_incomplete(self):
+        endpoint = "https://www.example.com/api/jobs"
+        execution = self._run_with_trace(
+            {
+                "content_payload_probes": [
+                    {
+                        "method": "first_party_declared_inventory",
+                        "status": "unverified",
+                        "endpoint_url": endpoint,
+                        "inventory_complete": False,
+                        "attempts": [
+                            {
+                                "endpoint_url": endpoint,
+                                "status": "fetch_failed",
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(
+            execution.result.reason_code,
+            "OPENING_DISCOVERY_INCOMPLETE",
+        )
+
+    def test_missing_dynamic_endpoint_remains_job_board_not_found(self):
+        execution = self._run_with_trace(
+            {
+                "content_payload_probes": [
+                    {
+                        "method": "first_party_declared_inventory",
+                        "status": "unverified",
+                        "inventory_complete": False,
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(execution.result.reason_code, "JOB_BOARD_NOT_FOUND")
+
+    def test_dynamic_endpoint_preserves_retryable_transport_reason(self):
+        execution = self._run_with_trace(
+            {
+                "content_payload_probes": [
+                    {
+                        "method": "first_party_dynamic_inventory",
+                        "status": "inventory_fetch_failed",
+                        "endpoint_url": "https://www.example.com/api/jobs",
+                        "inventory_complete": False,
+                        "fetch_error": {"reason_code": "NETWORK_TIMEOUT"},
+                    }
+                ]
+            }
+        )
+
+        self.assertEqual(execution.result.reason_code, "NETWORK_TIMEOUT")
+        self.assertTrue(execution.result.retryable)
 
 
 if __name__ == "__main__":

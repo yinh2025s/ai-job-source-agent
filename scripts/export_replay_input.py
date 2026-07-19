@@ -43,7 +43,10 @@ _SCOPED_REPLAY_SOURCE_KINDS = frozenset(
         "input",
         "fixed_input",
         "linkedin_public_jobs",
+        "linkedin_public_jobs_blind_holdout",
+        "linkedin_public_jobs_observed_development",
         "linkedin_browser_extension",
+        "replay_input",
     }
 )
 

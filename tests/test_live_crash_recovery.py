@@ -53,6 +53,7 @@ args = Namespace(
     max_ats_board_fetches=5,
     skip_sitemap=False,
     career_search_timeout=6,
+    enable_parallel_candidate_discovery=True,
 )
 result = run_pipeline_phase(
     CompanyInput(**record),
@@ -104,6 +105,7 @@ args = Namespace(
     max_ats_board_fetches=5,
     skip_sitemap=False,
     career_search_timeout=6,
+    enable_parallel_candidate_discovery=True,
 )
 result = run_pipeline_phase(
     CompanyInput(**record),
@@ -157,7 +159,7 @@ class LiveCrashRecoveryTests(unittest.TestCase):
             record = {
                 "company_name": "Aurora Data",
                 "company_website_url": "https://aurora-data.example",
-                "job_title": "AI Engineer",
+                "job_title": "AI Algorithm Engineer Intern",
                 "source": "scoped_crash_recovery_test",
             }
             input_path.write_text(json.dumps([record]), encoding="utf-8")
@@ -327,7 +329,7 @@ class LiveCrashRecoveryTests(unittest.TestCase):
             record = {
                 "company_name": "Aurora Data",
                 "company_website_url": "https://aurora-data.example",
-                "job_title": "AI Engineer",
+                "job_title": "AI Algorithm Engineer Intern",
                 "source": "crash_recovery_test",
             }
             input_path.write_text(json.dumps([record]), encoding="utf-8")
@@ -445,6 +447,7 @@ class LiveCrashRecoveryTests(unittest.TestCase):
                     max_career_search_queries=5,
                     max_ats_board_fetches=5,
                     career_search_timeout=6,
+                    enable_parallel_candidate_discovery=True,
                 )
             )
             fingerprint = execution_fingerprint(record, run_configuration.digest)
