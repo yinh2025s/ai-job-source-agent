@@ -206,6 +206,11 @@ class DiscoveredJobBoardTests(unittest.TestCase):
                 ),
             },
             {
+                "url": "https://acme.ripplehire.com/ripplehire/careers",
+                "provider": "ripplehire",
+                "identifier": "acme.ripplehire.com",
+            },
+            {
                 "url": "https://careers.example.test/jobs",
                 "provider": "sitecore_next_jobs",
                 "identifier": json.dumps(
@@ -281,6 +286,16 @@ class DiscoveredJobBoardTests(unittest.TestCase):
                 "identifier": (
                     '{"path":"/example-search","tenant":"example-search","v":1}'
                 ),
+            },
+            {
+                "url": "https://other.ripplehire.com/ripplehire/careers",
+                "provider": "ripplehire",
+                "identifier": "acme.ripplehire.com",
+            },
+            {
+                "url": "https://acme.ripplehire.com/ripplehire/careers?lang=en",
+                "provider": "ripplehire",
+                "identifier": "acme.ripplehire.com",
             },
             {
                 "url": "https://attacker.wd1.myworkdayjobs.com/Visa_Careers",

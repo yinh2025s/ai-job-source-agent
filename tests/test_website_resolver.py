@@ -3527,6 +3527,33 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertNotIn("homepage verified", candidate.reasons)
         self.assertIsNone(resolver._select_verified_candidate([candidate]))
 
+    def test_ad_iframe_parking_lander_with_company_name_is_rejected(self):
+        class AdParkingFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url=url,
+                    html=(
+                        '<html><head><title>Acme Robotics</title>'
+                        '<script src="https://l.cdn-fileserver.com/consent/manager.js"></script>'
+                        '</head><body data-mode="vgd_l2type=dmola">'
+                        '<div>Acme Robotics</div>'
+                        '<iframe src="https://findresultsquick.com/ads/SAFEFRAME.html"></iframe>'
+                        '</body></html>'
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(AdParkingFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://acme-robotics.com",
+            "Acme Robotics",
+            verify=True,
+        )
+
+        self.assertIn("parked domain rejected", candidate.reasons)
+        self.assertNotIn("homepage verified", candidate.reasons)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
     def test_direct_http_website_evidence_is_verified_over_https(self):
         class HttpsOnlyFetcher(Fetcher):
             def __init__(self):

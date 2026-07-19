@@ -57,7 +57,12 @@ class RecordingFetcher:
 class RippleHireAdapterTests(unittest.TestCase):
     def setUp(self):
         self.adapter = RippleHireAdapter()
-        self.board = JobBoard(BOARD_URL, "ripplehire", "acme.ripplehire.com")
+        self.board = JobBoard(
+            BOARD_URL,
+            "ripplehire",
+            "acme.ripplehire.com",
+            replay_safe=True,
+        )
 
     def test_native_adapter_is_discovered_and_canonicalizes_public_urls(self):
         native = {adapter.name: adapter for adapter in discover_native_adapters()}
@@ -126,6 +131,56 @@ class RippleHireAdapterTests(unittest.TestCase):
         form = parse_qs(fetcher.requests[1][1].decode())
         payload = json.loads(form["careerSiteUrlParams"][0])
         self.assertEqual(payload["search"], "applications")
+
+    def test_replays_jointly_redacted_portal_token_even_when_source_was_live(self):
+        redacted = "[REDACTED]"
+        fetcher = RecordingFetcher({
+            BOARD_URL: Page(
+                url=BOARD_URL,
+                final_url=(
+                    "https://acme.ripplehire.com/candidate/"
+                    f"?token=%5BREDACTED%5D&source=CAREERSITE"
+                ),
+                html=portal_html(token=redacted),
+                source="live",
+            ),
+            API_URL: Page(url=API_URL, html=response_xml([]), source="live"),
+        })
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Mechanical Design Engineer"),
+        )
+
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(len(fetcher.requests), 2)
+        form = parse_qs(fetcher.requests[1][1].decode())
+        payload = json.loads(form["careerSiteUrlParams"][0])
+        self.assertEqual(payload["token"], "snapshot-redacted-token")
+
+    def test_rejects_partially_redacted_portal_token(self):
+        fetcher = RecordingFetcher({
+            BOARD_URL: Page(
+                url=BOARD_URL,
+                final_url=(
+                    "https://acme.ripplehire.com/candidate/"
+                    f"?token={TOKEN}&source=CAREERSITE"
+                ),
+                html=portal_html(token="[REDACTED]"),
+                source="live",
+            ),
+        })
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Mechanical Design Engineer"),
+        )
+
+        self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertEqual(len(fetcher.requests), 1)
 
     def test_paginates_with_bound_and_stops_on_exact_title(self):
         first = [{"id": str(index + 1), "title": f"Engineer {index}"} for index in range(50)]

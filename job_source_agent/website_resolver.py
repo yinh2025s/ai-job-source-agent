@@ -96,6 +96,9 @@ PARKED_DOMAIN_INFRASTRUCTURE_MARKERS = (
     "iseaskies.com",
     "assets.squarespace.com/universal/scripts-compressed/parking-page-",
     "assets.squarespace.com/universal/styles-compressed/parking-page-",
+    "findresultsquick.com/",
+    "l.cdn-fileserver.com/",
+    "vgd_l2type=dmola",
 )
 
 MAX_REGIONAL_LOCALE_CANDIDATES = 3

@@ -10,6 +10,36 @@
 
 ### Added
 
+- `.182` upgrades request identity to v2 and recursively sanitizes valid JSON object/array values
+  embedded inside form fields. Sensitive nested values no longer influence body fingerprints, while
+  ordinary text, non-sensitive fields, and pagination remain identity-significant. This fixes a
+  general privacy-safe replay defect exposed by RippleHire's `careerSiteUrlParams` form payload.
+  The final Tata focused live revalidates the correct Website, first-party Career, and tenant-bound
+  RippleHire board for both records; current complete title-filtered inventory returns
+  `OPENING_NOT_FOUND` twice. Full scoped replay is 2/2 reproduced with zero mismatch or fixture gap,
+  so the conservative ledger is now 68 Exact, 23 Verified Not Found, 4 External Blocked, and
+  5 System Gaps. The request-identity v2 fixture migration retains CEIPAL's privacy-safe exact case;
+  final gates pass 2393 tests (3 skipped), 25/25 provider cases, 6/6 resolver cases, and 44 native
+  adapters with zero architecture issues. `ADAPTER_VERSION` is `2026-07-19.182`.
+
+- `.181` repairs RippleHire outcome-tape replay without retaining its public routing token. When both
+  the sanitized portal HTML and final URL carry the same `[REDACTED]` token, the adapter uses a stable
+  replay placeholder whose form request identity remains privacy-redacted; partial redaction,
+  disagreement, invalid tokens, and cross-tenant redirects still fail closed.
+
+- `.180` makes RippleHire's public canonical board locator replay-safe under a strict tenant-host,
+  fixed-path, and query-free policy. This closes a general checkpoint gap exposed after two Tata
+  records successfully revalidated their historical first-party Career handoff and current complete
+  title-filtered empty inventory: the first full-outcome bundle correctly failed rather than seeding
+  an unregistered runtime locator. Provider, job-board, and replay-bundle regression tests pass.
+
+- `.179` begins the Tata Technologies closure cluster by correcting S2 rather than changing the
+  existing RippleHire adapter. A fresh two-record baseline exposed a mechanically hyphenated parked
+  domain that echoed the company name while loading an advertising iframe, causing the resolver to
+  award false homepage verification before the official Career handoff could run. Generic parking
+  infrastructure markers now reject this template even when title and body contain exact company
+  tokens; the regression uses a fictional company and adds no company-specific URL or override.
+
 - `.174-.178` closes two frozen-100 inventory gaps without guessing an opening URL. Generic
   WordPress pagination now recognizes `paged`, repairs the bounded `?paged=?paged=N` defect, follows
   unlabeled numeric next pages, and accepts only same-origin canonical query-to-`/page/N/` redirects

@@ -35,7 +35,11 @@ failure selection must be frozen before parallel implementation.
    case-sensitive and form fields are canonicalized independently of their wire
    order. File parts, filenames, unknown part headers, malformed boundaries, and
    oversized bodies are non-replayable. Raw request bodies and digests of
-   unredacted credentials are prohibited.
+   unredacted credentials are prohibited. Request identity v2 additionally parses a
+   non-sensitive form value when and only when it is a valid JSON object or array,
+   recursively applies the same sensitive-key policy, and canonicalizes that nested
+   structure. This prevents provider payload wrappers such as `careerSiteUrlParams`
+   from making a persisted fingerprint depend on an inner token.
 4. Opaque bodies that cannot be safely parsed are marked non-replayable. Capture
    may record that classification, but must not persist the body or a reversible or
    credential-derived representation.
@@ -100,6 +104,8 @@ failure selection must be frozen before parallel implementation.
 
 1. Snapshot replay schema and failure-bundle schema move to v2. Legacy v1 success
    snapshots remain readable; unknown future major versions fail closed.
+   Request identity v1 tapes are not silently reinterpreted as v2; affected scoped
+   evidence requires a fresh capture under the new identity contract.
 2. Request identity and structured error contracts are main-line owned shared
    interfaces. Snapshot capture, replay materialization, provider behavior, and
    focused tests may be implemented in disjoint worktrees only after this ADR is

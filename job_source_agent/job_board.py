@@ -905,6 +905,19 @@ def _loxo_policy(board: JobBoard) -> bool:
     )
 
 
+def _ripplehire_policy(board: JobBoard) -> bool:
+    identifier = board.identifier or ""
+    parsed = urlparse(board.url)
+    return bool(
+        _valid_hostname(identifier)
+        and identifier.casefold() == identifier == _host(board.url)
+        and identifier.endswith(".ripplehire.com")
+        and identifier != "ripplehire.com"
+        and parsed.path == "/ripplehire/careers"
+        and _no_query(board.url)
+    )
+
+
 def _workday_policy(board: JobBoard) -> bool:
     identifier = board.identifier or ""
     if identifier.count("/") != 1:
@@ -948,6 +961,7 @@ _REPLAY_SAFE_POLICIES: dict[str, Callable[[JobBoard], bool]] = {
     "peoplesoft": _peoplesoft_policy,
     "pinpoint": _pinpoint_policy,
     "phenom": _phenom_policy,
+    "ripplehire": _ripplehire_policy,
     "sitecore_next_jobs": _sitecore_policy,
     "smartrecruiters": _smartrecruiters_policy,
     "talentbrew": _talentbrew_policy,

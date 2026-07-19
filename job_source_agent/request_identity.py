@@ -10,7 +10,7 @@ from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 from .browser_interaction import BrowserInteraction
 
 
-IDENTITY_VERSION = "1"
+IDENTITY_VERSION = "2"
 REDACTED_VALUE = "[REDACTED]"
 
 _SENSITIVE_KEYS = {
@@ -247,7 +247,7 @@ def _body_identity(
             sorted(
                 (
                     key,
-                    _redacted_value(value) if is_sensitive_key(key) else value,
+                    _sanitize_form_value(key, value),
                 )
                 for key, value in fields
             ),
@@ -256,6 +256,25 @@ def _body_identity(
         return _digest_text(canonical), True, None
 
     return None, False, "opaque_body"
+
+
+def _sanitize_form_value(key: str, value: str) -> str:
+    if is_sensitive_key(key):
+        return _redacted_value(value)
+    stripped = value.lstrip()
+    if not stripped.startswith(("{", "[")):
+        return value
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError:
+        return value
+    sanitized = _sanitize_structured_value(parsed)
+    return json.dumps(
+        sanitized,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=True,
+    )
 
 
 def _multipart_form_fields(text: str, content_type: str) -> list[tuple[str, str]] | None:

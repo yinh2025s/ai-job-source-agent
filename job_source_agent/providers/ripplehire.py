@@ -37,6 +37,7 @@ class RippleHireAdapter:
             url=f"https://{host}/ripplehire/careers",
             provider=self.name,
             identifier=host,
+            replay_safe=True,
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
@@ -172,7 +173,11 @@ def _portal_config(page: Page) -> tuple[str | None, str | None]:
     if html_token and query_token and html_token != query_token:
         return None, None
     token = html_token or query_token
-    if token == "[REDACTED]" and page.source != "live":
+    if (
+        token == "[REDACTED]"
+        and html_token == "[REDACTED]"
+        and query_token == "[REDACTED]"
+    ):
         token = "snapshot-redacted-token"
     if not isinstance(token, str) or not _PUBLIC_TOKEN.fullmatch(token):
         return None, None

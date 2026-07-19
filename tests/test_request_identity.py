@@ -118,6 +118,34 @@ class RequestIdentityTests(unittest.TestCase):
 
         self.assertEqual(first.body_fingerprint, second.body_fingerprint)
         self.assertNotEqual(first.body_fingerprint, other_page.body_fingerprint)
+
+    def test_form_embedded_json_recursively_redacts_sensitive_values(self):
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        first = build_request_identity(
+            "https://jobs.example.test/search",
+            data=(
+                "payload=%7B%22page%22%3A0%2C%22token%22%3A%22first-secret%22%7D"
+            ).encode(),
+            headers=headers,
+        )
+        second = build_request_identity(
+            "https://jobs.example.test/search",
+            data=(
+                "payload=%7B%22token%22%3A%22second-secret%22%2C%22page%22%3A0%7D"
+            ).encode(),
+            headers=headers,
+        )
+        other_page = build_request_identity(
+            "https://jobs.example.test/search",
+            data=(
+                "payload=%7B%22page%22%3A1%2C%22token%22%3A%22first-secret%22%7D"
+            ).encode(),
+            headers=headers,
+        )
+
+        self.assertEqual(first.identity_version, "2")
+        self.assertEqual(first.body_fingerprint, second.body_fingerprint)
+        self.assertNotEqual(first.body_fingerprint, other_page.body_fingerprint)
         self.assertEqual(first.fingerprint(), second.fingerprint())
         self.assertTrue(first.replayable)
 
