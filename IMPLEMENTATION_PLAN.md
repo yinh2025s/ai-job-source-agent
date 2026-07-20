@@ -25,7 +25,7 @@
 
 ## 当前执行轮次（2026-07-20，`.193`）
 
-### `.193`：verification allocation 因果可观测性（Phase B 进行中）
+### `.193`：verification allocation 因果可观测性（Phase C 已通过）
 
 对 `.189` request tape 的二次只读审计否定了原 `005/029/033` 共同 cluster。005/029 是同一 Versana
 resolver 输入和同一 `versanatech` LinkedIn slug 的重复岗位记录，正确 `versana.io` 只是低证据
@@ -42,6 +42,13 @@ candidate count、selected URL/source/reason、excluded URL/reason、完整 excl
 下一行为版本必须拆开验收：Versana 在 `verify_limit=3` 下 record-level 2/2 请求并选择 `versana.io`，同时
 报告唯一 host 1/1，且 collision negatives 为零；Slant 只有在第一方雇主关系成立或已验证 Ashby tenant
 通过 S5-S7 时才能 1/1，增加 slots 或直接信任同名 search result 不算成功。
+
+Phase C 已完成：2491 tests（4 skipped）、25/25 provider、6/6 resolver、46 adapters / 0 architecture
+issues。代码冻结于 `2f63a75` 后，005/029/033 focused live 保持 3 条 S2 失败，符合 trace-only 版本不改变
+行为的 contract；same-version replay 3/3 reproduced、0 mismatch、0 fixture gap。两条 Versana 的 fast 和
+merged allocation 完全同构，`versana.io` 两轮均明确为 `slot_limit_reached`。Slant 当前 merged pool 只有
+六个 speculative `slantcrm.*`，没有生成 `slant.app`，因此再次从 S 调整为 G-unstable-search-candidate；
+完整证据见 `docs/FRESH_100_V193_ALLOCATION_TRACE_PHASE_C.md`。下一版本不得把两者重新合并。
 
 ### `.192`：已验证 first-party literal JSON POST 库存（Phase C 已通过）
 

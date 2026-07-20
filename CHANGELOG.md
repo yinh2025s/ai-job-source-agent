@@ -21,6 +21,14 @@
   unchanged. `ADAPTER_VERSION` is `2026-07-20.193`; this observability release
   does not claim recovery of any fresh record and must precede separate Versana
   and Slant behavior contracts.
+  Full offline gates pass 2491 tests (4 skipped), 25/25 provider cases, 6/6
+  resolver cases, and 46 adapters with zero architecture issues. The code-frozen
+  005/029/033 focused live retains the same three S2 failures while exposing the
+  exact decisions; replay reproduces 3/3 with zero mismatch or fixture gap.
+  Both Versana records identically exclude `versana.io` as
+  `slot_limit_reached`. Slant's current search produces no `slant.app` at all,
+  so record 033 moves again from source ambiguity to unstable candidate
+  generation. `.193` closes observability only, not either behavior defect.
 
 - `.192` adds a strict, provider-neutral contract for a verified first-party
   listing page whose same-origin static asset declares one anonymous literal
