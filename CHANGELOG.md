@@ -23,7 +23,12 @@
   S6/S7 identity gates. `ADAPTER_VERSION` is `2026-07-20.190`; the unified
   offline gate passes 2466 tests (3 skipped), 25/25 provider cases, 6/6
   resolver cases, and 46 native adapters with zero architecture issues.
-  Focused live and same-version replay remain pending.
+  The frozen focused live completes 8/8 with 4 websites, 3 Career surfaces,
+  1 verified Job List, and 0 Exact; replay is 8/8 reproduced with zero mismatch
+  or fixture gap. Audited closure is 1 Verified Not Found, 1 Input Identity
+  Invalid, and 6 System Gaps. The run exposes deterministic Freshteam query
+  normalization and external Career-handoff propagation defects, so `.190`
+  does not pass closure and does not alter either `.188` benchmark score.
 
 - `.189` begins the fresh-100 S2 cold-start stabilization cycle. Known transport failures such as
   `IncompleteRead`, remote disconnects, TLS failures, DNS failures, and timeouts are normalized into
