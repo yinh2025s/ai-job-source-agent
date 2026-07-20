@@ -79,6 +79,12 @@ _CREDENTIALS = re.compile(
     r"\bwithCredentials\s*:\s*true|\bAuthorization\s*:",
     re.I,
 )
+_SENSITIVE_OBJECT_KEY = re.compile(
+    r"(?:^|[,{])\s*(?:['\"])?(?:access.?token|api.?key|auth(?:orization)?|"
+    r"cookie|csrf|jwt|password|refresh.?token|secret|session|signature|token)"
+    r"(?:['\"])?\s*:",
+    re.I,
+)
 _HOSTNAME = re.compile(r"^[a-z0-9](?:[a-z0-9.-]{0,251}[a-z0-9])?$", re.I)
 _LANGUAGE_PREFIX = re.compile(r"^[a-z]{2}(?:-[a-z]{2})?$", re.I)
 _JOB_SEARCH_ENDPOINT = re.compile(
@@ -201,6 +207,54 @@ _HANDLEBARS_SLUG_DETAIL = re.compile(
     r"\{\{\s*slug\s*\}\}(?P=quote)",
     re.I,
 )
+_LITERAL_FETCH_OPTIONS = re.compile(
+    r"\bfetch\(\s*(?P<quote>['\"])(?P<url>[^'\"]{1,1000})(?P=quote)"
+    r"\s*,\s*(?P<brace>\{)",
+    re.I,
+)
+_JSON_POST_METHOD = re.compile(r"\bmethod\s*:\s*['\"]POST['\"]", re.I)
+_JSON_POST_CONTENT_TYPE = re.compile(
+    r"['\"]Content-Type['\"]\s*:\s*['\"]application/json['\"]",
+    re.I,
+)
+_JSON_STRINGIFY_BODY = re.compile(
+    rf"\bbody\s*:\s*JSON\.stringify\(\s*(?P<name>{_IDENTIFIER})\s*\)",
+    re.I,
+)
+_JSON_POST_RESPONSE = re.compile(
+    r"\.(?:Jobs|jobs)\b.{0,5000}\.(?:TotalJobCount|totalJobCount)\b|"
+    r"\.(?:TotalJobCount|totalJobCount)\b.{0,5000}\.(?:Jobs|jobs)\b",
+    re.I | re.S,
+)
+_JSON_POST_RECORDS = re.compile(
+    r"\.(?:JobTitle|jobTitle)\b.{0,5000}\.(?:Reqnumber|REQNumber|reqNumber)\b|"
+    r"\.(?:Reqnumber|REQNumber|reqNumber)\b.{0,5000}\.(?:JobTitle|jobTitle)\b",
+    re.I | re.S,
+)
+_JSON_POST_FACETS = re.compile(
+    r"\.(?:Categories|categories)\b.{0,5000}\.(?:Locations|locations)\b|"
+    r"\.(?:Locations|locations)\b.{0,5000}\.(?:Categories|categories)\b",
+    re.I | re.S,
+)
+_JSON_POST_PAYLOAD_BINDINGS = (
+    re.compile(
+        r"\bLocations\s*:\s*parseDataAttributeToIntArray\("
+        r"[^)]*getAttribute\(\s*['\"]data-locations['\"]\s*\)\s*\)",
+        re.I,
+    ),
+    re.compile(
+        r"\bCategories\s*:\s*parseDataAttributeToIntArray\("
+        r"[^)]*getAttribute\(\s*['\"]data-categories['\"]\s*\)\s*\)",
+        re.I,
+    ),
+    re.compile(r"\bHideFacets\s*:\s*" + _IDENTIFIER, re.I),
+    re.compile(r"\bUseWorkDay\s*:\s*" + _IDENTIFIER, re.I),
+)
+_JSON_POST_DETAIL_TEMPLATE = re.compile(
+    r"v-bind:href\s*=\s*(['\"])\s*['\"](?P<path>/[^'\"]{1,240})['\"]"
+    r"\s*\+\s*['\"]\?reqNumber=['\"]\s*\+\s*job\.Reqnumber\s*\1",
+    re.I,
+)
 
 
 @dataclass(frozen=True)
@@ -241,6 +295,25 @@ class _Declaration:
     response_keys: tuple[str, str] | None = None
     transport: str = "generic"
     detail_path: str | None = None
+    body_json: str | None = None
+
+
+class _PublicListingConfigParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.configs: list[dict[str, str]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        values = {key.casefold(): value or "" for key, value in attrs}
+        classes = set(values.get("class", "").casefold().split())
+        required = (
+            "data-locations",
+            "data-categories",
+            "data-hide-facets",
+            "data-use-workday",
+        )
+        if "job-listing" in classes and set(required) <= set(values):
+            self.configs.append({key: values[key] for key in required})
 
 
 class _HTMLJobFragmentParser(HTMLParser):
@@ -545,7 +618,7 @@ def discover_js_declared_inventory(
                 exc, "asset_fetch_failed", considered, tuple(fetched), detail=asset_url
             )
         response_url = _public_https_url(asset_page.final_url or asset_page.url)
-        if response_url != asset_url:
+        if not _equivalent_asset_url(response_url, asset_url):
             return _result(
                 "asset_redirect_rejected",
                 assets_considered=considered,
@@ -575,6 +648,20 @@ def discover_js_declared_inventory(
         declarations.extend(
             _declared_jtable_get_inventory(asset_source, asset_url, page_url)
         )
+        json_post, json_post_error = _declared_literal_json_post_inventory(
+            asset_source,
+            asset_url,
+            page_url,
+            page.html or "",
+        )
+        if json_post_error is not None:
+            return _result(
+                json_post_error,
+                assets_considered=considered,
+                assets_fetched=tuple(fetched),
+                detail=asset_url,
+            )
+        declarations.extend(json_post)
 
     unique = {
         (
@@ -584,6 +671,7 @@ def discover_js_declared_inventory(
             item.response_keys,
             item.transport,
             item.detail_path,
+            item.body_json,
         ): item
         for item in declarations
     }
@@ -601,6 +689,15 @@ def discover_js_declared_inventory(
             page_url,
             declaration,
             title.strip(),
+            max_candidates,
+            considered,
+            tuple(fetched),
+        )
+    if declaration.transport == "literal_json_post":
+        return _fetch_literal_json_post_inventory(
+            fetcher,
+            page_url,
+            declaration,
             max_candidates,
             considered,
             tuple(fetched),
@@ -753,7 +850,7 @@ def inspect_js_declared_inventory_transport(
                 detail=asset_url,
             ).trace
         response_url = _public_https_url(asset_page.final_url or asset_page.url)
-        if response_url != asset_url:
+        if not _equivalent_asset_url(response_url, asset_url):
             return _result(
                 "asset_redirect_rejected",
                 assets_considered=considered,
@@ -777,6 +874,20 @@ def inspect_js_declared_inventory_transport(
         declarations.extend(
             _declared_jtable_get_inventory(source, asset_url, page_url)
         )
+        json_post, json_post_error = _declared_literal_json_post_inventory(
+            source,
+            asset_url,
+            page_url,
+            page.html or "",
+        )
+        if json_post_error is not None:
+            return _result(
+                json_post_error,
+                assets_considered=considered,
+                assets_fetched=tuple(fetched),
+                detail=asset_url,
+            ).trace
+        declarations.extend(json_post)
 
     unique = {
         (
@@ -786,6 +897,7 @@ def inspect_js_declared_inventory_transport(
             item.response_keys,
             item.transport,
             item.detail_path,
+            item.body_json,
         ): item
         for item in declarations
     }
@@ -804,6 +916,9 @@ def inspect_js_declared_inventory_transport(
         assets_fetched=tuple(fetched),
         endpoint_url=declaration.endpoint_url,
         request_fields=tuple(dict(declaration.fields)),
+        inventory_scope=(
+            "full" if declaration.transport == "literal_json_post" else "title_filtered"
+        ),
     )
 
 
@@ -1387,6 +1502,289 @@ def _declared_jtable_get_inventory(
     )
 
 
+def _declared_literal_json_post_inventory(
+    source: str,
+    asset_url: str,
+    page_url: str,
+    page_html: str,
+) -> tuple[tuple[_Declaration, ...], str | None]:
+    """Recognize one anonymous, first-party, literal JSON POST inventory."""
+
+    fetches: list[tuple[str, str, str, int]] = []
+    for match in _LITERAL_FETCH_OPTIONS.finditer(source):
+        bounds = _object_from_open_brace(source, match.start("brace"))
+        if bounds is None or bounds[1] - bounds[0] > 4_000:
+            continue
+        options = source[bounds[0] : bounds[1] + 1]
+        if not (
+            _JSON_POST_METHOD.search(options)
+            and _JSON_POST_CONTENT_TYPE.search(options)
+            and (body_match := _JSON_STRINGIFY_BODY.search(options)) is not None
+        ):
+            continue
+        fetches.append(
+            (match.group("url"), body_match.group("name"), options, match.start())
+        )
+
+    if not fetches:
+        return (), None
+    if len(fetches) != 1:
+        return (), "ambiguous_transport"
+
+    raw_endpoint, body_name, options, fetch_position = fetches[0]
+    if _CREDENTIALS.search(options) or _SENSITIVE_OBJECT_KEY.search(options):
+        return (), "sensitive_transport_rejected"
+    endpoint = _declared_endpoint(raw_endpoint, page_url)
+    if endpoint is None:
+        return (), "unsafe_transport_rejected"
+
+    payload_bounds = _named_assigned_object(
+        source,
+        body_name,
+        before=fetch_position,
+    )
+    if payload_bounds is None:
+        return (), "transport_not_declared"
+    payload_source = source[payload_bounds[0] : payload_bounds[1] + 1]
+    if not all(pattern.search(payload_source) for pattern in _JSON_POST_PAYLOAD_BINDINGS):
+        return (), "transport_not_declared"
+    for key_match in re.finditer(
+        rf"(?P<key>{_IDENTIFIER}|['\"][^'\"]+['\"])\s*:",
+        payload_source,
+    ):
+        if _SENSITIVE_KEY.search(key_match.group("key").strip("'\"")):
+            return (), "sensitive_transport_rejected"
+
+    if not (
+        _JSON_POST_RESPONSE.search(source)
+        and _JSON_POST_RECORDS.search(source)
+        and _JSON_POST_FACETS.search(source)
+    ):
+        return (), "transport_not_declared"
+    detail_match = _JSON_POST_DETAIL_TEMPLATE.search(page_html)
+    if detail_match is None:
+        return (), "transport_not_declared"
+    detail_path = detail_match.group("path") + "?reqNumber="
+    if _declared_endpoint(detail_path + "TEST-1", page_url) is None:
+        return (), "unsafe_transport_rejected"
+
+    config = _public_listing_json_body(page_html)
+    if config is None:
+        return (), "transport_not_declared"
+    body_json = json.dumps(config, sort_keys=True, separators=(",", ":"))
+    declaration = _Declaration(
+        asset_url,
+        endpoint,
+        tuple((key, "") for key in config),
+        method="POST",
+        response_keys=("TotalJobCount", "Jobs"),
+        transport="literal_json_post",
+        detail_path=detail_path,
+        body_json=body_json,
+    )
+    return (declaration,), None
+
+
+def _public_listing_json_body(page_html: str) -> dict[str, object] | None:
+    parser = _PublicListingConfigParser()
+    try:
+        parser.feed(page_html[:MAX_SETTINGS_CHARS])
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    if len(parser.configs) != 1:
+        return None
+    config = parser.configs[0]
+    locations = _bounded_pipe_ints(config["data-locations"])
+    categories = _bounded_pipe_ints(config["data-categories"])
+    if locations is None or categories is None:
+        return None
+    hide_facets = config["data-hide-facets"].casefold()
+    use_workday = config["data-use-workday"]
+    if hide_facets not in {"true", "false"} or use_workday not in {"True", "False"}:
+        return None
+    return {
+        "Categories": categories,
+        "HideFacets": hide_facets == "true",
+        "Locations": locations,
+        "UseWorkDay": use_workday,
+    }
+
+
+def _bounded_pipe_ints(value: str) -> list[int] | None:
+    if not value:
+        return []
+    parts = value.split("|")
+    if len(parts) > 100:
+        return None
+    output: list[int] = []
+    for part in parts:
+        if not re.fullmatch(r"[1-9][0-9]{0,8}", part):
+            return None
+        parsed = int(part)
+        if parsed in output:
+            return None
+        output.append(parsed)
+    return output
+
+
+def _fetch_literal_json_post_inventory(
+    fetcher: FetchClient,
+    page_url: str,
+    declaration: _Declaration,
+    max_candidates: int,
+    assets_considered: tuple[str, ...],
+    assets_fetched: tuple[str, ...],
+) -> JSDeclaredInventoryResult:
+    if declaration.body_json is None or declaration.detail_path is None:
+        return _result("transport_not_declared")
+    request_fields = tuple(dict(declaration.fields))
+    try:
+        body_value = json.loads(declaration.body_json)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return _result("transport_not_declared")
+    if not isinstance(body_value, dict):
+        return _result("transport_not_declared")
+    body = json.dumps(body_value, separators=(",", ":")).encode("utf-8")
+    headers = {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+    }
+    try:
+        response = fetcher.fetch(declaration.endpoint_url, data=body, headers=headers)
+    except (FetchError, OSError, TimeoutError) as exc:
+        return _fetch_failure(
+            exc,
+            "transport_fetch_failed",
+            assets_considered,
+            assets_fetched,
+            endpoint_url=declaration.endpoint_url,
+            request_fields=request_fields,
+        )
+    response_url = _public_https_url(response.final_url or response.url)
+    if response_url != declaration.endpoint_url:
+        return _result(
+            "transport_redirect_rejected",
+            assets_considered=assets_considered,
+            assets_fetched=assets_fetched,
+            endpoint_url=declaration.endpoint_url,
+            request_fields=request_fields,
+        )
+    candidates, valid, truncated = _parse_literal_json_post_candidates(
+        response.html or "",
+        page_url,
+        declaration.endpoint_url,
+        declaration.detail_path,
+        max_candidates,
+    )
+    if not valid:
+        return _result(
+            "invalid_job_postings_payload",
+            assets_considered=assets_considered,
+            assets_fetched=assets_fetched,
+            endpoint_url=declaration.endpoint_url,
+            request_fields=request_fields,
+        )
+    return JSDeclaredInventoryResult(
+        candidates=tuple(candidates),
+        inventory_complete=not truncated,
+        trace=JSInventoryTrace(
+            status="candidate_cap_reached" if truncated else "verified",
+            retryable=False,
+            blocked=False,
+            assets_considered=assets_considered,
+            assets_fetched=assets_fetched,
+            endpoint_url=declaration.endpoint_url,
+            request_fields=request_fields,
+            candidate_count=len(candidates),
+            inventory_scope="full",
+        ),
+    )
+
+
+def _parse_literal_json_post_candidates(
+    body: str,
+    page_url: str,
+    endpoint_url: str,
+    detail_path: str,
+    limit: int,
+) -> tuple[list[JSListingCandidate], bool, bool]:
+    if len(body) > MAX_RESPONSE_CHARS:
+        return [], False, False
+    try:
+        payload = json.loads(body)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return [], False, False
+    if not isinstance(payload, dict):
+        return [], False, False
+    records = payload.get("Jobs")
+    total = payload.get("TotalJobCount")
+    categories = payload.get("Categories")
+    locations = payload.get("Locations")
+    if (
+        not isinstance(records, list)
+        or not isinstance(categories, list)
+        or not isinstance(locations, list)
+        or isinstance(total, bool)
+        or not isinstance(total, int)
+        or total != len(records)
+        or total > MAX_CANDIDATES
+    ):
+        return [], False, False
+
+    output: list[JSListingCandidate] = []
+    seen_ids: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            return [], False, False
+        title = _text_field(record, ("JobTitle", "jobTitle"))
+        raw_id = next(
+            (
+                record.get(key)
+                for key in ("Reqnumber", "REQNumber", "reqNumber")
+                if record.get(key) is not None
+            ),
+            None,
+        )
+        if isinstance(raw_id, int) and not isinstance(raw_id, bool):
+            raw_id = str(raw_id)
+        if (
+            not title
+            or not isinstance(raw_id, str)
+            or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,127}", raw_id)
+            or raw_id in seen_ids
+        ):
+            return [], False, False
+        seen_ids.add(raw_id)
+        candidate_url = _candidate_url(detail_path + raw_id, page_url)
+        if candidate_url is None or not _same_origin(candidate_url, page_url):
+            return [], False, False
+        location_parts: list[str] = []
+        for key in (
+            "LocationCity",
+            "LocationState",
+            "LocationCountry",
+            "locationCity",
+            "locationState",
+            "locationCountry",
+        ):
+            value = _text_field(record, (key,))
+            if value and value.casefold() not in {
+                item.casefold() for item in location_parts
+            }:
+                location_parts.append(value)
+        if len(output) < limit:
+            output.append(
+                JSListingCandidate(
+                    title=title,
+                    location=", ".join(location_parts) or None,
+                    url=candidate_url,
+                    source_url=endpoint_url,
+                )
+            )
+    return output, True, total > limit
+
+
 def _fetch_jtable_inventory(
     fetcher: FetchClient,
     page_url: str,
@@ -1763,6 +2161,21 @@ def _named_literal_object(
 ) -> tuple[int, int] | None:
     assignment = re.compile(
         rf"\b(?:const|let|var)\s+{re.escape(name)}\s*=\s*\{{"
+    )
+    matches = list(assignment.finditer(source, 0, before))
+    if len(matches) != 1:
+        return None
+    return _object_from_open_brace(source, matches[0].end() - 1)
+
+
+def _named_assigned_object(
+    source: str,
+    name: str,
+    *,
+    before: int,
+) -> tuple[int, int] | None:
+    assignment = re.compile(
+        rf"(?:\b(?:const|let|var)\s+|[,;]\s*){re.escape(name)}\s*=\s*\{{"
     )
     matches = list(assignment.finditer(source, 0, before))
     if len(matches) != 1:
@@ -2168,6 +2581,21 @@ def _public_host(host: str) -> bool:
 def _same_origin(first: str, second: str) -> bool:
     left, right = urlparse(first), urlparse(second)
     return left.scheme == right.scheme and left.hostname == right.hostname and left.port == right.port
+
+
+def _equivalent_asset_url(first: str | None, second: str) -> bool:
+    if first is None:
+        return False
+    try:
+        left, right = urlparse(first), urlparse(second)
+        return bool(
+            _same_origin(first, second)
+            and left.path == right.path
+            and parse_qsl(left.query, keep_blank_values=True)
+            == parse_qsl(right.query, keep_blank_values=True)
+        )
+    except (TypeError, ValueError):
+        return False
 
 
 def _same_site(first: str, second: str) -> bool:

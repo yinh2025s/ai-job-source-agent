@@ -1,0 +1,19 @@
+{
+  "Jobs": [
+    {
+      "Reqnumber": "REQ-1042",
+      "JobTitle": "Platform Engineer",
+      "LocationCity": "North Harbor",
+      "LocationState": "NA"
+    },
+    {
+      "Reqnumber": "REQ-1043",
+      "JobTitle": "Data Analyst",
+      "LocationCity": "Remote",
+      "LocationState": "NA"
+    }
+  ],
+  "Categories": ["Engineering", "Operations"],
+  "Locations": ["North Harbor, NA", "Remote, NA"],
+  "TotalJobCount": 2
+}

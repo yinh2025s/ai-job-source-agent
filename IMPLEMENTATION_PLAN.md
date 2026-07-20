@@ -23,7 +23,27 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-20，`.191`）
+## 当前执行轮次（2026-07-20，`.192`）
+
+### `.192`：已验证 first-party literal JSON POST 库存（Phase B 完成，Phase C 待执行）
+
+本轮只处理 `.191` Milwaukee focused live 暴露的一个通用 S5 因果簇：已验证的第一方 Job List 页面
+和同源静态资产已经声明完整公开库存，但 `js_declared_inventory.py` 不执行匿名 literal JSON POST。
+这不是公司特例，也不与 CHAMP/NextPlay 的 S2 transport 重试混为同一 failure cluster。
+
+Phase B 已实现严格 contract：唯一同源 endpoint、唯一静态 payload、只读取页面公开 attributes、
+`Jobs/Categories/Locations/TotalJobCount` 完整性、稳定 requisition ID、同源详情模板和完整库存语义。
+资产 URL 只允许相同 origin/path/query 的 bare cache-buster 规范化；POST redirect、secret、动态或跨域
+endpoint、多 transport、异常 total、重复 ID、危险 detail URL 均 fail closed。生成的
+`/Jobdetails?reqNumber=...` 只有在 `verified_declared_inventory` 来源下才通过严格 output URL gate，随后
+仍走原有 title/location 和 S7 identity 验证。公司无关 fixture 覆盖正向及所有负向边界，相关 291 tests
+已通过。
+
+Phase C 固定顺序：运行统一 offline gates；提交并冻结 `.192` 代码；使用全新 checkpoint、completion、
+evidence、snapshot、replay 和 output 根目录只运行 Milwaukee；逐条审计 Website/Career/Job List/Opening；
+同版本 replay 必须 1/1、0 mismatch、0 fixture gap，且错误、跨公司、跨 tenant URL 为零。可接受终态是
+verified first-party Job List 后 exact opening，或完整当前库存证明的 `OPENING_NOT_FOUND`。运行期间冻结
+代码，不改写 `.188` aggregate；失败时先报告新的因果簇再决定下一版本。
 
 ### `.191`：`.190` 确定性缺陷闭环（Phase C 完成，未完全 closure）
 

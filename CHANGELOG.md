@@ -10,6 +10,20 @@
 
 ### Added
 
+- `.192` adds a strict, provider-neutral contract for a verified first-party
+  listing page whose same-origin static asset declares one anonymous literal
+  JSON POST inventory. The declaration must bind a unique endpoint, public
+  static page attributes, complete `Jobs`/facet/total response semantics,
+  stable requisition IDs, and an exact same-origin detail template; redirects,
+  credentials, ambiguous transports, malformed or duplicate records, and
+  unsafe detail URLs fail closed. A bounded asset cache-buster normalization
+  accepts only an otherwise identical path and parsed query. Resulting
+  `Jobdetails?reqNumber=...` URLs pass the output gate only as verified declared
+  inventory evidence and only with HTTPS, exact origin, one stable ID, and no
+  extra query or fragment. All candidates still pass ordinary S6/S7 title,
+  location, company, and hiring-identity checks. `ADAPTER_VERSION` is
+  `2026-07-20.192`; offline and focused live/replay gates are pending.
+
 - `.191` addresses the four deterministic correctness defects exposed by the
   frozen `.190` focused gate. Freshteam accepts only the bounded numeric
   cache-buster query forms observed before and after URL normalization. Link

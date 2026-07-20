@@ -1,0 +1,17 @@
+<!doctype html>
+<html>
+  <body>
+    <main
+      class="job-listing"
+      data-categories="1"
+      data-locations="1"
+      data-hide-facets="False"
+      data-use-workday="True"
+    >
+      <a v-bind:href="'/Jobdetails' + '?reqNumber=' + job.Reqnumber">
+        {{ job.JobTitle }}
+      </a>
+    </main>
+    <script src="/assets/career-inventory.js"></script>
+  </body>
+</html>

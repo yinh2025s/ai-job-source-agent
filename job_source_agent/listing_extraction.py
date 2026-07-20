@@ -220,6 +220,12 @@ def validate_output_url(
     origin: str = "",
 ) -> str | None:
     """Return a normalized URL only when it is a plausible official job detail."""
+    if origin == "verified_declared_inventory":
+        try:
+            if urlparse(url).fragment:
+                return None
+        except (AttributeError, TypeError, ValueError):
+            return None
     if origin == "first_party_fragment_job_card":
         fragment_url = _normalize_first_party_fragment_url(url, source_url)
         if fragment_url is None:
@@ -305,6 +311,8 @@ def _trusted_first_party_fragment_detail(parsed, source, title: str, origin: str
 
 
 def _trusted_structured_detail(parsed, source, origin: str) -> bool:
+    if origin == "verified_declared_inventory":
+        return _trusted_declared_inventory_detail(parsed, source)
     if origin != "applicant_manager_table":
         return False
     hostname = (parsed.hostname or "").casefold().rstrip(".")
@@ -323,6 +331,28 @@ def _trusted_structured_detail(parsed, source, origin: str) -> bool:
         len(query) == 1
         and query[0][0].casefold() == "pos"
         and re.fullmatch(r"[A-Za-z][1-9]\d{0,18}", query[0][1])
+    )
+
+
+def _trusted_declared_inventory_detail(parsed, source) -> bool:
+    """Accept only the bounded query route attested by a verified inventory."""
+
+    if (
+        parsed.scheme.casefold() != "https"
+        or source.scheme.casefold() != "https"
+        or parsed.hostname != source.hostname
+        or parsed.port != source.port
+        or parsed.username
+        or parsed.password
+        or parsed.fragment
+        or parsed.path.rstrip("/").casefold() != "/jobdetails"
+    ):
+        return False
+    query = parse_qsl(parsed.query, keep_blank_values=True)
+    return bool(
+        len(query) == 1
+        and query[0][0].casefold() == "reqnumber"
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,79}", query[0][1])
     )
 
 
