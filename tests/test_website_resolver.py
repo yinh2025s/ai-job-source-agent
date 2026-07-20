@@ -20,6 +20,75 @@ from job_source_agent.website_resolver import (
 
 
 class WebsiteResolverTests(unittest.TestCase):
+    def test_speculative_only_domain_requires_consistent_content_identity(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+        canonical_only = WebsiteCandidate(
+            "https://teamroyal.org/",
+            115,
+            [
+                "homepage verified",
+                "homepage canonical confirms company identity",
+                "candidate source: speculative_guess",
+            ],
+        )
+        contradictory_body = WebsiteCandidate(
+            "https://stuller.org/",
+            35,
+            [
+                "homepage verified",
+                "homepage body confirms company identity",
+                "company token missing from homepage",
+                "candidate source: speculative_guess",
+            ],
+        )
+        consistent_title = WebsiteCandidate(
+            "https://cretex.com/",
+            100,
+            [
+                "homepage verified",
+                "homepage title confirms company identity",
+                "candidate source: speculative_guess",
+            ],
+        )
+
+        self.assertIsNone(resolver._select_verified_candidate([canonical_only]))
+        self.assertIsNone(resolver._select_verified_candidate([contradictory_body]))
+        self.assertIs(resolver._select_verified_candidate([consistent_title]), consistent_title)
+
+    def test_search_skips_irrelevant_engine_results_before_stopping(self):
+        class SearchFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if "format=rss" in url:
+                    return Page(
+                        url=url,
+                        html=(
+                            "<rss><channel><item><title>Unrelated dictionary</title>"
+                            "<description>Translations</description>"
+                            "<link>https://dictionary.example/</link></item></channel></rss>"
+                        ),
+                    )
+                if "bing.com" in url:
+                    return Page(url=url, html='<a href="https://unrelated.example">Other</a>')
+                return Page(
+                    url=url,
+                    html=(
+                        '<a class="result__a" href="https://acme-systems.example">'
+                        "Acme Systems official website</a>"
+                    ),
+                )
+
+        fetcher = SearchFetcher()
+        results = CompanyWebsiteResolver(fetcher)._search_candidates_with_evidence(
+            "Acme Systems"
+        )
+
+        self.assertEqual([item.url for item in results], ["https://acme-systems.example"])
+        self.assertEqual(len(fetcher.calls), 3)
+
     def test_parenthetical_b_corp_certification_is_not_brand_identity(self):
         class CertificationFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):

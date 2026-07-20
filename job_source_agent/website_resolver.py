@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import re
 from base64 import urlsafe_b64decode
+from contextlib import nullcontext
 from dataclasses import dataclass, field
 from html import unescape as html_unescape
 from html.parser import HTMLParser
@@ -293,11 +294,12 @@ class CompanyWebsiteResolver:
             or _linkedin_slug_uses_marketing_prefix(linkedin_company_url)
             or _company_name_loses_identity_separator(company_name)
         ) and linkedin_company_url:
-            linkedin_evidence = self._linkedin_company_candidates(
-                linkedin_company_url,
-                company_name,
-                fetch_errors=fetch_errors,
-            )
+            with self._route_fetch_policy("linkedin_evidence"):
+                linkedin_evidence = self._linkedin_company_candidates(
+                    linkedin_company_url,
+                    company_name,
+                    fetch_errors=fetch_errors,
+                )
             linkedin_official_candidates = [
                 _prefer_https_candidate(url)
                 for url in linkedin_evidence.official_urls
@@ -535,11 +537,12 @@ class CompanyWebsiteResolver:
 
         loaded_linkedin_evidence_after_fast_path = False
         if not linkedin_evidence_loaded:
-            linkedin_evidence = self._linkedin_company_candidates(
-                linkedin_company_url,
-                company_name,
-                fetch_errors=fetch_errors,
-            )
+            with self._route_fetch_policy("linkedin_evidence"):
+                linkedin_evidence = self._linkedin_company_candidates(
+                    linkedin_company_url,
+                    company_name,
+                    fetch_errors=fetch_errors,
+                )
             linkedin_official_candidates = [
                 _prefer_https_candidate(url)
                 for url in linkedin_evidence.official_urls
@@ -644,11 +647,12 @@ class CompanyWebsiteResolver:
                 trace,
                 self._navigation_evidence_for_selected(fast_selected),
             )
-        search_evidence = self._search_candidates_with_evidence(
-            company_name,
-            job_location,
-            fetch_errors=fetch_errors,
-        )
+        with self._route_fetch_policy("search_evidence"):
+            search_evidence = self._search_candidates_with_evidence(
+                company_name,
+                job_location,
+                fetch_errors=fetch_errors,
+            )
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
         all_candidates = dedupe_urls(
@@ -677,6 +681,7 @@ class CompanyWebsiteResolver:
             search_evidence=evidence_by_domain,
             candidate_sources=candidate_sources,
             fetch_errors=fetch_errors,
+            previously_scored=fast_scored,
         )
         if same_brand_dot_com_blocked:
             for candidate in scored:
@@ -834,9 +839,14 @@ class CompanyWebsiteResolver:
         search_evidence: dict[str, SearchEvidence] | None = None,
         candidate_sources: dict[str, set[str]] | None = None,
         fetch_errors: list[dict] | None = None,
+        previously_scored: list[WebsiteCandidate] | None = None,
     ) -> list[WebsiteCandidate]:
         search_evidence = search_evidence or {}
         candidate_sources = candidate_sources or {}
+        previous_by_domain = {
+            domain_of(candidate.url): candidate
+            for candidate in (previously_scored or [])
+        }
         base_scored = [
             self._score_candidate(
                 candidate,
@@ -897,8 +907,47 @@ class CompanyWebsiteResolver:
                 candidate: WebsiteCandidate,
             ) -> tuple[WebsiteCandidate, list[dict]]:
                 candidate_fetch_errors: list[dict] = []
-                verified_candidate = _append_candidate_sources(
-                    self._score_candidate(
+                source_set = candidate_sources.get(domain_of(candidate.url), set())
+                previous = previous_by_domain.get(domain_of(candidate.url))
+                previous_sources = (
+                    _candidate_sources_from_reasons(previous.reasons)
+                    if previous is not None
+                    else set()
+                )
+                evidence_upgrade = bool(
+                    (source_set - previous_sources).intersection(
+                        {
+                            "linkedin_cached_official_website",
+                            "linkedin_evidence",
+                            "linkedin_official_website",
+                            "preferred_input",
+                            "search_evidence",
+                            "stored_verified_company_evidence",
+                        }
+                    )
+                )
+                if (
+                    previous is not None
+                    and "domain-only score" not in previous.reasons
+                    and not evidence_upgrade
+                ):
+                    return (
+                        _append_candidate_sources(
+                            WebsiteCandidate(
+                                previous.url,
+                                previous.score,
+                                list(previous.reasons),
+                                previous.verified_page,
+                            ),
+                            source_set,
+                        ),
+                        [],
+                    )
+                evidence_tier = _candidate_evidence_tier(
+                    source_set
+                )
+                with self._candidate_fetch_policy(source_set):
+                    scored_candidate = self._score_candidate(
                         candidate.url,
                         company_name,
                         linkedin_company_url=linkedin_company_url,
@@ -906,13 +955,12 @@ class CompanyWebsiteResolver:
                         verify=True,
                         search_evidence=search_evidence.get(domain_of(candidate.url)),
                         fetch_errors=candidate_fetch_errors,
-                        evidence_tier=_candidate_evidence_tier(
-                            candidate_sources.get(domain_of(candidate.url), set())
-                        ),
-                    ),
-                    candidate_sources.get(domain_of(candidate.url), set()),
+                        evidence_tier=evidence_tier,
+                    )
+                verified_candidate = _append_candidate_sources(
+                    scored_candidate,
+                    source_set,
                 )
-                source_set = candidate_sources.get(domain_of(candidate.url), set())
                 if "regional_recovery" in source_set:
                     requested_site = _registrable_site_from_url(candidate.url)
                     resolved_site = _registrable_site_from_url(verified_candidate.url)
@@ -1024,6 +1072,50 @@ class CompanyWebsiteResolver:
         ]
         return sorted(refined, key=lambda candidate: candidate.score, reverse=True)
 
+    def _route_fetch_policy(self, route: str):
+        retry_scope = getattr(self.fetcher, "retry_scope", None)
+        if not callable(retry_scope):
+            return nullcontext()
+        remaining_reader = getattr(self.fetcher, "remaining_fetch_seconds", None)
+        remaining = remaining_reader() if callable(remaining_reader) else None
+        fraction = 0.30 if route == "linkedin_evidence" else 0.40
+        max_elapsed = (
+            min(4.0, max(1.5, remaining * fraction))
+            if isinstance(remaining, (int, float))
+            else 4.0
+        )
+        return retry_scope(
+            max_retries=0,
+            max_elapsed_seconds=max_elapsed,
+            policy=route,
+        )
+
+    def _candidate_fetch_policy(self, sources: set[str]):
+        retry_scope = getattr(self.fetcher, "retry_scope", None)
+        retryable_sources = {
+            "linkedin_cached_official_website",
+            "linkedin_evidence",
+            "linkedin_official_website",
+            "preferred_input",
+            "regional_recovery",
+            "search_evidence",
+            "stored_verified_company_evidence",
+        }
+        if sources.intersection(retryable_sources) or not callable(retry_scope):
+            return nullcontext()
+        remaining_reader = getattr(self.fetcher, "remaining_fetch_seconds", None)
+        remaining = remaining_reader() if callable(remaining_reader) else None
+        max_elapsed = (
+            min(2.0, max(0.75, remaining * 0.15))
+            if isinstance(remaining, (int, float))
+            else 2.0
+        )
+        return retry_scope(
+            max_retries=0,
+            max_elapsed_seconds=max_elapsed,
+            policy="speculative_candidate",
+        )
+
     def _search_candidates(self, company_name: str, job_location: str | None = None) -> list[str]:
         return [result.url for result in self._search_candidates_with_evidence(company_name, job_location)]
 
@@ -1063,6 +1155,8 @@ class CompanyWebsiteResolver:
             for result in raw_results:
                 cleaned = clean_search_url(result.url, preserve_region=region)
                 if not cleaned or is_blocked_domain(cleaned):
+                    continue
+                if not _search_result_matches_company(result, cleaned, company_name):
                     continue
                 domain = domain_of(cleaned)
                 if domain in seen:
@@ -1207,6 +1301,25 @@ class CompanyWebsiteResolver:
         for candidate in scored:
             if candidate.score < 25:
                 continue
+            candidate_sources = _candidate_sources_from_reasons(candidate.reasons)
+            if candidate_sources == {"speculative_guess"}:
+                content_identity = any(
+                    reason in candidate.reasons
+                    for reason in (
+                        "homepage organization data confirms company identity",
+                        "homepage title confirms company identity",
+                        "homepage title confirms company abbreviation",
+                        "homepage body confirms company identity",
+                    )
+                )
+                if (
+                    "access-controlled institutional acronym" not in candidate.reasons
+                    and (
+                        not content_identity
+                        or "company token missing from homepage" in candidate.reasons
+                    )
+                ):
+                    continue
             linkedin_official = (
                 "LinkedIn company page identifies official website" in candidate.reasons
             )
@@ -1920,6 +2033,32 @@ def _text_confirms_company_identity(text: str, company_tokens: list[str]) -> boo
     )
 
 
+def _search_result_matches_company(
+    result: SearchEvidence,
+    url: str,
+    company_name: str,
+) -> bool:
+    company_tokens = _exact_identity_tokens(company_name)
+    if not company_tokens:
+        return False
+    domain = domain_of(url)
+    if _domain_confirms_company_identity(domain, company_tokens):
+        return True
+    if _domain_matches_company_abbreviation(domain, company_tokens):
+        return True
+    if (
+        not result.title
+        and not result.snippet
+        and len(company_tokens[0]) >= 5
+        and company_tokens[0] in re.sub(r"[^a-z0-9]", "", domain.casefold())
+    ):
+        return True
+    return _text_confirms_company_identity(
+        f"{result.title} {result.snippet}",
+        company_tokens,
+    )
+
+
 def _domain_confirms_company_identity(domain: str, company_tokens: list[str]) -> bool:
     if not domain or not company_tokens:
         return False
@@ -2488,6 +2627,15 @@ def _has_direct_identity_source(candidate: WebsiteCandidate) -> bool:
         "candidate source: stored_verified_company_evidence",
     }
     return any(reason in direct_sources for reason in candidate.reasons)
+
+
+def _candidate_sources_from_reasons(reasons: list[str]) -> set[str]:
+    prefix = "candidate source: "
+    return {
+        reason.removeprefix(prefix)
+        for reason in reasons
+        if reason.startswith(prefix)
+    }
 
 
 def _looks_like_mechanical_hyphenated_slug_domain(

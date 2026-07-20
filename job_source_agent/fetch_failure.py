@@ -4,7 +4,7 @@ from typing import Any, Literal, TypedDict
 
 from .reasons import classify_fetch_error, reason_spec
 from .request_identity import request_identity_from_dict
-from .web import FetchError
+from .web import TRANSPORT_PHASES, FetchError
 
 
 class FetchFailureProjection(TypedDict):
@@ -16,6 +16,7 @@ class FetchFailureProjection(TypedDict):
     reason_code_source: Literal["exception", "classified_message"]
     retryable: bool
     request_identity: dict[str, Any] | None
+    transport_phase: str | None
 
 
 def project_fetch_error(error: FetchError) -> FetchFailureProjection:
@@ -34,7 +35,16 @@ def project_fetch_error(error: FetchError) -> FetchFailureProjection:
         "reason_code_source": reason_code_source,
         "retryable": retryable,
         "request_identity": request_identity,
+        "transport_phase": _transport_phase(error.transport_phase),
     }
+
+
+def _transport_phase(value: object) -> str | None:
+    if value is None:
+        return None
+    if value not in TRANSPORT_PHASES:
+        raise TypeError("FetchError.transport_phase is invalid")
+    return str(value)
 
 
 def _validated_status(status: object) -> int | None:

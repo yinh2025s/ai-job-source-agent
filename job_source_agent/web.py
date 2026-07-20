@@ -6,11 +6,13 @@ from html import unescape
 from pathlib import Path
 import gzip
 import hashlib
+import http.client
 import ipaddress
 import json
 import re
 import signal
 import socket
+import ssl
 import threading
 import time
 from contextlib import contextmanager
@@ -174,12 +176,93 @@ class FetchError(RuntimeError):
         reason_code: str | None = None,
         retryable: bool | None = None,
         request_identity: dict | None = None,
+        transport_phase: str | None = None,
     ) -> None:
         super().__init__(message)
         self.status = status
         self.reason_code = reason_code
         self.retryable = retryable
         self.request_identity = request_identity
+        self.transport_phase = transport_phase
+
+
+TRANSPORT_PHASES = frozenset({"dns", "connect", "tls", "http", "read", "timeout"})
+
+
+def normalize_transport_exception(
+    error: BaseException,
+    *,
+    url: str,
+    data: bytes | None = None,
+    headers: dict[str, str] | None = None,
+) -> FetchError | None:
+    """Convert known network/read failures into the public typed fetch contract."""
+
+    if isinstance(error, FetchError):
+        return error
+    if not isinstance(
+        error,
+        (
+            HTTPError,
+            URLError,
+            TimeoutError,
+            socket.timeout,
+            OSError,
+            http.client.HTTPException,
+            gzip.BadGzipFile,
+        ),
+    ):
+        return None
+
+    phase = _transport_phase(error)
+    detail = str(error) or type(error).__name__
+    reason_code = classify_fetch_error(detail)
+    if phase == "dns":
+        reason_code = "DNS_FAILED"
+    elif phase == "timeout":
+        reason_code = "NETWORK_TIMEOUT"
+    elif phase == "connect" and reason_code == "FETCH_FAILED":
+        reason_code = "CONNECTION_FAILED"
+    return FetchError(
+        detail,
+        status=error.code if isinstance(error, HTTPError) else None,
+        reason_code=reason_code,
+        retryable=reason_spec(reason_code).retryable,
+        request_identity=build_request_identity(url, data=data, headers=headers).as_dict(),
+        transport_phase=phase,
+    )
+
+
+def _transport_phase(error: BaseException) -> str:
+    cause: BaseException = error
+    seen: set[int] = set()
+    while isinstance(cause, URLError) and isinstance(cause.reason, BaseException):
+        if id(cause) in seen:
+            break
+        seen.add(id(cause))
+        cause = cause.reason
+    if isinstance(error, HTTPError):
+        return "http"
+    if isinstance(cause, (socket.timeout, TimeoutError)):
+        return "timeout"
+    if isinstance(cause, socket.gaierror):
+        return "dns"
+    if isinstance(cause, ssl.SSLError):
+        return "tls"
+    if isinstance(cause, (http.client.IncompleteRead, gzip.BadGzipFile, EOFError)):
+        return "read"
+    if isinstance(cause, http.client.RemoteDisconnected):
+        return "connect"
+    if isinstance(cause, http.client.HTTPException):
+        return "read"
+    text = str(cause).casefold()
+    if any(marker in text for marker in ("ssl", "tls", "certificate")):
+        return "tls"
+    if any(marker in text for marker in ("timed out", "timeout")):
+        return "timeout"
+    if any(marker in text for marker in ("name resolution", "getaddrinfo", "nodename")):
+        return "dns"
+    return "connect"
 
 
 class TimeBudgetExceeded(RuntimeError):
@@ -766,7 +849,6 @@ class Fetcher:
                 reason_code="OPENING_DISCOVERY_INCOMPLETE",
                 retryable=False,
             )
-        socket.setdefaulttimeout(self.timeout)
         request_headers = {
             "User-Agent": (
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -805,16 +887,16 @@ class Fetcher:
                         raw = gzip.decompress(raw)
                     html = raw.decode(charset, errors="replace")
                     final_url = response.geturl()
-        except (HTTPError, URLError, TimeoutError, socket.timeout, OSError) as exc:
-            detail = str(exc)
-            reason_code = classify_fetch_error(detail)
-            raise FetchError(
-                detail,
-                status=exc.code if isinstance(exc, HTTPError) else None,
-                reason_code=reason_code,
-                retryable=reason_spec(reason_code).retryable,
-                request_identity=build_request_identity(url, data=data, headers=headers).as_dict(),
-            ) from exc
+        except BaseException as exc:
+            normalized_error = normalize_transport_exception(
+                exc,
+                url=url,
+                data=data,
+                headers=headers,
+            )
+            if normalized_error is None:
+                raise
+            raise normalized_error from exc
         return Page(url=url, html=html, final_url=final_url, source="live")
 
     def _thread_opener(self):

@@ -23,7 +23,49 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-20，`.188`）
+## 当前执行轮次（2026-07-20，`.189`）
+
+### `.189` fresh 100：S2 冷启动传输与候选调度（Phase C 完成）
+
+`.188` fresh 冷启动经人工 Exact 审核后为 11/100，eligible Exact recall 为 11/90；79 条
+`SYSTEM_GAP` 中 49 条在 S2 失败。两次使用独立 checkpoint/snapshot 的 49 条 S2-only 重跑均只解析
+同样 3 条，其余同样 46 条失败，每轮产生 413/414 个 retry event。失败标签在 7 条上发生变化，成功
+集合完全不变，因此根因是可重复的候选调度、重试预算和传输异常契约缺陷，不是一次网络波动。
+
+`.189` 第一轮只处理该通用簇：已冻结
+`docs/FRESH_100_V189_S2_ROOT_CAUSE.md` 作为实现契约。Phase B 将把
+`IncompleteRead` 等已知 transport exception 统一封装为可快照的 typed failure；按
+DNS/connect/TLS/HTTP/read 记录诊断；只重试有直接证据的候选；先收集 LinkedIn/search 证据并为证据
+路线保留预算，再有界验证 speculative guess。不得增加公司或 benchmark 特例，不得放宽 homepage
+身份验证，也不得用 focused 结果改写 `.188` 统一成绩。
+
+Phase C 固定回归这 49 条：0 worker exception、每条完整 S2 snapshot boundary、speculative retry 为
+0、scoped replay 0 mismatch/0 fixture gap，并逐条审核所有新解析官网的公司身份。通过后运行全量离线
+gate，再决定是否进入 S5 的 8 条缺陷；只有多个主要簇关闭后才以全新目录运行 code-frozen fresh 100。
+
+Phase B/C 已完成。最终 code-frozen run7 从 `.188` 重复诊断的 3/49 提升为 5/49，retry event 从
+413 降至 290，平均 S2 时间从 8.957 秒降至 6.476 秒；speculative candidate 的 scheduled retry 为
+0。49/49 均有完整 S2 snapshot boundary，Ken Garff 的 raw `IncompleteRead` 不再逃逸 worker。最终
+5 个 selected website 全部通过公司身份审计；中间轮次暴露的 `stuller.org` 和 `teamroyal.org`
+低证据假阳性已由通用 speculative-only content-identity gate 拒绝。
+
+same-version focused replay 为 `49/49 reproduced / 0 mismatch / 0 fixture gap / 0 integrity failure`。
+Python 3.12 全量门禁通过 2436 tests（3 skipped）、25/25 provider、6/6 resolver、44 adapters/0
+architecture issue。报告与逐条 delta 见 `docs/FRESH_100_V189_S2_PHASE_C.md` 和
+`artifacts/evaluations/fresh100-v189-s2-focused-20260720-run7/`；完整 live/replay archive SHA-256 为
+`ad5d7344d187cdcd74b217140fd2448fd135afbea7c2acf8d7e6db2cd54bbb94`。
+
+剩余 44 条 S2 未解析不能被改标为外部终态，也不继续用扩大猜测域名或 timeout 的方式追求官网召回。
+下一轮进入 S5 Phase A：从 fresh closure 中冻结 8 条 `JOB_BOARD_NOT_FOUND`，审计 External Apply、
+provider-targeted search 与 verified Career 下钻三路 candidate portfolio，确保 S2 失败不阻塞
+provider/tenant 验真。该轮先分析 trace/snapshot，不在 Phase A 修改代码。
+
+### `.188` fresh 100 冷启动独立泛化基线（冻结）
+
+`frozen100-v188` 的代码与原冻结 100 artifacts 保持不变。独立 July 18 fresh 100 冷启动输出位于
+`artifacts/evaluations/fresh100-v188-cold-20260720-run1/`：人工审核后为 11 Exact、9
+`VERIFIED_NOT_FOUND`、1 `INPUT_IDENTITY_INVALID`、79 `SYSTEM_GAP`；错误地点 URL 1 条。该基线及
+对应 replay integrity 结论只用于定位缺陷，任何 focused 修复不得覆盖或回写。
 
 ### `.188` 最终冻结 100：跨域 Career 搜索结果的招聘关系验真（完成）
 

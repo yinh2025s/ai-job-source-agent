@@ -1,13 +1,15 @@
 from __future__ import annotations
 
 import random
+import threading
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from typing import Any, Callable
 
 from .browser_interaction import BrowserInteraction
 from .reasons import classify_fetch_error, reason_spec
-from .web import FetchError, Page
+from .web import FetchError, Page, normalize_transport_exception
 
 
 @dataclass
@@ -19,6 +21,8 @@ class RetryEvent:
     error: str | None
     delay: float
     outcome: str
+    transport_phase: str | None = None
+    policy: str | None = None
 
 
 class RetryingFetcher:
@@ -50,6 +54,30 @@ class RetryingFetcher:
         self._deadline = deadline
         self.timeout = getattr(fetcher, "timeout", None)
         self.retry_events: list[dict[str, Any]] = []
+        self._policy_state = threading.local()
+
+    @contextmanager
+    def retry_scope(
+        self,
+        *,
+        max_retries: int | None = None,
+        max_elapsed_seconds: float | None = None,
+        policy: str | None = None,
+    ):
+        stack = getattr(self._policy_state, "stack", None)
+        if stack is None:
+            stack = []
+            self._policy_state.stack = stack
+        local_deadline = (
+            self._clock() + max(0.0, max_elapsed_seconds)
+            if max_elapsed_seconds is not None
+            else None
+        )
+        stack.append((max_retries, local_deadline, policy))
+        try:
+            yield
+        finally:
+            stack.pop()
 
     def fetch(
         self,
@@ -92,7 +120,15 @@ class RetryingFetcher:
                 finally:
                     if bounded_timeout is not None:
                         self.fetcher.timeout = original_timeout
-            except FetchError as exc:
+            except BaseException as raw_error:
+                exc = normalize_transport_exception(
+                    raw_error,
+                    url=url,
+                    data=data,
+                    headers=headers,
+                )
+                if exc is None:
+                    raise
                 reason_code = exc.reason_code or classify_fetch_error(str(exc))
                 spec = reason_spec(reason_code)
                 retryable = (
@@ -108,25 +144,41 @@ class RetryingFetcher:
                     error=str(exc),
                     delay=0.0,
                     outcome="failed",
+                    transport_phase=exc.transport_phase,
+                    policy=self._current_policy()[2],
                 )
                 self.retry_events.append(asdict(event))
                 event_record = self.retry_events[-1]
 
                 if retryable and spec.owner == "budget":
                     event_record["outcome"] = "retry_deferred"
-                    raise
+                    if exc is raw_error:
+                        raise
+                    raise exc from raw_error
                 if not retryable:
                     event_record["outcome"] = "not_retryable"
-                    raise
-                if attempt > self.max_retries:
+                    if exc is raw_error:
+                        raise
+                    raise exc from raw_error
+                scoped_retries = self._current_policy()[0]
+                allowed_retries = (
+                    self.max_retries
+                    if scoped_retries is None
+                    else max(0, scoped_retries)
+                )
+                if attempt > allowed_retries:
                     event_record["outcome"] = "retry_budget_exhausted"
-                    raise
+                    if exc is raw_error:
+                        raise
+                    raise exc from raw_error
 
                 delay = self._retry_delay(attempt - 1)
                 remaining = self._remaining_time()
                 if remaining <= delay:
                     event_record["outcome"] = "deadline_exhausted"
-                    raise
+                    if exc is raw_error:
+                        raise
+                    raise exc from raw_error
 
                 event_record["delay"] = delay
                 event_record["outcome"] = "retry_scheduled"
@@ -148,6 +200,7 @@ class RetryingFetcher:
                             error=None,
                             delay=0.0,
                             outcome="succeeded",
+                            policy=self._current_policy()[2],
                         )
                     )
                 )
@@ -164,9 +217,18 @@ class RetryingFetcher:
 
     def _remaining_time(self) -> float:
         deadline = self._deadline() if callable(self._deadline) else self._deadline
+        local_deadline = self._current_policy()[1]
+        if deadline is None:
+            deadline = local_deadline
+        elif local_deadline is not None:
+            deadline = min(deadline, local_deadline)
         if deadline is None:
             return float("inf")
         return deadline - self._clock()
+
+    def _current_policy(self) -> tuple[int | None, float | None, str | None]:
+        stack = getattr(self._policy_state, "stack", None)
+        return stack[-1] if stack else (None, None, None)
 
     def remaining_fetch_seconds(self) -> float | None:
         remaining = self._remaining_time()

@@ -1,4 +1,5 @@
 import json
+import http.client
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -409,6 +410,29 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn('"reason_code": "HTTP_FORBIDDEN"', failure_text)
         self.assertIn('"status": 403', failure_text)
         self.assertNotIn("private", failure_text)
+
+    def test_snapshotting_fetcher_finalizes_raw_incomplete_read(self):
+        class IncompleteFetcher:
+            timeout = 1
+
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                raise http.client.IncompleteRead(b"partial", 20)
+
+        with tempfile.TemporaryDirectory() as directory:
+            fetcher = SnapshottingFetcher(IncompleteFetcher(), directory)
+            with self.assertRaises(FetchError) as raised:
+                fetcher.fetch("https://jobs.example.com/openings")
+            failures = [
+                json.loads(line)
+                for line in (Path(directory) / "fetch-failures.jsonl").read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        self.assertEqual(raised.exception.transport_phase, "read")
+        self.assertEqual(len(failures), 1)
+        self.assertEqual(failures[0]["failure"]["reason_code"], "FETCH_FAILED")
+        self.assertTrue(failures[0]["terminal"])
 
     def test_explicit_budget_guard_failure_uses_request_aware_snapshot_identity(self):
         class MustNotFetch:

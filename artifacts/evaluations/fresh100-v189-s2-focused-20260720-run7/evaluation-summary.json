@@ -1,0 +1,61 @@
+{
+  "adapter_version": "2026-07-20.189",
+  "scope": "fixed 49-record S2-only fresh cohort",
+  "baseline": {
+    "success": 3,
+    "failed": 46,
+    "retry_events": 413,
+    "average_seconds": 8.957
+  },
+  "final": {
+    "success": 5,
+    "failed": 44,
+    "retry_events": 290,
+    "average_seconds": 6.476,
+    "worker_exceptions": 0,
+    "missing_s2_boundaries": 0
+  },
+  "final_reason_counts": {
+    "FETCH_FAILED": 38,
+    "HTTP_FORBIDDEN": 5,
+    "WEBSITE_NOT_RESOLVED": 1
+  },
+  "speculative_retry_scheduled": 0,
+  "replay": {
+    "total": 49,
+    "reproduced": 49,
+    "mismatch": 0,
+    "fixture_gap": 0,
+    "integrity_failed": 0
+  },
+  "selected_websites": [
+    {
+      "company_name": "Vectra AI",
+      "website_url": "https://www.vectra.ai",
+      "identity_audit": "PASS"
+    },
+    {
+      "company_name": "Ivo",
+      "website_url": "https://www.ivo.ai",
+      "identity_audit": "PASS"
+    },
+    {
+      "company_name": "Nisga'a Tek, LLC",
+      "website_url": "https://www.nisgaatek.com/",
+      "identity_audit": "PASS"
+    },
+    {
+      "company_name": "ARUP Laboratories",
+      "website_url": "https://www.aruplab.com",
+      "identity_audit": "PASS"
+    },
+    {
+      "company_name": "System One",
+      "website_url": "https://www.systemone.com/",
+      "identity_audit": "PASS"
+    }
+  ],
+  "score_policy": "Focused S2 evidence only; does not change the frozen fresh-100 unified score.",
+  "live_root": "/private/tmp/fresh100-v189-s2-focused-run7",
+  "replay_root": "/private/tmp/fresh100-v189-s2-focused-run7-replay"
+}

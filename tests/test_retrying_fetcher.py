@@ -1,4 +1,5 @@
 import unittest
+import http.client
 
 from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.career_transport_budget import CareerTransportBudgetFetcher
@@ -24,6 +25,28 @@ class SequenceFetcher:
 
 
 class RetryFetcherTests(unittest.TestCase):
+    def test_raw_incomplete_read_is_normalized_and_retried(self):
+        page = Page("https://example.com", "ok")
+        base = SequenceFetcher([http.client.IncompleteRead(b"part", 8), page])
+        fetcher = RetryingFetcher(base, max_retries=1, base_delay=0)
+
+        self.assertIs(fetcher.fetch("https://example.com"), page)
+        self.assertEqual(base.calls, 2)
+        self.assertEqual(fetcher.retry_events[0]["transport_phase"], "read")
+
+    def test_scoped_speculative_policy_switches_candidate_without_retry(self):
+        base = SequenceFetcher([FetchError("tls eof")])
+        fetcher = RetryingFetcher(base, max_retries=3, base_delay=0)
+
+        with fetcher.retry_scope(max_retries=0, policy="speculative_candidate"):
+            with self.assertRaises(FetchError):
+                fetcher.fetch("https://guessed.example")
+
+        self.assertEqual(base.calls, 1)
+        self.assertEqual(len(fetcher.retry_events), 1)
+        self.assertEqual(fetcher.retry_events[0]["policy"], "speculative_candidate")
+        self.assertEqual(fetcher.retry_events[0]["outcome"], "retry_budget_exhausted")
+
     def test_retryable_error_is_retried_until_success_and_traced(self):
         page = Page(url="https://example.com", final_url="https://example.com", html="ok")
         base = SequenceFetcher([FetchError("read timed out"), page])

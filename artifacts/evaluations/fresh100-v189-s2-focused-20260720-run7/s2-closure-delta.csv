@@ -1,0 +1,50 @@
+index,company_name,linkedin_job_url,baseline_s2_status,baseline_s2_reason,v189_s2_status,v189_s2_reason,website_url,identity_audit,selected_score,replay,elapsed_seconds
+0,Loveland Innovations,https://www.linkedin.com/jobs/view/devops-engineer-at-loveland-innovations-4424981543,failed,NETWORK_TIMEOUT,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,7.778
+1,iClassPro - Class Management Software,https://www.linkedin.com/jobs/view/devops-engineer-at-iclasspro-class-management-software-4441446072,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,3.666
+2,Indica Labs,https://www.linkedin.com/jobs/view/devops-engineer-at-indica-labs-4438426469,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,7.191
+3,Caesars Entertainment,https://www.linkedin.com/jobs/view/devops-engineer-at-caesars-entertainment-4409111101,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,6.437
+4,Vectra AI,https://www.linkedin.com/jobs/view/devops-engineer-at-vectra-ai-4430117412,failed,NETWORK_TIMEOUT,success,,https://www.vectra.ai,PASS,230,reproduced,3.76
+5,Versana,https://www.linkedin.com/jobs/view/devops-engineer-raleigh-at-versana-4428784625,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,7.351
+6,Altec,https://www.linkedin.com/jobs/view/devops-engineer-at-altec-4440790313,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,10.849
+7,Ivo,https://www.linkedin.com/jobs/view/devops-engineer-at-ivo-4401137274,success,,success,,https://www.ivo.ai,PASS,213,reproduced,6.085
+8,NYC Department of Social Services,https://www.linkedin.com/jobs/view/devops-engineer-at-nyc-department-of-social-services-4425365717,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,4.941
+9,City of Lubbock,https://www.linkedin.com/jobs/view/information-security-and-compliance-analyst-at-city-of-lubbock-4432727055,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,7.295
+10,Sunwest Bank,https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sunwest-bank-4420685217,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,6.161
+11,"City of Pharr, TX",https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-city-of-pharr-tx-4437874960,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,6.965
+12,"Stuller, Inc.",https://www.linkedin.com/jobs/view/information-security-analyst-at-stuller-inc-4424475160,failed,NETWORK_TIMEOUT,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,7.92
+13,"SDS International, Inc.",https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sds-international-inc-4317924361,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,4.673
+14,"Nisga'a Tek, LLC",https://www.linkedin.com/jobs/view/defense-cyber-analyst-at-nisga-a-tek-llc-4409058516,success,,success,,https://www.nisgaatek.com/,PASS,213,reproduced,1.951
+15,Hawaiian Electric,https://www.linkedin.com/jobs/view/cyber-operations-analyst-oahu-at-hawaiian-electric-4416993271,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,8.97
+16,Mayo Clinic,https://www.linkedin.com/jobs/view/information-security-analyst-is-mod-at-mayo-clinic-4442117657,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,5.969
+17,Benefis Health System,https://www.linkedin.com/jobs/view/vulnerability-analyst-information-technology-services-exempt-at-benefis-health-system-4432838078,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,4.431
+18,Diamondback Energy,https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-diamondback-energy-4432462031,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,4.894
+19,"Cretex Companies, Inc.",https://www.linkedin.com/jobs/view/it-cyber-security-risk-analyst-at-cretex-companies-inc-4439832665,failed,NETWORK_TIMEOUT,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,8.025
+20,Hawaiian Electric,https://www.linkedin.com/jobs/view/information-assurance-analyst-oahu-at-hawaiian-electric-4438885728,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,9.28
+21,FOTOMILL STUDIOS LIMITED,https://www.linkedin.com/jobs/view/computer-network-defense-analyst-at-fotomill-studios-limited-4370885298,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,4.684
+22,PACS,https://www.linkedin.com/jobs/view/security-analyst-at-pacs-4441642099,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,8.386
+23,North Dakota Information Technology (NDIT),https://www.linkedin.com/jobs/view/cyber-security-analyst-at-north-dakota-information-technology-ndit-4440062680,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,5.304
+24,University of Oklahoma,https://www.linkedin.com/jobs/view/grc-analyst-intermediate-at-university-of-oklahoma-4430146950,failed,WEBSITE_NOT_RESOLVED,failed,WEBSITE_NOT_RESOLVED,,NOT_APPLICABLE,,reproduced,4.629
+25,Holland America Line,https://www.linkedin.com/jobs/view/ux-designer-at-holland-america-line-4441219545,failed,NETWORK_TIMEOUT,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,6.49
+26,ARUP Laboratories,https://www.linkedin.com/jobs/view/ux-user-experience-designer-ii-at-arup-laboratories-4441135780,failed,NETWORK_TIMEOUT,success,,https://www.aruplab.com,PASS,133,reproduced,5.803
+27,IMG (International Medical Group),https://www.linkedin.com/jobs/view/ux-designer-at-img-international-medical-group-4426438449,failed,HTTP_FORBIDDEN,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,5.39
+28,Necessary Ventures,https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-necessary-ventures-4437656059,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,4.647
+29,Versana,https://www.linkedin.com/jobs/view/ux-designer-at-versana-4429309954,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,7.687
+30,Frost,https://www.linkedin.com/jobs/view/user-experience-designer-ii-at-frost-4406714624,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,7.675
+31,Fabric,https://www.linkedin.com/jobs/view/product-designer-at-fabric-4425643348,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,6.457
+32,Dechert LLP,https://www.linkedin.com/jobs/view/ux-designer-at-dechert-llp-4438146712,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,6.067
+33,Slant CRM,https://www.linkedin.com/jobs/view/product-designer-at-slant-crm-4335431264,failed,HTTP_FORBIDDEN,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,8.694
+34,Brown and Caldwell,https://www.linkedin.com/jobs/view/project-manager-at-brown-and-caldwell-4433489743,failed,HTTP_FORBIDDEN,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,7.496
+35,American Fabrication Inc.,https://www.linkedin.com/jobs/view/project-manager-at-american-fabrication-inc-4435856709,failed,HTTP_FORBIDDEN,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,8.912
+36,System One,https://www.linkedin.com/jobs/view/project-manager-at-system-one-4434872384,success,,success,,https://www.systemone.com/,PASS,228,reproduced,4.999
+37,Team Royal,https://www.linkedin.com/jobs/view/project-manager-at-team-royal-4437878290,failed,HTTP_FORBIDDEN,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,5.998
+38,Rider Levett Bucknall RLB,https://www.linkedin.com/jobs/view/project-manager-at-rider-levett-bucknall-rlb-4403834520,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,3.681
+39,Salas O'Brien,https://www.linkedin.com/jobs/view/project-manager-at-salas-o-brien-4193245312,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,4.807
+40,Hays + Sons,https://www.linkedin.com/jobs/view/project-manager-%E2%80%93-bloomington%0Afull-time-at-hays-%2B-sons-4405588363,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,6.472
+41,City of Sioux Falls,https://www.linkedin.com/jobs/view/talent-manager-at-city-of-sioux-falls-4435941256,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,8.004
+42,WICHITA COMPANY LIMITED,https://www.linkedin.com/jobs/view/assistant-director-of-human-resources-at-wichita-company-limited-4441608516,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,3.809
+43,City of College Station,https://www.linkedin.com/jobs/view/hr-operations-and-services-manager-at-city-of-college-station-4426127673,failed,FETCH_FAILED,failed,FETCH_FAILED,,NOT_APPLICABLE,,reproduced,6.65
+44,Jushi Holdings Inc.,https://www.linkedin.com/jobs/view/human-resources-manager-at-jushi-holdings-inc-4422128904,failed,FETCH_FAILED,failed,HTTP_FORBIDDEN,,NOT_APPLICABLE,,reproduced,6.775
+45,State of Montana,https://www.linkedin.com/jobs/view/human-resources-manager-at-state-of-montana-4439231755,failed,FETCH_FAILED,failed,HTTP_FORBIDDEN,,NOT_APPLICABLE,,reproduced,12.516
+46,Ken Garff Automotive Group,https://www.linkedin.com/jobs/view/human-resources-manager-at-ken-garff-automotive-group-4423595647,failed,FETCH_FAILED,failed,HTTP_FORBIDDEN,,NOT_APPLICABLE,,reproduced,7.705
+47,Systematic Business Consulting,https://www.linkedin.com/jobs/view/human-resources-manager-at-systematic-business-consulting-4440044707,failed,FETCH_FAILED,failed,HTTP_FORBIDDEN,,NOT_APPLICABLE,,reproduced,5.665
+48,Heritage Companies,https://www.linkedin.com/jobs/view/corporate-human-resources-manager-at-heritage-companies-4440274758,failed,HTTP_FORBIDDEN,failed,HTTP_FORBIDDEN,,NOT_APPLICABLE,,reproduced,7.343

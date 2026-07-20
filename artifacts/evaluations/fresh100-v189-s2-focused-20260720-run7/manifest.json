@@ -1,0 +1,33 @@
+{
+  "source_head": "053913a6f7ede1a4983eff14c3b5e20857a6850f",
+  "source_digest": "9e7e03111fa38c4c455545136cf8db010acb73e07fc57277983dffa20a4ea470",
+  "adapter_version": "2026-07-20.189",
+  "record_count": 49,
+  "workers": 4,
+  "fetch_timeout_seconds": 8,
+  "fetch_retries": 1,
+  "retry_deadline_seconds": 12.5,
+  "cache_policy": "none",
+  "stop_after": "website_resolution",
+  "evaluation_kind": "focused_s2_phase_c",
+  "immutable_baseline": "artifacts/evaluations/fresh100-v188-cold-20260720-run1",
+  "release_archive": {
+    "path": "artifacts/releases/fresh100-v189-s2-focused-20260720-run7.tar.zst",
+    "sha256": "ad5d7344d187cdcd74b217140fd2448fd135afbea7c2acf8d7e6db2cd54bbb94",
+    "bytes": 6083372
+  },
+  "files": {
+    "s2-closure-delta.csv": {
+      "sha256": "f1737f3e47fa361f84044244292a75ea0cc9e77d95f6900071e216ca54555923",
+      "bytes": 9332
+    },
+    "evaluation-summary.json": {
+      "sha256": "8b2a37a5e2535fef05b724f93c6a55ec5c51ef67cc2d30a3bbf26e1bf0e84a09",
+      "bytes": 1547
+    },
+    "README.md": {
+      "sha256": "72ac47ed2e7d31e08fb92eee40e07b0155f991ea43e9447f812115231bcfdc9a",
+      "bytes": 605
+    }
+  }
+}

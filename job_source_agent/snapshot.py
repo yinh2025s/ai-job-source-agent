@@ -16,7 +16,7 @@ import fcntl
 from .browser_interaction import BrowserInteraction
 from .reasons import classify_fetch_error, reason_spec
 from .request_identity import build_request_identity, is_sensitive_key, sanitize_url
-from .web import FetchError, Page, fixture_path_candidates
+from .web import FetchError, Page, fixture_path_candidates, normalize_transport_exception
 
 if TYPE_CHECKING:
     from .snapshot_capture import SnapshotCaptureCoordinator, SnapshotRequestCapture
@@ -298,7 +298,15 @@ class SnapshottingFetcher:
                     headers=headers,
                     interaction=interaction,
                 )
-        except FetchError as error:
+        except BaseException as raw_error:
+            error = normalize_transport_exception(
+                raw_error,
+                url=url,
+                data=data,
+                headers=headers,
+            )
+            if error is None:
+                raise
             record = self.snapshot_store.write_failure(
                 error,
                 url,
@@ -309,7 +317,9 @@ class SnapshottingFetcher:
             )
             if self.coordinator is not None:
                 self.coordinator.accept_terminal_record(record)
-            raise
+            if error is raw_error:
+                raise
+            raise error from raw_error
         record = self.snapshot_store.write_page(
             page,
             request_url=url,

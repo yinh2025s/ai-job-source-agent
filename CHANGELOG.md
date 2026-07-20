@@ -10,6 +10,18 @@
 
 ### Added
 
+- `.189` begins the fresh-100 S2 cold-start stabilization cycle. Known transport failures such as
+  `IncompleteRead`, remote disconnects, TLS failures, DNS failures, and timeouts are normalized into
+  typed `FetchError` outcomes with sanitized request identity and a separate transport phase. The
+  retry and snapshot wrappers now close known raw transport exceptions instead of allowing a worker
+  to terminate without a request boundary. Resolver probes use scoped retry policy: mechanically
+  generated domains switch candidates after one attempt, while LinkedIn/search/direct evidence
+  routes retain bounded retry eligibility and their own elapsed-time slice. Two `.188` S2-only cold
+  diagnostics resolved the same 3/49 records and failed the same 46 while producing 413/414 retry
+  events, establishing this as a repeatable scheduling/recovery defect. The implementation contract
+  and rollback criteria are frozen in `docs/FRESH_100_V189_S2_ROOT_CAUSE.md`; `.188` artifacts and
+  scores remain immutable. `ADAPTER_VERSION` is `2026-07-20.189`.
+
 - `.188` makes cross-domain Career search leads fail closed unless the destination proves a complete
   hiring relationship to the already verified corporate site. A same-name page must now provide
   matching company identity, same-origin canonical metadata, a same-origin actionable jobs route,
