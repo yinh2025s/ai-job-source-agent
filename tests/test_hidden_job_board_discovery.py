@@ -29,6 +29,33 @@ class MappingFetcher:
 
 
 class HiddenJobBoardDiscoveryTests(unittest.TestCase):
+    def test_career_root_with_multiple_verified_job_accordions_is_a_generic_board(self):
+        career = "https://school.example/careers/"
+        html = """
+        <p>East Sandwich, MA 02537</p>
+        <div class="accordion-item">
+          <a class="toggle" href="#overnight-rn-school-nurse">Overnight RN - School Nurse</a>
+          <p>Reports To: Director. Essential Job Function: onsite care.</p>
+          <a href="/employment-application/">online application</a>
+        </div>
+        <div class="accordion-item">
+          <a class="toggle" href="#evening-rn-school-nurse">Evening RN - School Nurse</a>
+          <p>Job Classification: Part Time. Candidate Requirements: RN license.</p>
+          <a href="/employment-application/">online application</a>
+        </div>
+        """
+        fetcher = MappingFetcher({career: Page(url=career, html=html)})
+
+        job_list, trace, discovered = JobSourceAgent(fetcher).find_job_board_with_evidence(
+            career,
+            company_name="Example School",
+            target_location="East Sandwich, MA",
+        )
+
+        self.assertEqual(job_list, career)
+        self.assertEqual(trace["selected_from"], "verified_first_party_listing_inventory")
+        self.assertIsNone(discovered)
+
     def test_upgrades_selected_board_from_observed_two_hop_career_action_chain(self):
         career = "https://careers.example.com/"
         category = "https://careers.example.com/nursing/"

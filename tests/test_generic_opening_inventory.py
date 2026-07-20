@@ -889,6 +889,44 @@ class GenericOpeningInventoryTests(unittest.TestCase):
         self.assertFalse(result.inventory_complete)
         self.assertEqual(result.stop_reason, "single_page_unbounded")
 
+    def test_collects_first_party_fragment_accordion_inventory(self):
+        initial = page(
+            BASE_URL,
+            """
+            <p>East Sandwich, MA 02537</p>
+            <div class="accordion-item">
+              <a class="toggle" href="#overnight-rn-school-nurse">Overnight RN - School Nurse</a>
+              <p>Reports To: Director. Essential Job Function: onsite care.</p>
+              <a href="/employment-application/">online application</a>
+            </div>
+            <div class="accordion-item">
+              <a class="toggle" href="#evening-rn-school-nurse">Evening RN - School Nurse</a>
+              <p>Job Classification: Part Time. Candidate Requirements: RN license.</p>
+              <a href="/employment-application/">online application</a>
+            </div>
+            """,
+        )
+
+        result, _fetcher = self.collect(initial)
+
+        self.assertEqual(
+            [item.url for item in result.candidates],
+            [
+                f"{BASE_URL}#overnight-rn-school-nurse",
+                f"{BASE_URL}#evening-rn-school-nurse",
+            ],
+        )
+        self.assertEqual(
+            [item.location for item in result.candidates],
+            ["East Sandwich, MA", "East Sandwich, MA"],
+        )
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(
+            result.stop_reason,
+            "complete_first_party_fragment_inventory",
+        )
+        self.assertTrue(has_strong_generic_opening_inventory(initial))
+
     def test_rejects_first_party_card_lookalikes_and_blocked_content(self):
         initial = page(
             BASE_URL,

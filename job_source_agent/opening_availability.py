@@ -55,6 +55,19 @@ def diagnose_opening_availability(
             evidence={"source_posting_status": source_status},
         )
 
+    ambiguity = trace.get("opening_identity_ambiguity")
+    if isinstance(ambiguity, dict) and ambiguity.get("candidates"):
+        return OpeningAvailabilityDiagnostic(
+            disposition="opening_identity_ambiguous",
+            confidence="high",
+            reason_code="OPENING_IDENTITY_AMBIGUOUS",
+            detail=(
+                "Multiple official openings match the supplied title and location; "
+                "the source input does not identify one opening uniquely."
+            ),
+            evidence=ambiguity,
+        )
+
     provider_errors = _provider_errors(trace)
     provider_failure_reason = _provider_failure_reason(trace, provider_errors)
     provider_api = trace.get("provider_api")

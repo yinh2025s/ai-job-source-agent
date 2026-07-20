@@ -9,6 +9,7 @@ from ..contracts import PipelineContext, StageExecution
 from ..company_discovery_evidence import (
     CompanyDiscoveryEvidenceStore,
     VerifiedCareerEvidence,
+    VerifiedCompanyDiscoveryEvidence,
     VerifiedProviderBoardEvidence,
 )
 from ..errors import DiscoveryError
@@ -38,6 +39,7 @@ from ..provider_candidates import (
     CandidateDiscoveryRequest,
     ProviderCandidate,
     ProviderCandidatePool,
+    STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
     VerifiedProviderCandidate,
 )
 from ..reasons import canonical_reason_code, make_stage_result
@@ -112,9 +114,15 @@ class CareerDiscoveryStage:
         self,
         service: CareerDiscoveryService,
         company_discovery_evidence_store: CompanyDiscoveryEvidenceStore | None = None,
+        provider_registry: ProviderRegistry | None = None,
+        enable_parallel_candidate_discovery: bool = True,
     ) -> None:
         self.service = service
         self.company_discovery_evidence_store = company_discovery_evidence_store
+        self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
+        self.enable_parallel_candidate_discovery = (
+            enable_parallel_candidate_discovery
+        )
 
     def run(self, context: PipelineContext) -> StageExecution:
         stored_career_url, stored_website_url = self._stored_career_candidate(context)
@@ -135,17 +143,23 @@ class CareerDiscoveryStage:
                 },
             )
         if (
-            not context.company_website_url
-            and self._has_stored_provider_candidate(context)
+            self.enable_parallel_candidate_discovery
+            and not context.career_root_url
+            and (
+            (
+                not context.company_website_url
+                and self._has_stored_provider_candidate(context)
+            )
+            or self._has_stored_provider_career_candidate(context)
+            )
         ):
             return StageExecution(
                 make_stage_result(
                     self.name,
                     "not_run",
                     detail=(
-                        "Current website verification was unavailable; a stored "
-                        "provider candidate is deferred to S5 for current inventory "
-                        "revalidation."
+                        "A stored listable provider candidate is deferred to S5 for "
+                        "current inventory revalidation."
                     ),
                 ),
                 trace={
@@ -333,6 +347,41 @@ class CareerDiscoveryStage:
             return False
         return bool(record is not None and record.provider_boards)
 
+    def _has_stored_provider_career_candidate(
+        self,
+        context: PipelineContext,
+    ) -> bool:
+        record = self._stored_company_discovery_record(context)
+        if (
+            record is None
+            or record.career is None
+            or record.career.source != "verified_career_search"
+        ):
+            return False
+        adapter = self.provider_registry.adapter_for(record.career.url)
+        board = adapter.identify_board(record.career.url) if adapter else None
+        return bool(adapter is not None and adapter.supports_listing and board is not None)
+
+    def _stored_company_discovery_record(
+        self,
+        context: PipelineContext,
+    ) -> VerifiedCompanyDiscoveryEvidence | None:
+        store = self.company_discovery_evidence_store
+        linkedin_url = context.company.linkedin_company_url
+        if store is None or not linkedin_url:
+            return None
+        try:
+            record = store.load(context.company.company_name, linkedin_url)
+        except (OSError, TypeError, ValueError):
+            return None
+        if record is None:
+            return None
+        if _strict_entity_key(record.company_name) != _strict_entity_key(
+            context.company.company_name
+        ) or not _same_url(record.linkedin_company_url, linkedin_url):
+            return None
+        return record
+
     def _save_verified_career(
         self,
         context: PipelineContext,
@@ -500,6 +549,30 @@ class JobBoardDiscoveryStage:
                     candidate_trace,
                     self.provider_registry,
                 )
+            no_public_evidence = _verified_no_public_recruiting_surface(
+                context,
+                candidate_trace,
+            )
+            if no_public_evidence is not None:
+                return StageExecution(
+                    result=make_stage_result(
+                        self.name,
+                        "partial",
+                        reason_code="NO_PUBLIC_OPENINGS",
+                        input_count=1,
+                        output_count=0,
+                        evidence=[no_public_evidence],
+                        detail=(
+                            "The verified official website exposed no public recruiting "
+                            "surface after bounded first-party and provider discovery."
+                        ),
+                    ),
+                    trace={
+                        "method": "verified_no_public_recruiting_surface",
+                        "no_public_recruiting_surface": no_public_evidence,
+                        "parallel_candidate_fallback": candidate_trace,
+                    },
+                )
             return StageExecution(
                 result=legacy_execution.result,
                 updates=legacy_execution.updates,
@@ -655,6 +728,8 @@ class JobBoardDiscoveryStage:
                 dynamic_inventory_reason = _dynamic_inventory_failure_reason(exc.trace)
                 if dynamic_inventory_reason is not None:
                     reason_code = dynamic_inventory_reason
+                elif _trace_has_unlinked_third_party_handoff(exc.trace):
+                    reason_code = "UNVERIFIABLE_THIRD_PARTY_HANDOFF"
             if reason_code == "JOB_BOARD_NOT_FOUND" and not _trace_has_discovery_errors(exc.trace):
                 native_execution = self._from_linkedin_native_source(
                     context,
@@ -671,6 +746,11 @@ class JobBoardDiscoveryStage:
                 started,
                 str(exc),
                 trace=exc.trace,
+                evidence=(
+                    [_unlinked_third_party_handoff_evidence(exc.trace)]
+                    if reason_code == "UNVERIFIABLE_THIRD_PARTY_HANDOFF"
+                    else None
+                ),
             )
 
         embedded_provider_boards = _first_party_inventory_provider_boards(
@@ -1078,6 +1158,10 @@ class JobBoardDiscoveryStage:
             return ()
         if record is None:
             return ()
+        if _strict_entity_key(record.company_name) != _strict_entity_key(
+            context.company.company_name
+        ) or not _same_url(record.linkedin_company_url, linkedin_url):
+            return ()
         candidates = []
         for evidence in record.provider_boards:
             try:
@@ -1097,6 +1181,33 @@ class JobBoardDiscoveryStage:
                 )
             except (TypeError, ValueError):
                 continue
+        career = record.career
+        website = record.website
+        if (
+            career is not None
+            and website is not None
+            and _same_url(career.website_url, website.url)
+        ):
+            adapter = self.provider_registry.adapter_for(career.url)
+            board = adapter.identify_board(career.url) if adapter else None
+            if adapter is not None and adapter.supports_listing and board is not None:
+                try:
+                    candidates.append(
+                        ProviderCandidate(
+                            url=career.url,
+                            source_kind="stored_verified_career_provider",
+                            source_url=career.evidence_url,
+                            company_name=(
+                                context.hiring_entity_name
+                                or context.company.company_name
+                            ),
+                            target_title=context.company.job_title,
+                            target_location=context.company.job_location,
+                            provider_hint=adapter.name,
+                        )
+                    )
+                except (TypeError, ValueError):
+                    pass
         return tuple(candidates)
 
     def _from_linkedin_native_source(
@@ -1602,6 +1713,17 @@ class OpeningMatchStage:
                 if diagnostic is not None
                 else "A verified job board could not be checked conclusively."
             )
+        elif self._stored_career_provider_identity_conflict(
+            context,
+            portfolio,
+            attempts,
+        ):
+            reason_code = "COMPANY_IDENTITY_AMBIGUOUS"
+            detail = (
+                "The stored ATS Career lead was revalidated against current complete "
+                "provider inventory, but its tenant does not match the verified hiring "
+                "entity and no first-party handoff establishes that relationship."
+            )
         elif not portfolio_complete:
             reason_code = "JOB_BOARD_PORTFOLIO_INCOMPLETE"
             detail = (
@@ -1663,6 +1785,53 @@ class OpeningMatchStage:
                 **stored_identity_updates,
             },
             trace=trace,
+        )
+
+    def _stored_career_provider_identity_conflict(
+        self,
+        context: PipelineContext,
+        portfolio: JobBoardPortfolio,
+        attempts: list[dict],
+    ) -> bool:
+        if len(attempts) != len(portfolio.boards) or not attempts:
+            return False
+        if any(
+            not _trace_has_complete_native_inventory(attempt.get("trace", {}))
+            for attempt in attempts
+        ):
+            return False
+        s5_trace = context.trace.get("stages", {}).get(STAGE_JOB_BOARD_DISCOVERY)
+        selected = s5_trace.get("selected") if isinstance(s5_trace, dict) else None
+        if (
+            not isinstance(selected, dict)
+            or selected.get("source_kind") != "stored_verified_career_provider"
+        ):
+            return False
+        store = self.company_discovery_evidence_store
+        linkedin_url = context.company.linkedin_company_url
+        if store is None or not linkedin_url:
+            return False
+        try:
+            record = store.load(context.company.company_name, linkedin_url)
+        except (OSError, TypeError, ValueError):
+            return False
+        if record is None or record.website is None or record.career is None:
+            return False
+        if (
+            _strict_entity_key(record.company_name)
+            != _strict_entity_key(context.company.company_name)
+            or not _same_url(record.linkedin_company_url, linkedin_url)
+            or not _same_url(record.career.website_url, record.website.url)
+            or not _same_url(selected.get("url") or "", record.career.url)
+        ):
+            return False
+        board = portfolio.primary.board
+        return bool(
+            board.identifier
+            and not _stored_tenant_matches_hiring_entity(
+                context.hiring_entity_name or context.company.company_name,
+                board.identifier,
+            )
         )
     def _stored_inventory_identity(
         self,
@@ -1778,6 +1947,7 @@ def _failed_execution(
     started: float,
     detail: str,
     trace: dict | None = None,
+    evidence: list[dict] | None = None,
 ) -> StageExecution:
     return StageExecution(
         result=make_stage_result(
@@ -1786,6 +1956,7 @@ def _failed_execution(
             reason_code=reason_code,
             duration_ms=_elapsed_ms(started),
             input_count=1,
+            evidence=evidence or [],
             detail=detail,
         ),
         trace=trace or {"error": detail},
@@ -1804,6 +1975,174 @@ def _trace_has_discovery_errors(value: object, key: str = "") -> bool:
         return any(_trace_has_discovery_errors(item, str(name)) for name, item in value.items())
     if isinstance(value, list):
         return any(_trace_has_discovery_errors(item) for item in value)
+    return False
+
+
+def _trace_has_unlinked_third_party_handoff(value: object) -> bool:
+    if isinstance(value, dict):
+        if value.get("disposition") == "unlinked_third_party_recruiting_handoff":
+            return True
+        return any(_trace_has_unlinked_third_party_handoff(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_trace_has_unlinked_third_party_handoff(item) for item in value)
+    return False
+
+
+def _unlinked_third_party_handoff_evidence(value: object) -> dict:
+    if isinstance(value, dict):
+        if value.get("disposition") == "unlinked_third_party_recruiting_handoff":
+            return {
+                "type": "availability_diagnostic",
+                **value,
+            }
+        for item in value.values():
+            evidence = _unlinked_third_party_handoff_evidence(item)
+            if evidence:
+                return evidence
+    elif isinstance(value, list):
+        for item in value:
+            evidence = _unlinked_third_party_handoff_evidence(item)
+            if evidence:
+                return evidence
+    return {}
+
+
+def _verified_no_public_recruiting_surface(
+    context: PipelineContext,
+    candidate_trace: object,
+) -> dict | None:
+    """Close a bounded official-surface miss without treating one 404 as absence."""
+
+    if context.company.external_apply_url or not context.company_website_url:
+        return None
+    website_stage = next(
+        (
+            result
+            for result in context.stage_results
+            if result.stage == "website_resolution"
+        ),
+        None,
+    )
+    career_stage = next(
+        (
+            result
+            for result in context.stage_results
+            if result.stage == STAGE_CAREER_DISCOVERY
+        ),
+        None,
+    )
+    if (
+        website_stage is None
+        or website_stage.status != "success"
+        or career_stage is None
+        or career_stage.status != "failed"
+        or career_stage.reason_code != "CAREER_PAGE_NOT_FOUND"
+        or career_stage.retryable
+    ):
+        return None
+    stages_trace = context.trace.get("stages")
+    career_trace = (
+        stages_trace.get(STAGE_CAREER_DISCOVERY)
+        if isinstance(stages_trace, dict)
+        else None
+    )
+    if not isinstance(career_trace, dict):
+        return None
+    transport = career_trace.get("transport_budget")
+    bundle = career_trace.get("bundle_navigation_discovery")
+    sitemap = career_trace.get("sitemap_discovery")
+    search = career_trace.get("search_discovery")
+    candidate = (
+        candidate_trace.get("candidate_discovery")
+        if isinstance(candidate_trace, dict)
+        else None
+    )
+    verification = (
+        candidate_trace.get("candidate_verification")
+        if isinstance(candidate_trace, dict)
+        else None
+    )
+    homepage_url = career_trace.get("homepage_url")
+    homepage_identity_verified = bool(
+        isinstance(homepage_url, str)
+        and homepage_url.rstrip("/").casefold()
+        == context.company_website_url.rstrip("/").casefold()
+    )
+    transport_incomplete = bool(
+        transport is not None
+        and (
+            not isinstance(transport, dict)
+            or transport.get("exhausted") is True
+            or int(transport.get("rejected") or 0) != 0
+            or int(transport.get("dispatched") or 0) < 1
+        )
+    )
+    if (
+        career_trace.get("homepage_fetch_error") not in (None, "")
+        or not homepage_identity_verified
+        or transport_incomplete
+        or not isinstance(bundle, dict)
+        or bool(bundle.get("candidate_urls"))
+        or not isinstance(sitemap, dict)
+        or sitemap.get("skipped") is True
+        or int(sitemap.get("candidate_count") or 0) != 0
+        or not isinstance(sitemap.get("sitemaps_checked"), list)
+        or not sitemap["sitemaps_checked"]
+        or sitemap.get("fanout_limit_reached") is True
+        or not isinstance(search, dict)
+        or bool(search.get("candidates"))
+        or search.get("stopped_reason") != "no_valid_candidates"
+        or not _has_successful_empty_search_query(search.get("queries"))
+        or not isinstance(candidate, dict)
+        or not isinstance(candidate.get("pool"), dict)
+        or int(candidate["pool"].get("candidate_count") or 0) != 0
+        or not isinstance(verification, dict)
+        or int(verification.get("verified_candidate_count") or 0) != 0
+        or _has_unresolved_evidence_candidate(career_trace)
+    ):
+        return None
+    return {
+        "type": "availability_diagnostic",
+        "disposition": "verified_no_public_recruiting_surface",
+        "contract_version": "1",
+        "website_url": context.company_website_url,
+        "homepage_verified": True,
+        "first_party_navigation_complete": True,
+        "sitemap_discovery_complete": True,
+        "bounded_search_complete": True,
+        "provider_candidate_count": 0,
+    }
+
+
+def _has_successful_empty_search_query(value: object) -> bool:
+    return bool(
+        isinstance(value, list)
+        and any(
+            isinstance(item, dict)
+            and item.get("error") in (None, "")
+            and not item.get("candidates")
+            and int(item.get("result_count") or 0) >= 0
+            for item in value
+        )
+    )
+
+
+def _has_unresolved_evidence_candidate(career_trace: dict) -> bool:
+    homepage_verification = career_trace.get(
+        "homepage_career_surface_verification"
+    )
+    if (
+        isinstance(homepage_verification, dict)
+        and homepage_verification.get("verified") is not True
+        and "identity mismatch"
+        in str(homepage_verification.get("reason") or "").casefold()
+    ):
+        return True
+    for failure in career_trace.get("candidate_fetch_errors") or []:
+        if not isinstance(failure, dict) or failure.get("retryable") is not True:
+            continue
+        if failure.get("origin") not in {"blind_ats_probe", "subdomain_probe"}:
+            return True
     return False
 
 
@@ -2908,7 +3247,7 @@ def _candidate_hiring_relationship(
         strength = 90
     elif candidate.source_kind not in {
         "guessed_path",
-        "stored_verified_provider_board",
+        *STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
     } and alias_rank is not None:
         evidence_type = "provider_tenant_match"
         strength = 94 - alias_rank

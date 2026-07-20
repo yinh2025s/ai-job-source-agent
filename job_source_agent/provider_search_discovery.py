@@ -30,7 +30,7 @@ class ProviderSearchCandidateDiscovery(CandidateDiscovery):
         *,
         provider_registry: ProviderRegistry = DEFAULT_PROVIDER_REGISTRY,
         max_candidates: int = MAX_PROVIDER_CANDIDATES,
-        max_probe_attempts: int = 6,
+        max_probe_attempts: int = 8,
     ) -> None:
         if (
             isinstance(max_candidates, bool)
@@ -41,7 +41,7 @@ class ProviderSearchCandidateDiscovery(CandidateDiscovery):
         self.resolver = resolver
         self.provider_registry = provider_registry
         self.max_candidates = max_candidates
-        if isinstance(max_probe_attempts, bool) or not 1 <= max_probe_attempts <= 12:
+        if isinstance(max_probe_attempts, bool) or not 1 <= max_probe_attempts <= 16:
             raise ValueError("Provider tenant probe limit is invalid")
         self.max_probe_attempts = max_probe_attempts
 
@@ -162,83 +162,108 @@ def _verified_provider_tenant_probes(
         request.linkedin_company_url,
     )
     attempts: list[TenantProbeAttempt] = []
-    for slug in slugs:
-        provider_urls = (
-            ("greenhouse", f"https://boards.greenhouse.io/{slug}"),
-            ("greenhouse", f"https://job-boards.greenhouse.io/{slug}"),
-            ("ashby", f"https://jobs.ashbyhq.com/{slug}"),
-            ("lever", f"https://jobs.lever.co/{slug}"),
-            ("pinpoint", f"https://{slug}.pinpointhq.com"),
-            ("smartrecruiters", f"https://jobs.smartrecruiters.com/{slug}"),
-        )
-        for provider, url in provider_urls:
-            if len(attempts) >= max_attempts:
-                return [], {
-                    "status": "rejected",
-                    "candidate_count": 0,
-                    "reason": "provider_tenant_probe_limit_reached",
-                    "attempts": attempts,
-                }
-            adapter = registry.adapter_for(url)
-            board = adapter.identify_board(url) if adapter is not None else None
-            attempt: TenantProbeAttempt = {
-                "url": url,
-                "provider": provider,
+    primary_provider_urls = (
+        ("greenhouse", "https://boards.greenhouse.io/{slug}"),
+        ("ashby", "https://jobs.ashbyhq.com/{slug}"),
+        ("lever", "https://jobs.lever.co/{slug}"),
+        ("workable", "https://apply.workable.com/{slug}"),
+    )
+    secondary_provider_urls = (
+        ("greenhouse", "https://job-boards.greenhouse.io/{slug}"),
+        ("pinpoint", "https://{slug}.pinpointhq.com"),
+        ("smartrecruiters", "https://jobs.smartrecruiters.com/{slug}"),
+    )
+    provider_urls = (
+        *(
+            (provider, template.format(slug=slug))
+            for slug in slugs
+            for provider, template in primary_provider_urls
+        ),
+        *(
+            (provider, template.format(slug=slug))
+            for slug in slugs
+            for provider, template in secondary_provider_urls
+        ),
+    )
+    for provider, url in provider_urls:
+        if len(attempts) >= max_attempts:
+            return [], {
                 "status": "rejected",
-            }
-            if adapter is None or board is None or not adapter.supports_listing:
-                attempt["reason"] = "provider_not_listable"
-                attempts.append(attempt)
-                continue
-            try:
-                result = adapter.list_jobs(
-                    fetcher,
-                    board,
-                    JobQuery(
-                        title=request.target_title,
-                        location=request.target_location,
-                    ),
-                )
-            except (FetchError, OSError, TimeoutError, TypeError, ValueError) as exc:
-                attempt["reason"] = "provider_probe_failed"
-                attempt["error_type"] = type(exc).__name__
-                attempts.append(attempt)
-                continue
-            if result.retryable:
-                attempt["reason"] = "provider_inventory_retryable"
-                attempts.append(attempt)
-                continue
-            if not result.inventory_complete or result.inventory_scope != "full":
-                attempt["reason"] = "provider_inventory_incomplete"
-                attempts.append(attempt)
-                continue
-            if not _same_provider_tenant(board, result.board, result.provider):
-                attempt["reason"] = "provider_tenant_mismatch"
-                attempts.append(attempt)
-                continue
-            if not result.candidates:
-                attempt["reason"] = "provider_inventory_empty"
-                attempts.append(attempt)
-                continue
-            attempt["status"] = "verified"
-            attempt["reason"] = "provider_inventory_verified"
-            attempt["candidate_count"] = len(result.candidates)
-            attempts.append(attempt)
-            candidate = ProviderCandidate(
-                url=result.board.url,
-                source_kind="verified_tenant_probe",
-                source_url=source_url,
-                company_name=request.company_name,
-                target_title=request.target_title,
-                target_location=request.target_location,
-                provider_hint=result.provider,
-            )
-            return [candidate], {
-                "status": "used",
-                "candidate_count": 1,
-                "reason": "verified_provider_tenant_probe",
+                "candidate_count": 0,
+                "reason": "provider_tenant_probe_limit_reached",
                 "attempts": attempts,
             }
+        adapter = registry.adapter_for(url)
+        board = adapter.identify_board(url) if adapter is not None else None
+        attempt: TenantProbeAttempt = {
+            "url": url,
+            "provider": provider,
+            "status": "rejected",
+        }
+        if adapter is None or board is None or not adapter.supports_listing:
+            attempt["reason"] = "provider_not_listable"
+            attempts.append(attempt)
+            continue
+        try:
+            result = adapter.list_jobs(
+                fetcher,
+                board,
+                JobQuery(
+                    title=request.target_title,
+                    location=request.target_location,
+                ),
+            )
+        except (FetchError, OSError, TimeoutError, TypeError, ValueError) as exc:
+            attempt["reason"] = "provider_probe_failed"
+            attempt["error_type"] = type(exc).__name__
+            attempts.append(attempt)
+            continue
+        if result.retryable:
+            attempt["reason"] = "provider_inventory_retryable"
+            attempts.append(attempt)
+            continue
+        full_inventory_verified = bool(
+            result.inventory_complete and result.inventory_scope == "full"
+        )
+        target_opening_verified = _probe_contains_exact_title(
+            result.candidates,
+            request.target_title,
+        )
+        if not full_inventory_verified and not target_opening_verified:
+            attempt["reason"] = "provider_inventory_incomplete"
+            attempts.append(attempt)
+            continue
+        if not _same_provider_tenant(board, result.board, result.provider):
+            attempt["reason"] = "provider_tenant_mismatch"
+            attempts.append(attempt)
+            continue
+        if not result.candidates:
+            attempt["reason"] = "provider_inventory_empty"
+            attempts.append(attempt)
+            continue
+        attempt["status"] = "verified"
+        attempt["reason"] = (
+            "provider_inventory_verified"
+            if full_inventory_verified
+            else "provider_target_opening_verified"
+        )
+        attempt["candidate_count"] = len(result.candidates)
+        attempts.append(attempt)
+        candidate = ProviderCandidate(
+            url=result.board.url,
+            source_kind="verified_tenant_probe",
+            source_url=source_url,
+            company_name=request.company_name,
+            target_title=request.target_title,
+            target_location=request.target_location,
+            provider_hint=result.provider,
+        )
+        return [candidate], {
+            "status": "used",
+            "candidate_count": 1,
+            "reason": "verified_provider_tenant_probe",
+            "attempts": attempts,
+        }
     return [], {
         "status": "rejected",
         "candidate_count": 0,
@@ -275,16 +300,47 @@ def _same_provider_tenant(
     )
 
 
+def _probe_contains_exact_title(
+    candidates: list[JobCandidate],
+    target_title: str | None,
+) -> bool:
+    normalized_target = " ".join(
+        re.findall(r"[a-z0-9]+", (target_title or "").casefold())
+    )
+    return bool(
+        normalized_target
+        and any(
+            " ".join(re.findall(r"[a-z0-9]+", candidate.title.casefold()))
+            == normalized_target
+            for candidate in candidates
+        )
+    )
+
+
 def _provider_slug_candidates(
     company_name: str,
     website_url: str,
     linkedin_company_url: str | None = None,
 ) -> tuple[str, ...]:
-    ignored = {"co", "company", "corp", "corporation", "group", "inc", "llc", "ltd", "the"}
-    tokens = [
+    legal_ignored = {"the"}
+    brand_ignored = {
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "group",
+        "inc",
+        "incorporated",
+        "llc",
+        "ltd",
+        "the",
+    }
+    all_tokens = re.findall(r"[a-z0-9]+", company_name.casefold())
+    legal_tokens = [token for token in all_tokens if token not in legal_ignored]
+    brand_tokens = [
         token
-        for token in re.findall(r"[a-z0-9]+", company_name.casefold())
-        if token not in ignored
+        for token in all_tokens
+        if token not in brand_ignored
     ]
     hostname = (urlparse(website_url).hostname or "").casefold().removeprefix("www.")
     host_label = hostname.split(".", 1)[0]
@@ -299,9 +355,11 @@ def _provider_slug_candidates(
         "-".join(linkedin_tokens),
     )
     values = (
-        *linkedin_variants,
         host_label,
-        "".join(tokens),
-        "-".join(tokens),
+        "-".join(legal_tokens),
+        *linkedin_variants,
+        "".join(legal_tokens),
+        "".join(brand_tokens),
+        "-".join(brand_tokens),
     )
     return tuple(dict.fromkeys(value for value in values if value))[:5]

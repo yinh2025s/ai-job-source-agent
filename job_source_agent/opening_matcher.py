@@ -566,12 +566,41 @@ class JobOpeningMatcher:
         if provider != "generic" or not target_location:
             return selected
 
-        for candidate in candidates:
-            if candidate.location and _strict_location_identity_matches(
-                candidate.location,
-                target_location,
-            ):
-                return candidate
+        strict_location_candidates = [
+            candidate
+            for candidate in candidates
+            if candidate.location
+            and _strict_location_identity_matches(candidate.location, target_location)
+        ]
+        if len(strict_location_candidates) == 1:
+            return strict_location_candidates[0]
+        if len(strict_location_candidates) > 1:
+            exact_title_candidates = [
+                candidate
+                for candidate in strict_location_candidates
+                if publication_title_identity_matches(
+                    candidate.title,
+                    target_title,
+                    target_location=target_location,
+                )
+            ]
+            if len(exact_title_candidates) == 1:
+                return exact_title_candidates[0]
+            ambiguous = exact_title_candidates or strict_location_candidates
+            trace["opening_identity_ambiguity"] = {
+                "reason": "multiple_same_location_title_candidates",
+                "target_title": target_title,
+                "target_location": target_location,
+                "candidates": [
+                    {
+                        "url": candidate.url,
+                        "title": candidate.title,
+                        "location": candidate.location,
+                    }
+                    for candidate in ambiguous[:8]
+                ],
+            }
+            return None
 
         expected_domain = domain_of(job_list_url)
         expected_site = _registrable_site(expected_domain)
@@ -1537,7 +1566,14 @@ def _opening_candidates_from_links(
         )
         if not validated_url:
             continue
-        if safe_normalize_url(validated_url) in excluded_identities:
+        trusted_fragment_detail = bool(
+            link.origin == "first_party_fragment_job_card"
+            and urlparse(validated_url).fragment
+        )
+        if (
+            safe_normalize_url(validated_url) in excluded_identities
+            and not trusted_fragment_detail
+        ):
             continue
         link = RawLink(
             validated_url,
@@ -1547,7 +1583,7 @@ def _opening_candidates_from_links(
             link.location,
         )
         scored = score_job_link(link, evidence_page_url)
-        verified_detail_shape = is_likely_job_detail(scored)
+        verified_detail_shape = is_likely_job_detail(scored) or trusted_fragment_detail
         title_score, title_reasons = score_title_match(link.text, target_title)
         if (
             title_score < MIN_TITLE_MATCH_SCORE
@@ -2458,7 +2494,9 @@ def publication_title_identity_matches(
 ) -> bool:
     """Require the same normalized role before an opening can be published."""
 
-    candidate = _publication_title_token_sequence(candidate_title)
+    candidate = _publication_title_token_sequence(
+        _strip_terminal_requisition_code(candidate_title)
+    )
     target = _publication_title_token_sequence(target_title)
     if not candidate or not target:
         return False
@@ -2487,14 +2525,24 @@ def publication_title_identity_matches(
     )
 
 
+def _strip_terminal_requisition_code(title: str) -> str:
+    return re.sub(
+        r"\s*\((?:req(?:uisition)?[-\s:]*)?[a-z]{1,10}[-_]?\d{2,12}\)\s*$",
+        "",
+        title,
+        flags=re.IGNORECASE,
+    )
+
+
 def _title_token_sequence(text: str) -> list[str]:
     normalized = "".join(char.lower() if char.isalnum() else " " for char in text)
     aliases = {"sr": "senior", "jr": "junior"}
-    return [
+    tokens = [
         aliases.get(token, token)
         for token in normalized.split()
         if len(token) >= 2 and token not in STOPWORDS
     ]
+    return _normalize_nursing_title_tokens(tokens)
 
 
 def _publication_title_token_sequence(text: str) -> list[str]:
@@ -2511,13 +2559,39 @@ def _publication_title_token_sequence(text: str) -> list[str]:
         "iv": "level4",
         "4": "level4",
     }
-    return [
+    tokens = [
         aliases.get(token, token)
         for token in normalized.split()
         if token in aliases or (len(token) >= 2 and token not in STOPWORDS)
     ]
+    return _normalize_nursing_title_tokens(tokens)
 
 
 def _tokens(text: str) -> set[str]:
     normalized = "".join(char.lower() if char.isalnum() else " " for char in text)
-    return {token for token in normalized.split() if len(token) >= 2 and token not in STOPWORDS}
+    tokens = [
+        token
+        for token in normalized.split()
+        if len(token) >= 2 and token not in STOPWORDS
+    ]
+    return set(_normalize_nursing_title_tokens(tokens))
+
+
+def _normalize_nursing_title_tokens(tokens: list[str]) -> list[str]:
+    """Canonicalize RN without broadening unrelated title abbreviations."""
+
+    normalized: list[str] = []
+    index = 0
+    while index < len(tokens):
+        if tokens[index : index + 2] == ["registered", "nurse"]:
+            token = "registered_nurse"
+            index += 2
+        elif tokens[index] == "rn":
+            token = "registered_nurse"
+            index += 1
+        else:
+            token = tokens[index]
+            index += 1
+        if not normalized or normalized[-1] != token:
+            normalized.append(token)
+    return normalized

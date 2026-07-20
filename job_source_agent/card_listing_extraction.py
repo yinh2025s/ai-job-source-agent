@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from html.parser import HTMLParser
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urlparse, urlunparse
 
 from .scoring import is_ats_url, is_likely_job_detail, score_job_link
 from .web import RawLink, safe_normalize_url
@@ -135,11 +135,33 @@ _ROLE_TITLE_WORDS = {
     "executive",
     "lead",
     "manager",
+    "nurse",
     "officer",
     "recruiter",
     "scientist",
     "specialist",
     "technician",
+}
+_ACCORDION_ITEM_MARKER = re.compile(
+    r"(?:^|\s)(?:wp-block-[a-z0-9_-]+-)?accordion-item(?:$|\s)",
+    re.I,
+)
+_ACCORDION_TOGGLE_MARKER = re.compile(r"(?:^|\s)toggle(?:$|\s)", re.I)
+_JOB_BODY_SIGNALS = (
+    "candidate requirements",
+    "essential job function",
+    "job classification",
+    "legal authorization to work",
+    "pay range",
+    "reports to",
+)
+_APPLICATION_PATH = re.compile(r"/(?:employment-)?application(?:/|$)|/(?:apply)(?:/|$)", re.I)
+_US_STATE_CODES = {
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI",
+    "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI",
+    "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC",
+    "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT",
+    "VT", "VA", "WA", "WV", "WI", "WY", "DC",
 }
 
 
@@ -202,6 +224,22 @@ class _Element:
 
 class _LimitReached(Exception):
     pass
+
+
+@dataclass
+class _AccordionItem:
+    toggle_href: str | None = None
+    toggle_text: list[str] = field(default_factory=list)
+    text: list[str] = field(default_factory=list)
+    application_hrefs: list[str] = field(default_factory=list)
+
+
+@dataclass
+class _AccordionElement:
+    tag: str
+    blocked: bool
+    item: _AccordionItem | None = None
+    toggle: _AccordionItem | None = None
 
 
 class _CardParser(HTMLParser):
@@ -388,12 +426,198 @@ def extract_card_listing_candidates(html: str, source_url: str) -> list[CardList
 
     seen: set[tuple[str, str]] = set()
     output: list[CardListingCandidate] = []
-    for candidate in parser.results:
+    candidates = [*parser.results, *_extract_fragment_accordion_candidates(html, source_url)]
+    for candidate in candidates:
         key = (candidate.url.rstrip("/"), candidate.title.casefold())
         if key not in seen:
             seen.add(key)
             output.append(candidate)
     return output[:MAX_CANDIDATES]
+
+
+class _FragmentAccordionParser(HTMLParser):
+    """Extract bounded same-page job accordions without admitting generic FAQs."""
+
+    def __init__(self, source_url: str) -> None:
+        super().__init__(convert_charrefs=True)
+        self.source_url = source_url
+        self.stack: list[_AccordionElement] = []
+        self.nodes = 0
+        self.text_chars = 0
+        self.items: list[_AccordionItem] = []
+        self.visible_text: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        tag = tag.casefold()
+        self.nodes += 1
+        if self.nodes > MAX_NODES:
+            raise _LimitReached
+        values = {name.casefold(): (value or "") for name, value in attrs}
+        blocked = bool(self.stack and self.stack[-1].blocked) or _is_hidden(tag, values)
+        owner = self._current_item()
+        item = None
+        toggle = None
+        if not blocked and owner is None and _ACCORDION_ITEM_MARKER.search(
+            values.get("class", "")
+        ):
+            item = _AccordionItem()
+            owner = item
+        if not blocked and owner is not None and tag == "a" and values.get("href"):
+            href = values["href"].strip()
+            if _ACCORDION_TOGGLE_MARKER.search(values.get("class", "")):
+                if owner.toggle_href is None:
+                    owner.toggle_href = href
+                    toggle = owner
+                else:
+                    owner.toggle_href = ""
+            elif _safe_same_origin_application(href, self.source_url):
+                owner.application_hrefs.append(href)
+        if tag not in _VOID_TAGS:
+            self.stack.append(_AccordionElement(tag, blocked, item, toggle))
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag.casefold() not in _VOID_TAGS:
+            self.handle_endtag(tag)
+
+    def handle_data(self, data: str) -> None:
+        if not data or (self.stack and self.stack[-1].blocked):
+            return
+        self.text_chars += len(data)
+        if self.text_chars > MAX_TEXT_CHARS:
+            raise _LimitReached
+        self.visible_text.append(data)
+        owner = self._current_item()
+        if owner is not None:
+            owner.text.append(data)
+        for element in self.stack:
+            if element.toggle is not None:
+                element.toggle.toggle_text.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        tag = tag.casefold()
+        match_index = next(
+            (
+                index
+                for index in range(len(self.stack) - 1, -1, -1)
+                if self.stack[index].tag == tag
+            ),
+            None,
+        )
+        if match_index is None:
+            return
+        while len(self.stack) > match_index:
+            element = self.stack.pop()
+            if element.item is not None:
+                self.items.append(element.item)
+
+    def close_open_elements(self) -> None:
+        while self.stack:
+            element = self.stack.pop()
+            if element.item is not None:
+                self.items.append(element.item)
+
+    def _current_item(self) -> _AccordionItem | None:
+        for element in reversed(self.stack):
+            if element.item is not None:
+                return element.item
+        return None
+
+
+def _extract_fragment_accordion_candidates(
+    html: str,
+    source_url: str,
+) -> list[CardListingCandidate]:
+    parser = _FragmentAccordionParser(source_url)
+    try:
+        parser.feed(html)
+        parser.close()
+        parser.close_open_elements()
+    except (_LimitReached, TypeError, ValueError):
+        return []
+    location = _unique_visible_us_location(" ".join(parser.visible_text))
+    output: list[CardListingCandidate] = []
+    for item in parser.items:
+        title = _clean_text(item.toggle_text, MAX_TITLE_CHARS)
+        href = item.toggle_href or ""
+        body = " ".join(" ".join(item.text).casefold().split())
+        if (
+            not href.startswith("#")
+            or not re.fullmatch(r"#[a-z0-9][a-z0-9-]{2,199}", href, re.I)
+            or not _plausible_title(title)
+            or not _looks_like_role_title(title)
+            or sum(signal in body for signal in _JOB_BODY_SIGNALS) < 2
+            or not item.application_hrefs
+            or not _fragment_is_title_bound(href, title)
+        ):
+            continue
+        normalized = _same_page_fragment_url(href, source_url)
+        if normalized is None:
+            continue
+        output.append(
+            CardListingCandidate(
+                title,
+                normalized,
+                source_url,
+                origin="first_party_fragment_job_card",
+                location=location,
+            )
+        )
+    return output
+
+
+def _same_page_fragment_url(href: str, source_url: str) -> str | None:
+    source = urlparse(source_url)
+    if (
+        source.scheme.casefold() != "https"
+        or not source.hostname
+        or source.username
+        or source.password
+        or not href.startswith("#")
+    ):
+        return None
+    try:
+        if source.port not in {None, 443}:
+            return None
+    except ValueError:
+        return None
+    return urlunparse(source._replace(query="", fragment=href[1:]))
+
+
+def _safe_same_origin_application(href: str, source_url: str) -> bool:
+    normalized = safe_normalize_url(href, source_url)
+    if not normalized:
+        return False
+    parsed = urlparse(normalized)
+    source = urlparse(source_url)
+    return bool(
+        parsed.scheme.casefold() == source.scheme.casefold() == "https"
+        and (parsed.hostname or "").casefold() == (source.hostname or "").casefold()
+        and not parsed.query
+        and not parsed.fragment
+        and _APPLICATION_PATH.search(parsed.path)
+    )
+
+
+def _fragment_is_title_bound(href: str, title: str) -> bool:
+    fragment_words = set(_words(href.lstrip("#"))) - _TITLE_STOP_WORDS
+    title_words = set(_words(title)) - _TITLE_STOP_WORDS
+    return bool(len(fragment_words & title_words) >= 2)
+
+
+def _unique_visible_us_location(text: str) -> str | None:
+    matches = {
+        (" ".join(match.group(1).split()), match.group(2).upper())
+        for match in re.finditer(
+            r"\b([A-Z][A-Za-z'-]+(?:\s+[A-Z][A-Za-z'-]+){0,3}),\s*([A-Z]{2})\b",
+            text,
+        )
+        if match.group(2).upper() in _US_STATE_CODES
+    }
+    if len(matches) != 1:
+        return None
+    city, state = next(iter(matches))
+    return f"{city}, {state}"
 
 
 def _candidate_from_card(card: _Card, source_url: str) -> CardListingCandidate | None:

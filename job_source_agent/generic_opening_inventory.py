@@ -937,9 +937,22 @@ def collect_generic_opening_inventory(
             traces.append(InventoryTraceEntry(current_url, page_candidate_count, stop_reason))
             break
         if not next_urls:
-            inventory_complete = saw_pagination or dynamic_inventory.inventory_complete
+            fragment_card_count = sum(
+                candidate.origin == "first_party_fragment_job_card"
+                for candidate in extracted
+            )
+            complete_fragment_inventory = bool(
+                pages_fetched == 1 and fragment_card_count >= 2
+            )
+            inventory_complete = bool(
+                saw_pagination
+                or dynamic_inventory.inventory_complete
+                or complete_fragment_inventory
+            )
             stop_reason = (
-                "complete"
+                "complete_first_party_fragment_inventory"
+                if complete_fragment_inventory
+                else "complete"
                 if inventory_complete
                 else "single_page_unbounded"
             )
@@ -1022,11 +1035,17 @@ def has_strong_generic_opening_inventory(page: Page) -> bool:
     # Keep S5 admission deliberately narrower than S6 extraction. These parsers
     # require multiple coherent detail records and reject navigation/card noise.
     dynamic = _extract_embedded_dynamic_inventory(page.html, source_url)
+    fragment_cards = [
+        candidate
+        for candidate in extract_listing_candidates(page.html, source_url)
+        if candidate.origin == "first_party_fragment_job_card"
+    ]
     return bool(
         (dynamic.inventory_complete and len(dynamic.candidates) >= 2)
         or len(_extract_semantic_job_cards(page.html, source_url)) >= 2
         or len(_extract_conrad_inventory(page.html, source_url)) >= 2
         or len(_extract_applicant_manager_inventory(page.html, source_url)) >= 2
+        or len(fragment_cards) >= 2
     )
 
 

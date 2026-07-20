@@ -83,6 +83,54 @@ class WebsiteResolverTests(unittest.TestCase):
             trace["selected"]["reasons"],
         )
 
+    def test_full_linkedin_slug_can_replace_ambiguous_stored_company_site(self):
+        linkedin_url = "https://www.linkedin.com/company/join-blossom-health"
+        official_url = "https://www.joinblossomhealth.com/"
+
+        class StoredBlossomFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+                self.calls: list[str] = []
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls.append(url)
+                if domain_of(url) == "blossom.net":
+                    return Page(
+                        url=url,
+                        final_url="https://www.blossom.net/",
+                        html="<title>Blossom</title><body>Blossom products</body>",
+                    )
+                if domain_of(url) == "joinblossomhealth.com":
+                    return Page(
+                        url=url,
+                        final_url=official_url,
+                        html=(
+                            "<title>Blossom Health | Online Psychiatry</title>"
+                            "<body>Blossom Health psychiatrists and careers</body>"
+                        ),
+                    )
+                raise FetchError("not this candidate")
+
+        fetcher = StoredBlossomFetcher()
+        website_url, trace = CompanyWebsiteResolver(
+            fetcher,
+            verify_limit=2,
+        ).resolve(
+            "Blossom",
+            linkedin_url,
+            "United States",
+            stored_candidate_url="https://www.blossom.net",
+        )
+
+        self.assertEqual(website_url, official_url)
+        self.assertTrue(
+            any(domain_of(call) == "joinblossomhealth.com" for call in fetcher.calls)
+        )
+        self.assertIn(
+            "LinkedIn slug challenge replaced stored company evidence",
+            trace["selected"]["reasons"],
+        )
+
     def test_transport_fallback_only_removes_www_from_verified_candidate(self):
         self.assertEqual(
             _alternate_apex_www_candidate("https://www.example.com/about"),

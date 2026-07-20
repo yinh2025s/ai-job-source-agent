@@ -40,6 +40,7 @@ _EXTERNAL_BLOCKED_REASONS = {
     "CAPTCHA_REQUIRED",
     "HTTP_FORBIDDEN",
     "LOGIN_REQUIRED",
+    "UNVERIFIABLE_THIRD_PARTY_HANDOFF",
 }
 _UNSUPPORTED_REASONS = {
     "PROVIDER_UNKNOWN",
@@ -585,7 +586,10 @@ def _terminal_outcome(result: dict) -> str:
     reason_code = str(terminal_stage.get("reason_code") or "")
     if reason_code == "NO_PUBLIC_OPENINGS":
         return "no_public_openings"
-    if reason_code == "COMPANY_IDENTITY_AMBIGUOUS":
+    if reason_code in {
+        "COMPANY_IDENTITY_AMBIGUOUS",
+        "OPENING_IDENTITY_AMBIGUOUS",
+    }:
         return "identity_ambiguous"
     if terminal_stage.get("retryable") is True:
         return "retryable_failure"

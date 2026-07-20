@@ -143,6 +143,40 @@ class MismatchedTenantProbeAdapter(LinkedInSlugProbeAdapter):
         )
 
 
+class LegalSlugWorkableAdapter:
+    name = "workable"
+    supports_listing = True
+
+    def recognizes(self, url):
+        return url.startswith("https://apply.workable.com/")
+
+    def identify_board(self, url):
+        tenant = url.rstrip("/").rsplit("/", 1)[-1]
+        return JobBoard(url=url, provider=self.name, identifier=tenant)
+
+    def list_jobs(self, fetcher, board, query):
+        candidates = []
+        if board.identifier == "garan-incorporated":
+            candidates.append(
+                JobCandidate(
+                    title="Junior Financial Operations Analyst",
+                    url=(
+                        "https://apply.workable.com/garan-incorporated/"
+                        "j/6EA77C8F89/"
+                    ),
+                    provider=self.name,
+                    location="New York, NY",
+                )
+            )
+        return AdapterResult(
+            provider=self.name,
+            board=board,
+            candidates=candidates,
+            inventory_scope="title_filtered",
+            inventory_complete=False,
+        )
+
+
 class StaticResolver:
     def __init__(self, candidates, trace):
         self.candidates = candidates
@@ -173,6 +207,40 @@ class StaticResolver:
 
 
 class ProviderSearchCandidateDiscoveryTests(unittest.TestCase):
+    def test_full_legal_slug_reaches_workable_within_bounded_probe_wave(self):
+        discovery = ProviderSearchCandidateDiscovery(
+            CareerSearchResolver(
+                MappingFetcher("<rss><channel /></rss>"),
+                max_queries=1,
+                max_source_fetches=1,
+            ),
+            provider_registry=ProviderRegistry((LegalSlugWorkableAdapter(),)),
+            max_probe_attempts=4,
+        )
+
+        result = discovery.discover(
+            CandidateDiscoveryRequest(
+                company_name="Garan, Incorporated",
+                linkedin_company_url="https://www.linkedin.com/company/garan",
+                target_title="Junior Financial Operations Analyst",
+                target_location="New York, NY",
+            )
+        )
+
+        self.assertEqual(
+            [candidate.url for candidate in result.candidates],
+            ["https://apply.workable.com/garan-incorporated"],
+        )
+        self.assertEqual(result.trace["tenant_probe_fallback"]["status"], "used")
+        self.assertEqual(
+            result.trace["tenant_probe_fallback"]["attempts"][-1]["provider"],
+            "workable",
+        )
+        self.assertEqual(
+            result.trace["tenant_probe_fallback"]["attempts"][-1]["reason"],
+            "provider_target_opening_verified",
+        )
+
     def test_tenant_probe_has_one_global_attempt_cap(self):
         discovery = ProviderSearchCandidateDiscovery(
             CareerSearchResolver(

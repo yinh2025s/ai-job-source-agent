@@ -13,6 +13,84 @@ SOURCE_URL = "https://careers.example.com/jobs"
 
 
 class CardListingExtractionTests(unittest.TestCase):
+    def test_extracts_first_party_job_accordions_with_safe_fragments(self):
+        html = """
+        <p>551 Route 6A</p><p>East Sandwich, MA 02537</p>
+        <div class="wp-block-extensions-accordion-item">
+          <a class="toggle" href="#overnight-rn-school-nurse">Overnight RN - School Nurse</a>
+          <div class="content">
+            <p>Reports To: Director of Health Care Services</p>
+            <p>Essential Job Function: provide onsite nursing care.</p>
+            <a href="/employment-application/">online application</a>
+          </div>
+        </div>
+        <div class="wp-block-extensions-accordion-item">
+          <a class="toggle" href="#evening-rn-school-nurse">Evening RN - School Nurse</a>
+          <div class="content">
+            <p>Job Classification: Part Time</p>
+            <p>Candidate Requirements: current RN license.</p>
+            <a href="/employment-application/">online application</a>
+          </div>
+        </div>
+        """
+
+        candidates = extract_card_listing_candidates(
+            html,
+            "https://school.example/careers/",
+        )
+
+        self.assertEqual(
+            [(item.title, item.url, item.location, item.origin) for item in candidates],
+            [
+                (
+                    "Overnight RN - School Nurse",
+                    "https://school.example/careers/#overnight-rn-school-nurse",
+                    "East Sandwich, MA",
+                    "first_party_fragment_job_card",
+                ),
+                (
+                    "Evening RN - School Nurse",
+                    "https://school.example/careers/#evening-rn-school-nurse",
+                    "East Sandwich, MA",
+                    "first_party_fragment_job_card",
+                ),
+            ],
+        )
+
+    def test_rejects_faq_accordions_and_unsafe_job_accordion_variants(self):
+        cases = {
+            "faq": """
+                <div class="accordion-item">
+                  <a class="toggle" href="#benefits">What benefits do you offer?</a>
+                  <p>Reports To and pay range are discussed during interviews.</p>
+                  <a href="/employment-application/">Apply</a>
+                </div>
+            """,
+            "cross_site_application": """
+                <div class="accordion-item">
+                  <a class="toggle" href="#software-engineer">Software Engineer</a>
+                  <p>Reports To: CTO. Essential Job Function: build software.</p>
+                  <a href="https://unrelated.example/apply">Apply</a>
+                </div>
+            """,
+            "unbound_fragment": """
+                <div class="accordion-item">
+                  <a class="toggle" href="#opening-one">Software Engineer</a>
+                  <p>Reports To: CTO. Essential Job Function: build software.</p>
+                  <a href="/employment-application/">Apply</a>
+                </div>
+            """,
+        }
+        for reason, html in cases.items():
+            with self.subTest(reason=reason):
+                self.assertEqual(
+                    extract_card_listing_candidates(
+                        html,
+                        "https://company.example/careers/",
+                    ),
+                    [],
+                )
+
     def test_extracts_calpion_style_detail_card(self):
         html = """
             <div class="job-card">

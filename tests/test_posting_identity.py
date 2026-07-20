@@ -128,6 +128,26 @@ class LinkedInPostingIdentityProbeTests(unittest.TestCase):
         )
         self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
 
+    def test_hiring_publisher_and_talent_solutions_site_close_unresolved_client(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: "<main><h1>Smart Talent Solutions</h1></main>",
+            },
+            errors={self.JOB_URL: "HTTP Error 999: Request denied"},
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Great Value Hiring",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "agency_unresolved")
+        self.assertTrue(
+            any("talent intermediary" in reason for reason in result.reasons)
+        )
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
     def test_public_website_metadata_can_trigger_job_detail_probe(self):
         fetcher = _MappingFetcher(
             pages={

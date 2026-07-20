@@ -16,6 +16,7 @@ from .models import (
     CompanyInput,
     DiscoveryResult,
 )
+from .provider_candidates import STORED_PROVIDER_CANDIDATE_SOURCE_KINDS
 from .pipeline_status import derive_pipeline_status
 from .identity_continuity import IDENTITY_CONTRACT_VERSION
 from .run_configuration import AgentConfig, DeterministicRunConfig
@@ -135,7 +136,7 @@ def discovery_result_from_context(
         and opening_stage_finished
         and isinstance(selected_job_board_candidate, dict)
         and selected_job_board_candidate.get("source_kind")
-        == "stored_verified_provider_board"
+        in STORED_PROVIDER_CANDIDATE_SOURCE_KINDS
         and (
             context.hiring_identity_evidence is None
             or not context.hiring_identity_evidence.verified
@@ -197,6 +198,7 @@ def discovery_result_from_context(
 
     first_terminal_stage = None
     source_terminal_stage = None
+    evidence_backed_downstream_terminal = None
     opening_terminal_stage = None
     for stage_result in result.stage_results:
         stage_trace = context.trace.get("stages", {}).get(stage_result.stage, {})
@@ -218,12 +220,33 @@ def discovery_result_from_context(
         if stage_result.reason_code == "LINKEDIN_NATIVE_ONLY":
             source_terminal_stage = stage_result
         if (
+            stage_result.stage in {
+                STAGE_JOB_BOARD_DISCOVERY,
+                STAGE_OPENING_MATCH,
+            }
+            and stage_result.reason_code
+            in {
+                "NO_PUBLIC_OPENINGS",
+                "UNVERIFIABLE_THIRD_PARTY_HANDOFF",
+                "OPENING_IDENTITY_AMBIGUOUS",
+            }
+            and _has_evidence_backed_terminal(stage_result)
+        ):
+            evidence_backed_downstream_terminal = stage_result
+        if (
             stage_result.stage == STAGE_OPENING_MATCH
             and stage_result.reason_code
         ):
             opening_terminal_stage = stage_result
 
-    terminal_stage = source_terminal_stage or first_terminal_stage
+    # A later evidence-backed availability/identity conclusion is more specific
+    # than an earlier discovery miss. Keep this list deliberately narrow so an
+    # ordinary downstream failure cannot hide an unresolved upstream identity.
+    terminal_stage = (
+        source_terminal_stage
+        or evidence_backed_downstream_terminal
+        or first_terminal_stage
+    )
     stored_candidate_revalidation_terminal = (
         opening_terminal_stage
         if validation_failed
@@ -246,6 +269,17 @@ def discovery_result_from_context(
             validation_result.reason_code,
         )
         result.trace["failure_detail"] = validation_result.detail
+    elif (
+        opening_terminal_stage is not None
+        and not context.open_position_url
+        and opening_terminal_stage.reason_code
+    ):
+        result.error_code = opening_terminal_stage.reason_code
+        result.error = _legacy_error(
+            opening_terminal_stage.stage,
+            opening_terminal_stage.reason_code,
+        )
+        result.trace["failure_detail"] = opening_terminal_stage.detail
     elif not context.job_list_page_url and terminal_stage is not None:
         result.error_code = terminal_stage.reason_code
         result.error = _legacy_error(terminal_stage.stage, terminal_stage.reason_code)
@@ -267,6 +301,21 @@ def discovery_result_from_context(
 
 def _pipeline_status(context: PipelineContext) -> str:
     return derive_pipeline_status(context.stage_results)
+
+
+def _has_evidence_backed_terminal(stage_result) -> bool:
+    allowed_dispositions = {
+        "opening_identity_ambiguous",
+        "unlinked_third_party_recruiting_handoff",
+        "verified_inventory_empty",
+        "verified_no_public_recruiting_surface",
+    }
+    return any(
+        isinstance(item, dict)
+        and item.get("type") == "availability_diagnostic"
+        and item.get("disposition") in allowed_dispositions
+        for item in stage_result.evidence
+    )
 
 
 def _has_public_upstream_result(result: DiscoveryResult) -> bool:

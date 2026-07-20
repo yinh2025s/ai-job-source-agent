@@ -104,6 +104,30 @@ class OpeningSelectionValidationTests(unittest.TestCase):
 
         self.assertIn("OPENING_TITLE_MISMATCH", issues)
 
+    def test_publication_accepts_terminal_requisition_code(self):
+        issues, _location = validate_opening_selection(
+            selection=_selection(title="Mechanical Project Engineer (BT-26148)"),
+            provider=_provider(),
+            opening=_opening(),
+            open_position_url="https://jobs.lever.co/acme/role-1",
+            target_title="Mechanical Project Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertNotIn("OPENING_TITLE_MISMATCH", issues)
+
+    def test_publication_does_not_strip_non_code_parenthetical_specialization(self):
+        issues, _location = validate_opening_selection(
+            selection=_selection(title="Mechanical Project Engineer (Propulsion)"),
+            provider=_provider(),
+            opening=_opening(),
+            open_position_url="https://jobs.lever.co/acme/role-1",
+            target_title="Mechanical Project Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertIn("OPENING_TITLE_MISMATCH", issues)
+
     def test_explicit_title_city_qualifier_can_refine_broad_inventory_region(self):
         issues, location = validate_opening_selection(
             selection=_selection(

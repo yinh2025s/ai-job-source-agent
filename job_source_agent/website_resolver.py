@@ -185,13 +185,30 @@ class CompanyWebsiteResolver:
 
         if stored_candidate_url:
             stored_candidates = [_prefer_https_candidate(stored_candidate_url)]
+            company_tokens = tokenize_company_name(company_name)
+            linkedin_slug_challenges = [
+                candidate
+                for candidate in self._linkedin_slug_domain_candidates(
+                    linkedin_company_url
+                )
+                if domain_of(candidate) != domain_of(stored_candidates[0])
+                and _full_linkedin_slug_matches_domain(
+                    domain_of(candidate),
+                    company_tokens,
+                    linkedin_company_url,
+                )
+            ]
+            revalidation_candidates = dedupe_urls(
+                [*stored_candidates, *linkedin_slug_challenges]
+            )
             stored_scored = self._rank_and_verify_candidates(
-                stored_candidates,
+                revalidation_candidates,
                 company_name,
                 linkedin_company_url,
                 job_location=job_location,
                 candidate_sources=_candidate_source_map(
                     ("stored_verified_company_evidence", stored_candidates),
+                    ("linkedin_slug", linkedin_slug_challenges),
                 ),
                 fetch_errors=fetch_errors,
             )
@@ -212,11 +229,20 @@ class CompanyWebsiteResolver:
             )
             stored_selected = self._select_verified_candidate(stored_scored)
             if stored_selected is not None:
+                selected_stored_candidate = (
+                    domain_of(stored_selected.url) == domain_of(stored_candidates[0])
+                )
                 trace["selected"] = {
                     "url": stored_selected.url,
                     "score": stored_selected.score,
                     "reasons": stored_selected.reasons
-                    + ["stored company evidence revalidated"],
+                    + [
+                        (
+                            "stored company evidence revalidated"
+                            if selected_stored_candidate
+                            else "LinkedIn slug challenge replaced stored company evidence"
+                        )
+                    ],
                 }
                 return (
                     stored_selected.url,

@@ -152,7 +152,7 @@ class CareerSearchTests(unittest.TestCase):
         self.assertIn("job-boards.greenhouse.io", queries[1])
         self.assertIn("jobs.lever.co", queries[2])
         self.assertIn("jobs.ashbyhq.com", queries[3])
-        self.assertIn("pinpointhq.com", queries[4])
+        self.assertIn("apply.workable.com", queries[4])
         self.assertFalse(any("site:boards.greenhouse.io" in query for query in queries))
 
     def test_title_targeted_search_keeps_opaque_ats_url_as_untrusted_lead(self):

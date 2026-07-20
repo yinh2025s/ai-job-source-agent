@@ -5,6 +5,7 @@ from pathlib import Path
 from job_source_agent.browser_interaction import JobSearchInteraction
 from job_source_agent.opening_matcher import (
     JobOpeningMatcher,
+    OpeningMatch,
     build_provider_api_urls,
     build_provider_search_urls,
     build_search_form_urls,
@@ -19,6 +20,7 @@ from job_source_agent.opening_matcher import (
 from job_source_agent.listing_extraction import (
     explicit_empty_inventory_evidence,
     extract_listing_candidates,
+    unlinked_third_party_recruiting_evidence,
     validate_output_url,
 )
 from job_source_agent.opening_availability import diagnose_opening_availability
@@ -33,6 +35,109 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OpeningMatcherTests(unittest.TestCase):
+    def test_unlinked_third_party_instruction_requires_explicit_copy_and_no_link(self):
+        html = (
+            "<main>Current Opportunities. Please find these complete postings and "
+            "application instructions on Indeed.</main>"
+        )
+        evidence = unlinked_third_party_recruiting_evidence(html)
+
+        self.assertEqual(evidence["platform"], "indeed")
+        self.assertIsNone(
+            unlinked_third_party_recruiting_evidence(
+                html + '<a href="https://www.indeed.com/cmp/acme/jobs">Indeed jobs</a>'
+            )
+        )
+        self.assertIsNone(
+            unlinked_third_party_recruiting_evidence(
+                "<main>Follow our company on Indeed for news.</main>"
+            )
+        )
+
+    def test_first_party_fragment_card_is_not_collapsed_into_its_board_url(self):
+        board = "https://school.example/careers/"
+        opening = f"{board}#overnight-rn-school-nurse"
+
+        candidates = _opening_candidates_from_links(
+            [
+                RawLink(
+                    opening,
+                    "Overnight RN - School Nurse",
+                    board,
+                    origin="first_party_fragment_job_card",
+                    location="East Sandwich, MA",
+                )
+            ],
+            page_url=board,
+            target_title="Overnight RN - School Nurse",
+            target_location="East Sandwich, MA",
+            provider="generic",
+        )
+
+        self.assertEqual([candidate.url for candidate in candidates], [opening])
+
+    def test_rn_alias_candidates_with_same_location_fail_closed_as_ambiguous(self):
+        board = "https://school.example/careers/"
+        target_title = "Registered Nurse - RN- School Nurse"
+        target_location = "East Sandwich, MA"
+        links = [
+            RawLink(
+                board + "#pt-overnight-rn-school-nurse",
+                "PT Overnight RN - School Nurse",
+                board,
+                origin="first_party_fragment_job_card",
+                location=target_location,
+            ),
+            RawLink(
+                board + "#pt-evening-rn-school-nurse",
+                "PT Evening Shift RN - School Nurse",
+                board,
+                origin="first_party_fragment_job_card",
+                location=target_location,
+            ),
+        ]
+        candidates = _opening_candidates_from_links(
+            links,
+            page_url=board,
+            target_title=target_title,
+            target_location=target_location,
+            provider="generic",
+        )
+        trace = {}
+
+        selected = JobOpeningMatcher(Fetcher(offline=True))._select_with_verified_detail(
+            candidates,
+            job_list_url=board,
+            target_title=target_title,
+            target_location=target_location,
+            provider="generic",
+            trace=trace,
+        )
+
+        self.assertIsNone(selected)
+        self.assertEqual(len(candidates), 2)
+        self.assertEqual(
+            trace["opening_identity_ambiguity"]["reason"],
+            "multiple_same_location_title_candidates",
+        )
+
+    def test_fragment_url_requires_exact_extractor_provenance_and_title_binding(self):
+        board = "https://school.example/careers/"
+        for origin, fragment in (
+            ("page_link", "#software-engineer"),
+            ("first_party_fragment_job_card", "#benefits"),
+        ):
+            with self.subTest(origin=origin, fragment=fragment):
+                self.assertEqual(
+                    validate_output_url(
+                        board + fragment,
+                        board,
+                        title="Software Engineer",
+                        origin=origin,
+                    ),
+                    None,
+                )
+
     def test_explicit_empty_inventory_accepts_right_now_question(self):
         phrase = explicit_empty_inventory_evidence(
             "<main><h2>No open positions right now?</h2></main>"

@@ -246,9 +246,13 @@ def _validate_discovered_board(discovered: DiscoveredJobBoard) -> None:
         or not _is_public_https_url(discovered.relationship_evidence_url)
     ):
         raise ValueError("Job board relationship evidence URL must be public HTTPS")
-    policy = _REPLAY_SAFE_POLICIES.get(board.provider)
-    if board.replay_safe and (policy is None or not policy(board)):
+    if board.replay_safe and not is_replay_safe_job_board(board):
         raise ValueError("Job board locator is not replay-safe for this provider")
+
+
+def is_replay_safe_job_board(board: JobBoard) -> bool:
+    policy = _REPLAY_SAFE_POLICIES.get(board.provider)
+    return bool(board.replay_safe and policy is not None and policy(board))
 
 
 def _validate_job_board_portfolio(portfolio: JobBoardPortfolio) -> None:

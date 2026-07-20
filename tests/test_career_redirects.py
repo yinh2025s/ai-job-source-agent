@@ -104,6 +104,109 @@ class GenericOfficialCareerRedirectTests(unittest.TestCase):
         self.assertEqual(verification["official_backlinks"], [OFFICIAL_URL])
         self.assertIn(f"{CAREER_URL}/jobs", verification["actionable_routes"])
 
+    def test_accepts_search_microsite_only_with_complete_relationship_evidence(self):
+        agent = JobSourceAgent(
+            RedirectFetcher(CAREER_URL, redirect_html()),
+            max_career_candidate_fetches=1,
+        )
+        trace = {"candidate_fetch_errors": []}
+        selected = agent._select_verified_career_candidate(
+            [
+                LinkCandidate(
+                    CAREER_URL,
+                    CAREER_URL,
+                    "https://search.example/results",
+                    320,
+                    ["unverified branded career microsite search lead"],
+                    "search_result",
+                )
+            ],
+            trace,
+            max_fetches=1,
+            company_name="Acme Corporation",
+            homepage_url=OFFICIAL_URL,
+        )
+
+        self.assertEqual(selected, CAREER_URL)
+        self.assertEqual(
+            trace["selected_redirect_kind"],
+            "verified_search_career_microsite",
+        )
+        self.assertTrue(trace["search_microsite_verification"][0]["verified"])
+
+    def test_rejects_same_name_search_microsite_without_official_backlink(self):
+        html = redirect_html(company="Acme Corporation", backlink="")
+        agent = JobSourceAgent(
+            RedirectFetcher(CAREER_URL, html),
+            max_career_candidate_fetches=1,
+        )
+        trace = {"candidate_fetch_errors": []}
+        selected = agent._select_verified_career_candidate(
+            [
+                LinkCandidate(
+                    CAREER_URL,
+                    CAREER_URL,
+                    "https://search.example/results",
+                    320,
+                    ["unverified branded career microsite search lead"],
+                    "search_result",
+                )
+            ],
+            trace,
+            max_fetches=1,
+            company_name="Acme Corporation",
+            homepage_url=OFFICIAL_URL,
+        )
+
+        self.assertIsNone(selected)
+        verification = trace["search_microsite_verification"][0]
+        self.assertFalse(verification["verified"])
+        self.assertEqual(
+            verification["reason"],
+            "redirect page lacks official source-origin backlink",
+        )
+
+    def test_rejects_same_name_blossom_restaurant_search_result(self):
+        restaurant_url = "https://blossomrestaurant.com.sg/careers.html"
+        html = redirect_html(
+            final_url=restaurant_url,
+            company="Blossom",
+            job_route="https://blossomrestaurant.com.sg/jobs",
+            backlink="",
+        )
+        agent = JobSourceAgent(
+            RedirectFetcher(restaurant_url, html),
+            max_career_candidate_fetches=1,
+        )
+        trace = {"candidate_fetch_errors": []}
+        selected = agent._select_verified_career_candidate(
+            [
+                LinkCandidate(
+                    restaurant_url,
+                    "Blossom Careers",
+                    "https://search.example/results",
+                    320,
+                    ["unverified branded career microsite search lead"],
+                    "search_result",
+                )
+            ],
+            trace,
+            max_fetches=1,
+            company_name="Blossom",
+            homepage_url="https://www.blossom.net",
+        )
+
+        self.assertIsNone(selected)
+        verification = trace["search_microsite_verification"][0]
+        self.assertFalse(verification["verified"])
+        self.assertIn(
+            verification["reason"],
+            {
+                "requested URL lacks career intent",
+                "redirect page lacks official source-origin backlink",
+            },
+        )
+
     def test_find_career_page_supplies_verified_homepage_context(self):
         class HomepageRedirectFetcher(Fetcher):
             def __init__(self):

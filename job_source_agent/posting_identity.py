@@ -14,6 +14,7 @@ from .web import FetchError
 _INTERMEDIARY_NAME_MARKERS = {
     "capital",
     "consulting",
+    "hiring",
     "partners",
     "recruiting",
     "recruitment",
@@ -54,6 +55,10 @@ _INTERMEDIARY_WEBSITE_MARKERS = (
         r"\b(?:talent|staffing|workforce|recruitment)\s+solutions?\s+"
         r"(?:for|to)\s+(?:our\s+|their\s+)?"
         r"(?:clients|employers|businesses|organizations)\b",
+    ),
+    (
+        "talent solutions",
+        r"\b(?:smart\s+)?talent\s+solutions?\b",
     ),
 )
 
@@ -103,7 +108,34 @@ class LinkedInPostingIdentityProbe:
                 "unavailable",
                 reasons=("job URL is not a public LinkedIn detail URL",),
             )
-        if not self.should_probe(publisher_name):
+        name_triggered = self.should_probe(publisher_name)
+        publisher_tokens = set(
+            re.findall(r"[a-z0-9]+", publisher_name.casefold())
+        )
+        website_fallback_required = "hiring" in publisher_tokens
+        website_markers: tuple[str, ...] = ()
+        if website_url and (not name_triggered or website_fallback_required):
+            try:
+                website_page = self.fetcher.fetch(website_url)
+            except FetchError as exc:
+                if not name_triggered:
+                    return PostingIdentityEvidence(
+                        "unavailable",
+                        reasons=(f"verified website trigger fetch failed: {exc}",),
+                    )
+                trigger_reasons = (
+                    f"verified website trigger fetch failed: {exc}",
+                )
+            else:
+                website_markers = _strong_intermediary_website_markers(
+                    website_page.html
+                )
+                if website_markers:
+                    trigger_reasons = (
+                        "bounded probe triggered by verified website semantics: "
+                        + ", ".join(website_markers),
+                    )
+        if not name_triggered:
             if not website_url:
                 return PostingIdentityEvidence(
                     "not_applicable",
@@ -111,14 +143,6 @@ class LinkedInPostingIdentityProbe:
                         "publisher name and verified website did not trigger bounded intermediary probe",
                     ),
                 )
-            try:
-                website_page = self.fetcher.fetch(website_url)
-            except FetchError as exc:
-                return PostingIdentityEvidence(
-                    "unavailable",
-                    reasons=(f"verified website trigger fetch failed: {exc}",),
-                )
-            website_markers = _strong_intermediary_website_markers(website_page.html)
             if not website_markers:
                 return PostingIdentityEvidence(
                     "not_applicable",
@@ -126,13 +150,18 @@ class LinkedInPostingIdentityProbe:
                         "verified website did not contain strong intermediary semantics",
                     ),
                 )
-            trigger_reasons = (
-                "bounded probe triggered by verified website semantics: "
-                + ", ".join(website_markers),
-            )
         try:
             page = self.fetcher.fetch(linkedin_job_url)
         except FetchError as exc:
+            if name_triggered and website_markers:
+                return PostingIdentityEvidence(
+                    "agency_unresolved",
+                    reasons=(
+                        "publisher name and verified website both indicate a talent intermediary",
+                        f"public job detail fetch failed: {exc}",
+                        *trigger_reasons,
+                    ),
+                )
             return PostingIdentityEvidence(
                 "unavailable",
                 reasons=(f"public job detail fetch failed: {exc}", *trigger_reasons),
@@ -140,6 +169,15 @@ class LinkedInPostingIdentityProbe:
 
         descriptions = _job_posting_descriptions(page.html)
         if not descriptions:
+            if name_triggered and website_markers:
+                return PostingIdentityEvidence(
+                    "agency_unresolved",
+                    reasons=(
+                        "publisher name and verified website both indicate a talent intermediary",
+                        "public job detail did not contain JobPosting JSON-LD",
+                        *trigger_reasons,
+                    ),
+                )
             return PostingIdentityEvidence(
                 "unavailable",
                 reasons=(

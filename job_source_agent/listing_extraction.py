@@ -5,7 +5,7 @@ import re
 from dataclasses import dataclass
 from html import unescape
 from html.parser import HTMLParser
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, urljoin, urlparse, urlunparse
 
 from .card_listing_extraction import extract_card_listing_candidates
 from .scoring import is_ats_url, is_likely_job_detail, score_job_link
@@ -84,6 +84,7 @@ class _VisibleTextParser(HTMLParser):
         self.ignored_depth = 0
         self.hidden_depth = 0
         self.parts: list[str] = []
+        self.hrefs: list[str] = []
         self.character_count = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
@@ -91,6 +92,8 @@ class _VisibleTextParser(HTMLParser):
         if normalized_tag in self._IGNORED_TAGS:
             self.ignored_depth += 1
         values = {name.casefold(): (value or "") for name, value in attrs}
+        if normalized_tag == "a" and values.get("href"):
+            self.hrefs.append(values["href"])
         if (
             normalized_tag not in self._VOID_TAGS
             and (
@@ -168,6 +171,47 @@ def explicit_empty_inventory_evidence(html: str) -> str | None:
     return match.group(0) if match else None
 
 
+def unlinked_third_party_recruiting_evidence(html: str) -> dict[str, str] | None:
+    """Return explicit official copy that delegates recruiting without a link."""
+
+    if not isinstance(html, str):
+        return None
+    parser = _VisibleTextParser()
+    try:
+        parser.feed(html[:2_000_000])
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    text = " ".join(" ".join(parser.parts).split())
+    platforms = {
+        "adzuna": "adzuna.com",
+        "indeed": "indeed.com",
+        "linkedin": "linkedin.com",
+    }
+    linked_hosts = {
+        (urlparse(normalized).hostname or "").casefold()
+        for href in parser.hrefs
+        if (normalized := safe_normalize_url(href)) is not None
+    }
+    for platform, domain in platforms.items():
+        if any(host == domain or host.endswith("." + domain) for host in linked_hosts):
+            continue
+        pattern = re.compile(
+            rf"(.{{0,160}}\b(?:application instructions?|complete postings?|current "
+            rf"opportunities|job postings?|open positions?)\b.{{0,160}}\b(?:on|through|via) "
+            rf"{re.escape(platform)}\b.{{0,80}})",
+            re.I,
+        )
+        match = pattern.search(text)
+        if match:
+            return {
+                "platform": platform,
+                "disposition": "unlinked_third_party_recruiting_handoff",
+                "phrase": " ".join(match.group(1).split())[:400],
+            }
+    return None
+
+
 def validate_output_url(
     url: str,
     source_url: str,
@@ -176,6 +220,22 @@ def validate_output_url(
     origin: str = "",
 ) -> str | None:
     """Return a normalized URL only when it is a plausible official job detail."""
+    if origin == "first_party_fragment_job_card":
+        fragment_url = _normalize_first_party_fragment_url(url, source_url)
+        if fragment_url is None:
+            return None
+        parsed_fragment = urlparse(fragment_url)
+        parsed_source = urlparse(source_url)
+        return (
+            fragment_url
+            if _trusted_first_party_fragment_detail(
+                parsed_fragment,
+                parsed_source,
+                title,
+                origin,
+            )
+            else None
+        )
     normalized = safe_normalize_url(url, source_url)
     if not normalized:
         return None
@@ -194,12 +254,54 @@ def validate_output_url(
         not is_likely_job_detail(scored)
         and not _title_bound_same_origin_detail(parsed, source, title)
         and not _trusted_structured_detail(parsed, source, origin)
+        and not _trusted_first_party_fragment_detail(parsed, source, title, origin)
     ):
         return None
     same_origin = parsed.hostname == source.hostname and parsed.port == source.port
     if same_origin or _same_registrable_site(parsed.hostname, source.hostname) or is_ats_url(normalized):
         return normalized
     return None
+
+
+def _normalize_first_party_fragment_url(url: str, source_url: str) -> str | None:
+    try:
+        parsed = urlparse(urljoin(source_url, url.strip()))
+        source = urlparse(source_url)
+        _ = parsed.port
+        _ = source.port
+    except (AttributeError, TypeError, ValueError):
+        return None
+    if (
+        parsed.scheme.casefold() != "https"
+        or source.scheme.casefold() != "https"
+        or parsed.hostname != source.hostname
+        or parsed.port != source.port
+        or parsed.username
+        or parsed.password
+        or parsed.path.rstrip("/") != source.path.rstrip("/")
+        or parsed.query != source.query
+        or not parsed.fragment
+    ):
+        return None
+    return urlunparse(parsed)
+
+
+def _trusted_first_party_fragment_detail(parsed, source, title: str, origin: str) -> bool:
+    if origin != "first_party_fragment_job_card":
+        return False
+    if (
+        parsed.scheme.casefold() != "https"
+        or source.scheme.casefold() != "https"
+        or parsed.hostname != source.hostname
+        or parsed.port != source.port
+        or parsed.path.rstrip("/") != source.path.rstrip("/")
+        or parsed.query != source.query
+        or not re.fullmatch(r"[a-z0-9][a-z0-9-]{2,199}", parsed.fragment, re.I)
+    ):
+        return False
+    fragment_words = set(re.findall(r"[a-z0-9]+", parsed.fragment.casefold()))
+    title_words = set(re.findall(r"[a-z0-9]+", title.casefold()))
+    return len(fragment_words & title_words) >= 2
 
 
 def _trusted_structured_detail(parsed, source, origin: str) -> bool:

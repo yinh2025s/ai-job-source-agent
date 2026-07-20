@@ -248,11 +248,11 @@ def build_application_from_fetcher(
                     fetcher,
                     max_results=min(settings.max_candidates, MAX_PROVIDER_CANDIDATES),
                     max_queries=settings.max_career_search_queries,
-                    # Candidate search must finalize before the opening phase.
-                    # Four source dispatches cover the primary/secondary search
-                    # pair without allowing an empty search to consume the
-                    # company-level discovery window.
-                    max_source_fetches=2,
+                    # Diversity mode issues one bounded Bing RSS request per
+                    # query. Keep the transport cap aligned with the declared
+                    # query cap so later provider families are not silently
+                    # unreachable.
+                    max_source_fetches=settings.max_career_search_queries,
                 ),
                 provider_registry=registry,
                 max_candidates=min(settings.max_candidates, MAX_PROVIDER_CANDIDATES),
@@ -277,6 +277,10 @@ def build_application_from_fetcher(
             CareerDiscoveryStage(
                 agent,
                 company_discovery_evidence_store=company_discovery_store,
+                provider_registry=registry,
+                enable_parallel_candidate_discovery=(
+                    settings.enable_parallel_candidate_discovery
+                ),
             ),
             JobBoardDiscoveryStage(
                 agent,

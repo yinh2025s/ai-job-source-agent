@@ -291,6 +291,88 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertEqual(result.error_code, "LINKEDIN_NATIVE_ONLY")
         self.assertEqual(result.error, "linkedin_native_only")
 
+    def test_evidence_backed_no_public_terminal_overrides_earlier_career_miss(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.company_website_url = "https://acme.example"
+        context.stage_results.extend(
+            [
+                StageResult(
+                    stage=STAGE_CAREER_DISCOVERY,
+                    status="failed",
+                    reason_code="CAREER_PAGE_NOT_FOUND",
+                ),
+                StageResult(
+                    stage="job_board_discovery",
+                    status="partial",
+                    reason_code="NO_PUBLIC_OPENINGS",
+                    evidence=[
+                        {
+                            "type": "availability_diagnostic",
+                            "disposition": "verified_no_public_recruiting_surface",
+                        }
+                    ],
+                ),
+            ]
+        )
+
+        result = discovery_result_from_context(context)
+
+        self.assertEqual(result.error_code, "NO_PUBLIC_OPENINGS")
+        self.assertEqual(result.pipeline_status, "partial")
+
+    def test_evidence_backed_third_party_handoff_overrides_retryable_s2_error(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = "https://acme.example/careers"
+        context.stage_results.extend(
+            [
+                StageResult(
+                    stage=STAGE_WEBSITE_RESOLUTION,
+                    status="failed",
+                    reason_code="FETCH_FAILED",
+                    retryable=True,
+                ),
+                StageResult(stage=STAGE_CAREER_DISCOVERY, status="success"),
+                StageResult(
+                    stage="job_board_discovery",
+                    status="failed",
+                    reason_code="UNVERIFIABLE_THIRD_PARTY_HANDOFF",
+                    evidence=[
+                        {
+                            "type": "availability_diagnostic",
+                            "disposition": "unlinked_third_party_recruiting_handoff",
+                            "platform": "indeed",
+                        }
+                    ],
+                ),
+            ]
+        )
+
+        result = discovery_result_from_context(context)
+
+        self.assertEqual(result.error_code, "UNVERIFIABLE_THIRD_PARTY_HANDOFF")
+        self.assertEqual(result.pipeline_status, "partial")
+
+    def test_opening_terminal_is_published_with_verified_job_list(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.job_list_page_url = "https://jobs.example/acme"
+        context.stage_results.extend(
+            [
+                StageResult(stage="job_board_discovery", status="success"),
+                StageResult(
+                    stage="opening_match",
+                    status="partial",
+                    reason_code="OPENING_NOT_FOUND",
+                    detail="Complete inventory contained no matching title.",
+                ),
+            ]
+        )
+
+        result = discovery_result_from_context(context)
+
+        self.assertEqual(result.error_code, "OPENING_NOT_FOUND")
+        self.assertEqual(result.error, "opening_not_found")
+        self.assertEqual(result.status, "success")
+
     def test_unsupported_terminal_reason_is_preserved(self):
         context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
         context.stage_results.append(

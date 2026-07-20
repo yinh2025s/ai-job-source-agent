@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from dataclasses import asdict, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -37,9 +38,16 @@ from job_source_agent.company_discovery_evidence_store import (
 )
 from job_source_agent.company_discovery_evidence import (
     COMPANY_DISCOVERY_EVIDENCE_SCHEMA_VERSION,
+    VerifiedCareerEvidence,
     VerifiedProviderBoardEvidence,
+    VerifiedWebsiteEvidence,
 )
-from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
+from job_source_agent.job_board import (
+    DiscoveredJobBoard,
+    JobBoard,
+    JobBoardPortfolio,
+    is_replay_safe_job_board,
+)
 from job_source_agent.evaluation import result_provider, summarize_results
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import (
@@ -548,12 +556,6 @@ def _freeze_company_discovery_evidence(
                 website=evidence.website,
                 career=evidence.career,
             )
-            for provider_board in evidence.provider_boards:
-                frozen_store.save(
-                    company_name,
-                    linkedin_company_url,
-                    provider_board=provider_board,
-                )
         except (OSError, TypeError, ValueError) as error:
             _reset_bundle_file_output(bundle_path)
             raise FailureReplayError(
@@ -561,15 +563,29 @@ def _freeze_company_discovery_evidence(
             ) from error
         frozen_count += 1
 
-    restored_provider_inputs = _restore_stored_provider_inputs(
+    restored_discovery_inputs = _restore_stored_discovery_inputs(
         frozen_store,
         companies,
         source_records,
     )
+    provenance["restored_stored_discovery_input_count"] = (
+        restored_discovery_inputs
+    )
+    restored_provider_inputs = _restore_stored_provider_inputs(
+        frozen_store,
+        companies,
+        source_records,
+        source_store=source_store,
+    )
     provenance["restored_stored_provider_input_count"] = restored_provider_inputs
 
-    provenance["frozen_record_count"] = frozen_count
-    if not frozen_count:
+    frozen_record_count = sum(
+        1
+        for company_name, linkedin_company_url in identities
+        if frozen_store.load(company_name, linkedin_company_url) is not None
+    )
+    provenance["frozen_record_count"] = frozen_record_count
+    if not frozen_record_count:
         provenance["status"] = "omitted"
         provenance["source_status"] = "available_no_selected_evidence"
         return None, provenance
@@ -578,19 +594,111 @@ def _freeze_company_discovery_evidence(
     return bundle_path, provenance
 
 
-def _restore_stored_provider_inputs(
+def _restore_stored_discovery_inputs(
     store: FilesystemCompanyDiscoveryEvidenceStore,
     companies: list,
     source_records: list[dict],
 ) -> int:
+    """Reconstruct trace-proven S2/S4 inputs removed by live invalidation."""
+
+    restored = 0
+    for company, source_record in zip(companies, source_records, strict=True):
+        linkedin_url = getattr(company, "linkedin_company_url", None)
+        if not isinstance(linkedin_url, str) or not linkedin_url:
+            continue
+        record = store.load(company.company_name, linkedin_url)
+        website_trace = _source_stage_trace(source_record, "website_resolution")
+        stored_website = (
+            website_trace.get("stored_candidate_url")
+            if isinstance(website_trace, dict)
+            else None
+        )
+        candidates = (
+            website_trace.get("candidates", [])
+            if isinstance(website_trace, dict)
+            else []
+        )
+        stored_website_was_read = any(
+            isinstance(candidate, dict)
+            and _same_identity_url(candidate.get("url"), stored_website)
+            and isinstance(candidate.get("reasons"), list)
+            and "candidate source: stored_verified_company_evidence"
+            in candidate["reasons"]
+            for candidate in candidates
+        )
+        if (
+            record is None or record.website is None
+        ) and isinstance(stored_website, str) and stored_website_was_read:
+            try:
+                store.save(
+                    company.company_name,
+                    linkedin_url,
+                    website=VerifiedWebsiteEvidence(
+                        url=stored_website,
+                        source="verified_resolver",
+                        evidence_url=stored_website,
+                        observed_at=time.time(),
+                    ),
+                )
+            except (OSError, TypeError, ValueError):
+                continue
+            restored += 1
+            record = store.load(company.company_name, linkedin_url)
+
+        career_trace = _source_stage_trace(source_record, "career_discovery")
+        marker = (
+            career_trace.get("stored_company_discovery_candidate")
+            if isinstance(career_trace, dict)
+            else None
+        )
+        career_url = marker.get("career_url") if isinstance(marker, dict) else None
+        career_website = (
+            marker.get("website_url") if isinstance(marker, dict) else None
+        )
+        if (
+            isinstance(marker, dict)
+            and marker.get("authority") == "candidate_requiring_current_revalidation"
+            and isinstance(career_url, str)
+            and isinstance(career_website, str)
+            and record is not None
+            and record.career is None
+            and record.website is not None
+            and _same_identity_url(record.website.url, career_website)
+        ):
+            try:
+                store.save(
+                    company.company_name,
+                    linkedin_url,
+                    career=VerifiedCareerEvidence(
+                        url=career_url,
+                        website_url=career_website,
+                        source="first_party_navigation",
+                        evidence_url=career_website,
+                        observed_at=time.time(),
+                    ),
+                )
+            except (OSError, TypeError, ValueError):
+                continue
+            restored += 1
+    return restored
+
+
+def _restore_stored_provider_inputs(
+    store: FilesystemCompanyDiscoveryEvidenceStore,
+    companies: list,
+    source_records: list[dict],
+    *,
+    source_store: FilesystemCompanyDiscoveryEvidenceStore | None = None,
+) -> int:
     """Restore durable provider evidence that the captured S5 explicitly read.
 
-    The live batch freezes its evidence store before workers mutate it. A later
-    phase can nevertheless read evidence committed by an earlier phase or a
-    recovered attempt. Scoped replay must reconstruct that producer state, but
-    only when the source trace proves the candidate was stored and S7 verifies
-    the same first-party relationship. The provider inventory is still replayed
-    from its outcome tape; this input never authorizes an opening by itself.
+    A final live evidence store can contain provider boards written by the same
+    record's S5. Copying those boards into replay would leak downstream evidence
+    into S4 and change the recorded request boundary. Scoped replay therefore
+    restores a provider board only when the source trace proves it was already a
+    stored input and S7 verifies the same first-party relationship. The provider
+    inventory is still replayed from its outcome tape; this input never
+    authorizes an opening by itself.
     """
 
     restored = 0
@@ -605,6 +713,66 @@ def _restore_stored_provider_inputs(
             or selected.get("source_kind") != "stored_verified_provider_board"
         ):
             continue
+        record = store.load(company.company_name, linkedin_url)
+        source_evidence = (
+            source_store.load(company.company_name, linkedin_url)
+            if source_store is not None
+            else None
+        )
+        selected_url = selected.get("url")
+        stored_board = next(
+            (
+                board
+                for board in (
+                    source_evidence.provider_boards
+                    if source_evidence is not None
+                    else ()
+                )
+                if _same_identity_url(board.canonical_board_url, selected_url)
+            ),
+            None,
+        )
+        if (
+            stored_board is not None
+            and record is not None
+            and record.career is not None
+        ):
+            adapter = DEFAULT_PROVIDER_REGISTRY.adapter_for(
+                stored_board.canonical_board_url
+            )
+            board = (
+                adapter.identify_board(stored_board.canonical_board_url)
+                if adapter is not None
+                else None
+            )
+            canonicalize = getattr(adapter, "canonicalize_board", None)
+            if board is not None and callable(canonicalize):
+                board = canonicalize(board)
+            board_tenant = (
+                board.identifier or tenant_locator(board.url)
+                if board is not None
+                else None
+            )
+            if (
+                board is not None
+                and board.provider == stored_board.provider
+                and board_tenant == stored_board.tenant
+                and _same_identity_url(
+                    board.url,
+                    stored_board.canonical_board_url,
+                )
+            ):
+                try:
+                    store.save(
+                        company.company_name,
+                        linkedin_url,
+                        provider_board=stored_board,
+                    )
+                except (OSError, TypeError, ValueError):
+                    pass
+                else:
+                    restored += 1
+                    continue
         assertion = source_record.get("identity_assertion")
         provider = assertion.get("provider") if isinstance(assertion, dict) else None
         hiring = assertion.get("hiring") if isinstance(assertion, dict) else None
@@ -635,7 +803,6 @@ def _restore_stored_provider_inputs(
             continue
         if not _same_identity_url(selected.get("url"), board_url):
             continue
-        record = store.load(company.company_name, linkedin_url)
         if record is None or record.career is None:
             continue
         if not (
@@ -1650,11 +1817,42 @@ def _scoped_job_board_stage_url(result: dict, source_record: dict) -> str | None
 
     unique_candidates = tuple(dict.fromkeys(candidates))
     if len(unique_candidates) > 1:
+        verified_board_url = _verified_identity_board_url(source_record)
+        if verified_board_url is not None:
+            matching = tuple(
+                candidate
+                for candidate in unique_candidates
+                if canonicalize_identity_url(candidate) == verified_board_url
+            )
+            if len(matching) == 1:
+                return matching[0]
         raise _ScopedStageSeedAmbiguity(
             "Scoped job_board_discovery evidence has conflicting "
             f"job_list_page_url values: {list(unique_candidates)}"
         )
     return unique_candidates[0] if unique_candidates else None
+
+
+def _verified_identity_board_url(source_record: dict) -> str | None:
+    assertion = source_record.get("identity_assertion")
+    payload = assertion.get("provider") if isinstance(assertion, dict) else None
+    if (
+        not isinstance(assertion, dict)
+        or assertion.get("verdict") != "verified"
+        or not isinstance(payload, dict)
+        or payload.get("relationship_verified") is not True
+    ):
+        return None
+    canonical_url = payload.get("canonical_board_url")
+    top_level_url = source_record.get("job_list_page_url")
+    if not isinstance(canonical_url, str) or not isinstance(top_level_url, str):
+        return None
+    try:
+        canonical = canonicalize_identity_url(canonical_url)
+        top_level = canonicalize_identity_url(top_level_url)
+    except (TypeError, ValueError):
+        return None
+    return canonical if canonical == top_level else None
 
 
 def _verified_identity_job_board(
@@ -1796,6 +1994,8 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
                 board_url=primary_url,
             )
         if board is None or not board.replay_safe:
+            return None
+        if not is_replay_safe_job_board(board):
             return None
         try:
             discovered = DiscoveredJobBoard(

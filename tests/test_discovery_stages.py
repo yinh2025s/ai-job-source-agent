@@ -49,6 +49,145 @@ class FakeDiscoveryService:
 
 
 class DiscoveryStageTests(unittest.TestCase):
+    @staticmethod
+    def _no_public_context() -> PipelineContext:
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.company_website_url = "https://acme.example"
+        context.stage_results.extend(
+            [
+                StageResult(stage="website_resolution", status="success"),
+                StageResult(
+                    stage="career_discovery",
+                    status="failed",
+                    reason_code="CAREER_PAGE_NOT_FOUND",
+                ),
+            ]
+        )
+        context.trace.setdefault("stages", {})["career_discovery"] = {
+            "homepage_url": "https://acme.example",
+            "homepage_fetch_error": None,
+            "transport_budget": {
+                "dispatched": 12,
+                "rejected": 0,
+                "exhausted": False,
+            },
+            "bundle_navigation_discovery": {"candidate_urls": []},
+            "sitemap_discovery": {
+                "candidate_count": 0,
+                "fanout_limit_reached": False,
+                "sitemaps_checked": [
+                    {"url": "https://acme.example/sitemap.xml", "url_count": 3}
+                ],
+            },
+            "search_discovery": {
+                "candidates": [],
+                "stopped_reason": "no_valid_candidates",
+                "queries": [
+                    {"error": None, "candidates": [], "result_count": 10}
+                ],
+            },
+            "candidate_fetch_errors": [
+                {
+                    "url": "https://careers.acme.example",
+                    "origin": "subdomain_probe",
+                    "retryable": True,
+                }
+            ],
+        }
+        return context
+
+    def test_complete_bounded_official_surface_miss_is_no_public_openings(self):
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+        ).run(self._no_public_context())
+
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(execution.result.reason_code, "NO_PUBLIC_OPENINGS")
+        self.assertEqual(
+            execution.result.evidence[0]["disposition"],
+            "verified_no_public_recruiting_surface",
+        )
+
+    def test_no_public_terminal_replays_without_runtime_transport_capability(self):
+        context = self._no_public_context()
+        context.trace["stages"]["career_discovery"].pop("transport_budget")
+
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.reason_code, "NO_PUBLIC_OPENINGS")
+
+    def test_no_public_terminal_fails_closed_on_incomplete_official_probe(self):
+        context = self._no_public_context()
+        context.trace["stages"]["career_discovery"]["candidate_fetch_errors"].append(
+            {
+                "url": "https://acme.example/careers",
+                "origin": "page_link",
+                "retryable": True,
+            }
+        )
+
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "not_run")
+        self.assertIsNone(execution.result.reason_code)
+
+    def test_no_public_terminal_rejects_homepage_company_identity_mismatch(self):
+        context = self._no_public_context()
+        context.trace["stages"]["career_discovery"][
+            "homepage_career_surface_verification"
+        ] = {
+            "verified": False,
+            "reason": "homepage company identity mismatch",
+        }
+
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "not_run")
+        self.assertIsNone(execution.result.reason_code)
+
+    def test_unlinked_third_party_handoff_is_external_terminal(self):
+        class UnlinkedHandoffService(FakeDiscoveryService):
+            def find_job_board(self, *args, **kwargs):
+                raise DiscoveryError(
+                    "job_board_not_found",
+                    "No linked board",
+                    trace={
+                        "unlinked_third_party_handoffs": [
+                            {
+                                "platform": "indeed",
+                                "disposition": "unlinked_third_party_recruiting_handoff",
+                            }
+                        ]
+                    },
+                )
+
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.career_page_url = "https://acme.example/employment"
+
+        execution = JobBoardDiscoveryStage(UnlinkedHandoffService()).run(context)
+
+        self.assertEqual(
+            execution.result.reason_code,
+            "UNVERIFIABLE_THIRD_PARTY_HANDOFF",
+        )
+        self.assertEqual(execution.result.owner, "external")
+
     def test_first_party_generic_search_filter_preserves_stable_board_identity(self):
         self.assertTrue(
             _is_transient_generic_board_query_variant(
@@ -301,6 +440,129 @@ class DiscoveryStageTests(unittest.TestCase):
             "stored_provider_candidate_deferred_to_s5",
         )
 
+    def test_stored_provider_career_defers_s4_for_current_s5_revalidation(self):
+        class UnexpectedCareer(FakeDiscoveryService):
+            def find_career_page(self, *args, **kwargs):
+                raise AssertionError("S4 must not refetch a recognized ATS career lead")
+
+        base = self._stored_career_record()
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+            career=VerifiedCareerEvidence(
+                url=(
+                    "https://recruiting.paylocity.com/recruiting/jobs/All/"
+                    "18300151-3b4d-4044-912d-501cebb26321/Panacea-Healthcare-Solutions"
+                ),
+                website_url=base.website.url,
+                source="verified_career_search",
+                evidence_url=base.website.url,
+                observed_at=1.0,
+            ),
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+        context.company_website_url = "https://acme.example"
+
+        execution = CareerDiscoveryStage(
+            UnexpectedCareer(),
+            self._EvidenceStore(record),
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "not_run")
+        self.assertEqual(
+            execution.trace["scheduler"]["reason"],
+            "stored_provider_candidate_deferred_to_s5",
+        )
+
+    def test_first_party_stored_provider_career_still_revalidates_in_s4(self):
+        class CapturingCareer(FakeDiscoveryService):
+            preferred_url = None
+
+            def find_career_page(self, *args, preferred_url=None, **kwargs):
+                self.preferred_url = preferred_url
+                return preferred_url, {
+                    "selected": {"url": preferred_url, "reason": "provider career page"}
+                }
+
+        base = self._stored_career_record()
+        career_url = "https://jobs.lever.co/acme"
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+            career=VerifiedCareerEvidence(
+                url=career_url,
+                website_url=base.website.url,
+                source="first_party_navigation",
+                evidence_url=base.website.url,
+                observed_at=1.0,
+            ),
+        )
+        service = CapturingCareer()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                company_website_url="https://acme.example",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+        context.company_website_url = "https://acme.example"
+
+        execution = CareerDiscoveryStage(
+            service,
+            self._EvidenceStore(record),
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(service.preferred_url, career_url)
+
+    def test_legacy_s5_mode_does_not_defer_stored_provider_candidate(self):
+        class CapturingCareer(FakeDiscoveryService):
+            called = False
+
+            def find_career_page(self, *args, preferred_url=None, **kwargs):
+                self.called = True
+                return preferred_url, {
+                    "selected": {"url": preferred_url, "reason": "provider career page"}
+                }
+
+        base = self._stored_career_record()
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+            career=VerifiedCareerEvidence(
+                url="https://jobs.lever.co/acme",
+                website_url=base.website.url,
+                source="verified_career_search",
+                evidence_url=base.website.url,
+                observed_at=1.0,
+            ),
+        )
+        service = CapturingCareer()
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+            )
+        )
+
+        execution = CareerDiscoveryStage(
+            service,
+            self._EvidenceStore(record),
+            enable_parallel_candidate_discovery=False,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertTrue(service.called)
+
     def test_generic_nonretryable_stored_career_rejection_retains_career_layer(self):
         class MissingCareer(FakeDiscoveryService):
             def find_career_page(self, *args, **kwargs):
@@ -521,6 +783,151 @@ class DiscoveryStageTests(unittest.TestCase):
             execution.trace["candidate_discovery"]["waves"]["search"]["reason"],
             "stored_candidate_requires_inventory_revalidation",
         )
+
+    def test_stored_provider_career_is_only_an_unverified_s5_candidate(self):
+        base = self._stored_career_record()
+        career_url = (
+            "https://recruiting.paylocity.com/recruiting/jobs/All/"
+            "18300151-3b4d-4044-912d-501cebb26321/Panacea-Healthcare-Solutions"
+        )
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+            career=VerifiedCareerEvidence(
+                url=career_url,
+                website_url=base.website.url,
+                source="verified_career_search",
+                evidence_url=base.website.url,
+                observed_at=1.0,
+            ),
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+                job_title="Engineer",
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+            company_discovery_evidence_store=self._EvidenceStore(record),
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.updates["provider"], "paylocity")
+        self.assertEqual(execution.updates["job_list_page_url"], career_url)
+        self.assertEqual(
+            execution.trace["selected"]["source_kind"],
+            "stored_verified_career_provider",
+        )
+        self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+        self.assertFalse(execution.updates["job_board_portfolio"].eligible_set_complete)
+
+    def test_generic_stored_career_is_not_promoted_to_s5(self):
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+                job_title="Engineer",
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(
+            FakeDiscoveryService(),
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+            company_discovery_evidence_store=self._EvidenceStore(
+                self._stored_career_record()
+            ),
+        ).run(context)
+
+        self.assertNotEqual(
+            execution.trace.get("selected", {}).get("source_kind"),
+            "stored_verified_career_provider",
+        )
+
+    def test_complete_stored_career_inventory_with_wrong_tenant_is_identity_ambiguous(self):
+        class EmptyInventoryService:
+            def match_discovered_board(self, discovered, *args):
+                return None, discovered.board.url, {
+                    "provider_api": {
+                        "inventory": {
+                            "source": "native_adapter",
+                            "status": "verified_filtered_empty",
+                            "scope": "title_filtered",
+                            "complete": True,
+                            "candidate_count": 0,
+                        },
+                        "adapter_trace": {
+                            "inventory_complete": True,
+                            "inventory_scope": "title_filtered",
+                        },
+                    }
+                }
+
+        base = self._stored_career_record()
+        career_url = (
+            "https://recruiting.paylocity.com/recruiting/jobs/All/"
+            "18300151-3b4d-4044-912d-501cebb26321/Panacea-Healthcare-Solutions"
+        )
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+            career=VerifiedCareerEvidence(
+                url=career_url,
+                website_url=base.website.url,
+                source="verified_career_search",
+                evidence_url=base.website.url,
+                observed_at=1.0,
+            ),
+        )
+        board = JobBoard(
+            provider="paylocity",
+            identifier=(
+                "18300151-3b4d-4044-912d-501cebb26321|"
+                "panacea-healthcare-solutions"
+            ),
+            url=career_url,
+        )
+        discovered = DiscoveredJobBoard(
+            board=board,
+            detection_method="linked_url_evidence",
+            evidence_url=career_url,
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+                job_title="Engineer",
+            )
+        )
+        context.job_list_page_url = career_url
+        context.discovered_job_board = discovered
+        context.job_board_portfolio = JobBoardPortfolio(
+            boards=(discovered,),
+            eligible_set_complete=False,
+        )
+        context.trace["stages"] = {
+            "job_board_discovery": {
+                "selected": {
+                    "url": career_url,
+                    "source_kind": "stored_verified_career_provider",
+                }
+            }
+        }
+
+        execution = OpeningMatchStage(
+            EmptyInventoryService(),
+            max_job_board_attempts=1,
+            company_discovery_evidence_store=self._EvidenceStore(record),
+        ).run(context)
+
+        self.assertEqual(execution.result.reason_code, "COMPANY_IDENTITY_AMBIGUOUS")
 
     def test_current_career_route_precedes_unverified_stored_provider_candidate(self):
         record = self._stored_career_record()

@@ -17,11 +17,19 @@ SOURCE_PRIORITIES = {
     "external_apply": 500,
     "first_party_ats_link": 400,
     "stored_verified_provider_board": 350,
+    "stored_verified_career_provider": 325,
     "targeted_opening_search": 300,
     "verified_tenant_probe": 250,
     "targeted_board_search": 200,
     "guessed_path": 100,
 }
+
+STORED_PROVIDER_CANDIDATE_SOURCE_KINDS = frozenset(
+    {
+        "stored_verified_provider_board",
+        "stored_verified_career_provider",
+    }
+)
 
 _PROVIDER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _SENSITIVE_QUERY_KEYS = {

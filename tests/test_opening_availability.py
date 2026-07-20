@@ -4,6 +4,29 @@ from job_source_agent.opening_availability import diagnose_opening_availability
 
 
 class OpeningAvailabilityTests(unittest.TestCase):
+    def test_multiple_official_matches_are_input_identity_ambiguity(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "opening_identity_ambiguity": {
+                    "reason": "multiple_same_location_title_candidates",
+                    "candidates": [
+                        {"url": "https://school.example/careers/#overnight"},
+                        {"url": "https://school.example/careers/#evening"},
+                    ],
+                },
+                "provider_api": {
+                    "inventory": {
+                        "status": "verified",
+                        "complete": True,
+                    }
+                },
+            }
+        )
+
+        self.assertEqual(diagnostic.disposition, "opening_identity_ambiguous")
+        self.assertEqual(diagnostic.reason_code, "OPENING_IDENTITY_AMBIGUOUS")
+        self.assertEqual(diagnostic.confidence, "high")
+
     def test_verified_title_with_location_rejection_reports_location_no_match(self):
         diagnostic = diagnose_opening_availability(
             {

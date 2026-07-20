@@ -10,6 +10,7 @@ from .provider_candidates import (
     CandidateDiscoveryRequest,
     ProviderCandidate,
     ProviderCandidatePool,
+    STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
     VerifiedProviderCandidate,
 )
 from .providers import ProviderRegistry
@@ -194,7 +195,7 @@ class ProviderCandidatePortfolioBuilder:
                     and not any(
                         item.candidate.source_kind.startswith("targeted_")
                         or item.candidate.source_kind
-                        == "stored_verified_provider_board"
+                        in STORED_PROVIDER_CANDIDATE_SOURCE_KINDS
                         for item in selected
                     )
                 ),

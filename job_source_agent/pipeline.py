@@ -33,6 +33,7 @@ from .js_declared_inventory import inspect_js_declared_inventory_transport
 from .listing_extraction import (
     explicit_empty_inventory_evidence,
     extract_listing_candidates,
+    unlinked_third_party_recruiting_evidence,
 )
 from .models import (
     STAGE_CAREER_DISCOVERY,
@@ -1973,6 +1974,16 @@ class JobSourceAgent:
                 page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
                 if content_probe:
                     trace.setdefault("content_payload_probes", []).append(content_probe)
+                third_party_handoff = unlinked_third_party_recruiting_evidence(
+                    page.html
+                )
+                if third_party_handoff is not None:
+                    trace.setdefault("unlinked_third_party_handoffs", []).append(
+                        {
+                            "url": page.final_url or page.url,
+                            **third_party_handoff,
+                        }
+                    )
 
             actual_page_url = page.final_url or page.url
             normalized_actual_url = actual_page_url.rstrip("/")
@@ -4753,6 +4764,40 @@ class JobSourceAgent:
             page, content_probe = probe_first_party_cms_payload(self.fetcher, page)
             if content_probe:
                 trace.setdefault("content_payload_probes", []).append(content_probe)
+            direct_search_microsite = (
+                candidate.origin == "search_result"
+                and "unverified branded career microsite search lead"
+                in candidate.reasons
+                and homepage_url is not None
+                and self._registrable_site(urlparse(actual_url).hostname or "")
+                != self._registrable_site(urlparse(homepage_url).hostname or "")
+            )
+            if direct_search_microsite:
+                microsite_verification = self._verify_generic_official_career_redirect(
+                    candidate,
+                    page,
+                    company_name=company_name,
+                    homepage_url=homepage_url,
+                    allow_direct_microsite=True,
+                )
+                trace.setdefault("search_microsite_verification", []).append(
+                    microsite_verification
+                )
+                if microsite_verification["verified"]:
+                    trace["selected"] = dataclass_to_dict(candidate)
+                    trace["selected_page_source"] = page.source
+                    trace["selected_redirect_kind"] = (
+                        "verified_search_career_microsite"
+                    )
+                    return actual_url
+                trace["candidate_fetch_errors"].append(
+                    {
+                        "url": candidate.url,
+                        "error": "unverified cross-site Career search microsite: "
+                        + str(microsite_verification.get("reason") or "unknown"),
+                    }
+                )
+                continue
             if derived_reasons:
                 verified, verification = self._verify_derived_provider_board(
                     actual_url,
@@ -4878,6 +4923,7 @@ class JobSourceAgent:
         *,
         company_name: str | None,
         homepage_url: str | None,
+        allow_direct_microsite: bool = False,
     ) -> dict:
         actual_url = page.final_url or page.url
         verification = {
@@ -4900,12 +4946,24 @@ class JobSourceAgent:
         if not source.hostname or source.scheme != "https" or not self._is_default_https_origin(source):
             verification["reason"] = "official source origin is not safe HTTPS"
             return verification
-        if self._registrable_site(requested.hostname or "") != self._registrable_site(source.hostname):
-            verification["reason"] = "redirect request did not originate on the official site"
-            return verification
-        if self._registrable_site(requested.hostname or "") == self._registrable_site(final.hostname or ""):
-            verification["reason"] = "redirect did not cross registrable domains"
-            return verification
+        requested_site = self._registrable_site(requested.hostname or "")
+        source_site = self._registrable_site(source.hostname or "")
+        final_site = self._registrable_site(final.hostname or "")
+        if allow_direct_microsite:
+            verification["kind"] = "generic_search_career_microsite"
+            if requested_site == source_site:
+                verification["reason"] = "search microsite is not cross-site"
+                return verification
+            if requested_site != final_site:
+                verification["reason"] = "search microsite redirected across registrable domains"
+                return verification
+        else:
+            if requested_site != source_site:
+                verification["reason"] = "redirect request did not originate on the official site"
+                return verification
+            if requested_site == final_site:
+                verification["reason"] = "redirect did not cross registrable domains"
+                return verification
         if self._is_provider_job_board_url(actual_url) or is_ats_url(actual_url):
             verification["reason"] = "provider redirects require provider verification"
             return verification

@@ -23,7 +23,160 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-19，`.182`）
+## 当前执行轮次（2026-07-20，`.188`）
+
+### `.188` 最终冻结 100：跨域 Career 搜索结果的招聘关系验真（完成）
+
+`.187` 冻结 100 unified live 已完成 100/100，当前结果为 68 Exact、88 Job List；Bastion 的
+ApplicantPro requisition-code 标题后缀缺陷已恢复 Exact。但同版本 replay 在 Blossom 暴露出新的
+correctness defect，因此该轮不能计为最终通过：S4 将搜索结果
+`blossomrestaurant.com.sg/careers.html` 仅凭同名公司与 Career 页面形态接受为
+`blossom.net` 的招聘页面，并污染了 company evidence；S5 后续虽找到历史 Ashby board，S7 正确
+拒绝未验证的招聘关系，但错误 Career 候选本身已经证明 `SYSTEM_GAP` 尚未清零。
+
+`.188` 保留搜索召回，但不再让跨 registrable-domain 的
+`unverified branded career microsite search lead` 直接通过普通 Career 页面判定。此类候选必须在
+发布或写入 evidence store 前同时证明：页面公司身份匹配、canonical/`og:url` 与最终页面同源、
+存在同源可执行岗位入口，并且页面存在可绑定到已验证官方公司的 corporate backlink；缺少任一
+关系证据即拒绝。ATS URL 仍进入 provider/tenant 验真，不能借此通用分支建立关系。
+
+本轮 Phase C 顺序固定为：Blossom 负向 fixture 与相关 Career 测试；使用未污染 evidence store
+执行 Blossom focused current live；同版本 focused replay 1/1；全量离线 gate；最后以冻结 `.188`
+代码和独立 artifact 重跑完整 100 live 与 100/100 replay。只有错误/跨 tenant URL 为 0、完整 closure
+matrix 可复现且 `SYSTEM_GAP=0` 后才更新最终数字、提交并推送。
+
+Phase B/C focused gate 已通过。进一步根因确认 `.187` 不只接受了错误的跨域 Career 搜索结果，
+还让先前缓存的同名单词域 `blossom.net` 在重新加载后抢先返回，跳过了 LinkedIn company slug
+`join-blossom-health` 提供的更强官网候选。`.188` 现在只在 stored domain 与完整 LinkedIn slug domain
+冲突时把二者放入同一 revalidation wave；普通无冲突 stored 官网仍保持快速路径。Blossom focused
+current live 从原始错误缓存状态出发，在 7.5 秒内恢复
+`joinblossomhealth.com -> /careers -> Ashby Blossom-Health -> exact opening`，标题为
+`Software Engineer (All Levels)`、地点为 New York City、完整库存 10 条；证据库重新写成连续的
+Website/Career/Provider 链。same-version replay 为 `1/1 reproduced / 0 mismatch / 0 fixture gap`。
+相关 resolver、Career、stage 测试 221 条通过；下一步为全量离线 gate 和冻结 100 unified live。
+
+最终 gate 已全部完成。全量离线门禁通过 2429 tests（3 skipped）、provider benchmark 25/25、
+resolver benchmark 6/6、44 adapters/0 architecture issues。冻结 `.188` unified live 运行 100/100，
+耗时 473.2 秒，返回 69 Exact、89 Job List；相较 `.187` 恢复 Blossom 后 Exact 增加 1。same-version
+full replay 为 `100 reproduced / 0 mismatch / 0 fixture gap`，record integrity 100/100。独立 Exact
+审核确认 69/69 canonical opening URL 与 closure matrix 一致，provider relationship 均 verified，
+标题/地点无 identity conflict，错误、跨公司及跨 tenant URL 均为 0。
+
+最终 evidence ledger 为 `69 EXACT / 23 VERIFIED_NOT_FOUND / 5 EXTERNAL_BLOCKED /
+3 INPUT_IDENTITY_INVALID / 0 SYSTEM_GAP`；raw exact 为 69%，eligible exact recall 为 69/69，
+audited exact precision 为 69/69。统一 live 中 10 条 current transport failure 均有此前 focused
+live/replay 支持的非系统终态，不用单次网络结果覆盖更强证据。最终报告见
+`docs/FROZEN_100_FINAL_REPORT.md`。
+
+### `.187` 最终冻结 100：S7 标题后缀与 scoped replay 因果状态（进行中）
+
+`.186` 已完成最后五条统一 current live：Panacea 为
+`COMPANY_IDENTITY_AMBIGUOUS`，Riverview 为 `OPENING_IDENTITY_AMBIGUOUS`，Southeastern 为
+`UNVERIFIABLE_THIRD_PARTY_HANDOFF`，Garan 返回官方 Workable Exact，Great Value 为
+`COMPANY_IDENTITY_AMBIGUOUS`；5/5 scoped replay 通过。closure matrix 已机械核对为
+`69 EXACT / 23 VERIFIED_NOT_FOUND / 5 EXTERNAL_BLOCKED / 3 INPUT_IDENTITY_INVALID / 0 SYSTEM_GAP`。
+
+随后 `.186` 冻结 100 unified live 完成 100/100：66 条当前 Exact、89 条 Job List、9 条当前网络/访问
+失败，未发现错误 URL。Bastion 是唯一真实 correctness regression：ApplicantPro 官方 opening 标题
+`Mechanical Project Engineer (BT-26148)` 与目标仅相差终端 requisition code，S6 正确匹配但 S7
+错误拒绝。`.187` 只允许删除严格的终端 requisition-code 括号，不删除 `(Propulsion)` 等专业方向，
+因此 Bastion 应恢复 Exact 而不放宽普通标题身份。
+
+旧 `.186` 全量 scoped replay 现已执行 100/100，结果为 `99 reproduced / 1 mismatch / 0 fixture gap`；
+唯一 mismatch 正是 Bastion 从旧的错误 rejection 转为当前 verified Exact。修复过程中同时补齐 replay
+bundle 的阶段因果 contract：最终 evidence store 中由本轮 S5 新写入的 provider board 不得泄漏到
+S4；被本轮 invalidation 删除、但 source trace 明确读取过的 stored website/career 必须恢复；只有
+source trace 明确选择 `stored_verified_provider_board` 且冻结源 store 的 canonical provider/tenant
+一致时才恢复 provider input。Tata、Leadenhall、Stark CEIPAL、SpaceX 和 Actabl focused replay 均已
+覆盖这些边界。
+
+`.187` 的剩余 gate 是：Bastion focused current live + replay；全量 unit/provider/resolver/architecture
+gate；最后以冻结代码和独立 artifact 重跑同一 100 条 live，再对 `.187` snapshots 执行 100/100
+scoped replay。通过条件仍为 closure matrix `SYSTEM_GAP=0`、错误/跨 tenant URL=0，并将新 unified
+结果、网络外部终态和 eligible exact recall 写回文档后提交推送。
+
+### `.186` Phase B/C：stored ATS Career 直达 S5 当前验真（进行中）
+
+`.185` 五条 focused live 中，Southeastern、Garan 和 Great Value 已分别收敛为
+`UNVERIFIABLE_THIRD_PARTY_HANDOFF`、Workable Exact 和 `COMPANY_IDENTITY_AMBIGUOUS`；full scoped
+replay 5/5 可复现。但 Panacea 从上一轮的 `OPENING_NOT_FOUND` 退化为 S4 `NETWORK_TIMEOUT`，
+Riverview 从 `OPENING_IDENTITY_AMBIGUOUS` 退化为 `WEBSITE_NOT_RESOLVED`。replay 只证明本轮结果
+可复现，不能把错误终态算作 Phase C 通过。
+
+Panacea 根因是 evidence store 已保存可由 Paylocity adapter 明确认出的 Career URL，但 S5 只读取
+`provider_boards`，S4 因而重复执行网页导航并在 152 秒后超时。`.186` 增加
+`stored_verified_career_provider` 候选类型：只有 record 的公司/LinkedIn key 连续、website 与
+career 的归属连续、Career URL 可由支持 listing 的 adapter 识别时，S4 才把它延后到 S5。该记录
+只提供候选入口，不授予招聘关系或成功；当前 provider inventory、tenant、title/location/status 和
+S7 仍必须重新验证，未重建身份时发布层继续隐藏 stored Job List URL。普通同站 Career 页面、跨
+identity record 和不支持 listing 的 URL 不会进入该路径。
+
+Phase C 先分别执行 Panacea 和 Riverview focused current live：Panacea 必须恢复为当前 Paylocity
+库存支持的结构化终态；Riverview 必须恢复官方 Career 同页 inventory，若持续网络失败则保留当前
+证据并按 retryable/external 分类，不能写公司特例。两条通过后再统一重跑最后五条及 full scoped
+replay；随后更新 closure matrix、运行全量离线 gate，并执行冻结 100 条统一 live 回归。
+
+`.186` focused current live 已关闭两条退化。Riverview 在 39.5 秒内恢复官方 website、Career 与
+同页 Job List，返回预期 `OPENING_IDENTITY_AMBIGUOUS`，full replay 1/1 通过。Panacea 在 3.1 秒内
+跳过重复 S4，读取 Paylocity 当前完整库存；进一步核验发现 source company 是 Pennsylvania 的
+skilled-nursing operator，而 cached website 是 Barcelona 的西语 health-data 产品，Paylocity tenant
+又属于 Minnesota 的 `Panacea Healthcare Solutions`。因此旧轮次的 `OPENING_NOT_FOUND` 实际混入
+了错误公司关系；`.186` 正确收敛为 `COMPANY_IDENTITY_AMBIGUOUS`，不发布 Job List/Opening，full
+replay 1/1 通过。下一 gate 为同一代码、独立 artifact 的最后五条统一 current live + replay。
+
+### `.185` Phase B/C：最后五条发布语义与 ATS tenant 恢复（进行中）
+
+`.184` 将后置的 evidence-backed availability/identity terminal 提升为最终发布结论，并补齐
+first-party fragment inventory、RN alias、同地点多 opening ambiguity、unlinked recruiting handoff、
+replay-safe no-public evidence 和 hiring intermediary 识别。相关 290 tests 通过；使用当前重新验证的
+company evidence 对五条 focused live 后，Panacea 为 `OPENING_NOT_FOUND`，Riverview 为
+`OPENING_IDENTITY_AMBIGUOUS`，Southeastern 为 `UNVERIFIABLE_THIRD_PARTY_HANDOFF`，Great Value
+为 `COMPANY_IDENTITY_AMBIGUOUS`，四条均通过 full scoped replay。Garan 仍因 ATS 搜索与 probe
+调度缺陷停在 retryable `FETCH_FAILED`，所以当时不能宣布 Phase C 完成。
+
+`.185` 继续修复通用三路候选实现而非增加 Garan override：provider search 的 source fetch budget
+现在与声明的 query budget 一致，title-targeted provider 计划覆盖 Workable；当 Bing 索引无效且
+DuckDuckGo challenge 时，tenant fallback 按“已验证官网 slug / 完整法人 slug / LinkedIn slug”与
+provider 波次交叉调度，8 次上限不再被一个短 slug 独占。Workable 当前 title-filtered API 在找到
+精确标题后会提前停止分页；tenant probe 现在允许“同 tenant + 精确标题候选”建立候选关系，完整
+库存仍是无目标候选时的硬门槛，location、状态和 opening URL 继续由 S6/S7 验证。
+
+Garan `.185` focused live 已返回官方 Workable board
+`https://apply.workable.com/garan-incorporated/` 和精确 opening
+`https://apply.workable.com/garan-incorporated/j/6EA77C8F89/`；title 为
+`Junior Financial Operations Analyst`，location 为 New York，identity assertion 为 verified，full
+scoped replay 1/1 reproduced、0 mismatch、0 fixture gap。下一步冻结 `.185` 重跑全部五条，复核
+Panacea 的 provider identity、四个结构化终态和 Garan Exact；通过后更新 closure matrix 为
+`SYSTEM_GAP=0`，执行全量离线 gate 和最终冻结 100 条统一回归。
+
+### `.183` Phase A：最后五条 evidence closure（进行中）
+
+`.182` 后冻结 100 条只剩 Panacea Health Corp、Riverview School、Southeastern Renal
+Dialysis、Garan, Incorporated 和 Great Value Hiring 五条 `SYSTEM_GAP`。本轮先审计同一批
+`.173` live/snapshot/trace，不把人工“没有 Career”直接升级为终态，也不把 Adzuna/Indeed 搜索
+摘要当作公司招聘关系。审计将五条冻结为两个共享缺陷，不增加公司 override：
+
+1. **第一方 Career 页面内嵌岗位库存**：Riverview 的官方 Career 页面正文已经列出
+   `PT Overnight RN - School Nurse` 和 `PT Evening Shift RN - School Nurse`，并提供同页 fragment
+   与官方 employment application。旧 S5 只寻找独立 Job Board，未把带稳定岗位锚点的官方 Career
+   页面建模为完整 first-party inventory，因此错误停在 `JOB_BOARD_NOT_FOUND`。Phase B 只扩展
+   通用第一方 inventory contract：岗位标题、稳定 fragment/详情链接、申请动作和公司页面身份都
+   必须来自当前官方页面；匹配仍经过 title/location/S7，不信任 Adzuna handoff。
+2. **可复现的无公开招聘表面终态**：Panacea、Garan 和 Great Value 的已验证官网已执行 homepage
+   navigation、常见路径、bundle、sitemap、ATS probe 与 bounded search，未产生第一方 Career 或
+   provider；Southeastern 的官方 Employment 页面明确说明岗位转由 Indeed 发布，但没有可验证的
+   handoff URL。旧模型只能返回 `CAREER_PAGE_NOT_FOUND`/`JOB_BOARD_NOT_FOUND`，无法区分“搜索
+   尚未完成”和“官方公开表面已完整检查但没有可验证入口”。Phase B 将建立严格、可 replay 的
+   no-public-recruiting evidence contract；只有官网身份已验证、必需发现路径均实际完成、没有预算
+   耗尽/网络失败、没有未验证强候选时才允许结构化终态。任何 retryable fetch、截断或第一方招聘
+   线索都会 fail closed 为 `SYSTEM_GAP`。
+
+Phase C 固定验收这五条和至少两条控制样本：Riverview 必须返回官方同页 exact fragment 或经 S7
+验证的同页 opening；其余四条必须返回 replayable 的 verified no-public terminal，0 opening URL。
+完整 scoped replay 要求 5/5 reproduced、0 mismatch、0 fixture gap；随后运行全量单测、provider、
+resolver 和 architecture gate。通过后 ledger 目标为 `SYSTEM_GAP=0`，再冻结代码运行最终 100 条
+统一 live 回归；最终统一回归若暴露新系统缺陷，继续按 A -> B -> C 修复，不能用本轮 focused
+结果直接宣告 Goal 完成。
 
 ### `.182` Phase B/C：form 内嵌 JSON request identity（已通过）
 

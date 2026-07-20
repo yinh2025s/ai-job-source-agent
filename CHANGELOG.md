@@ -10,6 +10,39 @@
 
 ### Added
 
+- `.188` makes cross-domain Career search leads fail closed unless the destination proves a complete
+  hiring relationship to the already verified corporate site. A same-name page must now provide
+  matching company identity, same-origin canonical metadata, a same-origin actionable jobs route,
+  and an official corporate backlink before it can be selected or persisted; ATS destinations still
+  require provider and tenant verification. This prevents an unrelated Blossom restaurant Careers
+  page from being attached to `blossom.net`. The frozen-100 `.187` live completed all 100 records with
+  68 current Exact and 88 Job Lists, but that run is intentionally not accepted as final because the
+  Blossom defect is a real system gap. `ADAPTER_VERSION` is `2026-07-20.188`; focused live/replay and
+  same-version frozen-100 gates remain in progress. The same defect also exposed stored-website
+  precedence: when a stored same-name domain conflicts with a stronger full LinkedIn-slug domain,
+  both are now revalidated in one wave instead of allowing the cache to return early. Starting from
+  the prior incorrect `blossom.net` cache, focused live restores the complete official
+  `joinblossomhealth.com -> /careers -> Ashby Blossom-Health -> exact opening` chain in 7.5 seconds;
+  same-version replay is 1/1 reproduced with zero mismatch or fixture gap, and 221 related tests pass.
+  Final offline gates pass 2429 tests (3 skipped), 25/25 provider cases, 6/6 resolver cases, and
+  44 adapters with zero architecture issues. The frozen `.188` unified live completes 100/100 with
+  69 Exact and 89 Job Lists; full replay is 100/100 reproduced with zero mismatch or fixture gap.
+  Independent closure comparison confirms all 69 opening URLs, titles, locations, providers and
+  tenants, with zero wrong or cross-tenant URL. The final ledger is 69 Exact, 23 Verified Not Found,
+  5 External Blocked, 3 Input Identity Invalid, and 0 System Gaps.
+
+- `.187` closes the final frozen-100 correctness and replay-stability defects. S7 now treats only a
+  strict terminal requisition-code parenthetical such as `(BT-26148)` as publication metadata, while
+  preserving specialty qualifiers such as `(Propulsion)` as title identity. Scoped replay bundles now
+  reconstruct the evidence state that existed at the recorded phase boundary: downstream provider
+  evidence cannot leak backward, invalidated but trace-proven stored Website/Career inputs are
+  restored, and stored provider boards are restored only when the source trace selected them and the
+  frozen source store confirms the same canonical provider and tenant. The `.186` unified live ran
+  all 100 records with 66 current Exact and no wrong URL; its repaired replay executes 100/100 with
+  99 reproduced, one intentional Bastion transition, and zero fixture gaps. The closure ledger remains
+  69 Exact, 23 Verified Not Found, 5 External Blocked, 3 Input Identity Invalid, and 0 System Gaps.
+  `ADAPTER_VERSION` is `2026-07-19.187`; same-version final live/replay gates remain in progress.
+
 - `.182` upgrades request identity to v2 and recursively sanitizes valid JSON object/array values
   embedded inside form fields. Sensitive nested values no longer influence body fingerprints, while
   ordinary text, non-sensitive fields, and pagination remain identity-significant. This fixes a
