@@ -2476,6 +2476,137 @@ class OpeningMatcherTests(unittest.TestCase):
             53,
         )
 
+    def test_complete_native_inventory_rejects_conflicting_level_suffix(self):
+        class CompleteInventoryAdapter:
+            name = "complete_inventory_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="CYBER SECURITY ANALYST - MID",
+                            location="Huntsville, AL",
+                            url="https://jobs.example.com/job/339",
+                            provider=self.name,
+                        )
+                    ],
+                    inventory_scope="full",
+                    inventory_complete=True,
+                )
+
+        matcher = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([CompleteInventoryAdapter()]),
+        )
+
+        match, trace = matcher.match(
+            "https://jobs.example.com",
+            "CYBER SECURITY ANALYST",
+            "Huntsville, AL",
+        )
+
+        self.assertIsNone(match)
+        self.assertTrue(trace["provider_api"]["inventory"]["complete"])
+        self.assertEqual(
+            trace["provider_api"]["rejected_candidates"][0]["reason"],
+            "publication_title_identity_mismatch",
+        )
+        diagnostic = diagnose_opening_availability(trace)
+        self.assertEqual(diagnostic.reason_code, "OPENING_NOT_FOUND")
+
+    def test_incomplete_native_inventory_preserves_incomplete_after_title_rejection(self):
+        class IncompleteInventoryAdapter:
+            name = "incomplete_inventory_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="CYBER SECURITY ANALYST - MID",
+                            location="Huntsville, AL",
+                            url="https://jobs.example.com/job/339",
+                            provider=self.name,
+                        )
+                    ],
+                    reason_code="FETCH_BUDGET_EXHAUSTED",
+                    retryable=True,
+                    inventory_scope="full",
+                    inventory_complete=False,
+                )
+
+        matcher = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([IncompleteInventoryAdapter()]),
+        )
+
+        match, trace = matcher.match(
+            "https://jobs.example.com",
+            "CYBER SECURITY ANALYST",
+            "Huntsville, AL",
+        )
+
+        self.assertIsNone(match)
+        self.assertFalse(trace["provider_api"]["inventory"]["complete"])
+        diagnostic = diagnose_opening_availability(trace)
+        self.assertEqual(
+            diagnostic.reason_code,
+            "FETCH_BUDGET_EXHAUSTED",
+        )
+
+    def test_native_inventory_keeps_benign_publication_suffix(self):
+        class BenignSuffixAdapter:
+            name = "benign_suffix_test"
+            supports_listing = True
+
+            def recognizes(self, url):
+                return True
+
+            def identify_board(self, url):
+                return JobBoard(url=url, provider=self.name, identifier="example")
+
+            def list_jobs(self, fetcher, board, query):
+                return AdapterResult(
+                    provider=self.name,
+                    board=board,
+                    candidates=[
+                        JobCandidate(
+                            title="Data Analyst - Remote",
+                            location="Remote",
+                            url="https://jobs.example.com/job/7",
+                            provider=self.name,
+                        )
+                    ],
+                    inventory_scope="full",
+                    inventory_complete=True,
+                )
+
+        match, _trace = JobOpeningMatcher(
+            Fetcher(offline=True),
+            ProviderRegistry([BenignSuffixAdapter()]),
+        ).match("https://jobs.example.com", "Data Analyst")
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, "https://jobs.example.com/job/7")
+
     def test_native_adapter_uses_location_to_break_exact_title_tie(self):
         class LocationAdapter:
             name = "location_test"

@@ -9,6 +9,26 @@ from job_source_agent.web import Page
 
 
 class HomepageNavigationEvidenceTests(unittest.TestCase):
+    def test_late_visible_external_career_link_survives_global_link_cap(self):
+        ordinary = "".join(
+            f'<a href="/products/{index}">Product {index}</a>'
+            for index in range(220)
+        )
+        evidence = evidence_from_verified_homepage(
+            Page(
+                url="https://www.exampletools.com",
+                html=ordinary + (
+                    '<a href="https://exampletools.jobs/">'
+                    '<h2>COMPANY + CAREERS</h2></a>'
+                ),
+            ),
+            homepage_url="https://www.exampletools.com",
+        )
+
+        self.assertIsNotNone(evidence)
+        assert evidence is not None
+        self.assertEqual(evidence.candidate_urls, ("https://exampletools.jobs/",))
+
     def test_extracts_only_query_free_url_semantic_career_links(self):
         evidence = evidence_from_verified_homepage(
             Page(

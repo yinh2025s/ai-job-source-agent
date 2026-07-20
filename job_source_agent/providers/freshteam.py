@@ -19,7 +19,7 @@ _ASSET_PATH = re.compile(
     r"attachments/(?P<attachment>[1-9][0-9]{0,19})/original/"
     r"(?P<file>[A-Za-z0-9_-]{1,100}_widget\.js)$"
 )
-_ASSET_QUERY = re.compile(r"^[1-9][0-9]{0,19}$")
+_ASSET_QUERY = re.compile(r"^[1-9][0-9]{0,19}=?$")
 _TENANT = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _RESERVED_TENANTS = frozenset({"api", "app", "assets", "support", "www"})
 _UNIQUE_ID = re.compile(r"^[A-Za-z0-9_-]{6,128}$")

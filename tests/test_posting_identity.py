@@ -1,8 +1,12 @@
 import json
+from pathlib import Path
 import unittest
 
 from job_source_agent.posting_identity import LinkedInPostingIdentityProbe
 from job_source_agent.web import FetchError, Fetcher, Page
+
+
+FIXTURES = Path(__file__).parent / "fixtures" / "posting_identity"
 
 
 class _StaticFetcher(Fetcher):
@@ -128,7 +132,7 @@ class LinkedInPostingIdentityProbeTests(unittest.TestCase):
         )
         self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
 
-    def test_hiring_publisher_and_talent_solutions_site_close_unresolved_client(self):
+    def test_single_broad_website_marker_does_not_close_blocked_posting_identity(self):
         fetcher = _MappingFetcher(
             pages={
                 self.WEBSITE_URL: "<main><h1>Smart Talent Solutions</h1></main>",
@@ -142,10 +146,98 @@ class LinkedInPostingIdentityProbeTests(unittest.TestCase):
             website_url=self.WEBSITE_URL,
         )
 
+        self.assertEqual(result.classification, "unavailable")
+        self.assertTrue(
+            any("public job detail fetch failed" in reason for reason in result.reasons)
+        )
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
+    def test_nextplay_fixture_closes_blocked_detail_with_multiple_client_markers(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: (
+                    FIXTURES / "nextplay_intermediary_homepage.html"
+                ).read_text(encoding="utf-8"),
+            },
+            errors={self.JOB_URL: "HTTP Error 999: Request denied"},
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "NextPlay Jobs",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
         self.assertEqual(result.classification, "agency_unresolved")
         self.assertTrue(
-            any("talent intermediary" in reason for reason in result.reasons)
+            any("client-serving talent intermediary" in reason for reason in result.reasons)
         )
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
+    def test_nextplay_fixture_closes_missing_jobposting_identity(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: (
+                    FIXTURES / "nextplay_intermediary_homepage.html"
+                ).read_text(encoding="utf-8"),
+                self.JOB_URL: "<main>LinkedIn job detail unavailable</main>",
+            }
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "NextPlay Jobs",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "agency_unresolved")
+        self.assertTrue(
+            any("did not contain JobPosting JSON-LD" in reason for reason in result.reasons)
+        )
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
+    def test_direct_employer_recruiting_and_staffing_team_is_not_terminal(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: (
+                    "<main>Our recruiting and staffing teams support our own "
+                    "software organization.</main>"
+                ),
+            },
+            errors={self.JOB_URL: "HTTP Error 999: Request denied"},
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "unavailable")
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
+    def test_recruiting_and_staffing_website_preserves_verified_alternate_employer(self):
+        description = (
+            "At <strong>ModMed</strong>, we build healthcare software. "
+            "When You Join ModMed you can grow. "
+            "ModMed Benefits include health coverage. "
+            "ModMed will not ask you to purchase equipment."
+        )
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: "<main>Recruiting and Staffing</main>",
+                self.JOB_URL: _job_page(description, "Acme"),
+            }
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "alternate_employer")
+        self.assertEqual(result.employer_name, "ModMed")
         self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
 
     def test_public_website_metadata_can_trigger_job_detail_probe(self):
@@ -251,6 +343,26 @@ class LinkedInPostingIdentityProbeTests(unittest.TestCase):
 
         result = LinkedInPostingIdentityProbe(fetcher).probe(
             "Acme Search",
+            self.JOB_URL,
+            website_url=self.WEBSITE_URL,
+        )
+
+        self.assertEqual(result.classification, "publisher_unconfirmed")
+        self.assertEqual(fetcher.calls, [self.WEBSITE_URL, self.JOB_URL])
+
+    def test_recruiting_and_staffing_website_preserves_internal_role_control(self):
+        fetcher = _MappingFetcher(
+            pages={
+                self.WEBSITE_URL: "<main>Recruiting and Staffing</main>",
+                self.JOB_URL: _job_page(
+                    "Join our finance team and improve our internal operations.",
+                    "Acme",
+                ),
+            }
+        )
+
+        result = LinkedInPostingIdentityProbe(fetcher).probe(
+            "Acme",
             self.JOB_URL,
             website_url=self.WEBSITE_URL,
         )

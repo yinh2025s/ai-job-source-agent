@@ -718,7 +718,7 @@ class UpstreamStageTests(unittest.TestCase):
             {"field": "publisher_role", "value": "recruiting_agency"},
             execution.result.evidence,
         )
-        self.assertIn("undisclosed client", execution.result.detail)
+        self.assertIn("posting-level employer is unavailable", execution.result.detail)
 
 
 if __name__ == "__main__":

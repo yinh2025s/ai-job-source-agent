@@ -349,6 +349,7 @@ class _LinkParser(HTMLParser):
         self.links: list[RawLink] = []
         self.provider_links: list[RawLink] = []
         self.command_links: list[RawLink] = []
+        self.career_links: list[RawLink] = []
         self.embedded_text: list[str] = []
         self._embedded_text_chars = 0
         self._structured_attribute_chars = 0
@@ -456,7 +457,17 @@ class _LinkParser(HTMLParser):
                 origin="page_link",
             )
             self._append_provider_link(link)
-            if _is_explicit_job_list_command(text) and len(self.command_links) < MAX_EXTRACTED_LINKS:
+            if (
+                _is_safe_priority_navigation(link.url)
+                and _is_explicit_career_navigation_label(text)
+                and len(self.career_links) < MAX_EXTRACTED_LINKS
+            ):
+                self.career_links.append(link)
+            if (
+                _is_safe_priority_navigation(link.url)
+                and _is_explicit_job_list_command(text)
+                and len(self.command_links) < MAX_EXTRACTED_LINKS
+            ):
                 self.command_links.append(link)
             if len(self.links) < MAX_EXTRACTED_LINKS:
                 self.links.append(link)
@@ -526,6 +537,7 @@ def extract_links(page: Page) -> list[RawLink]:
         provider_config_links,
         parser.provider_links,
         embedded_provider_links,
+        parser.career_links,
         parser.command_links,
         ordinary_links,
         embedded_links,
@@ -562,6 +574,19 @@ def _is_explicit_job_list_command(text: str) -> bool:
         any(command in normalized_text for command in EXPLICIT_JOB_LIST_COMMANDS)
         or is_explicit_career_action(text)
     )
+
+
+def _is_explicit_career_navigation_label(text: str) -> bool:
+    tokens = re.findall(r"[a-z0-9]+", text.casefold())
+    return bool(tokens and len(tokens) <= 5 and set(tokens) & {"career", "careers"})
+
+
+def _is_safe_priority_navigation(url: str) -> bool:
+    try:
+        host = (urlparse(url).hostname or "").casefold()
+    except ValueError:
+        return False
+    return bool(host and not _is_provider_lookalike_host(host))
 
 
 def _is_provider_url(url: str) -> bool:

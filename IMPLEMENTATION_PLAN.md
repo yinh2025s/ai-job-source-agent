@@ -23,7 +23,30 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-20，`.190`）
+## 当前执行轮次（2026-07-20，`.191`）
+
+### `.191`：`.190` 确定性缺陷闭环（Phase B 完成，Phase C 待执行）
+
+本轮不扩张为新的 provider/heuristic 开发，只修复 `.190` focused gate 已经证明的四条共同 contract
+缺陷。Freshteam 仅接受有界数字 cache-buster 在原始与规范化后的两种等价 query；HTML link extraction
+在普通 top-N 之外保留短且可见的 Career 导航，但 provider-lookalike host 不获得优先权；招聘中介只有
+在已验证官网同时出现多项 client-serving 语义时才形成 posting employer unavailable terminal，普通雇主
+的 recruiting/staffing 文案继续拒绝；native provider inventory 在 S6 选择 opening 前执行与 S7 相同的
+publication-title identity gate，完整库存中的职级冲突归为 verified no-match，不完整库存保持 retryable。
+
+Phase C 固定为：先跑全量 unit/provider/resolver/architecture gates；提交冻结 `.191` 代码；使用全新
+checkpoint/snapshot/evidence/output 目录串行复测 CHAMP、Milwaukee Tool、NextPlay、IGNITE；逐条审核
+Website/Career/Job List/opening identity；同版本 scoped replay 要求 4/4、0 mismatch、0 fixture gap。
+focused 结果只回答这四条确定性缺陷，不能改写 `.188` 或 fresh-100 aggregate。
+
+全量离线门禁已通过：2480 tests（4 skipped）、25/25 provider benchmark、6/6 resolver benchmark、
+46 native adapters / 0 architecture issues。下一步是提交冻结代码，再运行上述 4 条串行 focused live；
+live 期间不修改代码。
+
+并行的 `.189` B-cluster 只读 request-tape 审计已完成，并纠正一个分类错误：`035` 的正确输入 host
+实际已被请求，只是在跳转 `amfab.us` 后 identity continuity 被拒绝，因此移入 I-cluster。真正共享
+`_allocate_verification_slots()` 根因的是 `005/029/033`；后续实现必须在相同三槽预算内恢复 3/3，低于
+3/3 即否定 cluster，而不是扩大预算。该 allocator 工作不并入 `.191`，待 `.191` 冻结 gate 后单独开始。
 
 ### `.190` fresh 100：S4/S5 Career 正确性与已观察库存下钻（Phase C 完成，未通过 closure）
 
@@ -66,14 +89,14 @@ Phase C 已以 commit `a8b00c2` 冻结运行 8/8，77.1 秒完成；same-version
 terminal。另有 4 条 S2 timeout/TLS + LinkedIn 451/999 的 retryable 簇，不能加公司特例。完整报告见
 `docs/FRESH_100_V190_S5_PHASE_C.md`；下一版本必须升级 `.191` 后再修复和验证。
 
-### `.189` fresh 100：S2 冷启动传输与候选调度（Phase C 完成）
+### `.189` fresh 100：传输/重试/快照稳定化（Phase C 完成，未关闭 S2 因果簇）
 
 `.188` fresh 冷启动经人工 Exact 审核后为 11/100，eligible Exact recall 为 11/90；79 条
 `SYSTEM_GAP` 中 49 条在 S2 失败。两次使用独立 checkpoint/snapshot 的 49 条 S2-only 重跑均只解析
 同样 3 条，其余同样 46 条失败，每轮产生 413/414 个 retry event。失败标签在 7 条上发生变化，成功
 集合完全不变，因此根因是可重复的候选调度、重试预算和传输异常契约缺陷，不是一次网络波动。
 
-`.189` 第一轮只处理该通用簇：已冻结
+`.189` 第一轮原计划把这些记录作为一个通用簇：已冻结
 `docs/FRESH_100_V189_S2_ROOT_CAUSE.md` 作为实现契约。Phase B 将把
 `IncompleteRead` 等已知 transport exception 统一封装为可快照的 typed failure；按
 DNS/connect/TLS/HTTP/read 记录诊断；只重试有直接证据的候选；先收集 LinkedIn/search 证据并为证据
@@ -84,7 +107,7 @@ Phase C 固定回归这 49 条：0 worker exception、每条完整 S2 snapshot b
 0、scoped replay 0 mismatch/0 fixture gap，并逐条审核所有新解析官网的公司身份。通过后运行全量离线
 gate，再决定是否进入 S5 的 8 条缺陷；只有多个主要簇关闭后才以全新目录运行 code-frozen fresh 100。
 
-Phase B/C 已完成。最终 code-frozen run7 从 `.188` 重复诊断的 3/49 提升为 5/49，retry event 从
+Phase B/C 的稳定化门禁已完成，但没有关闭 S2 因果簇。最终 code-frozen run7 从 `.188` 重复诊断的 3/49 提升为 5/49，retry event 从
 413 降至 290，平均 S2 时间从 8.957 秒降至 6.476 秒；speculative candidate 的 scheduled retry 为
 0。49/49 均有完整 S2 snapshot boundary，Ken Garff 的 raw `IncompleteRead` 不再逃逸 worker。最终
 5 个 selected website 全部通过公司身份审计；中间轮次暴露的 `stuller.org` 和 `teamroyal.org`
@@ -96,10 +119,12 @@ architecture issue。报告与逐条 delta 见 `docs/FRESH_100_V189_S2_PHASE_C.m
 `artifacts/evaluations/fresh100-v189-s2-focused-20260720-run7/`；完整 live/replay archive SHA-256 为
 `ad5d7344d187cdcd74b217140fd2448fd135afbea7c2acf8d7e6db2cd54bbb94`。
 
-剩余 44 条 S2 未解析不能被改标为外部终态，也不继续用扩大猜测域名或 timeout 的方式追求官网召回。
-下一轮进入 S5 Phase A：从 fresh closure 中冻结 8 条 `JOB_BOARD_NOT_FOUND`，审计 External Apply、
-provider-targeted search 与 verified Career 下钻三路 candidate portfolio，确保 S2 失败不阻塞
-provider/tenant 验真。该轮先分析 trace/snapshot，不在 Phase A 修改代码。
+新增恢复只有 2/49，因此原“同在 S2 停止即属于同一簇”的假设已被否定。剩余 44 条已在
+`docs/FRESH_100_V189_CAUSAL_RECLASSIFICATION.md` 按正确候选 transport、验证预算饥饿、source
+identity、候选未产生、身份拒绝和 provider-first 路径逐条重分。每个实现簇必须共享触发条件和代码路径，
+并有明确的批量恢复下限；若通用修复低于下限，立即否定簇定义并重做因果审计，不得再用 S2 阶段标签
+包装。Provider/External Apply 是可叠加 bypass 路径，不替代 S2 根因分类，也仍须通过 provider、tenant、
+hiring relationship 和 S7 验真。
 
 ### `.188` fresh 100 冷启动独立泛化基线（冻结）
 

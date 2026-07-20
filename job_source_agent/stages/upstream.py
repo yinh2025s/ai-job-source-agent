@@ -448,8 +448,9 @@ class HiringIdentityResolutionStage:
                                 }
                             ],
                             detail=(
-                                "Publisher is recruiting for an undisclosed client; "
-                                "no safe hiring entity can be selected."
+                                "Publisher is a verified talent intermediary, but the "
+                                "posting-level employer is unavailable; no safe hiring "
+                                "entity can be selected."
                             ),
                         ),
                         trace=trace,

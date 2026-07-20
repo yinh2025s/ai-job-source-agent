@@ -10,6 +10,22 @@
 
 ### Added
 
+- `.191` addresses the four deterministic correctness defects exposed by the
+  frozen `.190` focused gate. Freshteam accepts only the bounded numeric
+  cache-buster query forms observed before and after URL normalization. Link
+  extraction preserves short, visible Career labels beyond the ordinary link
+  cap while rejecting provider-lookalike priority hosts. A publisher becomes a
+  terminal unresolved talent intermediary only when its verified website has
+  multiple client-serving semantics, so generic employer recruiting copy does
+  not trigger the terminal. Native provider inventory now applies the same
+  publication-title identity contract before S6 selects an opening: a complete
+  inventory containing only a conflicting level such as `- MID` becomes
+  `OPENING_NOT_FOUND`, while incomplete inventory remains retryable and benign
+  display suffixes remain valid. `ADAPTER_VERSION` is `2026-07-20.191`.
+  Full offline gates pass 2480 tests (4 skipped), 25/25 provider cases, 6/6
+  resolver cases, and 46 native adapters with zero architecture issues;
+  focused live/replay remains pending.
+
 - `.190` closes the first fresh-100 S4/S5 failure cluster without changing the
   frozen `.188` baseline. Career verification now rejects press, project, and
   other non-employment routes even when their slugs contain `jobs`; persisted
@@ -41,6 +57,18 @@
   events, establishing this as a repeatable scheduling/recovery defect. The implementation contract
   and rollback criteria are frozen in `docs/FRESH_100_V189_S2_ROOT_CAUSE.md`; `.188` artifacts and
   scores remain immutable. `ADAPTER_VERSION` is `2026-07-20.189`.
+  The final code-frozen gate resolved 5/49 versus the repeated 3/49 baseline:
+  this validates transport/retry/snapshot stabilization but does not close an
+  S2 failure cluster. The remaining 44 are now reclassified record by record
+  into causal transport, verification-allocation, source-identity,
+  candidate-generation, identity-rejection, and provider-first paths in
+  `docs/FRESH_100_V189_CAUSAL_RECLASSIFICATION.md`. Every executable cluster
+  has a shared trigger/code path and a minimum batch-recovery expectation; a
+  repair below that bound invalidates the cluster definition.
+  A request-tape audit subsequently moved record 035 from allocation to
+  redirect-identity rejection: its correct input host was requested, then
+  redirected to `amfab.us`. The bounded allocation cluster is therefore
+  records 005/029/033 with a strict 3/3 recovery expectation.
 
 - `.188` makes cross-domain Career search leads fail closed unless the destination proves a complete
   hiring relationship to the already verified corporate site. A same-name page must now provide

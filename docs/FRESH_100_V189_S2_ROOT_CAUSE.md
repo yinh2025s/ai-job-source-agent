@@ -1,5 +1,12 @@
 # Fresh 100 `.189` S2 Root-Cause Contract
 
+> Retrospective correction (2026-07-20): this contract correctly identified
+> transport/retry/snapshot defects, but incorrectly treated all records that
+> stopped at S2 as one causal cluster. The final implementation recovered only
+> two additional websites. It therefore closes only the stabilization
+> subproblem; the remaining 44-record causal classification and batch recovery
+> contracts are in `docs/FRESH_100_V189_CAUSAL_RECLASSIFICATION.md`.
+
 ## Scope
 
 This Phase A audit covers the 49 fresh-cohort records whose `.188` closure is a
@@ -18,7 +25,7 @@ Both runs resolved the same 3/49 companies (`Ivo`, `Nisga'a Tek, LLC`, and
 seven records, but the success set did not. This is therefore a repeatable
 system defect, not evidence of a single transient network outage.
 
-## Observed Failure Cluster
+## Originally Observed Stage Cohort
 
 | Signal | Run 1 | Run 2 |
 | --- | ---: | ---: |

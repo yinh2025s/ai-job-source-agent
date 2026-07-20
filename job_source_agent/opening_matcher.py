@@ -1059,6 +1059,20 @@ class JobOpeningMatcher:
                                 )
                             ):
                                 continue
+                            if not publication_title_identity_matches(
+                                candidate.title,
+                                target_title,
+                                target_location=target_location,
+                            ):
+                                trace.setdefault("rejected_candidates", []).append(
+                                    {
+                                        "url": candidate.url,
+                                        "title": candidate.title,
+                                        "location": candidate.location,
+                                        "reason": "publication_title_identity_mismatch",
+                                    }
+                                )
+                                continue
                             if _is_explicit_location_mismatch(
                                 candidate.location,
                                 target_location,

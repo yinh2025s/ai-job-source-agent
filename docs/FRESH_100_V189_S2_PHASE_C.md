@@ -2,7 +2,8 @@
 
 ## Scope And Score Policy
 
-This report closes the first `.189` failure cluster: the fixed 49-record subset
+This report completes the `.189` transport/retry/snapshot stabilization gate on
+the fixed 49-record subset
 that was a fresh-cohort `SYSTEM_GAP` at S2 in `.188`. It is an S2-only focused
 gate. It does not replace or modify the immutable `.188` fresh-100 result of 11
 audited Exact out of 100, and it does not claim that the remaining records are
@@ -81,9 +82,16 @@ diagnostics causal, prevents retry amplification on guessed domains, preserves
 request identity for existing replay fixtures, and adds no accepted false
 website in the final audit.
 
-Do not interpret 5/49 as adequate product recall. The next cluster remains the
-S5 candidate-discovery gap: use External Apply and provider-targeted search to
-recover records whose website route is unavailable, then verify provider,
-tenant, hiring relationship, title, location, status, and opening URL. The 44
-unresolved S2 records stay in the closure matrix until a later unified,
-code-frozen fresh-100 run assigns valid end-to-end terminals.
+This is not S2 cluster closure. Recovering only two additional websites
+(`3/49 -> 5/49`) falsifies the original assumption that the remaining records
+share one executable S2 cause. The 44 unresolved records are reclassified by
+candidate generation, verification allocation, source identity, homepage
+transport, identity rejection, and provider-first recovery in
+`docs/FRESH_100_V189_CAUSAL_RECLASSIFICATION.md`.
+
+Do not interpret 5/49 as adequate product recall. Provider-targeted search and
+External Apply may bypass website resolution for records with independent
+relationship evidence, but they are not a blanket explanation for all 44.
+Each causal cluster now has an explicit expected batch recovery threshold; a
+repair below that threshold requires reclassification rather than another
+stage-level heuristic.

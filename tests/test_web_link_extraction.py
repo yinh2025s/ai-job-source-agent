@@ -358,6 +358,42 @@ class LinkExtractionTests(unittest.TestCase):
         self.assertEqual(len(links), MAX_EXTRACTED_LINKS)
         self.assertEqual(links[0].url, offers)
 
+    def test_retains_late_visible_career_navigation_within_cap(self):
+        ordinary_anchors = "".join(
+            f'<a href="/products/{index}">Product {index}</a>'
+            for index in range(MAX_EXTRACTED_LINKS + 20)
+        )
+        careers = "https://www.exampletools.jobs"
+
+        links = extract_links(
+            Page(
+                url="https://www.exampletools.com",
+                html=ordinary_anchors
+                + f'<a href="{careers}"><h2>COMPANY + CAREERS</h2></a>',
+            )
+        )
+
+        self.assertEqual(len(links), MAX_EXTRACTED_LINKS)
+        self.assertEqual(links[0].url, careers)
+        self.assertEqual(links[0].origin, "page_link")
+
+    def test_does_not_promote_late_career_word_inside_long_marketing_copy(self):
+        ordinary_anchors = "".join(
+            f'<a href="/products/{index}">Product {index}</a>'
+            for index in range(MAX_EXTRACTED_LINKS)
+        )
+        marketing = "https://unrelated.example/story"
+
+        links = extract_links(
+            Page(
+                url="https://www.example.com",
+                html=ordinary_anchors
+                + f'<a href="{marketing}">Build a better career with our products today</a>',
+            )
+        )
+
+        self.assertNotIn(marketing, [link.url for link in links])
+
     def test_high_value_merge_is_stable_and_deduplicates_normalized_urls(self):
         provider = "https://jobs.lever.co/acme"
         anchors = (

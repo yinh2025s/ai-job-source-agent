@@ -34,6 +34,10 @@ _AGENCY_TEXT_MARKERS = (
 
 _INTERMEDIARY_WEBSITE_MARKERS = (
     (
+        "recruiting and staffing",
+        r"\brecruit(?:ment|ing)\s+(?:and|&)\s+staffing\b",
+    ),
+    (
         "staffing solutions and executive search",
         r"(?:\bstaffing\s+solutions?\b.{0,120}\bexecutive\s+search\b"
         r"|\bexecutive\s+search\b.{0,120}\bstaffing\s+solutions?\b)",
@@ -59,6 +63,23 @@ _INTERMEDIARY_WEBSITE_MARKERS = (
     (
         "talent solutions",
         r"\b(?:smart\s+)?talent\s+solutions?\b",
+    ),
+)
+
+_TERMINAL_INTERMEDIARY_WEBSITE_MARKERS = (
+    (
+        "matches talent with companies",
+        r"\bmatch(?:es|ing)?\s+(?:qualified\s+)?talent\s+with\s+"
+        r"(?:[a-z-]+\s+){0,3}companies\b",
+    ),
+    (
+        "hires for customer roles",
+        r"\b(?:better|smarter)\s+hires?\s+for\s+your\b"
+        r"|\byour\s+(?:most\s+)?critical\s+roles\b",
+    ),
+    (
+        "customer talent partner",
+        r"\byour\s+(?:exclusive\s+)?talent\s+partner\b",
     ),
 )
 
@@ -114,6 +135,7 @@ class LinkedInPostingIdentityProbe:
         )
         website_fallback_required = "hiring" in publisher_tokens
         website_markers: tuple[str, ...] = ()
+        terminal_website_markers: tuple[str, ...] = ()
         if website_url and (not name_triggered or website_fallback_required):
             try:
                 website_page = self.fetcher.fetch(website_url)
@@ -128,6 +150,9 @@ class LinkedInPostingIdentityProbe:
                 )
             else:
                 website_markers = _strong_intermediary_website_markers(
+                    website_page.html
+                )
+                terminal_website_markers = _terminal_intermediary_website_markers(
                     website_page.html
                 )
                 if website_markers:
@@ -150,15 +175,17 @@ class LinkedInPostingIdentityProbe:
                         "verified website did not contain strong intermediary semantics",
                     ),
                 )
+        website_establishes_intermediary = len(terminal_website_markers) >= 2
         try:
             page = self.fetcher.fetch(linkedin_job_url)
         except FetchError as exc:
-            if name_triggered and website_markers:
+            if website_establishes_intermediary:
                 return PostingIdentityEvidence(
                     "agency_unresolved",
                     reasons=(
-                        "publisher name and verified website both indicate a talent intermediary",
+                        "verified website establishes client-serving talent intermediary semantics",
                         f"public job detail fetch failed: {exc}",
+                        *(f"website marker: {marker}" for marker in terminal_website_markers),
                         *trigger_reasons,
                     ),
                 )
@@ -169,12 +196,13 @@ class LinkedInPostingIdentityProbe:
 
         descriptions = _job_posting_descriptions(page.html)
         if not descriptions:
-            if name_triggered and website_markers:
+            if website_establishes_intermediary:
                 return PostingIdentityEvidence(
                     "agency_unresolved",
                     reasons=(
-                        "publisher name and verified website both indicate a talent intermediary",
+                        "verified website establishes client-serving talent intermediary semantics",
                         "public job detail did not contain JobPosting JSON-LD",
+                        *(f"website marker: {marker}" for marker in terminal_website_markers),
                         *trigger_reasons,
                     ),
                 )
@@ -232,6 +260,15 @@ def _strong_intermediary_website_markers(html: str) -> tuple[str, ...]:
     return tuple(
         label
         for label, pattern in _INTERMEDIARY_WEBSITE_MARKERS
+        if re.search(pattern, text)
+    )
+
+
+def _terminal_intermediary_website_markers(html: str) -> tuple[str, ...]:
+    text = _plain_text(html, include_public_metadata=True).casefold()
+    return tuple(
+        label
+        for label, pattern in _TERMINAL_INTERMEDIARY_WEBSITE_MARKERS
         if re.search(pattern, text)
     )
 

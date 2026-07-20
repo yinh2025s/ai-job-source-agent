@@ -20,10 +20,7 @@ ASSET_URL = (
 TENANT = "fixtureco"
 BOARD_URL = f"https://{TENANT}.freshteam.com/jobs"
 INVENTORY_URL = f"https://{TENANT}.freshteam.com/hire/widgets/jobs.json"
-CHAMP_SNAPSHOT = Path(
-    "/private/tmp/fresh100-v188-cold-20260720-run1/snapshots/sites/"
-    "www.champtitles.com/open-positions/index.html"
-)
+CHAMP_SNAPSHOT = FIXTURES / "champ_open_positions.html"
 
 
 def fixture(name):
@@ -146,9 +143,45 @@ class FreshteamAdapterTests(unittest.TestCase):
             "https://careers.example/openings",
         )
 
+    def test_accepts_bounded_widget_cache_buster_forms(self):
+        for asset_url in (ASSET_URL, f"{ASSET_URL}="):
+            with self.subTest(asset_url=asset_url):
+                fetcher = RoutingFetcher(successful_probe_pages(asset_url=asset_url))
+
+                board = self.adapter.probe_board(
+                    fetcher,
+                    widget_page(f'<script src="{asset_url}"></script>'),
+                )
+
+                self.assertEqual(board, self.board)
+                self.assertEqual(fetcher.requests[0][0], asset_url)
+
+    def test_rejects_unbounded_widget_cache_buster_forms(self):
+        rejected = (
+            ASSET_URL.replace("?1612292094", "?cache=1612292094"),
+            ASSET_URL.replace("?1612292094", "?1612292094=value"),
+            ASSET_URL.replace("?1612292094", "?1612292094=1"),
+            ASSET_URL.replace("?1612292094", "?1612292094=&other=1"),
+            ASSET_URL.replace("?1612292094", "?0"),
+            ASSET_URL.replace("?1612292094", "?01612292094"),
+            ASSET_URL.replace("?1612292094", "?123456789012345678901"),
+            ASSET_URL.replace("?1612292094", "?1612292094=="),
+            ASSET_URL.replace("?1612292094", "?1612292094%3D"),
+            ASSET_URL.replace("?1612292094", "?1612292094;other"),
+        )
+        for asset_url in rejected:
+            with self.subTest(asset_url=asset_url):
+                fetcher = RoutingFetcher(successful_probe_pages())
+
+                self.assertIsNone(
+                    self.adapter.probe_board(
+                        fetcher,
+                        widget_page(f'<script src="{asset_url}"></script>'),
+                    )
+                )
+                self.assertEqual(fetcher.requests, [])
+
     def test_champ_frozen_page_supplies_only_the_declared_asset_candidate(self):
-        if not CHAMP_SNAPSHOT.exists():
-            self.skipTest("CHAMP frozen page is unavailable")
         page = Page(
             url="https://www.champtitles.com/open-positions/",
             html=CHAMP_SNAPSHOT.read_text(encoding="utf-8"),
@@ -165,6 +198,18 @@ class FreshteamAdapterTests(unittest.TestCase):
         self.assertEqual(board.url, "https://ownum.freshteam.com/jobs")
         self.assertNotIn("champ", board.identifier)
         self.assertEqual(fetcher.requests[0][0], ASSET_URL)
+
+    def test_asset_redirect_may_not_change_cache_buster_form(self):
+        pages = successful_probe_pages()
+        pages[ASSET_URL] = Page(
+            url=ASSET_URL,
+            final_url=f"{ASSET_URL}=",
+            html=fixture("widget.js"),
+        )
+
+        self.assertIsNone(
+            self.adapter.probe_board(RoutingFetcher(pages), widget_page())
+        )
 
     def test_absent_or_ambiguous_config_and_empty_inventory_do_not_probe(self):
         bad_assets = (
