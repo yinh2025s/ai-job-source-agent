@@ -24,7 +24,14 @@
   display suffixes remain valid. `ADAPTER_VERSION` is `2026-07-20.191`.
   Full offline gates pass 2480 tests (4 skipped), 25/25 provider cases, 6/6
   resolver cases, and 46 native adapters with zero architecture issues;
-  focused live/replay remains pending.
+  the code-frozen four-record focused live and same-version replay complete
+  4/4 with zero mismatch or fixture gap. IGNITE now returns authoritative
+  `OPENING_NOT_FOUND`, and Milwaukee reaches the correct external Career
+  surface. CHAMP and NextPlay are live-inconclusive behind retryable S2
+  transport. Milwaukee exposes a separate generic gap: its verified Job Search
+  asset declares a same-origin JSON POST inventory that the current declared
+  inventory layer does not execute. This is documented for `.192`; no company
+  branch was added and `.191` does not claim full four-record closure.
 
 - `.190` closes the first fresh-100 S4/S5 failure cluster without changing the
   frozen `.188` baseline. Career verification now rejects press, project, and
