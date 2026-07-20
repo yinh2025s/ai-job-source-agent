@@ -10,6 +10,21 @@
 
 ### Added
 
+- `.190` closes the first fresh-100 S4/S5 failure cluster without changing the
+  frozen `.188` baseline. Career verification now rejects press, project, and
+  other non-employment routes even when their slugs contain `jobs`; persisted
+  Career evidence preserves the selected origin and source URL instead of
+  upgrading sitemap results to first-party navigation. Explicit external
+  Career links survive URL-only homepage evidence, and bounded S5 traversal
+  reserves verification slots for registered listing providers. New native
+  HRSmart and strict Freshteam widget adapters validate complete public
+  inventories with same-tenant opening URLs; repeated structured posting routes
+  reached from an official Career action are also recognized without weakening
+  S6/S7 identity gates. `ADAPTER_VERSION` is `2026-07-20.190`; the unified
+  offline gate passes 2466 tests (3 skipped), 25/25 provider cases, 6/6
+  resolver cases, and 46 native adapters with zero architecture issues.
+  Focused live and same-version replay remain pending.
+
 - `.189` begins the fresh-100 S2 cold-start stabilization cycle. Known transport failures such as
   `IncompleteRead`, remote disconnects, TLS failures, DNS failures, and timeouts are normalized into
   typed `FetchError` outcomes with sanitized request identity and a separate transport phase. The

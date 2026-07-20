@@ -3222,6 +3222,17 @@ class JobSourceAgent:
         candidates: list[LinkCandidate],
     ) -> list[LinkCandidate]:
         bounded = list(candidates[: self.max_candidates])
+        # Ranking must not discard an observed board that the strict provider
+        # registry can already bind. Keep this reserve bounded independently
+        # from the generic score window.
+        provider_reserve = [
+            candidate
+            for candidate in candidates
+            if self._has_listing_provider_adapter(candidate.url)
+            and not is_likely_job_detail(candidate)
+            and all(existing.url != candidate.url for existing in bounded)
+        ][: self.max_candidates]
+        bounded.extend(provider_reserve)
         official = max(
             candidates,
             key=self._official_career_destination_priority,
@@ -3436,9 +3447,34 @@ class JobSourceAgent:
             ) or (
                 is_ats_url(candidate.url)
                 and is_likely_job_listing_page(candidate)
+            ) or (
+                not is_likely_job_detail(candidate)
+                and self._is_public_provider_root_locator(candidate.url)
+                and normalize_url(
+                    self._canonical_provider_board(adapter, board).url
+                )
+                == normalize_url(canonical_url)
             ):
                 return adapter, board, candidate
         return None
+
+    @staticmethod
+    def _is_public_provider_root_locator(url: str) -> bool:
+        try:
+            parsed = urlparse(url)
+            port = parsed.port
+        except (TypeError, ValueError):
+            return False
+        return bool(
+            parsed.scheme.casefold() == "https"
+            and parsed.hostname
+            and parsed.username is None
+            and parsed.password is None
+            and port in {None, 443}
+            and parsed.path.rstrip("/") == ""
+            and not parsed.query
+            and not parsed.fragment
+        )
 
     def _embedded_canonical_provider_board(
         self,
@@ -4029,7 +4065,23 @@ class JobSourceAgent:
         detail_indexes = [
             index
             for index, part in enumerate(path_parts)
-            if part in {"job-detail", "job-details", "jobdetail", "jobdetails"}
+            if part
+            in {
+                "job-detail",
+                "job-details",
+                "jobdetail",
+                "jobdetails",
+                "opening",
+                "openings",
+                "position",
+                "positions",
+                "posting",
+                "postings",
+                "requisition",
+                "requisitions",
+                "vacancy",
+                "vacancies",
+            }
         ]
         if not detail_indexes:
             return False
@@ -4039,7 +4091,7 @@ class JobSourceAgent:
         identifier = path_parts[-1]
         return bool(
             re.fullmatch(
-                r"(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-9]{4,24})",
+                r"(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|[0-9]{1,24})",
                 identifier,
             )
         )
@@ -5361,10 +5413,7 @@ class JobSourceAgent:
                     or self._is_provider_job_board_url(normalized_url)
                 ):
                     continue
-                if any(
-                    token in lower_url
-                    for token in ("career", "careers", "jobs", "join-us", "join-our-team", "join-", "openings")
-                ):
+                if _sitemap_career_route(normalized_url):
                     links.append(
                         RawLink(
                             url=normalized_url,
@@ -5508,11 +5557,19 @@ class JobSourceAgent:
         if self._has_ats_link(text):
             return True
         page_links = extract_links(Page(url=candidate.url, html=html, final_url=candidate.url))
-        if any(
+        has_visible_job_detail = any(
             is_likely_job_detail(score_job_link(link, candidate.url))
             for link in page_links
-        ):
+        )
+        if has_visible_job_detail:
             return True
+        strong_inventory = has_strong_generic_opening_inventory(
+            Page(url=candidate.url, html=html, final_url=candidate.url)
+        )
+        if strong_inventory:
+            return True
+        if self._has_non_employment_route_conflict(candidate.url):
+            return False
         metadata = self._career_surface_metadata(html)
         metadata_values = metadata.identity_values
         if company_name:
@@ -5581,6 +5638,36 @@ class JobSourceAgent:
         return not generic_job_only and (
             metadata_surface or any(signal in text for signal in career_signals)
         )
+
+    @staticmethod
+    def _has_non_employment_route_conflict(url: str) -> bool:
+        conflicting_parts = {
+            "article",
+            "articles",
+            "blog",
+            "blogs",
+            "insight",
+            "insights",
+            "news",
+            "newsroom",
+            "press",
+            "press-release",
+            "press-releases",
+            "product",
+            "products",
+            "project",
+            "projects",
+            "resource",
+            "resources",
+            "stories",
+            "story",
+        }
+        parts = {
+            part.casefold().replace("_", "-")
+            for part in urlparse(url).path.split("/")
+            if part
+        }
+        return bool(parts & conflicting_parts)
 
     def _looks_like_error_page(self, url: str, html: str) -> bool:
         path = urlparse(url).path.lower()
@@ -5851,6 +5938,26 @@ def _same_concrete_host(left_url: str, right_url: str) -> bool:
         candidate_concrete_host(left_url).removeprefix("www.")
         == candidate_concrete_host(right_url).removeprefix("www.")
     )
+
+
+def _sitemap_career_route(url: str) -> bool:
+    parts = [
+        "-".join(re.findall(r"[a-z0-9]+", part.casefold()))
+        for part in urlparse(url).path.split("/")
+        if part
+    ]
+    exact = {
+        "career",
+        "careers",
+        "job",
+        "jobs",
+        "opening",
+        "openings",
+        "open-positions",
+        "join-us",
+        "join-our-team",
+    }
+    return any(part in exact or part.startswith("join-") for part in parts)
 
 
 def _same_navigation_source(source_url: str, career_page_url: str) -> bool:

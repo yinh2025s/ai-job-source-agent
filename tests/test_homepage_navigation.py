@@ -70,6 +70,24 @@ class HomepageNavigationEvidenceTests(unittest.TestCase):
         self.assertTrue(evidence.matches("https://retailer.example"))
         self.assertTrue(evidence.matches("https://retailer.example/"))
 
+    def test_preserves_explicit_external_career_destination_without_url_keyword(self):
+        evidence = evidence_from_verified_homepage(
+            Page(
+                url="https://tools.example/",
+                html=(
+                    '<a href="https://about.example/">Company</a>'
+                    '<a href="https://tools-careers.example/">COMPANY + CAREERS</a>'
+                ),
+            ),
+            homepage_url="https://tools.example/",
+        )
+
+        self.assertEqual(
+            evidence.candidate_urls,
+            ("https://tools-careers.example/",),
+        )
+        self.assertNotIn("COMPANY", str(evidence.to_checkpoint_payload()))
+
     def test_does_not_match_navigation_evidence_for_a_different_homepage_path(self):
         evidence = HomepageNavigationEvidence(
             homepage_url="https://retailer.example/",

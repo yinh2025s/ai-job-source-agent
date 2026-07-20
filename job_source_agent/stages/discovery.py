@@ -395,18 +395,7 @@ class CareerDiscoveryStage:
         website_url = verified_website_url or context.company_website_url
         if store is None or not linkedin_url or not website_url:
             return
-        selected_reason = str(
-            trace.get("selected", {}).get("reason")
-            if isinstance(trace, dict)
-            else ""
-        ).casefold()
-        source = (
-            "provider_handoff"
-            if "provider" in selected_reason or "ats" in selected_reason
-            else "first_party_navigation"
-            if domain_of(career_url) == domain_of(website_url)
-            else "verified_career_search"
-        )
+        source, evidence_url = _verified_career_provenance(trace, website_url)
         try:
             store.save(
                 context.company.company_name,
@@ -415,7 +404,7 @@ class CareerDiscoveryStage:
                     url=career_url,
                     website_url=website_url,
                     source=source,
-                    evidence_url=website_url,
+                    evidence_url=evidence_url,
                     observed_at=time.time(),
                 ),
             )
@@ -433,12 +422,16 @@ class CareerDiscoveryStage:
         if store is None or not linkedin_url or not stored_career_url:
             return
         # A stale transport response or a generic "not found" result is not
-        # evidence that the stored first-party relationship is wrong.  TTL
-        # handles aging; only an explicit current identity rejection may erase
-        # this durable layer.
-        if not isinstance(trace, dict) or trace.get(
-            "stored_candidate_identity_rejected"
-        ) is not True:
+        # evidence that the stored relationship is wrong. TTL handles aging;
+        # only an explicit rejection or a completed current semantic check may
+        # erase this durable layer.
+        if not isinstance(trace, dict) or not (
+            trace.get("stored_candidate_identity_rejected") is True
+            or _has_deterministic_stored_career_rejection(
+                trace,
+                stored_career_url,
+            )
+        ):
             return
         try:
             store.invalidate(
@@ -449,6 +442,94 @@ class CareerDiscoveryStage:
             )
         except (OSError, TypeError, ValueError):
             return
+
+
+def _verified_career_provenance(
+    trace: dict,
+    website_url: str,
+) -> tuple[str, str]:
+    selected = trace.get("selected") if isinstance(trace, dict) else None
+    if not isinstance(selected, dict):
+        return "verified_career_search", website_url
+
+    reasons = selected.get("reasons")
+    reason_values = (
+        [str(reason) for reason in reasons]
+        if isinstance(reasons, list)
+        else []
+    )
+    singular_reason = selected.get("reason")
+    if isinstance(singular_reason, str):
+        reason_values.append(singular_reason)
+    reason_text = " ".join(reason_values).casefold()
+    origin = selected.get("origin")
+    selected_page_source = trace.get("selected_page_source")
+
+    if (
+        selected_page_source == "provider_adapter"
+        or origin == "derived_provider_config"
+        or "provider" in reason_text
+        or "ats" in reason_text
+    ):
+        source = "provider_handoff"
+    elif origin in {
+        "page_link",
+        "verified_homepage_navigation",
+        "first_party_bundle_navigation",
+    }:
+        source = "first_party_navigation"
+    else:
+        # Sitemap, search, stored, and identity-supplied candidates are durable
+        # only as currently verified discovery results, never as navigation.
+        source = "verified_career_search"
+
+    source_url = selected.get("source_url")
+    evidence_url = source_url if isinstance(source_url, str) and source_url else website_url
+    return source, evidence_url
+
+
+def _has_deterministic_stored_career_rejection(
+    trace: dict,
+    stored_career_url: str,
+) -> bool:
+    preferred_url = trace.get("preferred_career_root")
+    if not isinstance(preferred_url, str) or not _same_url(
+        preferred_url,
+        stored_career_url,
+    ):
+        return False
+
+    schedules = trace.get("candidate_schedules")
+    if not isinstance(schedules, list):
+        schedule = trace.get("candidate_schedule")
+        schedules = [schedule] if isinstance(schedule, dict) else []
+    scheduled = any(
+        isinstance(item, dict)
+        and item.get("origin") == "identity_career_root"
+        and isinstance(item.get("url"), str)
+        and _same_url(item["url"], stored_career_url)
+        for schedule in schedules
+        if isinstance(schedule, dict)
+        for item in schedule.get("scheduled", [])
+        if isinstance(schedule.get("scheduled"), list)
+    )
+    if not scheduled:
+        return False
+
+    # A scheduled preferred candidate with no fetch/denial record reached the
+    # semantic verifier and was rejected based on its current page content.
+    for key in ("candidate_fetch_errors", "official_host_denial_skips"):
+        entries = trace.get(key)
+        if not isinstance(entries, list):
+            continue
+        if any(
+            isinstance(entry, dict)
+            and isinstance(entry.get("url"), str)
+            and _same_url(entry["url"], stored_career_url)
+            for entry in entries
+        ):
+            return False
+    return True
 
 
 class JobBoardDiscoveryStage:

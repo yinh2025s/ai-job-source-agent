@@ -111,7 +111,10 @@ def evidence_from_verified_homepage(
             origin="verified_homepage_navigation",
         )
         score = score_career_link(url_only_link).score
-        if score < 50:
+        if score < 50 and not _explicit_external_career_navigation(
+            link,
+            normalized_homepage,
+        ):
             continue
         seen.add(candidate_url)
         ranked.append((score, candidate_url))
@@ -125,6 +128,37 @@ def evidence_from_verified_homepage(
         homepage_url=normalized_homepage,
         candidate_urls=candidate_urls,
     )
+
+
+def _explicit_external_career_navigation(
+    link: RawLink,
+    homepage_url: str,
+) -> bool:
+    """Retain a visible cross-site Career handoff without persisting its label."""
+
+    target = urlparse(link.url)
+    source = urlparse(homepage_url)
+    if (
+        link.origin != "page_link"
+        or target.scheme.casefold() != "https"
+        or not target.hostname
+        or not source.hostname
+        or _registrable_site(target.hostname) == _registrable_site(source.hostname)
+    ):
+        return False
+    tokens = re.findall(r"[a-z0-9]+", link.text.casefold())
+    if not tokens or len(tokens) > 5:
+        return False
+    return bool(set(tokens) & {"career", "careers"})
+
+
+def _registrable_site(host: str) -> str:
+    labels = host.casefold().strip(".").split(".")
+    if len(labels) <= 2:
+        return ".".join(labels)
+    two_level_suffixes = {"co.uk", "com.au", "com.br", "com.sg", "co.jp", "co.nz"}
+    suffix = ".".join(labels[-2:])
+    return ".".join(labels[-3:]) if suffix in two_level_suffixes else suffix
 
 
 def _validate_evidence(evidence: HomepageNavigationEvidence) -> None:

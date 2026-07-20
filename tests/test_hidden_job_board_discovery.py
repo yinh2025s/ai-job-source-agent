@@ -29,6 +29,143 @@ class MappingFetcher:
 
 
 class HiddenJobBoardDiscoveryTests(unittest.TestCase):
+    def test_discovers_freshteam_widget_through_full_s5_pipeline(self):
+        career = "https://careers.example/open-positions"
+        asset = (
+            "https://s3.amazonaws.com/files.freshteam.com/production/24815/"
+            "attachments/4002236987/original/4000011339_widget.js?1612292094"
+        )
+        tenant = "fixtureco"
+        board = f"https://{tenant}.freshteam.com/jobs"
+        inventory = f"https://{tenant}.freshteam.com/hire/widgets/jobs.json"
+        fixture_root = ROOT / "tests" / "fixtures" / "freshteam"
+        fetcher = MappingFetcher(
+            {
+                career: Page(
+                    url=career,
+                    html=(
+                        '<div id="freshteam-widget"></div>'
+                        f'<script src="{asset}"></script>'
+                    ),
+                ),
+                asset: Page(
+                    url=asset,
+                    html=(fixture_root / "widget.js").read_text(encoding="utf-8"),
+                ),
+                inventory: Page(
+                    url=inventory,
+                    html=(fixture_root / "inventory.json").read_text(
+                        encoding="utf-8"
+                    ),
+                ),
+            }
+        )
+
+        job_list, trace, discovered = JobSourceAgent(
+            fetcher,
+            max_job_pages=2,
+        ).find_job_board_with_evidence(career)
+
+        self.assertEqual(job_list, board)
+        self.assertEqual(trace["provider"], "freshteam")
+        self.assertEqual(trace["provider_detection"]["method"], "page_evidence")
+        self.assertEqual(fetcher.requested, [career, asset, inventory])
+        self.assertIsNotNone(discovered)
+        assert discovered is not None
+        self.assertEqual(discovered.board.provider, "freshteam")
+        self.assertEqual(discovered.board.identifier, tenant)
+        self.assertEqual(discovered.relationship_evidence_url, career)
+
+    def test_editorial_and_project_job_slugs_are_not_career_surfaces(self):
+        agent = JobSourceAgent(MappingFetcher({}))
+        cases = {
+            "https://example.com/news/press-releases/toughest-jobs": (
+                "<title>Example Delivers for the Toughest Jobs</title>"
+                "<h1>The toughest jobs demand durable tools</h1>"
+            ),
+            "https://example.com/projects/electrical-install-jobs/": (
+                '<meta property="og:type" content="article">'
+                "<title>Electrical Install Jobs | Example</title>"
+                "<h1>Service Information</h1>"
+            ),
+        }
+
+        for url, markup in cases.items():
+            with self.subTest(url=url):
+                candidate = LinkCandidate(
+                    url=url,
+                    text="Career root",
+                    source_url="https://example.com/",
+                    score=800,
+                    reasons=["identity-supplied career root requiring verification"],
+                    origin="identity_career_root",
+                )
+                self.assertFalse(
+                    agent._looks_like_career_page(
+                        candidate,
+                        markup,
+                        company_name="Example",
+                    )
+                )
+
+    def test_registered_provider_root_is_reserved_beyond_generic_score_window(self):
+        career = "https://www.example.com/careers"
+        observed = "https://exampleco.applicantpro.com"
+        canonical = "https://www.applicantpro.com/openings/exampleco/jobs"
+        generic = "".join(
+            f'<a href="https://www.example.com/jobs/category-{index}">Category {index}</a>'
+            for index in range(6)
+        )
+        fetcher = MappingFetcher(
+            {career: Page(url=career, html=generic + f'<a href="{observed}">HERE</a>')}
+        )
+
+        job_list, trace, discovered = JobSourceAgent(
+            fetcher,
+            max_candidates=2,
+            max_job_pages=2,
+        ).find_job_board_with_evidence(career)
+
+        self.assertEqual(job_list, canonical)
+        self.assertEqual(trace["provider"], "applicantpro")
+        self.assertEqual(fetcher.requested, [career])
+        self.assertIsNotNone(discovered)
+        assert discovered is not None
+        self.assertEqual(discovered.relationship_evidence_url, career)
+
+    def test_verified_career_action_accepts_repeated_posting_routes_as_generic_inventory(self):
+        career = "https://company.example/careers"
+        listing = "https://tenant.vendor.example/hr/ats/JobSearch/viewAll"
+        first = "https://tenant.vendor.example/hr/ats/Posting/view/339"
+        second = "https://tenant.vendor.example/hr/ats/Posting/view/340"
+        fetcher = MappingFetcher(
+            {
+                career: Page(
+                    url=career,
+                    html=f'<a href="{listing}">View Job Openings</a>',
+                ),
+                listing: Page(
+                    url=listing,
+                    html=(
+                        f'<a href="{first}">Cyber Security Analyst</a>'
+                        f'<a href="{second}">Systems Analyst</a>'
+                    ),
+                ),
+            }
+        )
+
+        job_list, trace, discovered = JobSourceAgent(
+            fetcher,
+            provider_registry=ProviderRegistry(),
+            max_job_pages=2,
+        ).find_job_board_with_evidence(career)
+
+        self.assertEqual(job_list, listing)
+        self.assertEqual(trace["selected_from"], "explicit_first_party_listing_route")
+        self.assertIsNotNone(discovered)
+        assert discovered is not None
+        self.assertEqual(discovered.board.provider, "generic")
+
     def test_career_root_with_multiple_verified_job_accordions_is_a_generic_board(self):
         career = "https://school.example/careers/"
         html = """

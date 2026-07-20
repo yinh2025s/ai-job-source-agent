@@ -23,7 +23,36 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-20，`.189`）
+## 当前执行轮次（2026-07-20，`.190`）
+
+### `.190` fresh 100：S4/S5 Career 正确性与已观察库存下钻（Phase B 完成）
+
+已从 `.188` fresh closure 冻结 8 条 `JOB_BOARD_NOT_FOUND`（7 个独立公司表面），并使用同版本 trace/
+snapshot 完成只读根因审计。结论不是一个 provider 缺失：Milwaukee Tool 与 B&D Industries 是 S4
+把 press/project 页面误认成 Career；Northern Clearing 的官方 ApplicantPro 链接因文字仅为 `HERE`
+而在 top-N 前被截断；IGNITE 已经进入包含目标岗位的 HRSmart 列表，但通用库存不认识
+`/Posting/view/{id}` 结构；Splashlight、CHAMP 与 NextPlay 仍需要严格区分可验证公开库存、第三方阻塞和
+招聘中介身份，不能凭 LinkedIn/搜索摘要补 URL。
+
+实现与回滚 contract 已冻结在 `docs/FRESH_100_V190_S5_ROOT_CAUSE.md`。Phase B 顺序固定为：先补 S4
+非招聘内容负向 gate 和跨站显式 Career 导航的 URL-only evidence；再让 S5 bounded traversal 为已注册
+listing provider 保留验证槽位；最后扩展“官方 Career action 实际抵达的重复结构化 opening route”
+识别。S6/S7 的 title/location/status/company/tenant gate 不放宽，不增加公司特例。
+
+Phase C 使用全新的 focused live 目录运行这 8 条并冻结代码，逐条审核所有 Job List/Exact；随后对同版
+snapshot 做 scoped replay，要求 0 mismatch/0 fixture gap，再运行全量 unit/provider/resolver/
+architecture gate。focused 结果只关闭对应 failure cluster，不覆盖 `.188` fresh 11/100 或冻结 100
+的 69/100；多个主要簇关闭后才运行下一次独立 unified fresh 100。
+
+Phase B 已完成：S4 增加非招聘内容路径冲突 gate，并保留显式跨站 Career 导航的 URL-only evidence；
+S5 为已注册 listing provider 保留 bounded traversal 槽位，并仅允许 adapter 证明同一 provider/tenant
+时将安全 root locator 规范化为 canonical board。HRSmart 原生 adapter 已读取完整 `viewAll` 库存，
+Freshteam widget adapter 只有在当前 Career 页面声明唯一受限资产、资产声明唯一 tenant 且该 tenant 的
+公开库存非空时才建立 board。Career evidence 持久化现在保留实际 origin/source URL，当前语义拒绝只
+失效 Career 层，不删除已验证 Website。相关负向、provider 与 pipeline 集成测试已补齐；下一 gate 是
+全量离线验证，通过后冻结代码并以独立目录运行 8 条 focused live。全量离线 gate 已通过：2466
+tests（3 skipped）、25/25 provider、6/6 resolver、46 native adapters / 0 architecture issue；代码将在
+focused live 前提交冻结，运行期间不再修改。
 
 ### `.189` fresh 100：S2 冷启动传输与候选调度（Phase C 完成）
 

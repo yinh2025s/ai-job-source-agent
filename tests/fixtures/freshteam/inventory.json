@@ -1,0 +1,22 @@
+{
+  "jobs": [
+    {
+      "id": 5000131056,
+      "title": "Senior Platform Engineer",
+      "status": 2,
+      "deleted": false,
+      "unique_id": "SUKqusm_DF1T",
+      "remote": false,
+      "preferred_remote_job_locations": "",
+      "branch_id": 5000070058,
+      "job_role_id": 5000161485,
+      "url": "http://customer.example?jobId=SUKqusm_DF1T"
+    }
+  ],
+  "branches": [
+    {"id": 5000070058, "location": "Cleveland, Ohio"}
+  ],
+  "job_roles": [
+    {"id": 5000161485, "name": "Engineering"}
+  ]
+}
