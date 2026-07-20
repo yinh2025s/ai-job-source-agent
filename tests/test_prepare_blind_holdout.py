@@ -73,6 +73,13 @@ class PrepareBlindHoldoutTests(unittest.TestCase):
         self.assertNotIn("Unseen Company 1", {item["company_name"] for item in cohort})
         self.assertNotIn("Unseen Company 2", {item["company_name"] for item in cohort})
         self.assertEqual(manifest["cohort_provenance"], "blind_unseen")
+        self.assertEqual(manifest["schema_version"], "1.1")
+        self.assertEqual(manifest["selection_code_commit"], "abc123")
+        self.assertEqual(manifest["selection_source_tree_sha256"], "tree123")
+        self.assertEqual(
+            manifest["execution_code_policy"],
+            "clean_descendant_of_selection_commit",
+        )
         self.assertEqual(manifest["selection"]["post_selection_overlap_count"], 0)
         self.assertRegex(manifest["cohort_sha256"], r"^[0-9a-f]{64}$")
 

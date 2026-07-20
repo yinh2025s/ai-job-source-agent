@@ -59,8 +59,12 @@ def execute_once(
     if manifest.get("run_configuration_sha256") != config_sha:
         raise BlindExecutionError("run configuration digest does not match frozen manifest")
     head, tree = _clean_git_identity(repo_root)
-    if manifest.get("code_commit") != head or manifest.get("source_tree_sha256") != tree:
-        raise BlindExecutionError("runtime code identity differs from frozen manifest")
+    selection_head, selection_tree = _validate_code_lineage(
+        manifest,
+        runtime_head=head,
+        runtime_tree=tree,
+        repo_root=repo_root,
+    )
     if len(cohort) != config.get("cohort_size") or not 30 <= len(cohort) <= 50:
         raise BlindExecutionError("cohort size differs from frozen run configuration")
 
@@ -83,7 +87,10 @@ def execute_once(
     ledger = {
         "schema_version": "1.0", "run_id": run_id, "status": "consumed",
         "started_at": started_at, "cohort_sha256": cohort_sha,
-        "code_commit": head, "source_tree_sha256": tree,
+        "selection_code_commit": selection_head,
+        "selection_source_tree_sha256": selection_tree,
+        "runtime_code_commit": head,
+        "runtime_source_tree_sha256": tree,
         "run_configuration_sha256": config_sha,
     }
     _create_ledger_once(ledger_path, ledger)
@@ -103,8 +110,10 @@ def execute_once(
         "cohort_sha256": cohort_sha,
         "holdout_manifest_sha256": hashlib.sha256(holdout_manifest_path.read_bytes()).hexdigest(),
         "run_configuration_sha256": config_sha,
-        "code_commit": head,
-        "source_tree_sha256": tree,
+        "selection_code_commit": selection_head,
+        "selection_source_tree_sha256": selection_tree,
+        "runtime_code_commit": head,
+        "runtime_source_tree_sha256": tree,
         "command": command,
         "artifact_sha256": {
             name: hashlib.sha256(path.read_bytes()).hexdigest()
@@ -179,6 +188,60 @@ def _clean_git_identity(repo_root: Path) -> tuple[str, str]:
         capture_output=True, text=True, timeout=5,
     ).stdout.strip()
     return head, tree
+
+
+def _validate_code_lineage(
+    manifest: dict[str, Any],
+    *,
+    runtime_head: str,
+    runtime_tree: str,
+    repo_root: Path,
+) -> tuple[str, str]:
+    schema_version = manifest.get("schema_version")
+    if schema_version == "1.0":
+        selection_head = manifest.get("code_commit")
+        selection_tree = manifest.get("source_tree_sha256")
+        if selection_head != runtime_head or selection_tree != runtime_tree:
+            raise BlindExecutionError("runtime code identity differs from frozen v1.0 manifest")
+        return str(selection_head), str(selection_tree)
+    if schema_version != "1.1":
+        raise BlindExecutionError("unsupported holdout manifest schema")
+
+    selection_head = manifest.get("selection_code_commit")
+    selection_tree = manifest.get("selection_source_tree_sha256")
+    if (
+        not isinstance(selection_head, str)
+        or not selection_head
+        or not isinstance(selection_tree, str)
+        or not selection_tree
+        or manifest.get("execution_code_policy")
+        != "clean_descendant_of_selection_commit"
+    ):
+        raise BlindExecutionError("frozen selection code identity is incomplete")
+
+    committed_tree = subprocess.run(
+        ["git", "rev-parse", f"{selection_head}^{{tree}}"],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if committed_tree.returncode != 0 or committed_tree.stdout.strip() != selection_tree:
+        raise BlindExecutionError("frozen selection commit tree cannot be verified")
+    ancestor = subprocess.run(
+        ["git", "merge-base", "--is-ancestor", selection_head, runtime_head],
+        cwd=repo_root,
+        check=False,
+        capture_output=True,
+        text=True,
+        timeout=5,
+    )
+    if ancestor.returncode != 0:
+        raise BlindExecutionError("runtime code is not a descendant of the frozen selection commit")
+    if not runtime_tree:
+        raise BlindExecutionError("runtime source tree is missing")
+    return selection_head, selection_tree
 
 
 def _create_ledger_once(path: Path, value: Any) -> None:

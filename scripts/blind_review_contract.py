@@ -35,6 +35,18 @@ def verify_execution_chain(
         raise BlindChainError("cohort digest chain is invalid")
     if execution.get("holdout_manifest_sha256") != hashlib.sha256(holdout_bytes).hexdigest():
         raise BlindChainError("execution is not bound to the frozen holdout manifest")
+    if holdout.get("schema_version") == "1.1":
+        if (
+            execution.get("selection_code_commit")
+            != holdout.get("selection_code_commit")
+            or execution.get("selection_source_tree_sha256")
+            != holdout.get("selection_source_tree_sha256")
+        ):
+            raise BlindChainError("execution selection code identity differs from frozen holdout")
+        if not execution.get("runtime_code_commit") or not execution.get(
+            "runtime_source_tree_sha256"
+        ):
+            raise BlindChainError("execution runtime code identity is missing")
     if execution.get("status") != "complete" or execution.get("live_execution_count") != 1:
         raise BlindChainError("execution is not one complete live run")
     if execution.get("cohort_provenance_before_execution") != "blind_unseen":
@@ -79,6 +91,8 @@ def verify_execution_chain(
         "cohort_sha256": cohort_sha,
         "holdout_manifest_sha256": hashlib.sha256(holdout_bytes).hexdigest(),
         "execution_manifest_sha256": hashlib.sha256(execution_manifest_path.read_bytes()).hexdigest(),
+        "selection_code_commit": execution.get("selection_code_commit"),
+        "runtime_code_commit": execution.get("runtime_code_commit"),
     }
     return results, traces, summary, provenance
 

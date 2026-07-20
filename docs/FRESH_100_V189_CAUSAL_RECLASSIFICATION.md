@@ -97,14 +97,14 @@ from guesses before any future `B` assignment.
 
 | Cluster | Records | Shared trigger and code path | Batch acceptance expectation |
 | --- | --- | --- | --- |
-| T-403 homepage denial | 010, 015, 016, 020, 039 | Correct candidate reaches `_score_candidate()` and receives HTTP 403. | Alternate authoritative transport/evidence must recover at least 3/5, or this cluster is split by site policy/provider bypass. |
+| T-403 homepage denial diagnostic | 010, 015, 016, 020, 039 | Four independent companies reach `_score_candidate()` with the correct homepage and receive HTTP 403; records 015/020 are separate postings for the same Hawaiian Electric host. | Not executable as one repair: only Mayo Clinic has a reviewed first-party Career bypass. A future route must recover at least 3/4 independent companies (normally at least 4/5 records), each with independent authoritative relationship evidence. |
 | T-timeout | 000, 012, 034 | Correct candidate reaches `_score_candidate()` and the bounded request expires. | Same frozen request policy recovers at least 2/3 without increasing wrong websites or mean S2 budget. |
 | T-certificate chain | 006 | Correct candidate and `www` fallback reach `_score_candidate()` and both fail certificate-chain verification. | 1/1 through an independently validated transport/source; TLS verification itself is not weakened. |
 | T-TLS EOF | 018 | Correct candidate reaches `_score_candidate()` and the peer terminates during TLS establishment. | 1/1 through bounded retry or an independently validated source. |
 | G-alias source absent with slot crowding | 005, 029 | The same resolver input reaches `_linkedin_slug_domain_candidates()`, `_guess_domain_candidates()`, and `_allocate_verification_slots()`: `versanatech.*` has slug provenance, while `versana.io` has only `speculative_guess` provenance and no source reservation. | A bounded company-name plus LinkedIn-slug source query must independently support the correct host before it may receive one reservation. Then record-level 2/2 and unique-host 1/1 must pass with `verify_limit=3`; no TLD preference, extra slot, or unrelated alias selection is allowed. If the source query supplies no such evidence, the cluster remains open rather than forcing the guess. |
 | G-legal-form normalization | 021, 032 | `Limited/LLP` are absent from display, exact-identity, and LinkedIn-slug legal-form sets, so the source slug cannot produce the brand host. | 2/2 source-backed candidates generated under `verify_limit=3`; endpoint results are reported separately if a later transport failure appears. |
 | G-structured display/slug cleanup | 001 | The display tagline survives tokenization and terminal delimiter noise prevents the existing `Inc` slug suffix rule. | 1/1 only after both structured display boundary and sourced slug cleanup pass collision negatives. |
-| G-source-backed descriptive brand tail | 003, 017, 025, 046 | The reviewed host drops one or two descriptive/brand-tail tokens; those words are not legal forms and cannot be removed mechanically. | Independently sourced bounded prefix shortening recovers at least 3/4 with zero unrelated-brand selection. |
+| G-source-backed descriptive brand tail | 003, 017, 025, 046 | Full-name and LinkedIn-slug generation retain one or two descriptive tail tokens, while the single full-name official-site search never produces the reviewed leading-brand host. | At most two leading-prefix search queries, never direct prefix-domain guessing, must recover at least 3/4 source-backed websites under `verify_limit=3`; parent/product/short-generic collisions remain rejected. |
 | G-unconfirmed shortening target | 019 | Frozen review did not confirm the claimed `cretex.com` ground truth, so no recovery URL is admissible yet. | Excluded from recovery scoring until ground truth is independently confirmed; then receives a separate 1/1 gate. |
 | G-authoritative public-domain registry | 011, 041, 043, 045 | Independent city/state entities have authoritative `.gov` roots, but neither name transforms nor ordinary search produce a source-backed domain. | An authoritative public-domain registry route produces 4/4 websites; wrong-state, same-name, non-government, and `state.gov` collisions remain zero. Free-form `.gov` guessing is forbidden. |
 | G-nested public agency namespace | 008, 023 | The hiring entity is an agency below a verified parent-government namespace, so the correct identity is a path or subdomain rather than an independently derivable apex. | Parent namespace plus first-party agency directory/link evidence produces 2/2 agency-specific identities; a parent homepage alone never counts. |
@@ -214,3 +214,17 @@ contract. Records 011/041/043/045 share an authoritative public-domain registry
 need; 008/023 share a nested agency relationship path; 024 remains unconfirmed
 education identity. Provider overlays for 023 and 043 remain separate S5
 contracts, and no External Apply URL exists for these records.
+
+The T-403 audit also retires the old `3/5` expectation. The five records are
+only four companies, and two Hawaiian Electric postings share one blocked
+homepage. Only Mayo Clinic has reviewed first-party Career bypass evidence;
+Sunwest Bank, Hawaiian Electric, and Salas O'Brien have no captured common
+alternate route. HTTP 403 remains a transport diagnostic until at least three
+independent companies share authoritative recovery evidence.
+
+The four descriptive-tail records do share one pre-verification code path, but
+their behavior contract is source-backed prefix search, not suffix deletion or
+domain guessing. The resolver may issue at most two leading-prefix queries only
+after stronger evidence fails; every returned URL still passes existing
+homepage, parked-domain, parent/group, regional, and identity gates. Recovery
+below 3/4 invalidates this cluster.

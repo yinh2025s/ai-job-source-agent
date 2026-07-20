@@ -2,8 +2,14 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import Mock, patch
 
-from scripts.run_blind_holdout_once import BlindExecutionError, _create_ledger_once, _live_command
+from scripts.run_blind_holdout_once import (
+    BlindExecutionError,
+    _create_ledger_once,
+    _live_command,
+    _validate_code_lineage,
+)
 
 
 class RunBlindHoldoutOnceTests(unittest.TestCase):
@@ -36,6 +42,60 @@ class RunBlindHoldoutOnceTests(unittest.TestCase):
         self.assertEqual(command[command.index("--workers") + 1], "1")
         self.assertNotIn("--replay-bundle-dir", command)
         self.assertIn("--no-resume", command)
+
+    def test_v11_manifest_accepts_clean_descendant_runtime(self):
+        manifest = {
+            "schema_version": "1.1",
+            "selection_code_commit": "selection",
+            "selection_source_tree_sha256": "selection-tree",
+            "execution_code_policy": "clean_descendant_of_selection_commit",
+        }
+        completed = [
+            Mock(returncode=0, stdout="selection-tree\n"),
+            Mock(returncode=0, stdout=""),
+        ]
+        with patch("scripts.run_blind_holdout_once.subprocess.run", side_effect=completed):
+            identity = _validate_code_lineage(
+                manifest,
+                runtime_head="runtime",
+                runtime_tree="runtime-tree",
+                repo_root=Path("/repo"),
+            )
+        self.assertEqual(identity, ("selection", "selection-tree"))
+
+    def test_v11_manifest_rejects_non_descendant_runtime(self):
+        manifest = {
+            "schema_version": "1.1",
+            "selection_code_commit": "selection",
+            "selection_source_tree_sha256": "selection-tree",
+            "execution_code_policy": "clean_descendant_of_selection_commit",
+        }
+        completed = [
+            Mock(returncode=0, stdout="selection-tree\n"),
+            Mock(returncode=1, stdout=""),
+        ]
+        with patch("scripts.run_blind_holdout_once.subprocess.run", side_effect=completed):
+            with self.assertRaisesRegex(BlindExecutionError, "not a descendant"):
+                _validate_code_lineage(
+                    manifest,
+                    runtime_head="unrelated",
+                    runtime_tree="runtime-tree",
+                    repo_root=Path("/repo"),
+                )
+
+    def test_v10_manifest_remains_exact_code_only(self):
+        manifest = {
+            "schema_version": "1.0",
+            "code_commit": "selection",
+            "source_tree_sha256": "selection-tree",
+        }
+        with self.assertRaisesRegex(BlindExecutionError, "v1.0"):
+            _validate_code_lineage(
+                manifest,
+                runtime_head="runtime",
+                runtime_tree="runtime-tree",
+                repo_root=Path("/repo"),
+            )
 
 
 if __name__ == "__main__":

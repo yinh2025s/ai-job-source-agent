@@ -165,6 +165,36 @@ class ApplyBlindReviewsTests(unittest.TestCase):
                 execution_manifest_path=self.root / "execution.json",
             )
 
+    def test_execution_chain_rejects_v11_selection_code_drift(self):
+        holdout = json.loads((self.root / "holdout.json").read_text(encoding="utf-8"))
+        holdout.update({
+            "schema_version": "1.1",
+            "selection_code_commit": "selection",
+            "selection_source_tree_sha256": "selection-tree",
+        })
+        self._write("holdout.json", holdout)
+        execution = json.loads((self.root / "execution.json").read_text(encoding="utf-8"))
+        execution.update({
+            "holdout_manifest_sha256": hashlib.sha256(
+                (self.root / "holdout.json").read_bytes()
+            ).hexdigest(),
+            "selection_code_commit": "other-selection",
+            "selection_source_tree_sha256": "selection-tree",
+            "runtime_code_commit": "runtime",
+            "runtime_source_tree_sha256": "runtime-tree",
+        })
+        self._write("execution.json", execution)
+
+        with self.assertRaisesRegex(BlindChainError, "selection code identity"):
+            verify_execution_chain(
+                results_path=self.root / "results.json",
+                trace_path=self.root / "trace.json",
+                summary_path=self.root / "summary.json",
+                cohort_path=self.root / "cohort.json",
+                holdout_manifest_path=self.root / "holdout.json",
+                execution_manifest_path=self.root / "execution.json",
+            )
+
     def _manifest(self, role, records):
         manifest = {
             "schema_version": "2.0",

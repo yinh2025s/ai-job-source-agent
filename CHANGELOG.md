@@ -10,6 +10,22 @@
 
 ### Changed
 
+- `.199` repairs the blind-holdout lifecycle contract before another product
+  behavior change. Manifest schema 1.1 binds the clean selection commit/tree,
+  cohort, candidate pool, run configuration, history audit, and an explicit
+  `clean_descendant_of_selection_commit` execution policy. The one-shot runner
+  now accepts only a clean runtime commit descending from that selection
+  commit, records both identities in the exclusive ledger and execution
+  manifest, and still rejects changed cohort/config digests, divergent history,
+  dirty runtime code, reused output paths, or a consumed ledger. Review-chain
+  verification independently checks the selection/runtime identity fields.
+  Legacy schema 1.0 remains exact-code-only. This resolves the previous
+  contradiction where an implementation-before-execution holdout could never
+  run on the implementation being evaluated. Offline gates pass 2556 tests
+  (4 skipped), 25/25 provider cases, 6/6 resolver cases, and 46 native adapters
+  with zero architecture issues; concurrently present LLM reasoning files are
+  excluded from this iteration's commit ownership.
+
 - Proposed ADR-0029 for an off-by-default, provider-neutral LLM candidate
   reasoning layer limited to causal `G` website-discovery gaps. The planner may
   emit at most three bounded search queries and no URLs; the ranker may only

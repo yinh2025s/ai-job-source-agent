@@ -20,15 +20,19 @@ location, and bounded source trace. Website, career, board, opening, and externa
 are discovery answers and are removed or rejected before selection.
 
 The holdout is frozen only from a clean tracked Git tree. The manifest binds the complete
-cohort, identity rows, candidate bytes, run-configuration bytes, Git commit/tree, scanned
-historical files, and complete Git patch history. A missing history root is an audit failure.
+cohort, identity rows, candidate bytes, run-configuration bytes, selection Git commit/tree,
+scanned historical files, and complete Git patch history. A missing history root is an audit
+failure. The cohort remains unexecuted and unseen while product implementation continues.
 
 ## One-Shot Execution
 
 `scripts/run_blind_holdout_once.py` is the only allowed full runner. It verifies the frozen
-digests and code identity, preflights output paths and configuration, then atomically creates
-an exclusive ledger before starting `live_batch_eval.py`. The live batch is serial and cannot
-resume. Once the ledger is consumed, failure and interruption still make the cohort observed.
+digests, requires a clean runtime commit that descends from the frozen selection commit, binds
+both code identities in the ledger, preflights output paths and configuration, then atomically
+creates an exclusive ledger before starting `live_batch_eval.py`. The live batch is serial and
+cannot resume. Once the ledger is consumed, failure and interruption still make the cohort
+observed. A divergent branch, rewritten selection commit, changed cohort/config digest, or
+dirty runtime tree is rejected.
 
 Results, trace, summary, and the execution manifest are immutable review inputs. The review
 contract recomputes all artifact digests and rejects record-count, identity, URL, provider,

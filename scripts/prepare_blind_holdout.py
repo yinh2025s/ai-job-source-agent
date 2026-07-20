@@ -15,7 +15,7 @@ from typing import Any, Iterable
 from urllib.parse import urlparse, urlunparse
 
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "1.1"
 SCAN_SUFFIXES = frozenset({
     ".csv", ".html", ".json", ".jsonl", ".md", ".py", ".toml", ".txt",
     ".xml", ".yaml", ".yml",
@@ -181,8 +181,9 @@ def prepare_holdout(
         "cohort_provenance": "blind_unseen",
         "frozen_at": datetime.now(timezone.utc).isoformat(),
         "history_cutoff": cutoff.isoformat(),
-        "code_commit": git_evidence["head"],
-        "source_tree_sha256": git_evidence["tree"],
+        "selection_code_commit": git_evidence["head"],
+        "selection_source_tree_sha256": git_evidence["tree"],
+        "execution_code_policy": "clean_descendant_of_selection_commit",
         "record_count": len(selected),
         "cohort_sha256": hashlib.sha256(cohort_bytes).hexdigest(),
         "candidate_pool_sha256": hashlib.sha256(candidates_bytes).hexdigest(),

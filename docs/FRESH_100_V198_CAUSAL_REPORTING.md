@@ -65,6 +65,12 @@ records remain visible in stage diagnostics but are absent from
 zero-overlap blind holdout cohorts must exist, and the selected development
 cluster must reproduce across at least three companies.
 
+Recomputing the `.197` run-2 summary with `.198` produces
+`terminal_outcome_counts={exact_opening: 1}` and
+`stage_failure_groups=[]`; the upstream `FETCH_FAILED` remains only in
+`reason_code_counts`. This verifies the distinction against a real captured
+multi-route execution, not only a synthetic test.
+
 Phase B offline gates pass: 2512 tests (4 skipped), 25/25 provider benchmark,
 6/6 resolver benchmark, and 46 native adapters with zero architecture issues.
 The first sandboxed run was invalid because loopback socket binding was denied;

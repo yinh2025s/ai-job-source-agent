@@ -49,7 +49,19 @@ flag-off 无回归，平均不超过两次调用/公司，并报告成本、失�
 公司示例、人工正确 URL 或 closure matrix 调 prompt。完整 contract 见
 `docs/adr/0029-bound-llm-candidate-reasoning.md`。
 
-## 当前执行轮次（2026-07-20，`.198`）
+## 当前执行轮次（2026-07-20，`.199`）
+
+### `.199`：blind holdout selection/runtime lineage（Phase B）
+
+旧 holdout schema 同时要求“实现前封存”与“运行代码必须等于封存代码”，导致实现后的新版本永远无法消费
+未见 cohort。schema 1.1 将二者拆开：selection commit/tree 负责证明候选选择和历史排除发生在实现前；
+one-shot execution 只接受该 selection commit 的 clean descendant，并把 selection/runtime 两套代码 identity
+同时写入 exclusive ledger 与 execution manifest。cohort/config digest、一次性消费、serial live 和不可 resume
+规则不变；schema 1.0 保持 exact-code-only，避免旧 v1 artifact 被静默放宽。
+
+该修改只属于评估治理，不改变 S1-S7 产品行为。相关 contract/review-chain tests 通过后，重新从 clean `.199`
+commit 创建 holdout worktree；当前 `.198` 候选收集尝试在首个请求被 LinkedIn 地域 302/451 拒绝，没有写出
+候选或消费 cohort。
 
 ### `.198`：causal cluster 与 stage diagnostics 分离（Phase B）
 
@@ -67,6 +79,17 @@ mismatch、0 fixture gap。这只证明候选路径和一次 transport recovery�
 主域目录发现；008/023 是父级政府 namespace 下的 agency relationship；024 是 ground truth 尚未确认的
 教育机构 identity。原 `5/7` 验收废弃。行为实现前先封存两批与 development/frozen cohort 零重叠的 blind
 holdout；之后只选择至少跨三家公司复现的通用 contract。
+
+下一候选行为簇的 Phase A contract 已写入
+`docs/FRESH_100_PUBLIC_DOMAIN_REGISTRY_PHASE_A.md`。CISA/get.gov 每日公开 CSV 能以 organization type、
+organization、city 和 state 为四条 city/state 输入提供权威候选来源；它只产生有 provenance 的候选集，
+不能直接宣布 Website 成功。该实现仍被 blind holdout gate 阻挡：当前命令行 LinkedIn guest endpoint 被
+地域路由到 `linkedin.cn` 并返回 451，切换美国网络出口后继续完成两批封存。
+
+并行 Phase A 同时否定 `T-403` 的旧 `3/5` closure：5 条实际只有 4 家公司，且只有 Mayo Clinic 有已
+捕获的 first-party Career bypass，不能把 403 这个 transport 症状包装成共同修复。描述性品牌尾词
+003/017/025/046 则保留为后备 4-company contract，但只允许 bounded leading-prefix search，禁止机械
+猜测 prefix domain，且 focused 恢复低于 3/4 就必须整体回退并重新分簇。
 
 ### `.196`：source-backed legal-form normalization（Phase C 完成，部分 closure）
 
