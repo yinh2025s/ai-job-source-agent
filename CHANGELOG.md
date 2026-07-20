@@ -22,7 +22,15 @@
   inventory evidence and only with HTTPS, exact origin, one stable ID, and no
   extra query or fragment. All candidates still pass ordinary S6/S7 title,
   location, company, and hiring-identity checks. `ADAPTER_VERSION` is
-  `2026-07-20.192`; offline and focused live/replay gates are pending.
+  `2026-07-20.192`. Full offline gates pass 2487 tests (4 skipped), 25/25
+  provider cases, 6/6 resolver cases, and 46 native adapters with zero
+  architecture issues. The code-frozen Milwaukee focused live reaches the
+  exact official opening from a complete 294-record inventory in 36.6 seconds;
+  direct URL audit confirms HTTP 200 with matching company, title, location,
+  and requisition. Same-version replay reproduces 1/1 with zero mismatch or
+  fixture gap and zero wrong, cross-company, or cross-tenant URL. This closes
+  only the first-party literal JSON POST causal cluster; it does not alter the
+  `.188` aggregate or close the separate CHAMP/NextPlay S2 transport records.
 
 - `.191` addresses the four deterministic correctness defects exposed by the
   frozen `.190` focused gate. Freshteam accepts only the bounded numeric
