@@ -23,7 +23,25 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-20，`.192`）
+## 当前执行轮次（2026-07-20，`.193`）
+
+### `.193`：verification allocation 因果可观测性（Phase B 进行中）
+
+对 `.189` request tape 的二次只读审计否定了原 `005/029/033` 共同 cluster。005/029 是同一 Versana
+resolver 输入和同一 `versanatech` LinkedIn slug 的重复岗位记录，正确 `versana.io` 只是低证据
+speculative candidate；033 的 `slant.app` 来自包含多个无关 Slant 站点的 noisy search，当前来源不足以
+证明 `Slant CRM` 雇主连续性。两者只有最外层 `_rank_and_verify_candidates()` 相同，不能用一次 slot
+重排宣称 3/3 closure。
+
+本版只增加 bounded allocator decision provenance，不改变行为：每个 verification phase 记录 limit、
+candidate count、selected URL/source/reason、excluded URL/reason、完整 excluded count，并把 excluded 明细
+限制为 50 条。版本提升到 `.193` 使 checkpoint/replay 不会把旧 trace 当作新因果证据。Phase B 验收是
+纯 allocator contract、现有 resolver/stage/replay 回归和全量 offline gates 全部通过，并在冻结
+005/029/033 snapshot 上产生可解释 decision trace；本版不以 Website/Job List/Exact 恢复计分。
+
+下一行为版本必须拆开验收：Versana 在 `verify_limit=3` 下 record-level 2/2 请求并选择 `versana.io`，同时
+报告唯一 host 1/1，且 collision negatives 为零；Slant 只有在第一方雇主关系成立或已验证 Ashby tenant
+通过 S5-S7 时才能 1/1，增加 slots 或直接信任同名 search result 不算成功。
 
 ### `.192`：已验证 first-party literal JSON POST 库存（Phase C 已通过）
 
@@ -50,7 +68,9 @@ architecture issues。代码冻结于 `6ada919` 后，Milwaukee 1/1 live 在 36.
 命中 `R75328`；官方详情页 HTTP 200，company/title/location/requisition 均一致。同版本 scoped replay 为
 1/1 reproduced、0 mismatch、0 fixture gap，错误、跨公司和跨 tenant URL 均为零。完整记录见
 `docs/FRESH_100_V192_MILWAUKEE_PHASE_C.md`。该结论只关闭 literal JSON POST 因果簇；CHAMP/NextPlay
-仍属于独立 S2 transport，下一实现轮回到 `.189` 的 005/029/033 verification-allocation 3/3 contract。
+仍属于独立 S2 transport。对 `.189` request tape 的复审否定了 005/029/033 的 3/3 共同 contract：
+005/029 是同一 Versana 输入的 slug-family allocation（record-level 2/2），033 是 Slant noisy-search
+employer identity ambiguity，应由第一方关系证据或已验证 Ashby route 独立 1/1 恢复。
 
 ### `.191`：`.190` 确定性缺陷闭环（Phase C 完成，未完全 closure）
 
@@ -81,8 +101,10 @@ schema、无 redirect/secret，并继续走 S6/S7。完整触发、负向控制�
 
 并行的 `.189` B-cluster 只读 request-tape 审计已完成，并纠正一个分类错误：`035` 的正确输入 host
 实际已被请求，只是在跳转 `amfab.us` 后 identity continuity 被拒绝，因此移入 I-cluster。真正共享
-`_allocate_verification_slots()` 根因的是 `005/029/033`；后续实现必须在相同三槽预算内恢复 3/3，低于
-3/3 即否定 cluster，而不是扩大预算。该 allocator 工作不并入 `.191`，待 `.191` 冻结 gate 后单独开始。
+复审发现现有 trace 没有记录 `_allocate_verification_slots()` 的 selected/excluded/reason，因此此前只能从
+“候选存在但未请求”间接倒推。下一小步先增加不改变选择行为的 allocator decision trace；随后把
+005/029 作为同一 Versana resolver 输入按相同三槽预算验收 2/2，并把 033 单列为 search identity / Ashby
+provider-first 1/1。不得通过增加 verify limit、偏爱 `.io` 或信任同名搜索结果凑数。
 
 ### `.190` fresh 100：S4/S5 Career 正确性与已观察库存下钻（Phase C 完成，未通过 closure）
 

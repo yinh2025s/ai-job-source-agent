@@ -175,6 +175,7 @@ class CompanyWebsiteResolver:
             "target_region": location_region(job_location),
             "candidates": [],
             "fetch_errors": [],
+            "verification_allocations": [],
         }
         fetch_errors = trace["fetch_errors"]
         marketplace_or_hosted_brand_evidence = False
@@ -212,6 +213,8 @@ class CompanyWebsiteResolver:
                     ("linkedin_slug", linkedin_slug_challenges),
                 ),
                 fetch_errors=fetch_errors,
+                allocation_trace=trace["verification_allocations"],
+                allocation_phase="stored_revalidation",
             )
             trace["candidates"].extend(
                 {
@@ -332,6 +335,8 @@ class CompanyWebsiteResolver:
             job_location=job_location,
             candidate_sources=fast_sources,
             fetch_errors=fetch_errors,
+            allocation_trace=trace["verification_allocations"],
+            allocation_phase="fast_candidates",
         )
         fast_selected = self._select_verified_candidate(
             fast_scored,
@@ -358,6 +363,8 @@ class CompanyWebsiteResolver:
                 job_location=job_location,
                 candidate_sources=fast_sources,
                 fetch_errors=fetch_errors,
+                allocation_trace=trace["verification_allocations"],
+                allocation_phase="dot_com_competitor",
             )[0]
             competitor_domain = domain_of(dot_com_competitor.url)
             fast_scored = [
@@ -469,6 +476,8 @@ class CompanyWebsiteResolver:
                 job_location=job_location,
                 candidate_sources=regional_sources,
                 fetch_errors=fetch_errors,
+                allocation_trace=trace["verification_allocations"],
+                allocation_phase="regional_recovery",
             )
             trace["candidates"].extend(
                 {"url": candidate.url, "score": candidate.score, "reasons": candidate.reasons}
@@ -512,6 +521,8 @@ class CompanyWebsiteResolver:
                     ("corporate_group_root_probe", corporate_group_candidates),
                 ),
                 fetch_errors=fetch_errors,
+                allocation_trace=trace["verification_allocations"],
+                allocation_phase="corporate_group_recovery",
             )
             trace["candidates"].extend(
                 {
@@ -599,6 +610,8 @@ class CompanyWebsiteResolver:
                         job_location=job_location,
                         candidate_sources=official_sources,
                         fetch_errors=fetch_errors,
+                        allocation_trace=trace["verification_allocations"],
+                        allocation_phase="linkedin_official_recovery",
                     )
                 )
             official_selected = self._select_verified_candidate(
@@ -682,6 +695,8 @@ class CompanyWebsiteResolver:
             candidate_sources=candidate_sources,
             fetch_errors=fetch_errors,
             previously_scored=fast_scored,
+            allocation_trace=trace["verification_allocations"],
+            allocation_phase="merged_search_candidates",
         )
         if same_brand_dot_com_blocked:
             for candidate in scored:
@@ -840,6 +855,8 @@ class CompanyWebsiteResolver:
         candidate_sources: dict[str, set[str]] | None = None,
         fetch_errors: list[dict] | None = None,
         previously_scored: list[WebsiteCandidate] | None = None,
+        allocation_trace: list[dict] | None = None,
+        allocation_phase: str = "unspecified",
     ) -> list[WebsiteCandidate]:
         search_evidence = search_evidence or {}
         candidate_sources = candidate_sources or {}
@@ -875,6 +892,8 @@ class CompanyWebsiteResolver:
             base_scored,
             verify_count,
             candidate_sources,
+            decision_trace=allocation_trace,
+            phase=allocation_phase,
         )
         direct_to_verify = [
             candidate
@@ -2884,12 +2903,69 @@ def _allocate_verification_slots(
     scored: list[WebsiteCandidate],
     verify_count: int,
     candidate_sources: dict[str, set[str]],
+    *,
+    decision_trace: list[dict] | None = None,
+    phase: str = "unspecified",
 ) -> list[WebsiteCandidate]:
+    selected_reasons: dict[str, str] = {}
+
+    def record_decision() -> None:
+        if decision_trace is None:
+            return
+        selected_domains = {domain_of(item.url) for item in selected}
+        excluded = [
+            {
+                "url": item.url,
+                "score": item.score,
+                "sources": sorted(
+                    candidate_sources.get(domain_of(item.url), set())
+                ),
+                "reason": (
+                    "verification_disabled"
+                    if verify_count <= 0
+                    else "slot_limit_reached"
+                ),
+            }
+            for item in scored
+            if domain_of(item.url) not in selected_domains
+        ]
+        decision_trace.append(
+            {
+                "phase": phase,
+                "verify_limit": max(0, verify_count),
+                "candidate_count": len(scored),
+                "selected": [
+                    {
+                        "url": item.url,
+                        "score": item.score,
+                        "sources": sorted(
+                            candidate_sources.get(domain_of(item.url), set())
+                        ),
+                        "reason": selected_reasons[domain_of(item.url)],
+                    }
+                    for item in selected
+                ],
+                "excluded": excluded[:50],
+                "excluded_count": len(excluded),
+                "excluded_truncated": len(excluded) > 50,
+            }
+        )
+
     if verify_count <= 0:
+        selected: list[WebsiteCandidate] = []
+        record_decision()
         return []
 
-    selected: list[WebsiteCandidate] = []
+    selected = []
     selected_domains: set[str] = set()
+
+    def select(candidate: WebsiteCandidate, reason: str) -> bool:
+        domain = domain_of(candidate.url)
+        selected.append(candidate)
+        selected_domains.add(domain)
+        selected_reasons[domain] = reason
+        return len(selected) == verify_count
+
     # Direct page evidence is scarcer than generated guesses. Give each source
     # one opportunity before filling the remaining bounded slots by score.
     for source in (
@@ -2910,9 +2986,8 @@ def _allocate_verification_slots(
         )
         if candidate is None:
             continue
-        selected.append(candidate)
-        selected_domains.add(domain_of(candidate.url))
-        if len(selected) == verify_count:
+        if select(candidate, f"source_reservation:{source}"):
+            record_decision()
             return selected
 
     direct_evidence_sources = {"linkedin_evidence", "search_evidence"}
@@ -2922,19 +2997,17 @@ def _allocate_verification_slots(
             continue
         if not candidate_sources.get(domain, set()).intersection(direct_evidence_sources):
             continue
-        selected.append(candidate)
-        selected_domains.add(domain)
-        if len(selected) == verify_count:
+        if select(candidate, "direct_evidence_fill"):
+            record_decision()
             return selected
 
     for candidate in scored:
         domain = domain_of(candidate.url)
         if domain in selected_domains:
             continue
-        selected.append(candidate)
-        selected_domains.add(domain)
-        if len(selected) == verify_count:
+        if select(candidate, "score_fill"):
             break
+    record_decision()
     return selected
 
 

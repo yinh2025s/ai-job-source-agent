@@ -10,6 +10,18 @@
 
 ### Added
 
+- `.193` corrects the causal ledger before changing resolver behavior. Records
+  005/029 are duplicate-posting instances of one Versana LinkedIn-slug family
+  crowding path with a record-level 2/2 expectation; record 033 is separately
+  classified as noisy search employer-identity ambiguity with a verified Ashby
+  provider-first option. Website resolution now emits bounded verification
+  allocation provenance for each phase: limit, candidate count, selected URL,
+  source and selection reason, plus at most 50 excluded candidates and the full
+  excluded count. The allocator selection order and three-slot budget are
+  unchanged. `ADAPTER_VERSION` is `2026-07-20.193`; this observability release
+  does not claim recovery of any fresh record and must precede separate Versana
+  and Slant behavior contracts.
+
 - `.192` adds a strict, provider-neutral contract for a verified first-party
   listing page whose same-origin static asset declares one anonymous literal
   JSON POST inventory. The declaration must bind a unique endpoint, public
@@ -96,8 +108,13 @@
   repair below that bound invalidates the cluster definition.
   A request-tape audit subsequently moved record 035 from allocation to
   redirect-identity rejection: its correct input host was requested, then
-  redirected to `amfab.us`. The bounded allocation cluster is therefore
-  records 005/029/033 with a strict 3/3 recovery expectation.
+  redirected to `amfab.us`. A second audit rejected the remaining 005/029/033
+  grouping: 005/029 are duplicate-posting instances of one Versana slug-family
+  allocation path with a strict record-level 2/2 expectation, while 033 is
+  noisy search employer-identity ambiguity with an independently verified Ashby
+  bypass. Allocator decision provenance must be traced before either behavior
+  is changed; missing requests are no longer treated as sufficient proof of one
+  shared allocation defect.
 
 - `.188` makes cross-domain Career search leads fail closed unless the destination proves a complete
   hiring relationship to the already verified corporate site. A same-name page must now provide

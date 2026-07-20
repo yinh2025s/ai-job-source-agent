@@ -64,7 +64,7 @@ homepage-transport failure.
 | 030 | Frost | I | Correct `frostbank.com` was verified, but input `Frost` failed ambiguous-name identity strength. | `frostbank.com`. |
 | 031 | Fabric | S | LinkedIn evidence was denied and search resolved unrelated Fabric entities; ownership could not be established. | Posting employer remains identity-ambiguous. |
 | 032 | Dechert | G | `LLP` was retained in generated domains. | Missing `dechert.com`. |
-| 033 | Slant CRM | B | Correct search candidate lost bounded verification slots to higher-ranked alternatives. | `slant.app`; Ashby exact known. |
+| 033 | Slant CRM | S | Search produced `slant.app` beside several unrelated same-name sites, but the source evidence did not establish `Slant CRM` employer continuity strongly enough to justify verification or selection. | Ambiguous `slant.app`; Ashby exact known and is the safer provider-first route. |
 | 034 | Brown and Caldwell | T | Correct homepage TLS handshake timed out. | `brownandcaldwell.com`; UKG exact known. |
 | 035 | American Fabrication | I | Correct input host was requested and redirected to `amfab.us`, but redirect identity continuity scored below the selection gate. | `americanfabrication.com -> amfab.us`. |
 | 037 | Team Royal | G | Generator could not drop `team` or produce the `.us` brand host. | Missing `royal.us`. |
@@ -80,7 +80,16 @@ homepage-transport failure.
 | 047 | Systematic Business Consulting | G | Initialism-bearing brand host was absent; search selected another Systematic entity. | Missing `systematicbc.com`. |
 | 048 | Heritage Companies | G | Official shorthand host has no derivable display-name/slug relationship. | Missing `hhandr.com`; Paylocity board known. |
 
-Counts are `T=10`, `B=3`, `S=1`, `G=25`, `I=4`, and `P=1`, totaling 44.
+Counts are `T=10`, `B=2`, `S=2`, `G=25`, `I=4`, and `P=1`, totaling 44.
+
+The second request-tape audit rejected the earlier `B=005/029/033` grouping.
+Records 005 and 029 are two postings for the same Versana resolver input and
+have an identical candidate pool and request order. Record 033 only shares the
+outer `_rank_and_verify_candidates()` call: its candidate came from noisy search
+evidence and lacked employer-identity continuity. The current trace records
+generated candidates and actual requests, but not allocator `selected`,
+`excluded`, or `reason` decisions. Therefore allocator decision trace must be
+added before another causal allocation claim is inferred from a missing request.
 
 ## Executable Clusters
 
@@ -90,7 +99,7 @@ Counts are `T=10`, `B=3`, `S=1`, `G=25`, `I=4`, and `P=1`, totaling 44.
 | T-timeout | 000, 012, 034 | Correct candidate reaches `_score_candidate()` and the bounded request expires. | Same frozen request policy recovers at least 2/3 without increasing wrong websites or mean S2 budget. |
 | T-certificate chain | 006 | Correct candidate and `www` fallback reach `_score_candidate()` and both fail certificate-chain verification. | 1/1 through an independently validated transport/source; TLS verification itself is not weakened. |
 | T-TLS EOF | 018 | Correct candidate reaches `_score_candidate()` and the peer terminates during TLS establishment. | 1/1 through bounded retry or an independently validated source. |
-| B-verification allocation | 005, 029, 033 | Correct candidate is present but `_allocate_verification_slots()` excludes it under `verify_limit=3`; source-name allocation lets repeated lexical host families consume all slots. | 3/3 correct hosts are requested and selected; every call remains at three slots and all collision controls remain rejected. |
+| B-Versana slug-family crowding | 005, 029 | The same resolver input generates `versana.io` as a low-evidence speculative candidate, while higher-scored candidates derived from the misleading `versanatech` LinkedIn slug consume the bounded verification path. | Record-level 2/2 request and select `versana.io` with `verify_limit=3`; each allocation stays at three candidates and unrelated low-evidence/TLD collision controls remain rejected. Because both records share one resolver input, report one unique-host recovery as well as 2/2 records. |
 | G-core/legal shortening | 001, 003, 017, 019, 021, 032, 046 | `_guess_domain_candidates()` / `_linkedin_slug_domain_candidates()` retain descriptive/legal tail tokens. | Source-backed bounded shortening recovers at least 5/7 with zero unrelated-brand selection. |
 | G-public/institutional namespace | 008, 011, 023, 024, 041, 043, 045 | Current generators do not produce government/education hierarchy or abbreviations. | Authoritative public-domain/search route recovers at least 5/7; no free-form `.gov` guessing. |
 | G-alias/acronym host | 013, 027, 037, 038, 044, 047, 048 | Official brand/initialism cannot be derived from current name and slug transforms. | Trusted source or provider relationship recovers at least 4/7; mechanical alias guessing alone is forbidden. |
@@ -98,6 +107,7 @@ Counts are `T=10`, `B=3`, `S=1`, `G=25`, `I=4`, and `P=1`, totaling 44.
 | G-singular/plural | 002 | Brand singularization is missing. | 1/1 with collision-negative tests. |
 | G-connector normalization | 040 | `+` does not map to brand connector `and`. | 1/1 with punctuation/brand collision negatives. |
 | S-source identity ambiguity | 031 | LinkedIn source is denied and search entities fail ownership continuity in `_search_result_matches_company()`. | Must resolve posting employer identity first; no URL recovery target is claimed meanwhile. |
+| S-search employer ambiguity | 033 | Search emits `slant.app` together with unrelated same-name sites, but current evidence does not prove that the site is the `Slant CRM` posting employer. | 1/1 only after first-party employer continuity is proven, or through the independently verified Ashby provider route; increasing or reordering verification slots alone cannot pass. |
 | I-municipal redirect | 009 | Correct reviewed site is rejected as parent/group after redirect. | 1/1 only with first-party municipal continuity evidence. |
 | I-holding-company identity | 022 | Correct site is fetched but holding-company language triggers parent/group rejection. | 1/1 only when downstream provider relationship proves the same hiring group. |
 | I-short-brand identity | 030 | Correct page is verified but abbreviated input lacks sufficient positive identity. | 1/1 with title/canonical/structured evidence; unrelated `Frost` negatives remain rejected. |
@@ -123,7 +133,7 @@ previously reviewed provider evidence that can bypass S2 candidate generation:
 | 022 | Workday tenant/opening |
 | 025 | Oracle tenant/opening |
 | 029 | Lever tenant/opening |
-| 033 | Ashby tenant/opening |
+| 033 | Ashby tenant/opening; preferred over treating ambiguous search identity as a website fact |
 | 034 | UKG/UltiPro tenant/opening |
 
 These are candidate-discovery inputs, not automatic successes. Every route must
@@ -132,8 +142,11 @@ S7 identity validation.
 
 ## Next Gate
 
-Do not modify resolver/provider code from this report alone. First freeze
-cluster-specific fixtures and negative controls, then implement one causal
-cluster at a time. Run local tests per cluster, merge once, and use a single
-code-frozen focused live/replay gate. The immutable `.188` and `.189` artifacts
-must not be overwritten.
+Do not modify resolver/provider behavior from this report alone. First add a
+non-behavioral allocation decision trace that records bounded selected and
+excluded candidates with reasons. Then freeze separate fixtures and negative
+controls for Versana allocation and Slant identity/provider recovery. A Versana
+repair below 2/2 or a Slant repair that merely probes an unverified same-name
+site invalidates its cluster contract. Run local tests per cluster, merge once,
+and use a single code-frozen focused live/replay gate. The immutable `.188` and
+`.189` artifacts must not be overwritten.
