@@ -9,6 +9,7 @@ from job_source_agent.direct_candidate_discovery import (
 from job_source_agent.provider_candidates import (
     CandidateDiscoveryResult,
     ProviderCandidate,
+    ProviderPublishedEmployerEvidence,
 )
 from job_source_agent.identity_continuity import HiringIdentityEvidence, ProviderIdentity
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
@@ -244,6 +245,108 @@ def _unrelated_direct_candidate():
 
 
 class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
+    def test_provider_published_employer_can_bind_descriptor_name_without_s2(self):
+        evidence = ProviderPublishedEmployerEvidence(
+            employer_name="Slant",
+            descriptor_terms=("crm",),
+            evidence_url="https://api.ashbyhq.com/posting-api/job-board/slant",
+            opening_url="https://jobs.ashbyhq.com/slant/role-123",
+            extraction_method="about_heading_self_description",
+        )
+        candidate = ProviderCandidate(
+            url="https://jobs.ashbyhq.com/slant",
+            source_kind="verified_tenant_probe",
+            source_url="https://www.linkedin.com/company/slantcrmforadvisors",
+            company_name="Slant CRM",
+            target_title="Product Designer",
+            target_location="Lehi, UT",
+            provider_hint="ashby",
+            provider_employer_evidence=evidence,
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Slant CRM",
+                linkedin_company_url=(
+                    "https://www.linkedin.com/company/slantcrmforadvisors"
+                ),
+                job_title="Product Designer",
+                job_location="Lehi, UT",
+            )
+        )
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (_StaticCandidateDiscovery(candidate),),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.updates["provider_identity"].verification_method,
+            "provider_published_employer",
+        )
+        self.assertEqual(
+            execution.updates["provider_identity"].evidence_url,
+            "https://api.ashbyhq.com/posting-api/job-board/slant",
+        )
+        self.assertTrue(execution.updates["provider_identity"].relationship_verified)
+
+    def test_provider_published_employer_rejects_descriptor_or_tenant_collision(self):
+        for employer, descriptors, opening_url in (
+            ("Slant", ("ai",), "https://jobs.ashbyhq.com/slant/role-123"),
+            ("Other", ("crm",), "https://jobs.ashbyhq.com/slant/role-123"),
+            ("Slant", ("crm",), "https://jobs.ashbyhq.com/other/role-123"),
+        ):
+            with self.subTest(
+                employer=employer,
+                descriptors=descriptors,
+                opening_url=opening_url,
+            ):
+                evidence = ProviderPublishedEmployerEvidence(
+                    employer_name=employer,
+                    descriptor_terms=descriptors,
+                    evidence_url=(
+                        "https://api.ashbyhq.com/posting-api/job-board/slant"
+                    ),
+                    opening_url=opening_url,
+                    extraction_method="about_heading_self_description",
+                )
+                candidate = ProviderCandidate(
+                    url="https://jobs.ashbyhq.com/slant",
+                    source_kind="verified_tenant_probe",
+                    source_url=(
+                        "https://www.linkedin.com/company/slantcrmforadvisors"
+                    ),
+                    company_name="Slant CRM",
+                    target_title="Product Designer",
+                    target_location="Lehi, UT",
+                    provider_hint="ashby",
+                    provider_employer_evidence=evidence,
+                )
+                context = PipelineContext.from_company(
+                    CompanyInput(
+                        company_name="Slant CRM",
+                        job_title="Product Designer",
+                        job_location="Lehi, UT",
+                    )
+                )
+
+                execution = JobBoardDiscoveryStage(
+                    _NoNetworkService(),
+                    DEFAULT_PROVIDER_REGISTRY,
+                    candidate_discovery=CompositeCandidateDiscovery(
+                        (_StaticCandidateDiscovery(candidate),),
+                        limit=12,
+                    ),
+                    enable_parallel_candidate_discovery=True,
+                ).run(context)
+
+                self.assertNotEqual(execution.result.status, "success")
+
     def test_verified_tenant_probe_binds_exact_official_website_domain(self):
         website = "https://www.mrbeastyoutube.com/"
         candidate = ProviderCandidate(

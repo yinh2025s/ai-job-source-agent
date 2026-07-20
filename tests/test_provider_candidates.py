@@ -5,7 +5,9 @@ from job_source_agent.provider_candidates import (
     MAX_PROVIDER_CANDIDATES,
     ProviderCandidate,
     ProviderCandidatePool,
+    ProviderPublishedEmployerEvidence,
     VerifiedProviderCandidate,
+    provider_employer_matches_company,
 )
 
 
@@ -20,6 +22,69 @@ def candidate(url, source_kind, **kwargs):
 
 
 class ProviderCandidateTests(unittest.TestCase):
+    def test_verified_probe_can_carry_provider_published_employer_evidence(self):
+        evidence = ProviderPublishedEmployerEvidence(
+            employer_name="Slant",
+            descriptor_terms=("crm",),
+            evidence_url="https://api.ashbyhq.com/posting-api/job-board/slant",
+            opening_url="https://jobs.ashbyhq.com/slant/role-123",
+            extraction_method="about_heading_self_description",
+        )
+
+        raw = candidate(
+            "https://jobs.ashbyhq.com/slant",
+            "verified_tenant_probe",
+            provider_hint="ashby",
+            provider_employer_evidence=evidence,
+        )
+
+        self.assertEqual(raw.provider_employer_evidence, evidence)
+        self.assertEqual(
+            raw.to_trace_payload()["provider_employer_evidence"]["descriptor_terms"],
+            ["crm"],
+        )
+
+    def test_provider_employer_evidence_is_probe_only_and_fail_closed(self):
+        evidence = ProviderPublishedEmployerEvidence(
+            employer_name="Other",
+            descriptor_terms=(),
+            evidence_url="https://api.ashbyhq.com/posting-api/job-board/other",
+            opening_url="https://jobs.ashbyhq.com/other/role-123",
+            extraction_method="about_heading_self_description",
+        )
+        with self.assertRaisesRegex(ValueError, "verified tenant probe"):
+            candidate(
+                "https://jobs.ashbyhq.com/other",
+                "targeted_board_search",
+                source_url="https://www.bing.com/search?q=other",
+                query="Other jobs",
+                result_rank=1,
+                provider_employer_evidence=evidence,
+            )
+
+    def test_provider_employer_binding_requires_every_missing_identity_token(self):
+        evidence = ProviderPublishedEmployerEvidence(
+            employer_name="Example",
+            descriptor_terms=("ai", "crm"),
+            evidence_url="https://api.ashbyhq.com/posting-api/job-board/example",
+            opening_url="https://jobs.ashbyhq.com/example/role-123",
+            extraction_method="about_heading_self_description",
+        )
+
+        self.assertTrue(provider_employer_matches_company("Example CRM", evidence))
+        self.assertTrue(provider_employer_matches_company("Example", evidence))
+        self.assertFalse(provider_employer_matches_company("Example Bank", evidence))
+        self.assertFalse(provider_employer_matches_company("Other CRM", evidence))
+        self.assertFalse(provider_employer_matches_company("Example CRM Advisors", evidence))
+        with self.assertRaisesRegex(ValueError, "not normalized"):
+            ProviderPublishedEmployerEvidence(
+                employer_name="Other",
+                descriptor_terms=("CRM",),
+                evidence_url="https://api.ashbyhq.com/posting-api/job-board/other",
+                opening_url="https://jobs.ashbyhq.com/other/role-123",
+                extraction_method="about_heading_self_description",
+            )
+
     def test_pool_orders_by_evidence_strength_and_deduplicates(self):
         weak = candidate(
             "https://jobs.ashbyhq.com/example/",

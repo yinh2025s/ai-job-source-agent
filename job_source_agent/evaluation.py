@@ -14,7 +14,7 @@ from .result_identity import (
 )
 
 
-FAILURE_CLUSTER_COMPANY_LIMIT = 20
+STAGE_FAILURE_GROUP_COMPANY_LIMIT = 20
 EVALUATION_SCHEMA_VERSION = "1.0"
 EVALUATION_DISPOSITIONS = frozenset(
     {
@@ -99,7 +99,7 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
     availability_diagnostic_counts = _availability_diagnostic_counts(results)
     terminal_outcomes = [_terminal_outcome(result) for result in results]
     terminal_outcome_counts = Counter(terminal_outcomes)
-    failure_clusters = _failure_clusters(results)
+    stage_failure_groups = _stage_failure_groups(results)
     evaluation_metrics = summarize_evaluation_metrics(results)
 
     summary = {
@@ -131,7 +131,10 @@ def summarize_results(results: list[dict], elapsed_sec: float | None = None) -> 
         "source_posting_disposition_counts": source_posting_disposition_counts,
         "availability_diagnostic_counts": availability_diagnostic_counts,
         "terminal_outcome_counts": dict(terminal_outcome_counts),
-        "failure_clusters": failure_clusters,
+        # These are execution diagnostics, not causal failure clusters. A causal
+        # cluster requires shared trigger and code-path evidence outside this
+        # stage-level aggregate.
+        "stage_failure_groups": stage_failure_groups,
         "company_stage_matrix": _company_stage_matrix(results),
         "company_identity_matrix": _company_identity_matrix(results),
         "evaluation_schema_version": EVALUATION_SCHEMA_VERSION,
@@ -469,9 +472,11 @@ def _provider_reason_code_counts(results: list[dict]) -> dict[str, dict[str, int
     return {provider: dict(reason_counts) for provider, reason_counts in counts.items()}
 
 
-def _failure_clusters(results: list[dict]) -> list[dict]:
+def _stage_failure_groups(results: list[dict]) -> list[dict]:
     clusters: dict[tuple[str, str, str], dict[str, dict]] = {}
     for result in results:
+        if _terminal_outcome(result) == "exact_opening":
+            continue
         company_name = str(result.get("company_name") or "Unknown Company")
         for stage_name, stage in _stage_by_name(result).items():
             reason_code = stage.get("reason_code")
@@ -521,7 +526,7 @@ def _failure_clusters(results: list[dict]) -> list[dict]:
                 "retryable_count": sum(
                     1 for company in companies.values() if company["retryable"]
                 ),
-                "company_names": ordered_names[:FAILURE_CLUSTER_COMPANY_LIMIT],
+                "company_names": ordered_names[:STAGE_FAILURE_GROUP_COMPANY_LIMIT],
                 "inventory_disposition_counts": dict(sorted(disposition_counts.items())),
                 "terminal_outcome_counts": dict(sorted(terminal_outcome_counts.items())),
             }

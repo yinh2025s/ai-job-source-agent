@@ -23,7 +23,118 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-20，`.193`）
+## 当前架构轨道（2026-07-20，LLM Candidate Reasoning Phase A）
+
+本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
+DNS/TLS/timeout/403、provider inventory、S6 title/location、S7、岗位关闭、已验证 no-match 或未披露
+招聘主体。Phase A 已提出 `ADR-0029`，将 LLM 固定为可选 candidate planner/ranker，而不是事实来源：
+planner 只能生成最多三条搜索 query，ranker 只能引用最多十个输入 candidate ID，Top 3 仍必须由现有
+`CompanyWebsiteResolver` 抓取和验证后才能成为 Website evidence。Provider/tenant/S6/S7 contract 不放宽。
+
+调用顺序冻结为：先收集确定性 direct Website、External Apply 和 provider 证据；已有 verified Website、
+verified provider+hiring relationship 或官方 External Apply 时禁止调用；只有 source-backed candidate 缺失、
+全部是 speculative、同名实体无法排序或 legal/alias/acronym 信号未解决时，才进入独立 deadline 下的一次
+planner 和一次 ranker。任何 malformed/schema/timeout/client/unknown-ID/unsafe-output 都是可观测但非终态的
+advisory failure，并完整回退当前 deterministic baseline，不能覆盖原失败原因。
+
+Phase A 不修改行为代码、不选择 vendor、不调用真实或付费 API。当前并行只读审计分为：resolver/search/
+composition 插入点，以及 run-config/decision-store/snapshot/replay 兼容性；共享 ADR、schema 和最终集成由主线
+负责。Phase B 才实现 provider-neutral interfaces、fake client、严格 schema、feature flag、decision record/
+store 和 replay fixture，并始终保持 flag off。Phase C 建立无答案泄漏的固定 G-development A/B harness。
+Phase D 之前必须先汇报 provider、model、样本数、最大调用次数和预计成本，未经确认不得启用付费服务。
+
+第一阶段批量 gate 不接受单例修复：candidate recall@3 至少提升 25 个百分点，eligible G-development 至少
+40% 恢复正确官网候选，verified website 错误、模型新造 URL、跨公司和跨 tenant 均为 0，replay 100%，
+flag-off 无回归，平均不超过两次调用/公司，并报告成本、失败率和 P50/P95。未通过则保持关闭，不能加入
+公司示例、人工正确 URL 或 closure matrix 调 prompt。完整 contract 见
+`docs/adr/0029-bound-llm-candidate-reasoning.md`。
+
+## 当前执行轮次（2026-07-20，`.198`）
+
+### `.198`：causal cluster 与 stage diagnostics 分离（Phase B）
+
+自动 evaluation 不再把相同 `stage/provider/reason_code` 包装成可执行 failure cluster。该聚合改名为
+`stage_failure_groups`，只用于观察阶段症状；已经通过 provider/External Apply 路径恢复 Exact 的记录，
+即使 S2 留有失败诊断，也不会再进入失败组。真正 causal cluster 仍只存在于证据台账中，必须同时拥有
+共同触发条件、共同代码路径和批量验收下限。
+
+`.197` 已证明 Versana 的 Lever tenant 区分大小写：case-preserved `Versana` probe 在首次 focused live
+遭遇两次 TLS EOF，同版本全新目录重跑后得到 canonical board 和 `UX Designer` Exact，replay 1/1、0
+mismatch、0 fixture gap。这只证明候选路径和一次 transport recovery，不满足“至少三家公司”的通用能力
+门槛，因此不改写 fresh-100 总成绩，也不宣布 cluster closure。
+
+对原 7 条 public/institutional 记录的只读审计进一步否定了共同 cluster：011/041/043/045 是权威政府
+主域目录发现；008/023 是父级政府 namespace 下的 agency relationship；024 是 ground truth 尚未确认的
+教育机构 identity。原 `5/7` 验收废弃。行为实现前先封存两批与 development/frozen cohort 零重叠的 blind
+holdout；之后只选择至少跨三家公司复现的通用 contract。
+
+### `.196`：source-backed legal-form normalization（Phase C 完成，部分 closure）
+
+对原 `G-core/legal shortening` 八条做逐条 request-tape 审计后，确认它不是一个 executable cluster。
+实际拆为：法律形式 `021/032`、iClassPro tagline/slug delimiter `001`、需要独立来源的描述性品牌尾
+`003/017/025/046`，以及 ground truth 尚未确认的 Cretex `019`。`.196` 只实现第一组：LinkedIn slug
+terminal token 支持 `Limited/LLP`，先清理 terminal delimiter，再统一 display tokenization、exact identity
+token 和 slug suffix 语义。嵌入词、非 terminal legal token 和 legal token 后仍有其他词均保持不剥离。
+
+离线门禁为 2509 tests（4 skipped）、25/25 provider、6/6 resolver、46 adapters / 0 architecture issues，
+compile 和 diff check 通过。代码冻结后用全新根目录串行运行 FotoMill 与 Dechert：正确 source-backed
+candidate 2/2 进入 verification，但 endpoint 只恢复 1/2。Dechert 成功得到 verified website、Career 和完整
+当前 inventory，目标 `UX Designer` 不存在，因此终态为 `OPENING_NOT_FOUND`，不是 system gap。FotoMill
+正确 `fotomillstudios.com` 已被请求，但 HTTPS 在 Python 与 curl 中都发生 TLS/SSL failure；只有一个 2015
+年的 HTTP meta-refresh shell 可达，不能作为全局 TLS downgrade 的依据。它从 G 重新归入 T-TLS，而不是
+继续包装成 legal-form failure。
+
+同版本 replay 2/2 reproduced、0 mismatch、0 fixture gap，record integrity passed。`.196` 因此关闭
+Dechert 一条并关闭两条的 candidate-generation 子问题，但不宣称原 2/2 endpoint cluster closure。剩余
+open ledger 为 42 条：`T=11, B=0, S=1, G=26, I=4`。完整证据见
+`docs/FRESH_100_V196_LEGAL_FORM_PHASE_C.md`。
+
+### `.195`：provider identity provenance 对齐（Phase C 已完成）
+
+`.194` focused live 已从 S2 unresolved 直接恢复 Slant CRM 的 Ashby Job Board 和 `Product Designer`
+Exact，S7 验证 company/title/`Lehi, Utah`/tenant/opening 全部通过，同版 replay 1/1 reproduced、0
+mismatch、0 fixture gap。逐字段 identity audit 同时发现：Hiring evidence 正确指向 Ashby API，Provider
+identity 却仍继承被拒绝的 LinkedIn company URL。`.195` 只在
+`provider_published_employer` candidate relationship 已验证时，把 ProviderIdentity evidence URL 对齐到
+同一个 provider-owned evidence URL；其他 External Apply、first-party handoff、tenant-name 和 stored
+evidence 路径不变。版本升为 `2026-07-20.195`。
+
+Phase C 已完成。相关 88 tests 通过；全量门禁为 2505 tests（4 skipped）、25/25 provider、6/6
+resolver、46 adapters / 0 architecture issues，compile 和 diff check 通过。代码冻结后使用全新的
+checkpoint、completion、evidence、snapshot、replay 和 output 根目录运行 record 033：22.1 秒内从
+Ashby provider-owned public API 恢复 canonical board 与 `Product Designer` Exact。S7 逐字段验证
+`Slant CRM`、`Product Designer`、`Lehi, Utah`、provider `ashby`、tenant `slant` 和 canonical opening；
+Hiring 与 Provider identity 的 evidence URL 均为同一 Ashby API，错误、跨公司和跨 tenant URL 为零。
+同版本 snapshot replay 为 1/1 reproduced、0 mismatch、0 fixture gap，record integrity passed。
+
+Trace 中 S1-S5 的 checkpoint `restore` 是同一次 live 内 S1-S3 producer 与 S4-S7 consumer 之间的正常
+跨进程 handoff；这些 checkpoint 均在该空白 run root 内由同一个 producer attempt 创建，不是恢复 `.188`、
+`.189`、`.194` 或其他运行的 cache/completion。完整证据见
+`docs/FRESH_100_V195_PROVIDER_EMPLOYER_PHASE_C.md`。本轮只关闭 record 033 的
+`G-unstable search candidate`，不关闭 S2、整个 G 类或 Versana 路径，也不改写 `.188` aggregate；剩余
+因果记录为 43 条（`T=10, B=0, S=1, G=28, I=4`）。
+
+### `.194`：provider-published employer identity（Phase C 发现 provenance 瑕疵，由 `.195` 收尾）
+
+Phase A 对 Versana 和 Slant 两条独立路径做了实时证据检查。Versana 的 bounded
+`"Versana" "VersanaTech" official website` 查询只返回无关结果，因此没有 source-backed
+`versana.io` 候选，保持 `G` 且不进入行为实现。Slant 的 Ashby 官方 API 则匿名公开完整
+`Product Designer` opening、`Lehi, Utah` 地点和 opening-scoped `About Slant` 自述；同一 About
+section 明确把 Slant 描述为 CRM，满足建立 provider-owned 雇主证据的前提。
+
+Phase B 冻结 `ProviderPublishedEmployerEvidence`：证据必须来自 provider 自己的公开 opening/API，
+绑定 employer name、显式 uppercase descriptor、evidence URL、canonical opening URL 和 extraction
+method。Provider probe 只对“两个有效公司 token，末 token 是 2-8 位 uppercase acronym”的输入增加
+一个 bounded stripped slug；该路径必须同时通过 exact normalized title、严格同城/同州 location、
+同 provider/tenant/opening、employer leading tokens 和全部 stripped descriptor。完整库存、tenant
+前缀、搜索摘要、同州错城、错误 employer/descriptor/opening 或缺失组织证据均不能授权关系。
+
+Ashby adapter 只从单个 job record 的真实 `About <name>` heading 和同 section 的显式 self-description
+或 `product called <same name>` 句提取 evidence；孤立职责术语、lowercase 泛化描述、名称冲突和跨
+opening 数据 fail closed。S5 新增 `provider_published_employer` relationship method，但 S6/S7 仍需
+重新验证 title、location、status、canonical tenant 和最终 opening URL。`ADAPTER_VERSION` 升至
+`2026-07-20.194`。相关 88 tests 和 compile/diff check 已通过；focused live/replay 恢复 Exact，但
+ProviderIdentity evidence URL 的 provenance 瑕疵由 `.195` 收尾，因此 `.194` 不单独宣称 cluster closure。
 
 ### `.193`：verification allocation 因果可观测性（Phase C 已通过）
 
@@ -39,9 +150,16 @@ candidate count、selected URL/source/reason、excluded URL/reason、完整 excl
 纯 allocator contract、现有 resolver/stage/replay 回归和全量 offline gates 全部通过，并在冻结
 005/029/033 snapshot 上产生可解释 decision trace；本版不以 Website/Job List/Exact 恢复计分。
 
-下一行为版本必须拆开验收：Versana 在 `verify_limit=3` 下 record-level 2/2 请求并选择 `versana.io`，同时
-报告唯一 host 1/1，且 collision negatives 为零；Slant 只有在第一方雇主关系成立或已验证 Ashby tenant
-通过 S5-S7 时才能 1/1，增加 slots 或直接信任同名 search result 不算成功。
+`.193` 的 allocator trace 进一步否定了把 Versana 归为纯 budget starvation：`versana.io` 虽在 pool 中，
+但只有 `speculative_guess` provenance，正确的 source-backed candidate 并未产生。因此剩余 44 条主因冻结为
+`T=10, B=0, S=1, G=29, I=4`；provider/External Apply 只作独立 overlay，不参与主因计数。完整逐条矩阵和
+每簇批量验收下限见 `docs/FRESH_100_V189_CAUSAL_RECLASSIFICATION.md`。
+
+下一行为版本必须拆开验收。Versana 只能先通过 bounded company-name + LinkedIn-slug source query 获得独立
+alias evidence，之后才可在 `verify_limit=3` 下获得一个 reservation；没有有效 source result 时必须继续失败，
+不得直接偏爱 `.io`。Slant 只有在公开 provider evidence 自身机器可读地发布 employer identity，且同一
+canonical tenant 的 title/location/status/opening 全部通过 S5-S7 时才能 1/1；`Slant CRM` 与 tenant `slant`
+的前缀相似、增加 slots 或同名 search snippet 都不能建立招聘关系。
 
 Phase C 已完成：2491 tests（4 skipped）、25/25 provider、6/6 resolver、46 adapters / 0 architecture
 issues。代码冻结于 `2f63a75` 后，005/029/033 focused live 保持 3 条 S2 失败，符合 trace-only 版本不改变

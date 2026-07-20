@@ -6,6 +6,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from ..contracts import FetchBudget, FetchClient
 from ..job_board import JobBoard
+from ..provider_candidates import ProviderPublishedEmployerEvidence
 from ..web import FetchError, Page
 
 
@@ -33,7 +34,15 @@ class AdapterResult:
     retryable: bool = False
     inventory_scope: str = "full"
     inventory_complete: bool = True
+    employer_evidence: tuple[ProviderPublishedEmployerEvidence, ...] = ()
     trace: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.employer_evidence, tuple) or any(
+            not isinstance(item, ProviderPublishedEmployerEvidence)
+            for item in self.employer_evidence
+        ):
+            raise TypeError("Provider employer evidence must be an immutable tuple")
 
 
 @runtime_checkable

@@ -1288,11 +1288,12 @@ class CompanyWebsiteResolver:
         path_parts = [part for part in urlparse(linkedin_company_url).path.split("/") if part]
         if len(path_parts) < 2 or path_parts[0] != "company":
             return []
-        slug = re.sub(r"[^a-z0-9-]", "", path_parts[1].lower())
+        slug = re.sub(r"[^a-z0-9-]", "", path_parts[1].lower()).strip("-")
         if not slug:
             return []
-        base = re.sub(r"-(inc|llc|ltd|corp|corporation|company|co)$", "", slug)
-        base = re.sub(r"(inc|llc|ltd|corp|corporation|company|co|hq)$", "", base)
+        legal_suffix = r"inc|llc|ltd|limited|llp|corp|corporation|company|co"
+        base = re.sub(rf"-(?:{legal_suffix})$", "", slug)
+        base = re.sub(rf"(?:{legal_suffix}|hq)$", "", base).strip("-")
         compact = base.replace("-", "")
         product_suffix_base = re.sub(r"-(ai|app|tech)$", "", base)
         prefix_stripped_base = re.sub(r"^(find|get|go|join|try|use)-?", "", base)
@@ -2416,7 +2417,9 @@ def _exact_identity_tokens(company_name: str) -> list[str]:
         "corp",
         "corporation",
         "inc",
+        "limited",
         "llc",
+        "llp",
         "ltd",
         "plc",
     }
@@ -2533,7 +2536,12 @@ def normalize_company_key(company_name: str) -> str:
 
 def tokenize_company_name(company_name: str) -> list[str]:
     company_name = _strip_non_brand_qualifiers(company_name)
-    cleaned = re.sub(r"\b(inc|llc|ltd|corp|corporation|co|company|technologies|technology)\b", "", company_name, flags=re.I)
+    cleaned = re.sub(
+        r"\b(inc|llc|ltd|limited|llp|corp|corporation|co|company|technologies|technology)\b",
+        "",
+        company_name,
+        flags=re.I,
+    )
     return [
         token.lower()
         for token in re.findall(r"[A-Za-z0-9]+", cleaned)

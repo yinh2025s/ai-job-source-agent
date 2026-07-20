@@ -69,7 +69,7 @@ def render_markdown_report(summary: dict, title: str = "AI Job Source Agent Repo
     lines.extend(_simple_count_table("Provider Distribution", summary.get("provider_counts", {}), "Provider"))
     lines.extend(_provider_stage_reliability(summary))
     lines.extend(_provider_reason_codes(summary))
-    lines.extend(_failure_clusters(summary))
+    lines.extend(_stage_failure_groups(summary))
     lines.extend(_simple_count_table("Reason Codes", summary.get("reason_code_counts", {}), "Reason"))
     lines.extend(
         _simple_count_table(
@@ -336,10 +336,10 @@ def _provider_reason_codes(summary: dict) -> list[str]:
     return lines
 
 
-def _failure_clusters(summary: dict) -> list[str]:
-    clusters = summary.get("failure_clusters") or []
+def _stage_failure_groups(summary: dict) -> list[str]:
+    clusters = summary.get("stage_failure_groups") or []
     lines = [
-        "## Actionable Failure Clusters",
+        "## Stage Failure Diagnostics",
         "",
         "| Rank | Stage | Provider | Reason | Companies | Retryable | Outcomes | Dispositions | Examples |",
         "| ---: | --- | --- | --- | ---: | ---: | --- | --- | --- |",

@@ -125,6 +125,165 @@ class AshbyAdapterTests(unittest.TestCase):
         self.assertEqual(result.trace["response_mode"], "api")
         self.assertEqual(result.trace["candidate_count"], 2)
 
+    def test_extracts_provider_published_employer_evidence_from_own_opening(self):
+        api_url = "https://api.ashbyhq.com/posting-api/job-board/example"
+        opening_url = "https://jobs.ashbyhq.com/example/product-designer"
+        result = self.adapter.list_jobs(
+            StubFetcher({
+                "jobs": [{
+                    "id": "product-designer",
+                    "title": "Product Designer",
+                    "jobUrl": opening_url,
+                    "location": "Lehi, UT",
+                    "descriptionHtml": """
+                        <h2>About Slant</h2>
+                        <p>Slant is a modern CRM for independent financial advisors.</p>
+                        <h2>The role</h2>
+                        <p>Build clear, useful experiences.</p>
+                    """,
+                }],
+            }),
+            self.adapter.identify_board("https://jobs.ashbyhq.com/example"),
+            JobQuery(),
+        )
+
+        self.assertEqual(len(result.employer_evidence), 1)
+        evidence = result.employer_evidence[0]
+        self.assertEqual(evidence.employer_name, "Slant")
+        self.assertEqual(evidence.descriptor_terms, ("crm",))
+        self.assertEqual(evidence.evidence_url, api_url)
+        self.assertEqual(evidence.opening_url, opening_url)
+        self.assertEqual(evidence.extraction_method, "about_heading_self_description")
+        self.assertEqual(result.trace["employer_evidence_count"], 1)
+
+    def test_extracts_explicit_launched_product_binding_from_about_section(self):
+        opening_url = "https://jobs.ashbyhq.com/pageport/product-designer"
+        result = self.adapter.list_jobs(
+            StubFetcher({
+                "jobs": [{
+                    "id": "product-designer",
+                    "title": "Product Designer",
+                    "jobUrl": opening_url,
+                    "location": "Lehi, UT",
+                    "descriptionHtml": """
+                        <h2>About Slant</h2>
+                        <p>Our company (Pageport, Inc.) is launching a new product
+                        called Slant - an AI-powered CRM for financial advisors.</p>
+                    """,
+                }],
+            }),
+            self.adapter.identify_board("https://jobs.ashbyhq.com/pageport"),
+            JobQuery(),
+        )
+
+        self.assertEqual(len(result.employer_evidence), 1)
+        evidence = result.employer_evidence[0]
+        self.assertEqual(evidence.employer_name, "Slant")
+        self.assertEqual(evidence.descriptor_terms, ("ai", "crm"))
+        self.assertEqual(evidence.opening_url, opening_url)
+
+    def test_rejects_about_section_with_wrong_employer_or_unbound_descriptor(self):
+        records = (
+            {
+                "id": "wrong-employer",
+                "title": "Product Designer",
+                "jobUrl": "https://jobs.ashbyhq.com/example/wrong-employer",
+                "descriptionHtml": """
+                    <h2>About Slant</h2>
+                    <p>Another Company is a CRM for financial advisors.</p>
+                """,
+            },
+            {
+                "id": "unrelated-crm",
+                "title": "Product Designer",
+                "jobUrl": "https://jobs.ashbyhq.com/example/unrelated-crm",
+                "descriptionHtml": """
+                    <h2>About Slant</h2>
+                    <p>Slant builds hiring software for advisors.</p>
+                    <p>This role will improve CRM integrations.</p>
+                """,
+            },
+            {
+                "id": "lowercase-description",
+                "title": "Product Designer",
+                "jobUrl": "https://jobs.ashbyhq.com/example/lowercase-description",
+                "descriptionHtml": """
+                    <h2>About Slant</h2>
+                    <p>Slant is a customer relationship management platform.</p>
+                """,
+            },
+            {
+                "id": "different-product",
+                "title": "Product Designer",
+                "jobUrl": "https://jobs.ashbyhq.com/example/different-product",
+                "descriptionHtml": """
+                    <h2>About Slant</h2>
+                    <p>We are launching a product called Different Company - a CRM
+                    for financial advisors.</p>
+                """,
+            },
+            {
+                "id": "unrelated-product-crm",
+                "title": "Product Designer",
+                "jobUrl": "https://jobs.ashbyhq.com/example/unrelated-product-crm",
+                "descriptionHtml": """
+                    <h2>About Slant</h2>
+                    <p>We are launching a product called Slant for advisors.</p>
+                    <p>This role will improve CRM integrations.</p>
+                """,
+            },
+        )
+
+        result = self.adapter.list_jobs(
+            StubFetcher({"jobs": list(records)}),
+            self.adapter.identify_board("https://jobs.ashbyhq.com/example"),
+            JobQuery(),
+        )
+
+        self.assertEqual(len(result.candidates), 5)
+        self.assertEqual(result.employer_evidence, ())
+        self.assertEqual(result.trace["employer_evidence_count"], 0)
+
+    def test_rejects_malformed_or_cross_opening_employer_evidence(self):
+        result = self.adapter.list_jobs(
+            StubFetcher({
+                "jobs": [
+                    {
+                        "id": "malformed",
+                        "title": "Product Designer",
+                        "jobUrl": "https://jobs.ashbyhq.com/example/malformed",
+                        "descriptionHtml": 42,
+                    },
+                    {
+                        "id": "conflicting-first",
+                        "title": "Product Designer",
+                        "jobUrl": "https://jobs.ashbyhq.com/example/shared-opening",
+                        "descriptionHtml": """
+                            <h2>About Slant</h2>
+                            <p>Slant is a CRM for financial advisors.</p>
+                        """,
+                    },
+                    {
+                        "id": "conflicting-second",
+                        "title": "Product Designer",
+                        "jobUrl": "https://jobs.ashbyhq.com/example/shared-opening",
+                        "descriptionHtml": """
+                            <h2>About Different Company</h2>
+                            <p>Different Company is a CRM for financial advisors.</p>
+                        """,
+                    },
+                ],
+            }),
+            self.adapter.identify_board("https://jobs.ashbyhq.com/example"),
+            JobQuery(),
+        )
+
+        self.assertEqual([candidate.url for candidate in result.candidates], [
+            "https://jobs.ashbyhq.com/example/malformed",
+            "https://jobs.ashbyhq.com/example/shared-opening",
+        ])
+        self.assertEqual(result.employer_evidence, ())
+
     def test_merges_primary_and_secondary_api_locations_in_stable_order(self):
         fetcher = StubFetcher({
             "jobs": [{

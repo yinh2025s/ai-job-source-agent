@@ -3,6 +3,7 @@ import unittest
 from job_source_agent.career_search import CareerSearchResolver, CareerSearchResult
 from job_source_agent.models import LinkCandidate
 from job_source_agent.provider_candidates import CandidateDiscoveryRequest
+from job_source_agent.provider_candidates import ProviderPublishedEmployerEvidence
 from job_source_agent.provider_search_discovery import ProviderSearchCandidateDiscovery
 from job_source_agent.providers import (
     AdapterResult,
@@ -10,6 +11,7 @@ from job_source_agent.providers import (
     JobCandidate,
     ProviderRegistry,
 )
+from job_source_agent.providers.lever import LeverAdapter
 from job_source_agent.web import FetchError, Fetcher, Page
 
 
@@ -67,6 +69,24 @@ class RejectingProbeFetcher(Fetcher):
     def fetch(self, url, data=None, headers=None):
         if "bing.com" in url:
             return Page(url, "<rss><channel /></rss>", final_url=url)
+        raise FetchError("tenant does not exist", status=404, retryable=False)
+
+
+class CaseSensitiveLeverFetcher(Fetcher):
+    def __init__(self):
+        super().__init__(offline=True)
+
+    def fetch(self, url, data=None, headers=None):
+        if "bing.com" in url:
+            return Page(url, "<rss><channel /></rss>", final_url=url)
+        if url == "https://api.lever.co/v0/postings/Versana?mode=json":
+            return Page(
+                url,
+                '[{"id":"role-1","text":"UX Designer",'
+                '"hostedUrl":"https://jobs.lever.co/Versana/role-1",'
+                '"categories":{"location":"Raleigh, NC"}}]',
+                final_url=url,
+            )
         raise FetchError("tenant does not exist", status=404, retryable=False)
 
 
@@ -177,6 +197,81 @@ class LegalSlugWorkableAdapter:
         )
 
 
+class AcronymSuffixProbeAdapter:
+    name = "ashby"
+    supports_listing = True
+
+    def __init__(
+        self,
+        *,
+        employer_name="Example",
+        descriptor_terms=("crm",),
+        location="Lehi, Utah",
+        evidence_opening_url=None,
+        result_tenant="example",
+        include_evidence=True,
+    ):
+        self.employer_name = employer_name
+        self.descriptor_terms = descriptor_terms
+        self.location = location
+        self.evidence_opening_url = evidence_opening_url
+        self.result_tenant = result_tenant
+        self.include_evidence = include_evidence
+
+    def recognizes(self, url):
+        return url.startswith("https://jobs.ashbyhq.com/")
+
+    def identify_board(self, url):
+        tenant = url.rstrip("/").split("/")[-1]
+        if tenant == "role-123":
+            tenant = "example"
+        return JobBoard(
+            url=f"https://jobs.ashbyhq.com/{tenant}",
+            provider=self.name,
+            identifier=tenant,
+        )
+
+    def list_jobs(self, fetcher, board, query):
+        if board.identifier != "example":
+            return AdapterResult(
+                provider=self.name,
+                board=board,
+                candidates=[],
+                inventory_complete=True,
+            )
+        opening_url = "https://jobs.ashbyhq.com/example/role-123"
+        evidence = ()
+        if self.include_evidence:
+            evidence = (
+                ProviderPublishedEmployerEvidence(
+                    employer_name=self.employer_name,
+                    descriptor_terms=self.descriptor_terms,
+                    evidence_url="https://api.ashbyhq.com/posting-api/job-board/example",
+                    opening_url=self.evidence_opening_url or opening_url,
+                    extraction_method="about_heading_self_description",
+                ),
+            )
+        result_board = JobBoard(
+            url=f"https://jobs.ashbyhq.com/{self.result_tenant}",
+            provider=self.name,
+            identifier=self.result_tenant,
+        )
+        return AdapterResult(
+            provider=self.name,
+            board=result_board,
+            candidates=[
+                JobCandidate(
+                    title="Product Designer",
+                    url=opening_url,
+                    provider=self.name,
+                    location=self.location,
+                )
+            ],
+            inventory_complete=True,
+            employer_evidence=evidence,
+        )
+
+
 class StaticResolver:
     def __init__(self, candidates, trace):
         self.candidates = candidates
@@ -207,6 +302,65 @@ class StaticResolver:
 
 
 class ProviderSearchCandidateDiscoveryTests(unittest.TestCase):
+    def test_case_sensitive_single_token_lever_tenant_is_verified_before_lowercase(self):
+        discovery = ProviderSearchCandidateDiscovery(
+            CareerSearchResolver(
+                CaseSensitiveLeverFetcher(), max_queries=1, max_source_fetches=1
+            ),
+            provider_registry=ProviderRegistry((LeverAdapter(),)),
+            max_probe_attempts=8,
+        )
+
+        result = discovery.discover(
+            CandidateDiscoveryRequest(
+                company_name="Versana",
+                linkedin_company_url="https://www.linkedin.com/company/versanatech",
+                target_title="UX Designer",
+                target_location="Raleigh, NC",
+            )
+        )
+
+        self.assertEqual(
+            [candidate.url for candidate in result.candidates],
+            ["https://jobs.lever.co/Versana"],
+        )
+        attempts = result.trace["tenant_probe_fallback"]["attempts"]
+        preserved = next(
+            attempt for attempt in attempts if attempt["probe_kind"] == "case_preserved"
+        )
+        self.assertEqual(preserved["provider"], "lever")
+        self.assertEqual(preserved["slug"], "Versana")
+        self.assertEqual(preserved["status"], "verified")
+        self.assertFalse(
+            any(
+                attempt["provider"] != "lever"
+                and attempt["probe_kind"] == "case_preserved"
+                for attempt in attempts
+            )
+        )
+
+    def test_case_preserved_lever_probe_does_not_guess_multi_token_camelcase(self):
+        discovery = ProviderSearchCandidateDiscovery(
+            CareerSearchResolver(
+                RejectingProbeFetcher(), max_queries=1, max_source_fetches=1
+            ),
+            max_probe_attempts=8,
+        )
+
+        result = discovery.discover(
+            CandidateDiscoveryRequest(
+                company_name="Versana Technologies",
+                linkedin_company_url="https://www.linkedin.com/company/versanatech",
+                target_title="UX Designer",
+            )
+        )
+
+        self.assertFalse(
+            any(
+                attempt["probe_kind"] == "case_preserved"
+                for attempt in result.trace["tenant_probe_fallback"]["attempts"]
+            )
+        )
     def test_full_legal_slug_reaches_workable_within_bounded_probe_wave(self):
         discovery = ProviderSearchCandidateDiscovery(
             CareerSearchResolver(
@@ -496,6 +650,161 @@ class ProviderSearchCandidateDiscoveryTests(unittest.TestCase):
                 for attempt in attempts
             )
         )
+
+    def test_acronym_suffix_probe_requires_opening_scoped_provider_employer_binding(self):
+        discovery = ProviderSearchCandidateDiscovery(
+            CareerSearchResolver(MappingFetcher("<rss><channel /></rss>"), max_queries=1),
+            provider_registry=ProviderRegistry((AcronymSuffixProbeAdapter(),)),
+            max_probe_attempts=8,
+        )
+
+        result = discovery.discover(
+            CandidateDiscoveryRequest(
+                company_name="Example CRM",
+                linkedin_company_url="https://www.linkedin.com/company/example-crm",
+                target_title="Product Designer",
+                target_location="Lehi, UT",
+            )
+        )
+
+        self.assertEqual(
+            [candidate.url for candidate in result.candidates],
+            ["https://jobs.ashbyhq.com/example"],
+        )
+        candidate = result.candidates[0]
+        self.assertIsNotNone(candidate.provider_employer_evidence)
+        self.assertEqual(
+            candidate.provider_employer_evidence.opening_url,
+            "https://jobs.ashbyhq.com/example/role-123",
+        )
+        attempts = result.trace["tenant_probe_fallback"]["attempts"]
+        stripped_attempt = next(
+            attempt
+            for attempt in attempts
+            if attempt["probe_kind"] == "acronym_suffix_stripped"
+            and attempt["provider"] == "ashby"
+        )
+        self.assertEqual(stripped_attempt["slug"], "example")
+        self.assertEqual(
+            stripped_attempt["reason"],
+            "provider_published_employer_verified",
+        )
+        self.assertLessEqual(len(attempts), 8)
+        self.assertEqual(
+            [attempt["slug"] for attempt in attempts[:5]],
+            ["example-crm"] * 4 + ["example"],
+        )
+
+    def test_acronym_suffix_probe_rejects_unbound_or_conflicting_evidence(self):
+        cases = (
+            ("wrong_employer", {"employer_name": "Other"}, "provider_employer_name_mismatch"),
+            ("missing_descriptor", {"descriptor_terms": ()}, "provider_employer_descriptor_mismatch"),
+            ("wrong_location", {"location": "Austin, TX"}, "provider_opening_location_mismatch"),
+            ("same_state_wrong_city", {"location": "Provo, Utah"}, "provider_opening_location_mismatch"),
+            ("wrong_opening", {"evidence_opening_url": "https://jobs.ashbyhq.com/example/other"}, "provider_employer_opening_mismatch"),
+            ("organization_null", {"include_evidence": False}, "provider_employer_evidence_missing"),
+        )
+        for name, adapter_kwargs, expected_reason in cases:
+            with self.subTest(name=name):
+                discovery = ProviderSearchCandidateDiscovery(
+                    CareerSearchResolver(
+                        MappingFetcher("<rss><channel /></rss>"), max_queries=1
+                    ),
+                    provider_registry=ProviderRegistry(
+                        (AcronymSuffixProbeAdapter(**adapter_kwargs),)
+                    ),
+                    max_probe_attempts=8,
+                )
+                result = discovery.discover(
+                    CandidateDiscoveryRequest(
+                        company_name="Example CRM",
+                        linkedin_company_url="https://www.linkedin.com/company/example-crm",
+                        target_title="Product Designer",
+                        target_location="Lehi, UT",
+                    )
+                )
+
+                self.assertEqual(result.candidates, ())
+                self.assertIn(
+                    expected_reason,
+                    [
+                        attempt["reason"]
+                        for attempt in result.trace["tenant_probe_fallback"]["attempts"]
+                        if attempt["probe_kind"] == "acronym_suffix_stripped"
+                    ],
+                )
+
+    def test_acronym_suffix_probe_rejects_result_tenant_mismatch(self):
+        discovery = ProviderSearchCandidateDiscovery(
+            CareerSearchResolver(MappingFetcher("<rss><channel /></rss>"), max_queries=1),
+            provider_registry=ProviderRegistry(
+                (AcronymSuffixProbeAdapter(result_tenant="other"),)
+            ),
+            max_probe_attempts=8,
+        )
+
+        result = discovery.discover(
+            CandidateDiscoveryRequest(
+                company_name="Example CRM",
+                linkedin_company_url="https://www.linkedin.com/company/example-crm",
+                target_title="Product Designer",
+                target_location="Lehi, UT",
+            )
+        )
+
+        self.assertEqual(result.candidates, ())
+        self.assertIn(
+            "provider_tenant_mismatch",
+            [
+                attempt["reason"]
+                for attempt in result.trace["tenant_probe_fallback"]["attempts"]
+                if attempt["probe_kind"] == "acronym_suffix_stripped"
+            ],
+        )
+
+    def test_non_acronym_or_non_two_token_company_does_not_add_stripped_probe(self):
+        discovery = ProviderSearchCandidateDiscovery(
+            CareerSearchResolver(MappingFetcher("<rss><channel /></rss>"), max_queries=1),
+            provider_registry=ProviderRegistry((AcronymSuffixProbeAdapter(),)),
+            max_probe_attempts=8,
+        )
+
+        result = discovery.discover(
+            CandidateDiscoveryRequest(
+                company_name="Example CRM Advisors",
+                linkedin_company_url="https://www.linkedin.com/company/example-crm-advisors",
+                target_title="Product Designer",
+            )
+        )
+
+        self.assertEqual(result.candidates, ())
+        self.assertFalse(
+            any(
+                attempt["probe_kind"] == "acronym_suffix_stripped"
+                for attempt in result.trace["tenant_probe_fallback"]["attempts"]
+            )
+        )
+
+    def test_acronym_suffix_probe_requires_a_website_or_linkedin_source(self):
+        discovery = ProviderSearchCandidateDiscovery(
+            CareerSearchResolver(MappingFetcher("<rss><channel /></rss>"), max_queries=1),
+            provider_registry=ProviderRegistry((AcronymSuffixProbeAdapter(),)),
+        )
+
+        result = discovery.discover(
+            CandidateDiscoveryRequest(
+                company_name="Example CRM",
+                target_title="Product Designer",
+                target_location="Lehi, UT",
+            )
+        )
+
+        self.assertEqual(result.candidates, ())
+        self.assertEqual(
+            result.trace["tenant_probe_fallback"]["reason"],
+            "probe_source_unavailable",
+        )
+        self.assertEqual(result.trace["tenant_probe_fallback"]["attempts"], [])
 
     def test_complete_but_empty_guessed_inventory_does_not_prove_company_tenant(self):
         discovery = ProviderSearchCandidateDiscovery(

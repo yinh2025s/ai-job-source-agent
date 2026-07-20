@@ -65,7 +65,7 @@ SUMMARY = {
         "lever": {"OPENING_NOT_FOUND": 1, "FETCH_FAILED": 2},
         "greenhouse": {},
     },
-    "failure_clusters": [
+    "stage_failure_groups": [
         {
             "stage": "opening_match",
             "provider": "lever",
@@ -136,7 +136,7 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("## Provider Reason Codes", report)
         self.assertIn("| lever | FETCH_FAILED | 2 |", report)
         self.assertLess(report.index("| lever | FETCH_FAILED | 2 |"), report.index("| lever | OPENING_NOT_FOUND | 1 |"))
-        self.assertIn("## Actionable Failure Clusters", report)
+        self.assertIn("## Stage Failure Diagnostics", report)
         self.assertIn(
             "| 1 | opening_match | lever | OPENING_NOT_FOUND | 2 | 0 | verified_no_match:2 | verified_inventory_no_match:2 | B, C |",
             report,
@@ -155,7 +155,7 @@ class RenderSummaryReportTests(unittest.TestCase):
         self.assertIn("| none | - | - | - | - | - | - | - |", report)
         self.assertIn("## Provider Reason Codes", report)
         self.assertIn("| none | none | 0 |", report)
-        self.assertIn("## Actionable Failure Clusters", report)
+        self.assertIn("## Stage Failure Diagnostics", report)
         self.assertIn("| 0 | none | none | none | 0 | 0 | - | - | - |", report)
         self.assertIn("## Checkpoint Activity", report)
         self.assertEqual(report.count("| none | none | 0 |"), 3)

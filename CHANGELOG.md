@@ -8,7 +8,106 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Proposed ADR-0029 for an off-by-default, provider-neutral LLM candidate
+  reasoning layer limited to causal `G` website-discovery gaps. The planner may
+  emit at most three bounded search queries and no URLs; the ranker may only
+  reorder supplied candidate IDs. Existing URL safety, website verification,
+  hiring relationship, provider/tenant, S6, and S7 gates remain authoritative.
+  The design freezes typed fallback, privacy, independent budgets, run-config
+  identity, advisory-only decision storage, offline replay, flag-off equivalence,
+  no-answer-leakage A/B measurement, and a batch uplift threshold before any
+  limited real model experiment. Phase A changes documentation only and neither
+  selects nor calls a model provider.
+
+- `.198` removes a misleading evaluation abstraction: automatic
+  `(stage, provider, reason_code)` aggregates are now named
+  `stage_failure_groups`, not causal `failure_clusters`, and records that later
+  recover an Exact opening are excluded from those groups. Stage funnels and
+  reason-code counts remain diagnostic history. Causal clusters require a
+  separately evidenced common trigger, code path, and batch acceptance floor.
+  The seven-record public/institutional group is consequently split into a
+  four-company authoritative public-domain registry cluster, a two-agency
+  nested namespace cluster, and one unconfirmed education identity record.
+  Offline gates pass 2512 tests (4 skipped), 25/25 provider cases, 6/6 resolver
+  cases, and 46 native adapters with zero architecture issues.
+
+- `.197` preserves the original case of a single-token company name for one
+  bounded Lever tenant probe immediately before the lowercase equivalent.
+  Versana's provider API is case-sensitive: the case-preserved candidate was
+  generated and requested in both focused runs. Run 1 ended in retryable TLS
+  EOF; a same-version, fresh-root run 2 recovered the canonical Lever board and
+  exact `UX Designer` opening and replayed 1/1 with zero mismatch or fixture
+  gap. This is one-company evidence and is not claimed as a general cluster
+  closure under the three-company minimum. The read-only run archive is
+  `artifacts/releases/fresh100-v197-lever-case-20260720-run2.tar.zst` with
+  SHA-256 `358a793bd42891e2ead045d79b9a29a5f3be7f3da02658f46df0329046a15fbc`.
+
+- The fresh-100 causal ledger now treats provider and External Apply recovery as
+  overlays rather than primary failure classes. After `.193` allocator evidence,
+  records 005/029 are no longer labeled budget starvation: `versana.io` had only
+  speculative-guess provenance, so the executable root is missing source-backed
+  candidate generation with secondary slot crowding. Record 025 is likewise a
+  website candidate-generation failure with an Oracle bypass overlay. The 44
+  unresolved records are now mutually classified as `T=10`, `B=0`, `S=1`,
+  `G=29`, and `I=4`, with shared trigger, code path, and batch acceptance floors.
+  Slant provider-first recovery is explicitly fail-closed unless provider-owned
+  public evidence binds employer, canonical tenant, title, location, status, and
+  opening; tenant-prefix or search-snippet similarity is insufficient.
+
 ### Added
+
+- `.196` splits the former eight-record `G-core/legal shortening` stage-shaped
+  cluster before changing behavior. LinkedIn slug normalization now recognizes
+  terminal `Limited` and `LLP`, strips terminal delimiter noise first, and uses
+  the same legal-form semantics for display and exact identity tokens. Embedded
+  words and non-terminal legal tokens remain unchanged. Full gates pass 2509
+  tests (4 skipped), 25/25 provider cases, 6/6 resolver cases, and 46 adapters
+  with zero architecture issues. A code-frozen two-record live produced both
+  correct source-backed candidates but recovered only Dechert end to end;
+  Dechert reached verified current inventory and authoritative
+  `OPENING_NOT_FOUND`. FotoMill's correct host failed TLS in both Python and
+  curl, so it moved from candidate generation to transport rather than being
+  counted as closure. Replay reproduced 2/2 with zero mismatch or fixture gap.
+  The open ledger is now `T=11, B=0, S=1, G=26, I=4` (42 records).
+
+- `.195` Phase C is complete for the single `G-unstable search candidate`
+  record 033. A code-frozen, isolated focused live recovered Slant CRM's
+  canonical Ashby board and `Product Designer` opening in 22.1 seconds without
+  resolving a website. Hiring and provider identity both cite the same public
+  Ashby API evidence; company, title, `Lehi, Utah`, provider, tenant, status,
+  and canonical opening passed S7. Same-version replay reproduced 1/1 with zero
+  mismatch or fixture gap and passed record integrity. Full gates pass 2505
+  tests (4 skipped), 25/25 provider cases, 6/6 resolver cases, and 46 adapters
+  with zero architecture issues. This closes only record 033, leaves 43 causal
+  records (`T=10, B=0, S=1, G=28, I=4`), and does not alter the immutable
+  `.188` aggregate.
+
+- `.195` aligns provider identity provenance after the `.194` focused audit.
+  When and only when a `provider_published_employer` candidate relationship is
+  verified, `ProviderIdentity.evidence_url` now uses the same provider-owned
+  public evidence URL as the hiring relationship instead of inheriting a denied
+  LinkedIn company URL. Other candidate and first-party evidence paths are
+  unchanged. `ADAPTER_VERSION` is `2026-07-20.195`.
+
+- `.194` adds a provider-owned employer identity contract for website-unresolved
+  records. `ProviderPublishedEmployerEvidence` is opening-scoped and binds a
+  public provider API URL, canonical opening URL, explicit employer name,
+  normalized acronym descriptors, and extraction method. Ashby emits it only
+  from one job record whose real `About <name>` section contains either a
+  same-name self-description or an explicit `product called <same name>`
+  statement with uppercase descriptor terms. A bounded provider probe may strip
+  one final uppercase acronym from an exactly two-token company name, but can
+  authorize the tenant only when exact title, strict city/state location,
+  canonical tenant/opening, employer name, and every stripped descriptor agree.
+  Search snippets, tenant-prefix similarity, full inventory alone, wrong-city
+  records, and missing or cross-opening employer evidence remain rejected. S5
+  records the new `provider_published_employer` relationship while S6/S7 retain
+  final title, location, status, and identity gates. `ADAPTER_VERSION` is
+  `2026-07-20.194`. Focused live/replay recovered Slant CRM Exact 1/1 with zero
+  replay mismatch or fixture gap, but the provider identity evidence URL still
+  inherited the denied LinkedIn source; `.195` completes that provenance fix.
 
 - `.193` corrects the causal ledger before changing resolver behavior. Records
   005/029 are duplicate-posting instances of one Versana LinkedIn-slug family

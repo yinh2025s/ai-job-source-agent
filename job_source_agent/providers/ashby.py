@@ -6,6 +6,7 @@ import json
 import re
 from urllib.parse import parse_qsl, quote, unquote, urljoin, urlparse, urlunparse
 
+from ..provider_candidates import ProviderPublishedEmployerEvidence
 from ..web import FetchError
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
@@ -24,6 +25,27 @@ _TRACKING_QUERY_KEYS = {
 }
 _URL_FIELDS = ("jobUrl", "jobURL", "job_url", "url", "externalLink")
 _JOB_CONTAINER_KEYS = {"jobs", "jobpostings", "job_postings", "openings"}
+_ABOUT_HEADING = re.compile(r"^about\s+(.+)$", re.IGNORECASE)
+_EMPLOYER_NAME = re.compile(r"^[A-Za-z][A-Za-z0-9 .&'\-]{0,119}$")
+_ACRONYM = re.compile(r"\b[A-Z][A-Z0-9]{1,23}\b")
+_SELF_DESCRIPTION_VERBS = (
+    "is",
+    "are",
+    "build",
+    "builds",
+    "create",
+    "creates",
+    "develop",
+    "develops",
+    "make",
+    "makes",
+    "offer",
+    "offers",
+    "power",
+    "powers",
+    "provide",
+    "provides",
+)
 
 
 class AshbyAdapter:
@@ -75,10 +97,16 @@ class AshbyAdapter:
             if isinstance(jobs, list):
                 candidates = _unique_candidates(jobs, identifier)
                 if candidates:
+                    employer_evidence = _employer_evidence_for_api_jobs(
+                        jobs,
+                        identifier=identifier,
+                        api_url=api_url,
+                    )
                     return AdapterResult(
                         provider=self.name,
                         board=board,
                         candidates=candidates,
+                        employer_evidence=employer_evidence,
                         trace={
                             "adapter": self.name,
                             "api_urls": [api_url],
@@ -86,6 +114,7 @@ class AshbyAdapter:
                             "response_source": api_page.source,
                             "response_mode": "api",
                             "candidate_count": len(candidates),
+                            "employer_evidence_count": len(employer_evidence),
                         },
                     )
                 fallback_reason = "empty_api_response"
@@ -182,6 +211,41 @@ class _ScriptParser(HTMLParser):
             self._parts = None
 
 
+class _AboutSectionParser(HTMLParser):
+    """Extract text belonging to actual heading-delimited description sections."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.headings: list[str] = []
+        self.sections: list[list[str]] = []
+        self._heading_parts: list[str] | None = None
+        self._heading_tag: str | None = None
+        self._active_section: list[str] | None = None
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        normalized = tag.casefold()
+        if normalized in {"h1", "h2", "h3", "h4", "h5", "h6"}:
+            self._heading_tag = normalized
+            self._heading_parts = []
+
+    def handle_data(self, data: str) -> None:
+        if self._heading_parts is not None:
+            self._heading_parts.append(data)
+        elif self._active_section is not None:
+            self._active_section.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized = tag.casefold()
+        if normalized == self._heading_tag and self._heading_parts is not None:
+            heading = _public_text(" ".join(self._heading_parts))
+            self._heading_tag = None
+            self._heading_parts = None
+            if heading:
+                self.headings.append(heading)
+                self._active_section = []
+                self.sections.append(self._active_section)
+
+
 def _embedded_payloads(html: str) -> list[object]:
     parser = _ScriptParser()
     try:
@@ -262,6 +326,136 @@ def _unique_candidates(jobs: list[object], identifier: str) -> list[JobCandidate
         seen_urls.add(candidate.url)
         candidates.append(candidate)
     return candidates
+
+
+def _employer_evidence_for_api_jobs(
+    jobs: list[object],
+    *,
+    identifier: str,
+    api_url: str,
+) -> tuple[ProviderPublishedEmployerEvidence, ...]:
+    """Return only unambiguous evidence tied to the record's own opening URL."""
+
+    evidence_by_opening: dict[str, list[ProviderPublishedEmployerEvidence]] = {}
+    for job in jobs:
+        candidate = _candidate(job, identifier)
+        if candidate is None or not isinstance(job, dict):
+            continue
+        evidence = _employer_evidence_from_job_record(
+            job,
+            evidence_url=api_url,
+            opening_url=candidate.url,
+        )
+        if evidence is not None:
+            evidence_by_opening.setdefault(candidate.url, []).append(evidence)
+
+    unambiguous: list[ProviderPublishedEmployerEvidence] = []
+    for opening_url in sorted(evidence_by_opening):
+        values = evidence_by_opening[opening_url]
+        unique = {
+            (item.employer_name, item.descriptor_terms, item.extraction_method): item
+            for item in values
+        }
+        if len(unique) == 1:
+            unambiguous.append(next(iter(unique.values())))
+    return tuple(unambiguous)
+
+
+def _employer_evidence_from_job_record(
+    job: dict,
+    *,
+    evidence_url: str,
+    opening_url: str,
+) -> ProviderPublishedEmployerEvidence | None:
+    description = job.get("descriptionHtml")
+    if not isinstance(description, str) or not description.strip():
+        return None
+    parser = _AboutSectionParser()
+    try:
+        parser.feed(description)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+
+    about_sections: list[tuple[str, str]] = []
+    for heading, section in zip(parser.headings, parser.sections):
+        match = _ABOUT_HEADING.fullmatch(heading)
+        if match is None:
+            continue
+        employer_name = _public_text(match.group(1))
+        if employer_name is None or _EMPLOYER_NAME.fullmatch(employer_name) is None:
+            return None
+        section_text = _public_text(" ".join(section))
+        if section_text is None:
+            return None
+        about_sections.append((employer_name, section_text))
+
+    if len(about_sections) != 1:
+        return None
+    employer_name, section_text = about_sections[0]
+    descriptor_terms = _bound_uppercase_descriptors(section_text, employer_name)
+    if not descriptor_terms:
+        return None
+    try:
+        return ProviderPublishedEmployerEvidence(
+            employer_name=employer_name,
+            descriptor_terms=descriptor_terms,
+            evidence_url=evidence_url,
+            opening_url=opening_url,
+            extraction_method="about_heading_self_description",
+        )
+    except (TypeError, ValueError):
+        return None
+
+
+def _bound_uppercase_descriptors(
+    section_text: str,
+    employer_name: str,
+) -> tuple[str, ...]:
+    escaped_name = re.escape(employer_name)
+    verb_pattern = "|".join(_SELF_DESCRIPTION_VERBS)
+    self_description = re.compile(
+        rf"^\s*{escaped_name}\s+(?:{verb_pattern})\b",
+        re.IGNORECASE,
+    )
+    product_launch = re.compile(
+        rf"\b(?:launch(?:es|ed|ing)?|introduc(?:e|es|ed|ing))\b"
+        rf"[^.!?]{{0,240}}?\bproduct\s+called\s+{escaped_name}\b"
+        rf"(?P<descriptor_text>[^.!?]{{0,240}})",
+        re.IGNORECASE,
+    )
+    for sentence in _section_sentences(section_text):
+        if self_description.match(sentence) is not None:
+            descriptor_text = sentence
+        else:
+            product_match = product_launch.search(sentence)
+            if product_match is None:
+                continue
+            descriptor_text = product_match.group("descriptor_text")
+        terms = tuple(
+            dict.fromkeys(term.casefold() for term in _ACRONYM.findall(descriptor_text))
+        )
+        if terms:
+            return terms
+    return ()
+
+
+def _section_sentences(section_text: str) -> list[str]:
+    """Split prose without breaking common legal-name abbreviations such as Inc."""
+
+    sentences: list[str] = []
+    for fragment in re.split(r"(?<=[.!?])\s+", section_text):
+        if not fragment:
+            continue
+        if sentences and re.search(
+            r"\b(?:co|corp|inc|ltd|llc|plc)\.$",
+            sentences[-1],
+            re.IGNORECASE,
+        ):
+            sentences[-1] = f"{sentences[-1]} {fragment}"
+        else:
+            sentences.append(fragment)
+    return sentences
 
 
 def _candidate(job: object, identifier: str) -> JobCandidate | None:

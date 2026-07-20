@@ -21,6 +21,7 @@ _PROVIDER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _RELATIONSHIP_EVIDENCE_TYPES = {
     "first_party_handoff",
     "linkedin_external_apply",
+    "provider_published_employer",
     "provider_tenant_match",
     "unverified_candidate",
 }

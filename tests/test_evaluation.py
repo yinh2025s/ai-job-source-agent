@@ -598,7 +598,7 @@ class EvaluationTests(unittest.TestCase):
 
         self.assertEqual(summary["provider_counts"], {"greenhouse": 1})
 
-    def test_summary_builds_stable_actionable_failure_clusters(self):
+    def test_summary_builds_stable_stage_failure_groups(self):
         results = [
             {
                 "company_name": "Zulu Co",
@@ -694,13 +694,13 @@ class EvaluationTests(unittest.TestCase):
             },
         ]
 
-        self.assertEqual(summarize_results(results)["failure_clusters"], expected)
+        self.assertEqual(summarize_results(results)["stage_failure_groups"], expected)
         self.assertEqual(
-            summarize_results(list(reversed(results)))["failure_clusters"],
+            summarize_results(list(reversed(results)))["stage_failure_groups"],
             expected,
         )
 
-    def test_failure_cluster_company_names_are_unique_sorted_and_bounded(self):
+    def test_stage_failure_group_company_names_are_unique_sorted_and_bounded(self):
         results = []
         for index in reversed(range(25)):
             results.append(
@@ -719,7 +719,7 @@ class EvaluationTests(unittest.TestCase):
             )
         results.append(results[0])
 
-        cluster = summarize_results(results)["failure_clusters"][0]
+        cluster = summarize_results(results)["stage_failure_groups"][0]
 
         self.assertEqual(cluster["company_count"], 25)
         self.assertEqual(cluster["retryable_count"], 13)
@@ -730,7 +730,7 @@ class EvaluationTests(unittest.TestCase):
             [f"Company {index:02d}" for index in range(20)],
         )
 
-    def test_failure_clusters_rank_largest_actionable_group_first(self):
+    def test_stage_failure_groups_rank_largest_diagnostic_group_first(self):
         results = [
             {
                 "company_name": "Early Stage One",
@@ -754,10 +754,41 @@ class EvaluationTests(unittest.TestCase):
             ],
         ]
 
-        clusters = summarize_results(results)["failure_clusters"]
+        clusters = summarize_results(results)["stage_failure_groups"]
 
         self.assertEqual(clusters[0]["stage"], "opening_match")
         self.assertEqual(clusters[0]["company_count"], 3)
+
+    def test_stage_failure_groups_exclude_recovered_exact_records(self):
+        result = {
+            "company_name": "Recovered Co",
+            "pipeline_status": "success",
+            "open_position_url": "https://jobs.lever.co/recovered/123",
+            "stages": [
+                {
+                    "stage": "website_resolution",
+                    "status": "failed",
+                    "reason_code": "FETCH_FAILED",
+                    "retryable": True,
+                },
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "lever",
+                },
+                {
+                    "stage": "opening_match",
+                    "status": "success",
+                    "provider": "lever",
+                },
+            ],
+        }
+
+        summary = summarize_results([result])
+
+        self.assertEqual(summary["terminal_outcome_counts"], {"exact_opening": 1})
+        self.assertEqual(summary["stage_failure_groups"], [])
+        self.assertEqual(summary["reason_code_counts"], {"FETCH_FAILED": 1})
 
 
 if __name__ == "__main__":

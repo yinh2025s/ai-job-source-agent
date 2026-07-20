@@ -1651,6 +1651,70 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertIn("https://brex.com", candidates)
 
+    def test_linkedin_slug_candidates_strip_sourced_legal_forms_and_delimiters(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+
+        limited = resolver._linkedin_slug_domain_candidates(
+            "https://www.linkedin.com/company/fotomill-studios-limited/"
+        )
+        llp = resolver._linkedin_slug_domain_candidates(
+            "https://www.linkedin.com/company/dechert-llp-/"
+        )
+
+        self.assertIn("https://fotomillstudios.com", limited)
+        self.assertIn("https://dechert.com", llp)
+
+    def test_linkedin_slug_legal_form_stripping_requires_terminal_token(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+
+        candidates = resolver._linkedin_slug_domain_candidates(
+            "https://www.linkedin.com/company/limited-edition-studios"
+        )
+        service_candidates = resolver._linkedin_slug_domain_candidates(
+            "https://www.linkedin.com/company/dechert-llp-services"
+        )
+
+        self.assertNotIn("https://editionstudios.com", candidates)
+        self.assertNotIn("https://dechert.com", service_candidates)
+
+    def test_sourced_legal_form_candidates_resolve_without_search_evidence(self):
+        class LegalFormFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if domain_of(url) == "fotomillstudios.com":
+                    return Page(
+                        url=url,
+                        final_url="https://fotomillstudios.com/",
+                        html="<html><head><title>FotoMill Studios</title></head></html>",
+                    )
+                if domain_of(url) == "dechert.com":
+                    return Page(
+                        url=url,
+                        final_url="https://www.dechert.com/",
+                        html="<html><head><title>Dechert LLP</title></head></html>",
+                    )
+                raise FetchError("not this candidate")
+
+        resolver = CompanyWebsiteResolver(LegalFormFetcher(offline=True), verify_limit=3)
+
+        fotomill, fotomill_trace = resolver.resolve(
+            "FotoMill Studios Limited",
+            "https://www.linkedin.com/company/fotomill-studios-limited",
+        )
+        dechert, dechert_trace = resolver.resolve(
+            "Dechert LLP",
+            "https://www.linkedin.com/company/dechert-llp-",
+        )
+
+        self.assertEqual(fotomill, "https://fotomillstudios.com/")
+        self.assertEqual(dechert, "https://www.dechert.com/")
+        self.assertIn("candidate source: linkedin_slug", fotomill_trace["selected"]["reasons"])
+        self.assertIn("candidate source: linkedin_slug", dechert_trace["selected"]["reasons"])
+
+    def test_company_tokenization_removes_only_whole_legal_form_tokens(self):
+        self.assertEqual(tokenize_company_name("FotoMill Studios Limited"), ["fotomill", "studios"])
+        self.assertEqual(tokenize_company_name("Dechert LLP"), ["dechert"])
+        self.assertEqual(tokenize_company_name("Unlimited Studios"), ["unlimited", "studios"])
+
     def test_linkedin_slug_candidates_strip_product_suffix_for_abbreviated_brand(self):
         resolver = CompanyWebsiteResolver(Fetcher(offline=True))
 

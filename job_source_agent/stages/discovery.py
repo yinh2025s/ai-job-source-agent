@@ -41,6 +41,7 @@ from ..provider_candidates import (
     ProviderCandidatePool,
     STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
     VerifiedProviderCandidate,
+    provider_employer_matches_company,
 )
 from ..reasons import canonical_reason_code, make_stage_result
 from ..result_identity import canonicalize_identity_url, tenant_locator
@@ -2547,6 +2548,12 @@ def _provider_identity(
             tenant,
             relationship_evidence,
         )
+        if (
+            verified
+            and method == "provider_published_employer"
+            and relationship_evidence is not None
+        ):
+            evidence_url = relationship_evidence.evidence_url
     effective_name = (
         effective_hiring.hiring_entity_name
         if effective_hiring is not None
@@ -3326,6 +3333,21 @@ def _candidate_hiring_relationship(
     ):
         evidence_type = "provider_tenant_match"
         strength = 90
+    elif (
+        candidate.source_kind == "verified_tenant_probe"
+        and candidate.provider_employer_evidence is not None
+        and provider_employer_matches_company(
+            company_name,
+            candidate.provider_employer_evidence,
+        )
+        and _provider_employer_evidence_matches_board(
+            selected,
+            candidate.provider_employer_evidence.opening_url,
+        )
+    ):
+        evidence_type = "provider_published_employer"
+        evidence_url = candidate.provider_employer_evidence.evidence_url
+        strength = 96
     elif candidate.source_kind not in {
         "guessed_path",
         *STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
@@ -3344,6 +3366,26 @@ def _candidate_hiring_relationship(
         evidence_url=evidence_url,
         strength=strength,
         verified=strength >= 80,
+    )
+
+
+def _provider_employer_evidence_matches_board(
+    selected: VerifiedProviderCandidate,
+    opening_url: str,
+) -> bool:
+    board = selected.discovered_board.board
+    adapter = DEFAULT_PROVIDER_REGISTRY.adapter_for(opening_url)
+    opening_board = adapter.identify_board(opening_url) if adapter is not None else None
+    if opening_board is None:
+        return False
+    canonicalize_board = getattr(adapter, "canonicalize_board", None)
+    if callable(canonicalize_board):
+        opening_board = canonicalize_board(opening_board)
+    return (
+        opening_board.provider == board.provider
+        and opening_board.identifier == board.identifier
+        and opening_board.url.rstrip("/").casefold()
+        == board.url.rstrip("/").casefold()
     )
 
 

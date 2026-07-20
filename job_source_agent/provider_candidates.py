@@ -10,7 +10,7 @@ from .job_board import DiscoveredJobBoard
 from .result_identity import canonicalize_identity_url
 
 
-PROVIDER_CANDIDATE_SCHEMA_VERSION = "1.0"
+PROVIDER_CANDIDATE_SCHEMA_VERSION = "1.1"
 MAX_PROVIDER_CANDIDATES = 12
 
 SOURCE_PRIORITIES = {
@@ -32,6 +32,7 @@ STORED_PROVIDER_CANDIDATE_SOURCE_KINDS = frozenset(
 )
 
 _PROVIDER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
+_EVIDENCE_METHOD = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 _SENSITIVE_QUERY_KEYS = {
     "access_token",
     "api_key",
@@ -54,6 +55,49 @@ _SENSITIVE_QUERY_KEYS = {
 
 
 @dataclass(frozen=True)
+class ProviderPublishedEmployerEvidence:
+    """Provider-owned opening evidence that names the recruiting organization."""
+
+    employer_name: str
+    descriptor_terms: tuple[str, ...]
+    evidence_url: str
+    opening_url: str
+    extraction_method: str
+
+    def __post_init__(self) -> None:
+        _validate_text(
+            self.employer_name,
+            "provider employer name",
+            required=True,
+            maximum=300,
+        )
+        if not isinstance(self.descriptor_terms, tuple):
+            raise TypeError("Provider employer descriptors must be immutable")
+        normalized_terms = tuple(
+            dict.fromkeys(
+                term.casefold()
+                for term in self.descriptor_terms
+                if isinstance(term, str) and re.fullmatch(r"[a-z0-9]{2,24}", term.casefold())
+            )
+        )
+        if normalized_terms != self.descriptor_terms:
+            raise ValueError("Provider employer descriptors are not normalized")
+        object.__setattr__(self, "evidence_url", _canonical_public_url(self.evidence_url))
+        object.__setattr__(self, "opening_url", _canonical_public_url(self.opening_url))
+        if not _EVIDENCE_METHOD.fullmatch(self.extraction_method):
+            raise ValueError("Invalid provider employer extraction method")
+
+    def to_trace_payload(self) -> dict[str, Any]:
+        return {
+            "employer_name": self.employer_name,
+            "descriptor_terms": list(self.descriptor_terms),
+            "evidence_url": self.evidence_url,
+            "opening_url": self.opening_url,
+            "extraction_method": self.extraction_method,
+        }
+
+
+@dataclass(frozen=True)
 class ProviderCandidate:
     """Untrusted URL lead. Ranking never grants provider or hiring identity."""
 
@@ -66,6 +110,7 @@ class ProviderCandidate:
     provider_hint: str | None = None
     query: str | None = None
     result_rank: int | None = None
+    provider_employer_evidence: ProviderPublishedEmployerEvidence | None = None
     schema_version: str = PROVIDER_CANDIDATE_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -96,6 +141,16 @@ class ProviderCandidate:
                 raise ValueError("Search candidates require query and result rank")
         elif self.query is not None or self.result_rank is not None:
             raise ValueError("Non-search candidates cannot carry search metadata")
+        if self.provider_employer_evidence is not None:
+            if not isinstance(
+                self.provider_employer_evidence,
+                ProviderPublishedEmployerEvidence,
+            ):
+                raise TypeError("Invalid provider employer evidence")
+            if self.source_kind != "verified_tenant_probe":
+                raise ValueError(
+                    "Provider employer evidence requires a verified tenant probe"
+                )
 
     @property
     def priority(self) -> int:
@@ -112,6 +167,11 @@ class ProviderCandidate:
             "provider_hint": self.provider_hint,
             "query": self.query,
             "result_rank": self.result_rank,
+            "provider_employer_evidence": (
+                self.provider_employer_evidence.to_trace_payload()
+                if self.provider_employer_evidence is not None
+                else None
+            ),
             "priority": self.priority,
             "schema_version": self.schema_version,
         }
@@ -231,6 +291,51 @@ def _candidate_identity(candidate: ProviderCandidate) -> str:
             "",
         )
     )
+
+
+def provider_employer_matches_company(
+    company_name: str,
+    evidence: ProviderPublishedEmployerEvidence,
+) -> bool:
+    """Bind a provider-published base name plus explicit descriptors to input."""
+
+    ignored = {
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "group",
+        "holdings",
+        "inc",
+        "incorporated",
+        "limited",
+        "llc",
+        "ltd",
+        "plc",
+        "the",
+    }
+
+    def identity_tokens(value: str) -> tuple[str, ...]:
+        return tuple(
+            token
+            for token in re.findall(r"[a-z0-9]+", value.casefold())
+            if token not in ignored
+        )
+
+    company_tokens = identity_tokens(company_name)
+    employer_tokens = identity_tokens(evidence.employer_name)
+    if not company_tokens or not employer_tokens:
+        return False
+    if employer_tokens == company_tokens:
+        return True
+    if (
+        len(employer_tokens) >= len(company_tokens)
+        or company_tokens[: len(employer_tokens)] != employer_tokens
+    ):
+        return False
+    remaining = company_tokens[len(employer_tokens) :]
+    descriptors = set(evidence.descriptor_terms)
+    return bool(remaining and all(token in descriptors for token in remaining))
 
 
 def _canonical_public_url(value: str) -> str:
