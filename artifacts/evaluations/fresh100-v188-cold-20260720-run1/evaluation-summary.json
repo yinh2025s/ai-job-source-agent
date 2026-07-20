@@ -1,0 +1,27 @@
+{
+  "source_commit": "ed4c9343ec382387542d7b917050acbc04096dda",
+  "tag": "frozen100-v188",
+  "raw_exact": 12,
+  "audited_exact": 11,
+  "eligible_denominator": 90,
+  "eligible_exact_recall": 0.12222222222222222,
+  "terminal_counts": {
+    "EXACT": 11,
+    "VERIFIED_NOT_FOUND": 9,
+    "EXTERNAL_BLOCKED": 0,
+    "INPUT_IDENTITY_INVALID": 1,
+    "SYSTEM_GAP": 79
+  },
+  "wrong_opening_url_count": 1,
+  "cross_company_false_positive_count": 0,
+  "cross_tenant_false_positive_count": 0,
+  "replay": {
+    "source_records": 100,
+    "reproduced": 97,
+    "mismatch": 1,
+    "fixture_gap": 0,
+    "tape_divergence": 1,
+    "captured_boundary_missing": 1,
+    "gate_passed": false
+  }
+}
