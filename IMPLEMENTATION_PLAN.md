@@ -59,9 +59,11 @@ one-shot execution 只接受该 selection commit 的 clean descendant，并把 s
 同时写入 exclusive ledger 与 execution manifest。cohort/config digest、一次性消费、serial live 和不可 resume
 规则不变；schema 1.0 保持 exact-code-only，避免旧 v1 artifact 被静默放宽。
 
-该修改只属于评估治理，不改变 S1-S7 产品行为。相关 contract/review-chain tests 通过后，重新从 clean `.199`
-commit 创建 holdout worktree；当前 `.198` 候选收集尝试在首个请求被 LinkedIn 地域 302/451 拒绝，没有写出
-候选或消费 cohort。
+该修改只属于评估治理，不改变 S1-S7 产品行为。网络恢复后已从 clean `.199` commit 只运行 S1 收集并完成
+两批封存：候选池 239 条，v2/v3 各 40 条且批内唯一、批间 identity overlap 为 0、历史 overlap 为 0、
+website/career/board/opening prefill 为 0。两批均为 schema 1.1，只读且尚未创建 one-shot ledger；开发期间
+禁止打开或运行。选择回执仅记录计数和 digest，位于
+`artifacts/blind_holdout/v2-v3-selection-receipt.json`。
 
 ### `.198`：causal cluster 与 stage diagnostics 分离（Phase B）
 
@@ -83,8 +85,8 @@ holdout；之后只选择至少跨三家公司复现的通用 contract。
 下一候选行为簇的 Phase A contract 已写入
 `docs/FRESH_100_PUBLIC_DOMAIN_REGISTRY_PHASE_A.md`。CISA/get.gov 每日公开 CSV 能以 organization type、
 organization、city 和 state 为四条 city/state 输入提供权威候选来源；它只产生有 provenance 的候选集，
-不能直接宣布 Website 成功。该实现仍被 blind holdout gate 阻挡：当前命令行 LinkedIn guest endpoint 被
-地域路由到 `linkedin.cn` 并返回 451，切换美国网络出口后继续完成两批封存。
+不能直接宣布 Website 成功。blind holdout 前置门禁现已满足；下一行为版本可实现该 registry candidate
+source，但必须保持 v2/v3 未观察，先完成 development focused live/replay 和原冻结 cohort 回归。
 
 并行 Phase A 同时否定 `T-403` 的旧 `3/5` closure：5 条实际只有 4 家公司，且只有 Mayo Clinic 有已
 捕获的 first-party Career bypass，不能把 403 这个 transport 症状包装成共同修复。描述性品牌尾词

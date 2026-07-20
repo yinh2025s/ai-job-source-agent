@@ -10,6 +10,14 @@
 
 ### Changed
 
+- `.199` blind selection is now sealed without changing S2-S7 behavior. An
+  S1-only pool of 239 unique identities produced two schema-1.1 cohorts of 40
+  records each. Both have zero historical/post-selection overlap, zero website
+  or career-prefill fields, and zero cross-cohort identity overlap. Their
+  digests bind selection commit `66054fd`; the files are read-only and no
+  one-shot ledger has been created. The repository receipt contains counts and
+  hashes only, so both cohorts remain unobserved for later acceptance runs.
+
 - `.199` repairs the blind-holdout lifecycle contract before another product
   behavior change. Manifest schema 1.1 binds the clean selection commit/tree,
   cohort, candidate pool, run configuration, history audit, and an explicit

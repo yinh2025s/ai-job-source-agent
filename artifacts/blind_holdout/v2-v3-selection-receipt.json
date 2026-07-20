@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0",
+  "status": "sealed_unconsumed",
+  "selection_code_commit": "66054fdcad16b5c910e22b41266f6452d8cc11d9",
+  "selection_source_tree_sha256": "f3489395ec92a5d32b4283eecc9c5642f226e657",
+  "execution_code_policy": "clean_descendant_of_selection_commit",
+  "candidate_pool": {
+    "record_count": 239,
+    "file_sha256": "482fcf74a6cdffd99bd301f13f35b06b86c263adfedfafb148f1864653e70987",
+    "manifest_file_sha256": "efd61bf141cde6969e62cfd0f2657f2187c7737b6844118234c2594e8c12dd3c"
+  },
+  "cohorts": {
+    "v2": {
+      "record_count": 40,
+      "unique_identity_count": 40,
+      "cohort_sha256": "d2846346085661fbbf10aed3aa069828695718d84846443d9dce0ed15dc5528d",
+      "manifest_file_sha256": "f5b53a89f8d49fb06ea6f2e790a892a30bbe6a65889587531eadd7505ff2cbea",
+      "historical_file_count": 20213,
+      "rejected_overlap_count": 37,
+      "post_selection_overlap_count": 0,
+      "forbidden_prefill_count": 0
+    },
+    "v3": {
+      "record_count": 40,
+      "unique_identity_count": 40,
+      "cohort_sha256": "6b655522f0f2817e0b73732ecd9c8035f1092e9384177e11896447e6b69bf556",
+      "manifest_file_sha256": "a5cb7efc777622acb19fbbdcd8dd1392560d0a4f96b8fab8f7cbabd8b1670121",
+      "historical_file_count": 20215,
+      "rejected_overlap_count": 108,
+      "post_selection_overlap_count": 0,
+      "forbidden_prefill_count": 0
+    }
+  },
+  "cross_cohort_identity_overlap_count": 0,
+  "one_shot_ledgers_created": 0,
+  "identity_data_in_receipt": false
+}
