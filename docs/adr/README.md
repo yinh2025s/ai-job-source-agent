@@ -40,3 +40,4 @@ NNNN-short-decision-title.md
 - [ADR-0026: Follow Career Inventory](0026-follow-career-inventory.md)
 - [ADR-0027: Bind Provider Candidates To Hiring Relationships](0027-bind-provider-candidates-to-hiring-relationships.md)
 - [ADR-0028: Cache Verified Company Discovery Evidence](0028-cache-verified-company-discovery-evidence.md)
+- [ADR-0029: Bound LLM Candidate Reasoning To Untrusted Discovery Leads](0029-bound-llm-candidate-reasoning.md)

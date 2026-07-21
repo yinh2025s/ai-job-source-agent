@@ -5,6 +5,7 @@ from pathlib import Path
 
 from .application_runner import ApplicationRunner
 from .candidate_portfolio import CompositeCandidateDiscovery
+from .candidate_reasoning_service import CandidateReasoningInvocationService
 from .career_search import CareerSearchResolver
 from .career_surface_discovery import CareerSurfaceCandidateDiscovery
 from .career_transport_budget import CareerTransportBudgetFetcher
@@ -156,6 +157,7 @@ def build_application(
     linkedin_evidence_cache_path: str | Path | None = None,
     company_discovery_evidence_path: str | Path | None = None,
     run_configuration: DeterministicRunConfig | None = None,
+    candidate_reasoning_service: CandidateReasoningInvocationService | None = None,
 ) -> ApplicationComponents:
     capture_coordinator = (
         SnapshotCaptureCoordinator() if fetcher_config.snapshot_dir else None
@@ -174,6 +176,7 @@ def build_application(
         company_discovery_evidence_path=company_discovery_evidence_path,
         run_configuration=run_configuration,
         capture_coordinator=capture_coordinator,
+        candidate_reasoning_service=candidate_reasoning_service,
     )
 
 
@@ -188,6 +191,7 @@ def build_application_from_fetcher(
     company_discovery_evidence_path: str | Path | None = None,
     run_configuration: DeterministicRunConfig | None = None,
     capture_coordinator: EvidenceCaptureCoordinator | None = None,
+    candidate_reasoning_service: CandidateReasoningInvocationService | None = None,
 ) -> ApplicationComponents:
     """Assemble the product pipeline around an injected fetch boundary."""
 
@@ -204,6 +208,13 @@ def build_application_from_fetcher(
         settings
     ).to_agent_config():
         raise ValueError("run_configuration does not match agent_config")
+    if settings.enable_llm_candidate_reasoning and (
+        candidate_reasoning_service is None
+        or not candidate_reasoning_service.enabled
+    ):
+        raise ValueError(
+            "LLM candidate reasoning is enabled but no enabled provider-neutral service was injected"
+        )
     agent = build_agent(
         fetcher,
         settings,
@@ -267,6 +278,11 @@ def build_application_from_fetcher(
                 website_resolver,
                 identity_hint_resolver=CompanyIdentityResolver(),
                 company_discovery_evidence_store=company_discovery_store,
+                candidate_reasoning_service=(
+                    candidate_reasoning_service
+                    if settings.enable_llm_candidate_reasoning
+                    else None
+                ),
             ),
             HiringIdentityResolutionStage(
                 CompanyIdentityResolver(

@@ -82,6 +82,41 @@
 
 ### Added
 
+- The off-by-default ADR-0029 Phase B foundation is implemented without choosing
+  or calling a real model. Provider-neutral planner, ranker, client and decision
+  store contracts enforce strict schema-1 payloads, at most three URL-free
+  queries, ten immutable search candidates and Top-3 verification. A bounded
+  resolver-backed search adapter produces evidence only; model ranking can only
+  reference supplied IDs, and every selected URL is fetched and identity-checked
+  again by `CompanyWebsiteResolver`. Visible External Apply, verified stored
+  provider evidence, deterministic success, typed transport failures, budget
+  exhaustion and later-stage/terminal states bypass reasoning. Formal scoped
+  replay-bundle export and consumption integrity remain pending, so this
+  foundation is not yet eligible for a real-model experiment.
+
+- LLM decision persistence now content-addresses company identity, complete input
+  and candidate evidence, provider/model/prompt/schema/adapter identity. Atomic
+  storage, failure audit records and strict service-level single-use replay reject missing,
+  corrupt, incompatible, changed-evidence and unconsumed fixtures; replay makes
+  zero model calls. The disabled run configuration remains schema 1.4 and omits
+  all LLM fields, while enabled runs use schema 1.5 and require an explicitly
+  injected provider-neutral service. No provider SDK, endpoint, credential or
+  paid API is present.
+
+- A leakage-resistant Phase C metrics core reports baseline/treatment candidate
+  recall@3, verified-website recall, eligible-G recovery, wrong or non-evidence
+  URLs, cross-company/tenant output, replay mismatch, call count, advisory
+  failures, token/cost totals and P50/P95 latency. It applies the frozen +25 percentage-point,
+  40%-recovery and zero-error gates. An 18-record answer-free eligible-G input is
+  frozen separately from evaluator-only website labels; its records digest is
+  `d3c65152af084f1ad2bd994c4a6d67de1e09a66781437be00adb88ceb88368ae`.
+  The reasoning-only resolver entry also rejects news, editorial and product
+  deep links before fetch; deterministic negative tests cover unrelated,
+  same-name regional-conflict and wrong-parent candidates.
+  No real-model experiment has run and no uplift is claimed. Offline validation
+  passes 2605 tests (4 skipped), 25/25 provider cases, 6/6 resolver cases and 46
+  native adapters with zero architecture issues.
+
 - `.196` splits the former eight-record `G-core/legal shortening` stage-shaped
   cluster before changing behavior. LinkedIn slug normalization now recognizes
   terminal `Limited` and `LLP`, strips terminal delimiter noise first, and uses

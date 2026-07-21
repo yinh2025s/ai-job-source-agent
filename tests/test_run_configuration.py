@@ -34,6 +34,126 @@ class DeterministicRunConfigTests(unittest.TestCase):
             enabled.to_payload()["agent"]["enable_parallel_candidate_discovery"]
         )
 
+    def test_disabled_llm_reasoning_preserves_schema_1_4_payload_and_digest(self):
+        baseline = DeterministicRunConfig.from_agent_config(AgentConfig())
+        explicitly_disabled = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                enable_llm_candidate_reasoning=False,
+                llm_provider="ignored-provider",
+                llm_model="ignored-model",
+                llm_prompt_version="ignored-prompt",
+                llm_timeout=99,
+                llm_max_candidates=1,
+                llm_max_calls_per_company=1,
+            )
+        )
+
+        self.assertEqual(baseline.to_payload()["schema_version"], "1.4")
+        self.assertNotIn("enable_llm_candidate_reasoning", baseline.to_payload()["agent"])
+        self.assertEqual(explicitly_disabled.to_payload(), baseline.to_payload())
+        self.assertEqual(explicitly_disabled.digest, baseline.digest)
+
+    def test_enabled_llm_reasoning_uses_schema_1_5_and_round_trips(self):
+        config = AgentConfig(
+            max_career_candidate_fetches=12,
+            enable_parallel_candidate_discovery=True,
+            enable_llm_candidate_reasoning=True,
+            llm_provider="example-provider",
+            llm_model="reasoner/v1",
+            llm_prompt_version="company-candidates-v1",
+            llm_timeout=12.5,
+            llm_max_candidates=7,
+            llm_max_calls_per_company=2,
+        )
+
+        deterministic = DeterministicRunConfig.from_agent_config(config)
+        payload = deterministic.to_payload()
+
+        self.assertEqual(payload["schema_version"], "1.5")
+        self.assertEqual(payload["agent"]["llm_model"], "reasoner/v1")
+        self.assertEqual(
+            DeterministicRunConfig.from_payload(payload).to_agent_config(),
+            config,
+        )
+        self.assertNotEqual(
+            deterministic.digest,
+            DeterministicRunConfig.from_agent_config(AgentConfig()).digest,
+        )
+
+    def test_schema_1_5_rejects_disabled_missing_or_unsafe_llm_configuration(self):
+        valid = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                enable_parallel_candidate_discovery=True,
+                enable_llm_candidate_reasoning=True,
+                llm_provider="example",
+                llm_model="model-v1",
+                llm_prompt_version="prompt-v1",
+            )
+        ).to_payload()
+
+        invalid_fields = {
+            "enable_parallel_candidate_discovery": False,
+            "enable_llm_candidate_reasoning": False,
+            "llm_provider": "",
+            "llm_model": "model with spaces",
+            "llm_prompt_version": "../secret",
+            "llm_timeout": float("nan"),
+            "llm_max_candidates": 11,
+            "llm_max_calls_per_company": 3,
+        }
+        for field, value in invalid_fields.items():
+            with self.subTest(field=field, value=value):
+                with self.assertRaises(ValueError):
+                    DeterministicRunConfig.from_payload(
+                        {
+                            **valid,
+                            "agent": {**valid["agent"], field: value},
+                        }
+                    )
+
+        with self.assertRaises(ValueError):
+            DeterministicRunConfig.from_payload(
+                {
+                    **valid,
+                    "agent": {
+                        key: value
+                        for key, value in valid["agent"].items()
+                        if key != "llm_model"
+                    },
+                }
+            )
+
+    def test_llm_behavior_fields_all_change_execution_digest(self):
+        base = AgentConfig(
+            max_career_candidate_fetches=12,
+            enable_parallel_candidate_discovery=True,
+            enable_llm_candidate_reasoning=True,
+            llm_provider="provider-a",
+            llm_model="model-a",
+            llm_prompt_version="prompt-a",
+            llm_timeout=8,
+            llm_max_candidates=10,
+            llm_max_calls_per_company=2,
+        )
+        base_digest = DeterministicRunConfig.from_agent_config(base).digest
+        variants = (
+            {"llm_provider": "provider-b"},
+            {"llm_model": "model-b"},
+            {"llm_prompt_version": "prompt-b"},
+            {"llm_timeout": 9},
+            {"llm_max_candidates": 9},
+            {"llm_max_calls_per_company": 1},
+        )
+
+        for changes in variants:
+            with self.subTest(changes=changes):
+                payload = {**base.__dict__, **changes}
+                variant = AgentConfig(**payload)
+                self.assertNotEqual(
+                    DeterministicRunConfig.from_agent_config(variant).digest,
+                    base_digest,
+                )
+
     def test_exhaustive_route_evaluation_requires_parallel_discovery(self):
         with self.assertRaisesRegex(ValueError, "requires parallel"):
             DeterministicRunConfig.from_agent_config(

@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 from html import unescape as html_unescape
 from html.parser import HTMLParser
 from pathlib import Path
+from typing import TYPE_CHECKING, Sequence
 from urllib.parse import parse_qs, unquote, urlencode, urlparse
 from xml.etree import ElementTree as ET
 
@@ -15,7 +16,10 @@ from .contracts import FetchClient
 from .fetch_failure import project_fetch_error
 from .homepage_navigation import HomepageNavigationEvidence, evidence_from_verified_homepage
 from .identity_evidence import LinkedInWebsiteEvidenceStore
-from .web import FetchError, Page, domain_of, extract_links, normalize_url
+from .web import FetchError, Page, domain_of, extract_links, normalize_url, safe_normalize_url
+
+if TYPE_CHECKING:
+    from .candidate_reasoning_contracts import CandidateEvidence
 
 
 SEARCH_ENDPOINT = "https://www.bing.com/search"
@@ -156,6 +160,125 @@ class CompanyWebsiteResolver:
             stored_candidate_url,
         )
         return website_url, trace
+
+    def resolve_ranked_existing_candidates(
+        self,
+        candidates: Sequence[str | CandidateEvidence],
+        company_name: str,
+        linkedin_company_url: str | None = None,
+        job_location: str | None = None,
+    ) -> tuple[str | None, dict]:
+        """Verify up to three existing LLM-ranked website candidates deterministically.
+
+        Candidate order is advisory only: every accepted URL must still pass the
+        resolver's normal fetch, page identity, and selection checks.  This method
+        deliberately does not search, infer new URLs, or accept provider URLs.
+        """
+
+        website_url, trace, _navigation_evidence = (
+            self.resolve_ranked_existing_candidates_with_navigation_evidence(
+                candidates,
+                company_name,
+                linkedin_company_url,
+                job_location,
+            )
+        )
+        return website_url, trace
+
+    def resolve_ranked_existing_candidates_with_navigation_evidence(
+        self,
+        candidates: Sequence[str | CandidateEvidence],
+        company_name: str,
+        linkedin_company_url: str | None = None,
+        job_location: str | None = None,
+    ) -> tuple[str | None, dict, HomepageNavigationEvidence | None]:
+        """Return a website only after deterministic verification of existing URLs.
+
+        The caller may supply `CandidateEvidence` from candidate reasoning or plain
+        URLs.  Model confidence, reason codes, and snippets are intentionally not
+        read here; only the already-discovered URL is eligible for verification.
+        """
+
+        if isinstance(candidates, (str, bytes)):
+            raise TypeError("candidates must be a bounded sequence of candidate URLs")
+        candidate_snapshot = tuple(candidates)
+        if len(candidate_snapshot) > 3:
+            raise ValueError("at most three ranked website candidates may be verified")
+
+        safe_candidates: list[str] = []
+        rejected_candidates: list[dict[str, str]] = []
+        for candidate in candidate_snapshot:
+            raw_url = candidate if isinstance(candidate, str) else getattr(candidate, "url", None)
+            if not isinstance(raw_url, str):
+                rejected_candidates.append({"reason": "candidate URL is missing or invalid"})
+                continue
+            if urlparse(raw_url).scheme.casefold() != "https":
+                rejected_candidates.append(
+                    {"url": raw_url, "reason": "candidate URL must already use HTTPS"}
+                )
+                continue
+            normalized = safe_normalize_url(raw_url)
+            if not normalized:
+                rejected_candidates.append({"url": raw_url, "reason": "candidate URL is unsafe"})
+                continue
+            if is_blocked_domain(normalized):
+                rejected_candidates.append(
+                    {"url": normalized, "reason": "candidate domain is blocked"}
+                )
+                continue
+            non_company_page_reason = _reasoning_candidate_page_rejection_reason(
+                normalized
+            )
+            if non_company_page_reason:
+                rejected_candidates.append(
+                    {"url": normalized, "reason": non_company_page_reason}
+                )
+                continue
+            safe_candidates.append(normalized)
+
+        safe_candidates = dedupe_urls(safe_candidates)
+        trace = {
+            "company_name": company_name,
+            "linkedin_company_url": linkedin_company_url,
+            "job_location": job_location,
+            "candidate_route": "llm_ranked_existing_website_candidates",
+            "candidates": [],
+            "rejected_candidates": rejected_candidates,
+            "fetch_errors": [],
+            "verification_allocations": [],
+        }
+        if not safe_candidates:
+            return None, trace, None
+
+        scored = self._rank_and_verify_candidates(
+            safe_candidates,
+            company_name,
+            linkedin_company_url,
+            job_location=job_location,
+            candidate_sources=_candidate_source_map(
+                ("search_evidence", safe_candidates)
+            ),
+            fetch_errors=trace["fetch_errors"],
+            allocation_trace=trace["verification_allocations"],
+            allocation_phase="llm_ranked_existing_candidates",
+        )
+        trace["candidates"].extend(
+            {
+                "url": candidate.url,
+                "score": candidate.score,
+                "reasons": candidate.reasons,
+            }
+            for candidate in scored
+        )
+        selected = self._select_verified_candidate(scored)
+        if selected is None:
+            return None, trace, None
+        trace["selected"] = {
+            "url": selected.url,
+            "score": selected.score,
+            "reasons": selected.reasons,
+        }
+        return selected.url, trace, self._navigation_evidence_for_selected(selected)
 
     def resolve_with_navigation_evidence(
         self,
@@ -1137,6 +1260,57 @@ class CompanyWebsiteResolver:
 
     def _search_candidates(self, company_name: str, job_location: str | None = None) -> list[str]:
         return [result.url for result in self._search_candidates_with_evidence(company_name, job_location)]
+
+    def search_bounded_candidate_query(
+        self,
+        query_text: str,
+        *,
+        max_results: int = 10,
+    ) -> tuple[SearchEvidence, ...]:
+        """Execute one prevalidated planner query without accepting its results.
+
+        Results pass the resolver's existing search URL cleanup and blocked-domain
+        policy. Company identity is deliberately not inferred here; callers must
+        still rank evidence and invoke deterministic website verification.
+        """
+
+        if not isinstance(query_text, str) or not query_text.strip() or len(query_text) > 300:
+            raise ValueError("query_text must be bounded non-empty text")
+        if isinstance(max_results, bool) or not isinstance(max_results, int) or not 1 <= max_results <= 10:
+            raise ValueError("max_results must be between 1 and 10")
+        query = urlencode({"q": query_text, "setlang": "en-us", "cc": "us"})
+        rss_query = urlencode(
+            {"q": query_text, "format": "rss", "setlang": "en-us", "cc": "us"}
+        )
+        searches = (
+            (f"{SEARCH_ENDPOINT}?{rss_query}", _bing_rss_results),
+            (f"{SEARCH_ENDPOINT}?{query}", _bing_html_results),
+            (f"{DUCKDUCKGO_SEARCH_ENDPOINT}?{query}", _duckduckgo_html_results),
+        )
+        results: list[SearchEvidence] = []
+        seen: set[str] = set()
+        for search_url, extract_results in searches:
+            try:
+                page = self.fetcher.fetch(search_url)
+            except FetchError:
+                continue
+            for result in extract_results(page.html):
+                cleaned = clean_search_url(result.url)
+                if (
+                    not cleaned
+                    or urlparse(cleaned).scheme.casefold() != "https"
+                    or is_blocked_domain(cleaned)
+                ):
+                    continue
+                if cleaned in seen:
+                    continue
+                seen.add(cleaned)
+                results.append(SearchEvidence(cleaned, result.title, result.snippet))
+                if len(results) >= max_results:
+                    return tuple(results)
+            if results:
+                break
+        return tuple(results)
 
     def _search_candidates_with_evidence(
         self,
@@ -2428,6 +2602,27 @@ def _exact_identity_tokens(company_name: str) -> list[str]:
         for token in re.findall(r"[a-z0-9]+", company_name.casefold())
         if token not in legal_or_group_suffixes
     ]
+
+
+def _reasoning_candidate_page_rejection_reason(url: str) -> str | None:
+    """Reject search-result deep links that cannot establish website ownership."""
+    segments = [segment.casefold() for segment in urlparse(url).path.split("/") if segment]
+    if not segments:
+        return None
+    if segments[0] in {
+        "article",
+        "articles",
+        "blog",
+        "insights",
+        "media",
+        "news",
+        "press",
+        "product",
+        "products",
+        "stories",
+    }:
+        return "search result is a news, editorial, or product deep link"
+    return None
 
 
 def _has_positive_page_identity(candidate: WebsiteCandidate) -> bool:

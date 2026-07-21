@@ -129,6 +129,49 @@ website resolution；page-derived generic board evidence 继续依赖 Career pro
 adapter provenance 都属于 page-derived evidence；缺少任一 required scope 时 preflight fail closed，
 不得从 global latest snapshot 猜测或补造空 tape。
 
+### Optional LLM Candidate Reasoning
+
+[ADR-0029](adr/0029-bound-llm-candidate-reasoning.md) defines an off-by-default,
+provider-neutral reasoning layer only for S2 candidate preparation. Deterministic
+direct Website, External Apply, and provider evidence are collected first into one
+immutable portfolio. A verified Website, verified provider/hiring relationship, or
+official External Apply route skips the model. Otherwise a pure eligibility gate may
+invoke one query planner and one candidate ranker for causal `G` cases where a
+source-backed website lead is missing or deterministically ambiguous.
+
+The planner emits at most three bounded search queries and no URLs. Search runs through
+the existing transport, and every result passes the existing public-URL safety filter
+before ranking. The ranker may only reorder at most ten supplied immutable candidate
+IDs; an unknown ID, URL-like output, malformed schema, timeout, client error, or
+incompatible fixture rejects the complete advisory decision and restores the ordinary
+deterministic order. At most three existing URLs then enter
+`CompanyWebsiteResolver`, whose fetch, redirect, parking, region, and ownership gates
+remain the only way to publish Website evidence.
+
+The LLM has no role in DNS/TLS/403/timeout recovery, provider inventory, tenant
+validation, title/location matching, opening status, S7, unknown recruiting clients,
+or verified no-match/closed decisions. Model confidence and search snippets never
+establish company or hiring relationships. Provider-first and External Apply routes
+remain independently completable and cannot be blocked by optional model latency.
+
+Planner/ranker depend on injected `LLMReasoningClient` and `LLMDecisionStore`
+interfaces. Runtime records contain only sanitized structured public evidence, fixed
+reason codes, digests, bounded model metadata, duration and token usage; they exclude
+HTML, cookies, tokens, headers, browser state, personal data, raw snapshots, and
+chain-of-thought. Replay consumes frozen decision fixtures and cannot call a real
+model. Prompt/model/schema/adapter/input-digest changes invalidate a fixture. All
+behavior fields enter deterministic execution identity, while paths, credentials and
+vendor endpoints remain outside it.
+
+The offline foundation is implemented, but it does not enable a model. Strict DTOs,
+structured client adapters, typed eligibility, conditional run configuration, atomic
+decision storage, strict replay, bounded search evidence, resolver re-verification and
+the A/B metrics gate are present. No fixed-cohort model A/B has run, so no recall uplift
+is claimed. Before any limited real experiment, provider, model, maximum call count,
+and estimated cost require explicit user approval. Passing requires batch-level recall
+uplift with zero wrong, cross-company, or cross-tenant URLs; one-company prompt tuning
+is not accepted.
+
 ### Career Inventory Following
 
 [ADR-0026](adr/0026-follow-career-inventory.md) 将 S5 的官网 Career 消费拆成“导航候选、库存

@@ -1,0 +1,15 @@
+{
+  "schema_version": "1.0",
+  "source_ledger": "docs/FRESH_100_V189_CAUSAL_RECLASSIFICATION.md",
+  "selection_policy": "Confirmed, disclosed, unresolved G inputs without a reviewed provider or External Apply bypass; one record per resolver identity.",
+  "record_id_space": "zero-based source cohort ordinal, not causal-ledger row number",
+  "record_ids": [6, 11, 18, 22, 24, 32, 38, 45, 47, 67, 72, 75, 80, 81, 83, 84, 88, 97],
+  "causal_ledger_record_ids": [3, 5, 8, 11, 13, 17, 23, 27, 28, 37, 38, 40, 41, 42, 44, 45, 46, 47],
+  "excluded_classes": ["T", "B", "S", "I"],
+  "excluded_g_reasons": [
+    "ground_truth_unconfirmed",
+    "candidate_generation_already_repaired",
+    "reviewed_provider_bypass",
+    "duplicate_resolver_identity"
+  ]
+}

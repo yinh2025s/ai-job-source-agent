@@ -1,0 +1,24 @@
+{
+  "schema_version": "1.0",
+  "purpose": "Evaluator-only labels. Never load this file while building planner/ranker requests.",
+  "records": [
+    {"record_id": "006", "reference_website_url": "https://caesars.com/"},
+    {"record_id": "011", "reference_website_url": "https://versana.io/"},
+    {"record_id": "018", "reference_website_url": "https://www.nyc.gov/site/dss/"},
+    {"record_id": "022", "reference_website_url": "https://pharr-tx.gov/"},
+    {"record_id": "024", "reference_website_url": "https://sdslink.com/"},
+    {"record_id": "032", "reference_website_url": "https://benefis.org/"},
+    {"record_id": "038", "reference_website_url": "https://ndit.nd.gov/"},
+    {"record_id": "045", "reference_website_url": "https://imglobal.com/"},
+    {"record_id": "047", "reference_website_url": "https://necessary.vc/"},
+    {"record_id": "067", "reference_website_url": "https://royal.us/"},
+    {"record_id": "072", "reference_website_url": "https://rlb.com/"},
+    {"record_id": "075", "reference_website_url": "https://haysandsons.com/"},
+    {"record_id": "080", "reference_website_url": "https://siouxfalls.gov/"},
+    {"record_id": "081", "reference_website_url": "https://wichita.co.uk/"},
+    {"record_id": "083", "reference_website_url": "https://jushico.com/"},
+    {"record_id": "084", "reference_website_url": "https://mt.gov/"},
+    {"record_id": "088", "reference_website_url": "https://kengarff.com/"},
+    {"record_id": "097", "reference_website_url": "https://systematicbc.com/"}
+  ]
+}

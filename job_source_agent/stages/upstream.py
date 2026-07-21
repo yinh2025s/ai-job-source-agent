@@ -3,6 +3,12 @@ from __future__ import annotations
 import time
 from typing import Protocol
 
+from ..candidate_reasoning_inputs import (
+    DeterministicResolverOutcome,
+    PublicCompanyReasoningInput,
+    linkedin_company_slug,
+)
+from ..candidate_reasoning_coordinator import CandidateReasoningResult
 from ..contracts import PipelineContext, StageExecution
 from ..company_discovery_evidence import (
     CompanyDiscoveryEvidenceStore,
@@ -54,6 +60,19 @@ class HiringIdentityResolutionService(Protocol):
         ...
 
 
+class CandidateReasoningStageService(Protocol):
+    @property
+    def enabled(self) -> bool:
+        ...
+
+    def reason(
+        self,
+        company: PublicCompanyReasoningInput,
+        outcome: DeterministicResolverOutcome,
+    ) -> CandidateReasoningResult:
+        ...
+
+
 class InputDiscoveryStage:
     """Represent the already-completed input/discovery boundary as S1."""
 
@@ -98,10 +117,12 @@ class WebsiteResolutionStage:
         service: WebsiteResolutionService,
         identity_hint_resolver: HiringIdentityResolutionService | None = None,
         company_discovery_evidence_store: CompanyDiscoveryEvidenceStore | None = None,
+        candidate_reasoning_service: CandidateReasoningStageService | None = None,
     ) -> None:
         self.service = service
         self.identity_hint_resolver = identity_hint_resolver
         self.company_discovery_evidence_store = company_discovery_evidence_store
+        self.candidate_reasoning_service = candidate_reasoning_service
 
     def run(self, context: PipelineContext) -> StageExecution:
         started = time.perf_counter()
@@ -236,6 +257,111 @@ class WebsiteResolutionStage:
                 and isinstance(resolution_failure.get("error"), str)
                 else "No official company website could be resolved."
             )
+            reasoning_service = self.candidate_reasoning_service
+            if (
+                reasoning_service is not None
+                and reasoning_service.enabled
+                and not context.company.external_apply_url
+                and not context.company.career_root_url
+            ):
+                transport_cause = _candidate_reasoning_transport_cause(
+                    resolution_failure
+                )
+                has_budget = retained_reason != "FETCH_BUDGET_EXHAUSTED"
+                deterministic_candidates = (
+                    trace.get("candidates", []) if isinstance(trace, dict) else []
+                )
+                g_condition = (
+                    "IDENTITY_THRESHOLD_NOT_MET"
+                    if deterministic_candidates
+                    else "NO_SOURCE_BACKED_CANDIDATE"
+                )
+                reasoning = reasoning_service.reason(
+                    PublicCompanyReasoningInput(
+                        company_name=context.company.company_name,
+                        linkedin_company_slug=linkedin_company_slug(
+                            context.company.linkedin_company_url
+                        ),
+                        job_title=context.company.job_title,
+                        job_location=context.company.job_location,
+                    ),
+                    DeterministicResolverOutcome(
+                        has_verified_provider_relationship=bool(
+                            stored_record is not None
+                            and stored_record.provider_boards
+                        ),
+                        transport_cause=transport_cause,
+                        has_sufficient_budget=has_budget,
+                        g_conditions=(g_condition,),
+                    ),
+                )
+                reasoning_trace = {
+                    "eligibility_state": reasoning.eligibility.state,
+                    "eligibility_reason": reasoning.eligibility.reason_code,
+                    "candidate_count": len(reasoning.candidates),
+                    "used_llm_ranking": reasoning.used_llm_ranking,
+                    "advisory_failure": (
+                        reasoning.advisory_failure.code
+                        if reasoning.advisory_failure is not None
+                        else None
+                    ),
+                }
+                trace["candidate_reasoning"] = reasoning_trace
+                verify_reasoned = getattr(
+                    self.service,
+                    "resolve_ranked_existing_candidates_with_navigation_evidence",
+                    None,
+                )
+                if reasoning.candidates and callable(verify_reasoned):
+                    try:
+                        reasoned_website, reasoned_trace, reasoned_navigation = (
+                            verify_reasoned(
+                                reasoning.candidates,
+                                context.company.company_name,
+                                context.company.linkedin_company_url,
+                                context.company.job_location,
+                            )
+                        )
+                    except (FetchError, DiscoveryError, TypeError, ValueError) as exc:
+                        reasoning_trace["verification_status"] = "rejected"
+                        reasoning_trace["verification_failure_type"] = type(exc).__name__
+                    else:
+                        reasoning_trace["verification"] = reasoned_trace
+                        if reasoned_website:
+                            website_url = normalize_url(reasoned_website)
+                            navigation_evidence = reasoned_navigation
+                            trace["selected"] = {
+                                "url": website_url,
+                                "reason": "candidate reasoning followed by deterministic resolver verification",
+                            }
+                            reasoning_trace["verification_status"] = "verified"
+                            detail = (
+                                "Candidate reasoning supplied search evidence; the "
+                                "deterministic resolver verified the official website."
+                            )
+                if website_url:
+                    self._save_verified_website(
+                        context,
+                        website_url,
+                        provided_website=provided_website,
+                        trace=trace,
+                    )
+                    updates = {"company_website_url": website_url}
+                    if navigation_evidence is not None:
+                        updates["homepage_navigation_evidence"] = navigation_evidence
+                    return StageExecution(
+                        result=make_stage_result(
+                            self.name,
+                            "success",
+                            duration_ms=_elapsed_ms(started),
+                            input_count=1,
+                            output_count=1,
+                            evidence=[{"field": "company_website_url", "url": website_url}],
+                            detail=detail,
+                        ),
+                        updates=updates,
+                        trace=trace,
+                    )
             execution = _failed_execution(
                 retained_reason,
                 started,
@@ -589,6 +715,37 @@ def _identity_failed_execution(
             detail=detail,
         ),
         trace=trace or {"error": detail},
+    )
+
+
+_CANDIDATE_REASONING_TRANSPORT_CAUSES = frozenset(
+    {
+        "DNS_FAILED",
+        "TLS_FAILED",
+        "NETWORK_TIMEOUT",
+        "HTTP_FORBIDDEN",
+        "RATE_LIMITED",
+        "BOT_PROTECTION",
+        "CONNECTION_FAILED",
+        "SERVER_ERROR",
+        "FETCH_FAILED",
+        "LOGIN_REQUIRED",
+        "CAPTCHA_REQUIRED",
+    }
+)
+
+
+def _candidate_reasoning_transport_cause(
+    resolution_failure: object,
+) -> str | None:
+    if not isinstance(resolution_failure, dict):
+        return None
+    reason_code = resolution_failure.get("reason_code")
+    return (
+        reason_code
+        if isinstance(reason_code, str)
+        and reason_code in _CANDIDATE_REASONING_TRANSPORT_CAUSES
+        else None
     )
 
 

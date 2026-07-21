@@ -1,0 +1,155 @@
+{
+  "schema_version": "1.0",
+  "purpose": "fixed eligible-G development input; contains no evaluator answer URLs",
+  "source_cohort": "live100_fresh_cohort_20260718.json",
+  "source_cohort_sha256": "fcf2ece19f9096e3b1ac64dd7aba60b53f78c520b8c9228cf6505ee8a1c86402",
+  "selection": "llm_candidate_reasoning_g_dev_selection_v1.json",
+  "record_count": 18,
+  "records_sha256": "d3c65152af084f1ad2bd994c4a6d67de1e09a66781437be00adb88ceb88368ae",
+  "records": [
+    {
+      "record_id": "006",
+      "company_name": "Caesars Entertainment",
+      "linkedin_company_url": "https://www.linkedin.com/company/caesars-entertainment-inc",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-caesars-entertainment-4409111101",
+      "job_title": "DevOps Engineer",
+      "job_location": "Reno, NV"
+    },
+    {
+      "record_id": "011",
+      "company_name": "Versana",
+      "linkedin_company_url": "https://www.linkedin.com/company/versanatech",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-raleigh-at-versana-4428784625",
+      "job_title": "DevOps Engineer - Raleigh",
+      "job_location": "Raleigh, NC"
+    },
+    {
+      "record_id": "018",
+      "company_name": "NYC Department of Social Services",
+      "linkedin_company_url": "https://www.linkedin.com/company/nyc-department-of-social-services",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/devops-engineer-at-nyc-department-of-social-services-4425365717",
+      "job_title": "DEVOPS ENGINEER",
+      "job_location": "Brooklyn, NY"
+    },
+    {
+      "record_id": "022",
+      "company_name": "City of Pharr, TX",
+      "linkedin_company_url": "https://www.linkedin.com/company/pharr-tx",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-city-of-pharr-tx-4437874960",
+      "job_title": "Cybersecurity Analyst",
+      "job_location": "Pharr, TX"
+    },
+    {
+      "record_id": "024",
+      "company_name": "SDS International, Inc.",
+      "linkedin_company_url": "https://www.linkedin.com/company/atdlink",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cybersecurity-analyst-at-sds-international-inc-4317924361",
+      "job_title": "Cybersecurity Analyst",
+      "job_location": "Omaha, NE"
+    },
+    {
+      "record_id": "032",
+      "company_name": "Benefis Health System",
+      "linkedin_company_url": "https://www.linkedin.com/company/benefis-health-system",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/vulnerability-analyst-information-technology-services-exempt-at-benefis-health-system-4432838078",
+      "job_title": "Vulnerability Analyst, Information Technology Services (Exempt)",
+      "job_location": "Great Falls, MT"
+    },
+    {
+      "record_id": "038",
+      "company_name": "North Dakota Information Technology (NDIT)",
+      "linkedin_company_url": "https://www.linkedin.com/company/ndit",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/cyber-security-analyst-at-north-dakota-information-technology-ndit-4440062680",
+      "job_title": "Cyber Security Analyst",
+      "job_location": "Fargo, ND"
+    },
+    {
+      "record_id": "045",
+      "company_name": "IMG (International Medical Group)",
+      "linkedin_company_url": "https://www.linkedin.com/company/international-medical-group",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/ux-designer-at-img-international-medical-group-4426438449",
+      "job_title": "UX Designer",
+      "job_location": "Indianapolis, IN"
+    },
+    {
+      "record_id": "047",
+      "company_name": "Necessary Ventures",
+      "linkedin_company_url": "https://www.linkedin.com/company/necessaryventures",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/user-experience-ux-designer-at-necessary-ventures-4437656059",
+      "job_title": "User Experience (UX) Designer",
+      "job_location": "Madison, WI"
+    },
+    {
+      "record_id": "067",
+      "company_name": "Team Royal",
+      "linkedin_company_url": "https://www.linkedin.com/company/teamroyalus",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-team-royal-4437878290",
+      "job_title": "Project Manager",
+      "job_location": "Lafayette, LA"
+    },
+    {
+      "record_id": "072",
+      "company_name": "Rider Levett Bucknall RLB",
+      "linkedin_company_url": "https://www.linkedin.com/company/rider-levett-bucknall-3",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-at-rider-levett-bucknall-rlb-4403834520",
+      "job_title": "Project Manager",
+      "job_location": "Honolulu, HI"
+    },
+    {
+      "record_id": "075",
+      "company_name": "Hays + Sons",
+      "linkedin_company_url": "https://www.linkedin.com/company/hays-and-sons-complete-restoration",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/project-manager-%E2%80%93-bloomington%0Afull-time-at-hays-%2B-sons-4405588363",
+      "job_title": "Project Manager \u2013 Bloomington Full Time",
+      "job_location": "Bloomington, IN"
+    },
+    {
+      "record_id": "080",
+      "company_name": "City of Sioux Falls",
+      "linkedin_company_url": "https://www.linkedin.com/company/cityofsiouxfalls",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/talent-manager-at-city-of-sioux-falls-4435941256",
+      "job_title": "Talent Manager",
+      "job_location": "Sioux Falls, SD"
+    },
+    {
+      "record_id": "081",
+      "company_name": "WICHITA COMPANY LIMITED",
+      "linkedin_company_url": "https://www.linkedin.com/company/wichita-company-limited",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/assistant-director-of-human-resources-at-wichita-company-limited-4441608516",
+      "job_title": "Assistant Director of Human Resources",
+      "job_location": "Wichita, KS"
+    },
+    {
+      "record_id": "083",
+      "company_name": "Jushi Holdings Inc.",
+      "linkedin_company_url": "https://www.linkedin.com/company/jushi-inc",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-jushi-holdings-inc-4422128904",
+      "job_title": "Human Resources Manager",
+      "job_location": "Reno, NV"
+    },
+    {
+      "record_id": "084",
+      "company_name": "State of Montana",
+      "linkedin_company_url": "https://www.linkedin.com/company/state-of-montana",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-state-of-montana-4439231755",
+      "job_title": "Human Resources Manager",
+      "job_location": "Townsend, MT"
+    },
+    {
+      "record_id": "088",
+      "company_name": "Ken Garff Automotive Group",
+      "linkedin_company_url": "https://www.linkedin.com/company/ken-garff-automotive-group",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-ken-garff-automotive-group-4423595647",
+      "job_title": "Human Resources Manager",
+      "job_location": "Cheyenne, WY"
+    },
+    {
+      "record_id": "097",
+      "company_name": "Systematic Business Consulting",
+      "linkedin_company_url": "https://www.linkedin.com/company/systematic-business-consulting",
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/human-resources-manager-at-systematic-business-consulting-4440044707",
+      "job_title": "Human Resources Manager",
+      "job_location": "Evansville, IN"
+    }
+  ]
+}
