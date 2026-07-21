@@ -42,6 +42,13 @@ incomplete 路径。Fresh100 的 81 条非 Exact 已按可执行根因重分，�
 簇中选择一项通用修复。编辑期间不重复运行 2500+ 全量测试；全量门禁只在本轮集成
 完成、版本冻结并准备 live gate 时运行一次。
 
+`.210` 的 202 条局部测试和三条同版本 replay 已通过，后者为 3/3 reproduced、0
+mismatch、0 fixture gap。Heritage 在两次 clean live 中均因 S2 network timeout 未进入
+修复分支，因此保留为 transport-blocked，而不是虚报 branch closure。当前并行只读比较
+`opening inventory incomplete` 与 `website transport timeout` 两个至少跨三家公司的
+候选簇；主线依据共同触发条件和预期批量恢复选择第二轮、也是当前治理上限内最后一轮
+通用架构修复。
+
 ## 当前架构轨道（2026-07-20，LLM Candidate Reasoning Phase A）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理

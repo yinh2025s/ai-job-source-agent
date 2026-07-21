@@ -17,6 +17,11 @@
   are causally partitioned in
   `docs/FRESH_100_V209_CAUSAL_ANALYSIS.md`; the one Heritage replay mismatch is
   the motivating observed instance, not a company-specific rule.
+- A clean three-record `.210` focused run and replay completed with 3/3
+  reproduced, zero mismatch and zero fixture gap. OneApp produced a verified
+  Pinpoint Exact; WalkMe remained safely identity-ambiguous. Heritage timed out
+  in S2 in both the cohort and a clean single-record retry, so live execution of
+  the repaired stored-board branch is explicitly not claimed.
 
 ## 2026-07-21 - Exact scoped replay producer state `.209`
 
