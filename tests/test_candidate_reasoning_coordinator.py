@@ -78,14 +78,26 @@ class FakeRanker:
 
 
 class FakeSearchBackend:
-    def __init__(self, count=2, *, error=None, wrong_query_id=False):
+    def __init__(
+        self,
+        count=2,
+        *,
+        error=None,
+        wrong_query_id=False,
+        clock=None,
+        advance=0.0,
+    ):
         self.count = count
         self.error = error
         self.wrong_query_id = wrong_query_id
+        self.clock = clock
+        self.advance = advance
         self.calls = []
 
     def search(self, query, *, query_id, remaining_seconds):
         self.calls.append((query, query_id, remaining_seconds))
+        if self.clock:
+            self.clock.now += self.advance
         if self.error:
             raise self.error
         evidence_query_id = "wrong-query" if self.wrong_query_id else query_id
@@ -382,6 +394,34 @@ class CandidateReasoningCoordinatorTest(unittest.TestCase):
         self.assertEqual(self.ranker.calls, 0)
         self.assertEqual(len(self.store.records), 1)
         self.assertEqual(self.store.records[0].failure_code, "TIMEOUT")
+
+    def test_search_elapsed_time_does_not_consume_model_deadline(self):
+        self.planner.clock = self.clock
+        self.planner.advance = 2.0
+        self.search = FakeSearchBackend(clock=self.clock, advance=10.0)
+        self.ranker.clock = self.clock
+        self.ranker.advance = 3.0
+
+        result = self._run()
+
+        self.assertTrue(result.used_llm_ranking)
+        self.assertIsNone(result.advisory_failure)
+        self.assertEqual(self.ranker.calls, 1)
+        self.assertTrue(all(call[2] == 8.0 for call in self.search.calls))
+
+    def test_planner_and_ranker_share_model_only_deadline(self):
+        self.planner.clock = self.clock
+        self.planner.advance = 6.0
+        self.search = FakeSearchBackend(clock=self.clock, advance=10.0)
+        self.ranker.clock = self.clock
+        self.ranker.advance = 5.0
+
+        result = self._run()
+
+        self.assertEqual(result.advisory_failure.code, "TIMEOUT")
+        self.assertEqual(result.advisory_failure.decision_kind, "candidate_rank")
+        self.assertEqual(self.ranker.calls, 1)
+        self.assertEqual(self.store.records[-1].failure_code, "TIMEOUT")
 
     def test_client_search_and_schema_failures_fall_back_without_terminal_reason(self):
         cases = (

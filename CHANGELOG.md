@@ -107,6 +107,11 @@
   The public LinkedIn slug may proceed through typed-G candidate discovery, while
   search, DNS/TLS, candidate verification and other transport failures remain blocked.
 
+- The candidate-reasoning deadline now measures planner/ranker time only. Live public
+  search no longer exhausts the model balance and changes whether replay requests a
+  ranker decision. The fixed experiment uses a 15-second shared model-time balance;
+  search retains its separate bounded transport controls.
+
 - Product-level LLM decision capture and replay are now closed on the isolated
   experiment branch. Live fake/provider-neutral runs write strict redacted
   `llm-decisions.jsonl` and `llm-decision-manifest.json` artifacts bound to the

@@ -68,8 +68,9 @@ before artifact persistence.
 - Maximum calls: one planner plus one ranker per company, 36 total.
 - Retry: none.
 - Concurrency: one company at a time for the first experiment.
-- Deadline: one shared 8-second LLM deadline per company; it cannot consume the S6
-  opening budget.
+- Deadline: one shared 15-second model-time deadline per company; planner and ranker
+  consume it, while intervening public search uses its existing transport budget and
+  does not consume the model-time balance or the S6 opening budget.
 - Estimated bounded input: at most about 225,000 tokens across the experiment.
 - Estimated bounded output: at most about 54,000 tokens, including reasoning/output
   allowance.
