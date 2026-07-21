@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-21 - Post-`.212` architecture review
+
+- Completed the required architecture review after the two-round generic
+  stabilization limit. No behavior code, provider adapter, identity gate or
+  sealed holdout was changed or executed.
+- Confirmed that the three candidate source types exist but normal product
+  scheduling is staged and sequential, S3 failure remains a global S5 gate,
+  and CLI/extension/library inputs do not expose identical External Apply
+  capability.
+- Fresh100 supplied 0/100 External Apply URLs. In the candidate-not-produced
+  group, 30 non-Exact records observed 1,434 raw SERP results across 150 fixed
+  queries but emitted zero provider candidates.
+- Provider search currently stops after its first syntactically valid lead and
+  the five-query cap always excludes the same later provider families. The
+  proposed next step is an explicitly authorized route-local candidate
+  coordinator migration, not another company/provider heuristic.
+- Separated the 27-record transport influence bound from functional discovery
+  gaps and specified a controlled current/US-exit A/B experiment. Full offline
+  tests were not rerun for this documentation-only review.
+- Full findings and the proposed acceptance contract are recorded in
+  `docs/FRESH_100_V212_ARCHITECTURE_REVIEW.md`.
+
 ## 2026-07-21 - Rejected opening-scheduling cluster `.212`
 
 - The `.211` four-company focused live retained 4/4 verified Websites,

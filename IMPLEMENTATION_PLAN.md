@@ -23,7 +23,33 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前执行轮次（2026-07-21，`.210`）
+## 当前架构复盘（2026-07-21，`.212`）
+
+两轮通用稳定化修复已经完成：`.210` 修复 stored provider tenant 被误投影为招聘
+主体；`.211` 在冻结四公司 live 中恢复 `0/4` Exact，已于 `.212` 回退。按照既定
+两轮上限，当前不再追加局部 heuristic，而是进入候选发现 orchestration 复盘。
+
+复盘确认：三类候选 producer 已存在，但正常产品仍是串行的 direct -> Website/Career
+-> conditional search wave，不是真正独立协调；S3 failure 仍会全局阻塞 S5；Provider
+Search 使用 `exhaustive=False`、首个合法 URL 后停止，并在五条 query 配额下固定遗漏
+Pinpoint、SmartRecruiters、Workday、Oracle 和 Eightfold。Fresh100 输入中的 External
+Apply 覆盖为 `0/100`；候选未产生组的 30 个非 Exact 记录虽然看到了 1,434 条原始
+SERP 结果，最终产出 Provider Candidate 为 0。
+
+下一阶段候选方案是新增 immutable `CandidateDiscoveryInput` 和 route-local
+`CandidateDiscoveryCoordinator`：External Apply/Provider Search 不等待 S2，Website/
+Career 在 S4 后追加；S3 rejection 改为 route-local；搜索保留预算内多个结果并均衡
+provider family；company deadline 内为三路和 opening inventory 分别预留预算。S6/S7、
+provider/tenant、title/location 和 URL 安全门保持不变。完整证据、迁移边界及验收合同见
+`docs/FRESH_100_V212_ARCHITECTURE_REVIEW.md`。
+
+该方案属于超过既定两轮上限的 contract/orchestration migration，行为实现开始前需要
+明确架构授权。开发时只跑受影响局部测试和 scoped replay；集成冻结后只跑一次全量
+offline gate。随后先做 development focused live，再做记录出口 IP/ASN/country 与
+connect/TLS/TTFB 的 current/US 网络四格 A/B。sealed holdout v2/v3 在开发门和
+Frozen100 回归门关闭前继续封存。
+
+## 已完成稳定化轮次（2026-07-21，`.210` -> `.212`）
 
 `.209` 已完成冻结 Fresh100 冷启动：100 条全部执行，得到 19 Exact、78 Website、
 60 Career 和 56 Job List。19 条 Exact 的 company/title/location/provider/tenant/board/
