@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-21 - Reject generic direct scheduler experiment `.206`
+
+- Tested `.205`'s evidence-gated generic direct scheduling on seven independent
+  Fresh100 companies, with clean roots and a complete 7/7 replay bundle.
+- Rejected the change after it restored zero Exact openings and allowed same-name
+  targeted-search Ashby boards to displace OneApp and Crosby's first-party
+  generic evidence, producing weaker `OPENING_NOT_FOUND` terminal claims.
+- `.206` restores `.204` scheduling behavior. The Phase A causal map and failed
+  focused experiment remain preserved; the next design must retain competing
+  route evidence through S6 instead of selecting a search board at S5 solely to
+  increase recall.
+
 ## 2026-07-21 - Deterministic multi-board projection and replay `.204`
 
 - Made the final typed S5 `JobBoardPortfolio` the single source for Job List

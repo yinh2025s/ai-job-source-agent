@@ -2738,6 +2738,22 @@ closes the replay-infrastructure defect only; the `.202` live score remains
 cluster. Full evidence is in
 `docs/FRESH_100_V204_REPLAY_PORTFOLIO_PHASE_C.md`.
 
+The next shared product hypothesis was frozen as `.205`: untyped generic direct
+success suppressed the provider-search wave for at least Tyler Technologies,
+The Home Depot, Necessary Ventures, OneApp, Crawford Thomas Recruiting, Crosby
+and Mayo Clinic. The first implementation made generic direct evidence a
+fallback and allowed verified search candidates to replace it. Its isolated
+seven-company live run restored zero Exact openings; worse, same-name Ashby
+search boards displaced OneApp and Crosby's first-party generic evidence and
+produced `OPENING_NOT_FOUND`. The 7/7 replay itself was deterministic (six
+reproduced, one budget recovery, zero mismatch/gap), so this is a design failure,
+not missing evidence. `.206` removes the scheduler change and restores `.204`
+behavior. The causal map remains useful, but the next architecture must retain
+competing generic/provider routes through S6 and compare verified opening
+outcomes instead of replacing a route at S5. See
+`docs/FRESH_100_V205_GENERIC_DIRECT_SCHEDULER_CAUSAL_ANALYSIS.md` and
+`docs/FRESH_100_V205_GENERIC_DIRECT_SCHEDULER_PHASE_C.md`.
+
 The preceding identity-apex allocation experiment failed its own Phase C gate.
 In its isolated six-record run only one independent company (Arkema) passed S2,
 below the frozen minimum of three; the two Arkema
