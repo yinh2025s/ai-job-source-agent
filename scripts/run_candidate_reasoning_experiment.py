@@ -265,7 +265,6 @@ def _run_arm(
             timeout=5.0,
             retries=1,
             retry_base_delay=0.25,
-            retry_deadline=8.0,
             snapshot_dir=root / "snapshots",
         ),
         agent_config,

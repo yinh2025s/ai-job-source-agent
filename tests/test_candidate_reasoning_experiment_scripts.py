@@ -3,6 +3,8 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
 
 from scripts.evaluate_candidate_reasoning_experiment import (
     _normalize_candidate_for_reference,
@@ -13,6 +15,7 @@ from scripts.run_candidate_reasoning_experiment import (
     _agent_config,
     _common_config_digest,
     _require_new_root,
+    _run_arm,
     _sealed_files,
 )
 
@@ -107,6 +110,24 @@ class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
                 "https://example.net/careers", "https://example.com/"
             )
         )
+
+    def test_run_arm_does_not_use_duration_as_absolute_retry_deadline(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            with patch(
+                "scripts.run_candidate_reasoning_experiment.build_application",
+                return_value=SimpleNamespace(pipeline=object()),
+            ) as build:
+                _run_arm(
+                    root=Path(temporary) / "arm",
+                    cohort=(),
+                    agent_config=_agent_config(llm=False),
+                    service_factory=None,
+                )
+
+        fetcher_config = build.call_args.args[0]
+        self.assertIsNone(fetcher_config.retry_deadline)
+        self.assertEqual(fetcher_config.timeout, 5.0)
+        self.assertEqual(fetcher_config.retries, 1)
 
 
 if __name__ == "__main__":

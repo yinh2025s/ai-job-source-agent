@@ -91,6 +91,11 @@
   evaluation, requires clean committed code and fresh artifact roots, seals full file
   digests, and invokes fixture-only same-version replay before promotion metrics.
 
+- The first real DeepSeek capture attempt was preserved unsealed after a runner-only
+  transport defect passed a duration as an absolute monotonic retry deadline, preventing
+  all public fetches before any model call. The runner now uses per-request timeout plus
+  bounded retries, and a regression test prevents reintroducing that deadline.
+
 - Product-level LLM decision capture and replay are now closed on the isolated
   experiment branch. Live fake/provider-neutral runs write strict redacted
   `llm-decisions.jsonl` and `llm-decision-manifest.json` artifacts bound to the
