@@ -136,6 +136,35 @@ class OracleHCMAdapterTests(unittest.TestCase):
         self.assertEqual(result.inventory_scope, "title_filtered")
         self.assertTrue(result.inventory_complete)
 
+    def test_telecommute_type_supplies_remote_location_when_place_is_absent(self):
+        board = self.adapter.identify_board(DETAIL_URL)
+        fetcher = StubFetcher(
+            job_page(jobLocation=None, jobLocationType="TELECOMMUTE")
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Platform Engineer"),
+        )
+
+        self.assertEqual(result.candidates[0].location, "Remote")
+        self.assertEqual(result.candidates[0].raw["jobLocationType"], "TELECOMMUTE")
+
+    def test_unknown_location_type_never_synthesizes_a_location(self):
+        board = self.adapter.identify_board(DETAIL_URL)
+        fetcher = StubFetcher(
+            job_page(jobLocation=None, jobLocationType="HYBRID")
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Platform Engineer"),
+        )
+
+        self.assertIsNone(result.candidates[0].location)
+
     def test_preserves_texas_childrens_exact_detail_identity(self):
         detail_url = (
             "https://eohh.fa.us2.oraclecloud.com/hcmUI/"

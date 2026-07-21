@@ -23,7 +23,7 @@ restored.
 | Metric | `.199` rerun | `.200` rerun | Delta |
 | --- | ---: | ---: | ---: |
 | Program raw Exact | 23/100 | 28/100 | +5 |
-| Strictly audited Exact | 22/100 | 23/100 | +1 |
+| Strictly audited Exact | 22/100 | 24/100 | +2 |
 | Verified website | 73/100 | 72/100 | -1 |
 | Career page | 57/100 | 59/100 | +2 |
 | Verified Job List | 55/100 | 57/100 | +2 |
@@ -58,12 +58,12 @@ domain registry module.
 
 ## Exact Audit
 
-Twenty-three of the 28 raw Exact records have continuous company, title,
+Twenty-four of the 28 raw Exact records have continuous company, title,
 location, provider, tenant, board, and opening evidence. No confirmed wrong-city,
 cross-company, cross-tenant, or obviously invalid opening URL was found among
-those 23.
+those 24.
 
-Five raw Exact records do not satisfy the strict product gate:
+Four raw Exact records do not satisfy the strict product gate:
 
 | Company | Finding |
 | --- | --- |
@@ -71,10 +71,16 @@ Five raw Exact records do not satisfy the strict product gate:
 | STEAMe | Title and tenant are continuous, but the selected opening has no location evidence. |
 | IMG | Title and tenant are continuous, but the selected opening has no location evidence. |
 | Steampunk, Inc. | Title and tenant are continuous, but the selected opening has no location evidence. |
-| Resolute Road Hospitality | The first-party Career page hands off to a Braintree Hospitality Paylocity tenant, but the output still records `same_entity` instead of an explicit hiring relationship. |
 
-These five records remain pending or rejected under the strict audit and are not
+These four records remain pending or rejected under the strict audit and are not
 counted as verified Exact merely because the program emitted an opening URL.
+
+The initial audit held Resolute Road Hospitality because the Paylocity board URL
+contains `Braintree-Hospitality`. A subsequent source audit showed that this is
+an opaque provider locator: the captured board `og:title`, `og:description`, HTML
+title and inventory explicitly identify Resolute Road Hospitality. It therefore
+passes the same-entity chain. Genuine cross-name hiring relationships still
+require independent typed evidence; URL slug text cannot establish one.
 
 ## Record Churn
 

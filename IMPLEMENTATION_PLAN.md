@@ -2696,9 +2696,9 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 The isolated full rerun at commit `bc33bce` completed 100/100 live records with
 0 restored completions. It produced 28 raw Exact, 72 websites, 59 Career pages,
-and 57 verified Job Lists. Strict URL and identity audit accepts 23 Exact and
-holds five records: four lack opening-location evidence and one lacks an
-explicit cross-name hiring relationship. Network instability remains causal:
+and 57 verified Job Lists. Corrected strict URL and identity audit accepts 24
+Exact and holds four records that lack opening-location evidence. Network
+instability remains causal:
 19 terminal records were rate-limited by LinkedIn and 7 timed out. The `.200`
 public-domain registry produced correct candidates but its two newly exercised
 records were denied before homepage verification, so focused end-to-end closure
@@ -2706,20 +2706,24 @@ is still open.
 
 The next implementation fan-out is therefore:
 
-1. Main line reviews and integrates the record-scoped replay fix only after this
-   frozen run is documented; Team Royal's missing stage boundary remains a
-   separate worker/snapshot cluster.
-2. Location evidence must become a hard Exact requirement for anonymous public
-   postings unless a stronger already-frozen contract explicitly authorizes a
+1. Record-scoped replay evidence has been integrated and verified against all
+   100 `.199` records. Batch-final evidence can no longer alter an earlier
+   posting's request tape.
+2. Location evidence is now a hard Exact requirement for anonymous public
+   postings unless explicit title/URL evidence proves the target location or a
    location-independent role. The four observed records are acceptance inputs,
    not company exceptions.
-3. First-party handoffs to a differently named tenant require typed hiring
-   relationship evidence before S7 can return Exact. Resolute Road/Braintree is
-   an observed instance, not a hardcoded mapping.
-4. Public-domain candidate generation remains accepted, while downstream
+3. Team Royal's missing boundary is addressed by one bounded fresh active-stage
+   recapture after an outer timeout. A focused live and replay must prove the
+   new runner behavior; old `.200` snapshots remain immutable.
+4. The initial Resolute/Braintree audit finding was withdrawn. The provider
+   board explicitly names Resolute; a Paylocity URL slug is a locator, not an
+   employer assertion. No cross-name rule is added without a three-company
+   causal cluster.
+5. Public-domain candidate generation remains accepted, while downstream
    homepage verification is evaluated separately from LinkedIn 429s. No
    government domain is trusted without the ordinary identity gate.
-5. Blind holdouts v2/v3 remain unopened until Fresh100 replay integrity and the
+6. Blind holdouts v2/v3 remain unopened until Fresh100 replay integrity and the
    strict false-positive gates pass on one frozen version.
 
 Full details and immutable output digests are recorded in

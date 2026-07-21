@@ -118,7 +118,11 @@ bounded 模式，多组 provider 查询共享预算，snippet 永远不能成为
 company/provider tenant 可以建立招聘关系；模糊 token、substring、title 相似和搜索排名不能。
 S6 在 portfolio 后续 board 命中时切换到真实命中 board 的 provider identity，并发布 typed
 `OpeningSelectionEvidence`。S7 除原有 company/provider/tenant/board/opening URL 连续性外，还
-验证 selected title，公开 location classification，并对明确 location mismatch fail closed。该路径由
+验证 selected title，公开 location classification，并对明确 location mismatch 或目标地点存在但
+opening location evidence 缺失 fail closed。完整库存、唯一候选和 provider URL 本身不能替代地点
+证据；只有 opening title/URL 中明确的目标城市，或结构明确且无冲突地区的 remote、work-from-home、
+nationwide qualifier 可以授权 location-independent match。Provider tenant/slug 始终是技术 locator，
+不能单独推导招聘主体。该路径由
 deterministic schema 1.3 的 `enable_parallel_candidate_discovery` 控制。CLI、live evaluator 和 extension
 bridge 默认启用；`--disable-parallel-candidate-discovery` 提供回滚。底层 library 默认与旧 1.0-1.2
 replay 配置保持关闭，以维持嵌入方与历史 checkpoint 兼容。Provider 可通过自己的可选 canonicalization
@@ -378,6 +382,7 @@ Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、ow
 - S2 success 表示“可访问性 + 肯定公司身份”，不是 HTTP 成功。域名 token、TLD、历史 LinkedIn slug 与搜索 snippet 只用于排序；非 authoritative 候选还必须由 title/body、结构化 Organization/legalName 或 canonical identity确认。有限 client-side redirect-only shell 同源最多跟随一跳并重新验证，跨域目标只作为 migration hint，不能直接成为官网。
 - 独立 `content_probe.py` 可供 S4/S5 从官网自己声明的同站 module bundle 读取公开 Magnolia Delivery payload，但只在 endpoint、app base、品牌一致 CMS host、HTTPS 标准端口和同 host response 全部验证后合并内容；该 probe 只补充页面证据，provider URL 仍进入原生 adapter 做 board/inventory 验证。
 - `live_batch_eval.py` 只负责公司级并发、两段 process hard budget 和输出；实际 S1-S7 执行委托 `PipelineApplication`，S1-S3 与 S4-S7 通过 filesystem stage checkpoint 衔接。每段先向 fetch wrapper 注入略早于 outer budget 的 soft deadline，逐请求压缩 socket timeout，并为结构化收尾和 checkpoint 发布预留最多 1 秒；process kill 只作不合作底层调用的最后保险。
+- `.201` 对 replay-enabled batch 的父进程超时增加一次有界 active-stage recapture。它使用新的 capture attempt 和同一 execution fingerprint，只在 worker 真实 finalize record-scoped、nonempty request scope 后替换原 terminal result；失败、异常或再次缺 scope 时保留原结果并让 replay integrity gate 失败。父进程不构造空 scope，也不从未完成 worker 猜测 request tape。
 - ADR-0008 将 process hard budget 定义为 durable-publication deadline：worker 在独立 POSIX process group 中运行，大结果先写入 attempt-local、destination-atomic envelope，pipe 只发送 readiness；父进程只接受 deadline 前已 fsync/replace 完成的 envelope，并在 timeout/final cleanup 终止整个进程组。完整 stage checkpoint 保持可复用，不因下游 timeout 回滚；snapshot 按 blob/view/artifact/sequence 在前、durable JSONL index 在后的顺序发布，company completion 继续作为最后的 authoritative commit marker。`.56` 离线门禁为 859 tests、24/24 provider、6/6 resolver、23 adapters / 0 issues；Akkodis 在 45 秒 focused live 内 34.5 秒 exact，并由 8 fixtures 对完整 URL/provider identity 做 1/1 replay。
 - `.62` 将 ADR-0008 的“stage checkpoint 不回滚”落实到 parent timeout result：只恢复同一 execution fingerprint 下连续、兼容且已完成的 stage prefix，首个 gap 标记 `COMPANY_TIME_BUDGET_EXHAUSTED`，不读取 gap 后 checkpoint。Akkodis 即使在 S6 分页撞 hard deadline也不再丢失已完成的 S4/S5；本轮网络下 43.6 秒完整读取 9 页/83 条 inventory 并得到 verified no-match，16-fixture replay 1/1 reproduced。
 - ADR-0010 / `.64` 在 hard process deadline 内增加 provider cooperative stop：`FetchBudget` 与最小 `FetchClient` 分离，分页 guard 以 request timeout + publication reserve 决定是否允许下一请求；PageCache/Snapshot 显式透传 capability，未知/nonfinite timeout fail closed。被 guard 拒绝的 request 不发网络，但按 ADR-0006 保存脱敏 request identity 和 `FETCH_BUDGET_EXHAUSTED` terminal outcome，使离线 replay 复现同一 partial boundary。Sitecore 首个迁移；Akkodis 45 秒 focused live 保留 8 页/80 条正向 inventory 和 verified job list，bundle 1/1 reproduced。同一冻结 30-company 统一回归为 30/29/28/24，6 个 non-success 全部 reproduced、0 fixture gap、0 mismatch。

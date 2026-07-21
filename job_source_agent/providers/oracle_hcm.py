@@ -198,7 +198,10 @@ class OracleHCMAdapter:
             title=title,
             url=detail_url,
             provider=self.name,
-            location=_location(posting.get("jobLocation")),
+            location=(
+                _location(posting.get("jobLocation"))
+                or _location_type(posting.get("jobLocationType"))
+            ),
             raw=raw,
         )
         return AdapterResult(
@@ -663,6 +666,16 @@ def _location(value: Any) -> str | None:
         rendered = ", ".join(part for part in parts if part)
         return rendered or name
     return name
+
+
+def _location_type(value: Any) -> str | None:
+    if isinstance(value, list):
+        normalized = {_normalized_text(item) for item in value if isinstance(item, str)}
+    elif isinstance(value, str):
+        normalized = {_normalized_text(value)}
+    else:
+        return None
+    return "Remote" if normalized == {"telecommute"} else None
 
 
 def _expiration_state(value: Any) -> str:

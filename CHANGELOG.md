@@ -10,11 +10,24 @@
 
 ### Changed
 
+- `.201` closes two correctness/replay contracts without adding a provider or
+  company exception. Strict S7 now rejects an opening whose target location is
+  known but whose official selection has no location evidence, regardless of
+  inventory completeness or candidate count. Explicit title/URL city evidence
+  and narrowly structured remote/work-from-home/nationwide qualifiers remain
+  valid; Remote Sensing and non-qualifier URL slugs are rejected. Replay now
+  rebuilds record-owned discovery evidence from trace-proven inputs instead of
+  exposing batch-final state, and reports bounded same-stage timeout
+  normalization explicitly. A parent process timeout with a missing active-stage
+  scope gets one bounded fresh recapture; only a real finalized nonempty scope
+  can replace the original result. `.199` artifacts replay 100/100 with 97
+  reproduced, 3 budget recoveries, 0 mismatch and 0 fixture gap. `.200` replays
+  99/99 after excluding its already-captured Team Royal boundary defect.
+
 - A code-frozen `.200` Fresh100 network rerun completed 100/100 records from
   clean checkpoint, evidence, completion and snapshot roots. Raw Exact increased
-  from 23 to 28, but strict audit accepts only 23: four openings lack location
-  evidence and one first-party handoff reaches a differently named Paylocity
-  tenant without an explicit hiring relationship. Website/Career/Job List were
+  from 23 to 28, but strict audit accepts only 24 because four openings lack
+  location evidence. Website/Career/Job List were
   72/59/57. Retryable terminals fell only from 30 to 27 as the dominant network
   symptom changed from 29 timeouts to 19 LinkedIn rate-limited records plus 7
   timeouts. The public-domain registry emitted correct government candidates but
@@ -22,6 +35,14 @@
   failed closed before execution because Team Royal lacked a finalized S2
   capture boundary; no mismatch was hidden or waived. Blind holdouts remained
   sealed and unobserved.
+
+- The `.200` Exact audit corrected its initial interpretation of Resolute Road
+  Hospitality. `Braintree-Hospitality` is part of Paylocity's opaque tenant
+  locator, not an employer assertion; the captured board title, description and
+  opening inventory explicitly name Resolute Road Hospitality. Frozen examples
+  with genuinely different hiring entities already use typed `brand_parent`
+  evidence. No new cross-name relationship rule is introduced because this is
+  not a three-company failure cluster.
 
 - `.199` blind selection is now sealed without changing S2-S7 behavior. An
   S1-only pool of 239 unique identities produced two schema-1.1 cohorts of 40
