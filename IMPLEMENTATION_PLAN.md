@@ -49,6 +49,13 @@ offline gate。随后先做 development focused live，再做记录出口 IP/ASN
 connect/TLS/TTFB 的 current/US 网络四格 A/B。sealed holdout v2/v3 在开发门和
 Frozen100 回归门关闭前继续封存。
 
+迁移前 contract 已进一步冻结为 proposed `ADR-0030`。新 engine 必须进入 run-config
+schema/digest，保留 staged rollback engine；coordinator 只调度和合并 untrusted lead，
+不得接管 provider、relationship、inventory 或 S7。第一阶段先证明三路逻辑独立和
+deterministic merge；route-local capture/checkpoint 支持完成前不得宣称真实并发，也
+不得序列化 future、线程、fetcher 或部分候选池。ADR 状态仍为 proposed，不构成行为
+实现授权。
+
 ## 已完成稳定化轮次（2026-07-21，`.210` -> `.212`）
 
 `.209` 已完成冻结 Fresh100 冷启动：100 条全部执行，得到 19 Exact、78 Website、

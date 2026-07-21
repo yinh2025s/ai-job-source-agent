@@ -21,6 +21,10 @@
   tests were not rerun for this documentation-only review.
 - Full findings and the proposed acceptance contract are recorded in
   `docs/FRESH_100_V212_ARCHITECTURE_REVIEW.md`.
+- Proposed ADR-0030 now freezes the coordinator responsibilities, route-local
+  status/suppression contract, provenance-preserving merge, deterministic
+  provider-family scheduling, schema migration, rollback and isolated file
+  ownership. The ADR explicitly does not authorize behavior implementation.
 
 ## 2026-07-21 - Rejected opening-scheduling cluster `.212`
 
