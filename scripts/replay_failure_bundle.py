@@ -30,8 +30,10 @@ from job_source_agent.contracts import StageExecution
 from job_source_agent.identity_continuity import (
     HiringIdentityEvidence,
     OpeningIdentity,
+    OpeningSelectionEvidence,
     ProviderIdentity,
 )
+from job_source_agent.opening_selection_validation import validate_opening_selection
 from job_source_agent.identity_evidence import FilesystemLinkedInWebsiteEvidenceStore
 from job_source_agent.company_discovery_evidence_store import (
     FilesystemCompanyDiscoveryEvidenceStore,
@@ -1832,7 +1834,8 @@ def _authoritative_stage_updates(
             if portfolio is not None:
                 updates["discovered_job_board"] = portfolio.primary
                 updates["job_board_portfolio"] = portfolio
-        if result.get("provider"):
+                updates["provider"] = portfolio.primary.board.provider
+        if result.get("provider") and "provider" not in updates:
             updates["provider"] = result["provider"]
     updates.update(_legacy_identity_checkpoint_updates(stage, source_record, updates))
     return updates
@@ -1942,6 +1945,220 @@ def _verified_identity_job_board(
     )
 
 
+def _canonical_urls_match(left: object, right: object) -> bool:
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    try:
+        return canonicalize_identity_url(left) == canonicalize_identity_url(right)
+    except (TypeError, ValueError):
+        return False
+
+
+def _checkpointed_scoped_job_board_portfolio(
+    payload: object,
+    *,
+    eligible_count: int,
+    eligible_set_complete: bool,
+    primary_provider: str,
+    primary_url: str,
+) -> JobBoardPortfolio:
+    try:
+        portfolio = JobBoardPortfolio.from_checkpoint_payload(payload)
+    except (TypeError, ValueError) as error:
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job-board portfolio checkpoint payload is invalid"
+        ) from error
+    captured_count = len(portfolio.boards)
+    safe_prefix_complete = captured_count == eligible_count
+    if (
+        captured_count > eligible_count
+        or (safe_prefix_complete and portfolio.eligible_set_complete != eligible_set_complete)
+        or (not safe_prefix_complete and portfolio.eligible_set_complete)
+        or portfolio.primary.board.provider != primary_provider
+        or not _canonical_urls_match(portfolio.primary.board.url, primary_url)
+        or any(
+            not item.board.replay_safe or not is_replay_safe_job_board(item.board)
+            for item in portfolio.boards
+        )
+    ):
+        raise _ScopedStageSeedAmbiguity(
+            "Scoped job-board portfolio checkpoint payload conflicts with its summary"
+        )
+    return portfolio
+
+
+def _legacy_exact_causal_prefix_portfolio(
+    source_record: dict,
+    attempts: object,
+    *,
+    detected_provider: object,
+    detected_url: object,
+    detection_method: object,
+) -> JobBoardPortfolio | None:
+    """Migrate an old exact S6 prefix only when the complete S7 chain proves it."""
+
+    if not isinstance(attempts, list) or len(attempts) != 1:
+        return None
+    attempt = attempts[0]
+    if not isinstance(attempt, dict) or attempt.get("status") != "exact":
+        return None
+    attempt_provider = attempt.get("provider")
+    attempt_url = attempt.get("board_url")
+    if (
+        not isinstance(detected_provider, str)
+        or not isinstance(detected_url, str)
+        or attempt_provider != detected_provider
+        or not _canonical_urls_match(attempt_url, detected_url)
+    ):
+        return None
+
+    opening_stage = next(
+        (
+            item
+            for item in source_record.get("stages", [])
+            if isinstance(item, dict) and item.get("stage") == "opening_match"
+        ),
+        None,
+    )
+    assertion = source_record.get("identity_assertion")
+    hiring_payload = assertion.get("hiring") if isinstance(assertion, dict) else None
+    provider_payload = (
+        assertion.get("provider") if isinstance(assertion, dict) else None
+    )
+    opening_payload = (
+        assertion.get("opening") if isinstance(assertion, dict) else None
+    )
+    selection_payload = (
+        assertion.get("selection") if isinstance(assertion, dict) else None
+    )
+    if (
+        not isinstance(opening_stage, dict)
+        or opening_stage.get("status") != "success"
+        or opening_stage.get("provider") != attempt_provider
+        or not isinstance(assertion, dict)
+        or assertion.get("verdict") != "verified"
+        or assertion.get("failure_codes") not in (None, [])
+    ):
+        return None
+    try:
+        hiring_identity = HiringIdentityEvidence.from_checkpoint_payload(
+            hiring_payload
+        )
+        provider_identity = ProviderIdentity.from_checkpoint_payload(provider_payload)
+        opening_identity = OpeningIdentity.from_checkpoint_payload(opening_payload)
+        selection_identity = OpeningSelectionEvidence.from_checkpoint_payload(
+            selection_payload
+        )
+    except (TypeError, ValueError):
+        return None
+    source_company_name = source_record.get("company_name")
+    selection_failures, _ = validate_opening_selection(
+        selection=selection_identity,
+        provider=provider_identity,
+        opening=opening_identity,
+        open_position_url=source_record.get("open_position_url"),
+        target_title=source_record.get("linkedin_job_title"),
+        target_location=source_record.get("linkedin_job_location"),
+    )
+    if (
+        not hiring_identity.verified
+        or not provider_identity.relationship_verified
+        or not isinstance(source_company_name, str)
+        or not source_company_name.strip()
+        or hiring_identity.source_company_name.casefold().strip()
+        != source_company_name.casefold().strip()
+        or selection_failures
+        or hiring_identity.hiring_entity_name != provider_identity.hiring_entity_name
+        or provider_identity.hiring_entity_name != opening_identity.hiring_entity_name
+        or provider_identity.provider != attempt_provider
+        or opening_identity.provider != attempt_provider
+        or provider_identity.tenant != opening_identity.tenant
+        or not _canonical_urls_match(
+            provider_identity.canonical_board_url,
+            attempt_url,
+        )
+        or not _canonical_urls_match(
+            opening_identity.canonical_board_url,
+            attempt_url,
+        )
+        or not _canonical_urls_match(
+            source_record.get("job_list_page_url"),
+            attempt_url,
+        )
+        or not _canonical_urls_match(
+            source_record.get("open_position_url"),
+            opening_identity.canonical_opening_url,
+        )
+        or selection_identity.provider != attempt_provider
+        or selection_identity.tenant != provider_identity.tenant
+        or not _canonical_urls_match(
+            selection_identity.canonical_board_url,
+            attempt_url,
+        )
+        or not _canonical_urls_match(
+            selection_identity.canonical_opening_url,
+            opening_identity.canonical_opening_url,
+        )
+    ):
+        return None
+
+    attempt_trace = attempt.get("trace")
+    selected = attempt_trace.get("selected") if isinstance(attempt_trace, dict) else None
+    selected_url = selected.get("url") if isinstance(selected, dict) else None
+    provider_api = (
+        attempt_trace.get("provider_api")
+        if isinstance(attempt_trace, dict)
+        else None
+    )
+    attempt_detection = (
+        provider_api.get("provider_detection")
+        if isinstance(provider_api, dict)
+        else None
+    )
+    attempt_detection_method = (
+        attempt_detection.get("source_method")
+        if isinstance(attempt_detection, dict)
+        else None
+    )
+    if (
+        not _canonical_urls_match(selected_url, opening_identity.canonical_opening_url)
+        or not isinstance(attempt_detection, dict)
+        or attempt_detection.get("provider") != attempt_provider
+        or not _canonical_urls_match(attempt_detection.get("url"), attempt_url)
+        or attempt_detection_method != detection_method
+    ):
+        return None
+
+    adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(attempt_provider)
+    board = adapter.identify_board(attempt_url) if adapter is not None else None
+    if board is None or not board.replay_safe:
+        board = _verified_identity_job_board(
+            source_record,
+            provider=attempt_provider,
+            board_url=attempt_url,
+        )
+    if (
+        board is None
+        or not board.replay_safe
+        or not is_replay_safe_job_board(board)
+        or board.provider != attempt_provider
+        or board.identifier != provider_identity.tenant
+    ):
+        return None
+    try:
+        discovered = DiscoveredJobBoard(
+            board=board,
+            detection_method=attempt_detection_method,
+            evidence_url=attempt_url,
+        )
+        return JobBoardPortfolio(
+            boards=(discovered,),
+            eligible_set_complete=False,
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None:
     trace = source_record.get("trace")
     stage_traces = trace.get("stages") if isinstance(trace, dict) else None
@@ -2000,12 +2217,43 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
         {},
     )
     result_provider = result.get("provider") if isinstance(result, dict) else None
-    if (
-        not isinstance(primary_url, str)
-        or not primary_url
-        or not isinstance(primary_provider, str)
-        or not primary_provider
-        or len(
+    opening_trace = (
+        stage_traces.get("opening_match")
+        if isinstance(stage_traces, dict)
+        else None
+    )
+    board_portfolio = (
+        opening_trace.get("board_portfolio")
+        if isinstance(opening_trace, dict)
+        else None
+    )
+    attempts = (
+        board_portfolio.get("attempts")
+        if isinstance(board_portfolio, dict)
+        else None
+    )
+    top_level_url = source_record.get("job_list_page_url")
+    primary_metadata_valid = bool(
+        isinstance(primary_url, str)
+        and primary_url
+        and isinstance(primary_provider, str)
+        and primary_provider
+    )
+    generic_url_only = (
+        eligible_count == 1
+        and eligible_set_complete
+        and primary_provider == "generic"
+        and detected_url is None
+        and detected_provider is None
+    )
+    provider_projection_consistent = (
+        generic_url_only
+        and (
+            not isinstance(top_level_url, str)
+            or _canonical_urls_match(top_level_url, primary_url)
+        )
+    ) or (
+        len(
             {
                 provider
                 for provider in (
@@ -2015,24 +2263,44 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
                 )
                 if isinstance(provider, str) and provider
             }
+        ) == 1
+        and detected_url == primary_url
+        and detected_provider == primary_provider
+        and (
+            not isinstance(top_level_url, str)
+            or _canonical_urls_match(top_level_url, primary_url)
         )
-        != 1
-    ):
+    )
+    if not primary_metadata_valid or not provider_projection_consistent:
+        migrated = None
+        if (
+            "checkpoint_payload" not in portfolio_summary
+            and eligible_count > 1
+            and primary_metadata_valid
+            and result_provider == primary_provider
+        ):
+            migrated = _legacy_exact_causal_prefix_portfolio(
+                source_record,
+                attempts,
+                detected_provider=detected_provider,
+                detected_url=detected_url,
+                detection_method=detection_method,
+            )
+        if migrated is not None:
+            return migrated
         raise _ScopedStageSeedAmbiguity(
             "Scoped job-board portfolio primary detection metadata is inconsistent"
         )
 
-    if (
-        eligible_count == 1
-        and eligible_set_complete
-        and primary_provider == "generic"
-        and detected_url is None
-        and detected_provider is None
-    ):
+    if generic_url_only:
         return None
-    if detected_url != primary_url or detected_provider != primary_provider:
-        raise _ScopedStageSeedAmbiguity(
-            "Scoped job-board portfolio primary detection metadata is inconsistent"
+    if "checkpoint_payload" in portfolio_summary:
+        return _checkpointed_scoped_job_board_portfolio(
+            portfolio_summary.get("checkpoint_payload"),
+            eligible_count=eligible_count,
+            eligible_set_complete=eligible_set_complete,
+            primary_provider=primary_provider,
+            primary_url=primary_url,
         )
 
     if eligible_count == 1 and eligible_set_complete:
@@ -2063,22 +2331,16 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
                 "Scoped singleton job-board discovery evidence is not checkpoint-safe"
             ) from error
 
-    opening_trace = (
-        stage_traces.get("opening_match")
-        if isinstance(stage_traces, dict)
-        else None
-    )
-    board_portfolio = (
-        opening_trace.get("board_portfolio")
-        if isinstance(opening_trace, dict)
-        else None
-    )
-    attempts = (
-        board_portfolio.get("attempts")
-        if isinstance(board_portfolio, dict)
-        else None
-    )
     if not isinstance(attempts, list) or len(attempts) != eligible_count:
+        migrated = _legacy_exact_causal_prefix_portfolio(
+            source_record,
+            attempts,
+            detected_provider=detected_provider,
+            detected_url=detected_url,
+            detection_method=detection_method,
+        )
+        if migrated is not None:
+            return migrated
         raise _ScopedStageSeedAmbiguity(
             "Scoped job-board portfolio attempts do not cover the captured eligible set"
         )

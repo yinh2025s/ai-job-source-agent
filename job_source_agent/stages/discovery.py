@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 import time
 import re
 from typing import Protocol
@@ -31,6 +32,7 @@ from ..models import (
     STAGE_HIRING_IDENTITY_RESOLUTION,
     STAGE_JOB_BOARD_DISCOVERY,
     STAGE_OPENING_MATCH,
+    StageResult,
 )
 from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
@@ -861,25 +863,28 @@ class JobBoardDiscoveryStage:
                 "url": discovered_board.board.url,
             }
 
-        provider = trace.get("provider") or self.provider_registry.detect(job_list_url)
-        provider = None if provider == "generic" else provider
-        updates = {"job_list_page_url": job_list_url, "provider": provider}
-        if discovered_board is not None:
-            updates["discovered_job_board"] = discovered_board
+        updates: dict[str, object] = {}
+        if portfolio is not None:
+            job_list_url, provider = _project_job_board_portfolio(
+                trace,
+                updates,
+                portfolio,
+            )
+            discovered_board = portfolio.primary
+        else:
+            provider = trace.get("provider") or self.provider_registry.detect(
+                job_list_url
+            )
+            provider = None if provider == "generic" else provider
+            updates.update({"job_list_page_url": job_list_url, "provider": provider})
+            if discovered_board is not None:
+                updates["discovered_job_board"] = discovered_board
         updates["provider_identity"] = _provider_identity(
             context,
             job_list_url,
             discovered_board,
             self.provider_registry,
         )
-        if (
-            portfolio is not None
-            and (
-                len(portfolio.boards) > 1
-                or not portfolio.eligible_set_complete
-            )
-        ):
-            updates["job_board_portfolio"] = portfolio
         return StageExecution(
             result=make_stage_result(
                 self.name,
@@ -1172,23 +1177,13 @@ class JobBoardDiscoveryStage:
             hiring_evidence=hiring_evidence,
             relationship_evidence=relationship_evidence,
         )
-        updates: dict[str, object] = {
-            "job_list_page_url": discovered.board.url,
-            "provider": discovered.board.provider,
-            "discovered_job_board": discovered,
-            "provider_identity": provider_identity,
-        }
+        updates: dict[str, object] = {"provider_identity": provider_identity}
         if (
             hiring_evidence is not None
             and hiring_evidence != context.hiring_identity_evidence
         ):
             updates["hiring_identity_evidence"] = hiring_evidence
             updates["hiring_entity_name"] = hiring_evidence.hiring_entity_name
-        if (
-            len(portfolio.boards) > 1
-            or not portfolio.eligible_set_complete
-        ):
-            updates["job_board_portfolio"] = portfolio
         trace = {
             "method": "parallel_candidate_discovery",
             "candidate_discovery": discovery_trace,
@@ -1202,6 +1197,7 @@ class JobBoardDiscoveryStage:
             "relationship_method": provider_identity.verification_method,
             "relationship_evidence": relationship_evidence.to_trace_payload(),
         }
+        _project_job_board_portfolio(trace, updates, portfolio)
         if route_evaluation_trace is not None:
             trace["route_evaluation"] = route_evaluation_trace
         execution = StageExecution(
@@ -2978,13 +2974,16 @@ def _merge_legacy_website_route(
                 }
             )
     boards = _deduplicate_public_board_identities(boards)
-    if len(boards) > 1:
-        updates["job_board_portfolio"] = JobBoardPortfolio(
+    portfolio = None
+    if boards:
+        portfolio = JobBoardPortfolio(
             boards=tuple(boards[:8]),
             eligible_set_complete=False,
         )
 
     trace = dict(candidate_execution.trace)
+    if portfolio is not None:
+        _project_job_board_portfolio(trace, updates, portfolio)
     trace["route_evaluation"] = _route_trace_with_legacy(
         trace.get("route_evaluation"),
         legacy_execution,
@@ -2995,8 +2994,11 @@ def _merge_legacy_website_route(
         "reason_code": legacy_execution.result.reason_code,
         "trace": legacy_execution.trace,
     }
+    result = candidate_execution.result
+    if portfolio is not None:
+        result = _project_job_board_stage_result(result, portfolio.primary)
     return StageExecution(
-        result=candidate_execution.result,
+        result=result,
         updates=updates,
         trace=trace,
         evidence_lineage=candidate_execution.evidence_lineage,
@@ -3624,6 +3626,144 @@ def _trace_has_complete_native_inventory(trace: object) -> bool:
         and adapter_trace.get("tenant_identity_conflict") is not True
         and not adapter_trace.get("errors")
     )
+
+
+def _project_job_board_portfolio(
+    trace: dict,
+    updates: dict[str, object],
+    portfolio: JobBoardPortfolio,
+) -> tuple[str, str]:
+    """Project the final typed S5 portfolio into every public stage surface."""
+
+    primary = portfolio.primary
+    board = primary.board
+    conflicts = _job_board_projection_conflicts(trace, board.url, board.provider)
+    previous_projection = trace.get("job_board_portfolio_projection")
+    if isinstance(previous_projection, dict):
+        previous_fields = previous_projection.get("fields")
+        if isinstance(previous_fields, list):
+            conflicts = [
+                *(
+                    field
+                    for field in previous_fields
+                    if isinstance(field, str)
+                ),
+                *conflicts,
+            ]
+    conflicts = list(dict.fromkeys(conflicts))
+
+    checkpoint_payload = portfolio.to_checkpoint_payload()
+    detection = trace.get("provider_detection")
+    detection_matches_primary = (
+        isinstance(detection, dict)
+        and detection.get("provider") == board.provider
+        and isinstance(detection.get("url"), str)
+        and _same_url(detection["url"], board.url)
+    )
+    summary = {
+        "eligible_count": len(portfolio.boards),
+        "eligible_set_complete": portfolio.eligible_set_complete,
+        "primary_provider": board.provider,
+        "primary_url": board.url,
+    }
+    if checkpoint_payload is not None:
+        summary["checkpoint_payload"] = checkpoint_payload
+
+    trace["job_list_page_url"] = board.url
+    trace["provider"] = board.provider
+    trace["provider_detection"] = {
+        "method": (
+            detection.get("method")
+            if detection_matches_primary
+            else primary.detection_method
+        ),
+        "provider": board.provider,
+        "url": board.url,
+        "evidence_url": (
+            detection.get("evidence_url")
+            if detection_matches_primary and detection.get("evidence_url")
+            else primary.evidence_url
+        ),
+    }
+    trace["job_board_portfolio"] = summary
+    if conflicts:
+        trace["job_board_portfolio_projection"] = {
+            "status": "superseded_conflict",
+            "fields": conflicts,
+            "resolution": "final_typed_portfolio",
+        }
+    else:
+        trace.pop("job_board_portfolio_projection", None)
+
+    updates.update(
+        {
+            "job_list_page_url": board.url,
+            "provider": board.provider,
+            "discovered_job_board": primary,
+        }
+    )
+    if len(portfolio.boards) > 1 or not portfolio.eligible_set_complete:
+        updates["job_board_portfolio"] = portfolio
+    else:
+        updates.pop("job_board_portfolio", None)
+    return board.url, board.provider
+
+
+def _project_job_board_stage_result(
+    result: StageResult,
+    primary: DiscoveredJobBoard,
+) -> StageResult:
+    evidence = [
+        (
+            {**item, "url": primary.board.url}
+            if item.get("field") == "job_list_page_url"
+            else item
+        )
+        for item in result.evidence
+    ]
+    return replace(
+        result,
+        provider=primary.board.provider,
+        evidence=evidence,
+    )
+
+
+def _job_board_projection_conflicts(
+    trace: dict,
+    primary_url: str,
+    primary_provider: str,
+) -> list[str]:
+    expected = {
+        "job_list_page_url": primary_url,
+        "provider": primary_provider,
+        "provider_detection.url": primary_url,
+        "provider_detection.provider": primary_provider,
+        "job_board_portfolio.primary_url": primary_url,
+        "job_board_portfolio.primary_provider": primary_provider,
+    }
+    detection = trace.get("provider_detection")
+    summary = trace.get("job_board_portfolio")
+    observed = {
+        "job_list_page_url": trace.get("job_list_page_url"),
+        "provider": trace.get("provider"),
+        "provider_detection.url": (
+            detection.get("url") if isinstance(detection, dict) else None
+        ),
+        "provider_detection.provider": (
+            detection.get("provider") if isinstance(detection, dict) else None
+        ),
+        "job_board_portfolio.primary_url": (
+            summary.get("primary_url") if isinstance(summary, dict) else None
+        ),
+        "job_board_portfolio.primary_provider": (
+            summary.get("primary_provider") if isinstance(summary, dict) else None
+        ),
+    }
+    return [
+        field
+        for field, value in observed.items()
+        if value not in (None, "") and value != expected[field]
+    ]
 
 
 def _rank_first_party_portfolio(

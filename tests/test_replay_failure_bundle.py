@@ -24,8 +24,18 @@ from job_source_agent.company_discovery_evidence_store import (
     FilesystemCompanyDiscoveryEvidenceStore,
 )
 from job_source_agent.contracts import PipelineContext
-from job_source_agent.identity_continuity import ProviderIdentity
-from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
+from job_source_agent.identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    OpeningSelectionEvidence,
+    ProviderIdentity,
+)
+from job_source_agent.job_board import (
+    DiscoveredJobBoard,
+    JobBoard,
+    JobBoardPortfolio,
+)
+from job_source_agent.providers.registry import DEFAULT_PROVIDER_REGISTRY
 from job_source_agent.snapshot import SnapshotStore
 from job_source_agent.models import PIPELINE_STAGES, CompanyInput, dataclass_to_dict
 from job_source_agent.run_configuration import AgentConfig, DeterministicRunConfig
@@ -36,6 +46,7 @@ from scripts.replay_failure_bundle import (
     _RedactionHydratingScopedFetcher,
     _build_outcome_gate,
     _build_record_integrity,
+    _authoritative_stage_updates,
     _authoritative_upstream_executions,
     _effective_replay_resume_stage,
     _export_replay_records_with_sources,
@@ -838,6 +849,574 @@ class FailureReplayBundleTests(unittest.TestCase):
             boards,
         )
         self.assertFalse(portfolio.eligible_set_complete)
+
+    def test_scoped_s5_seed_prefers_complete_payload_over_exact_attempt_prefix(self):
+        board_urls = (
+            "https://recruiting.adp.com/srccar/public/nghome.guid?c=1181515&d=Corporate",
+            "https://recruiting.adp.com/srccar/public/nghome.guid?c=1181515&d=Retail",
+        )
+        adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named("adp")
+        boards = tuple(adapter.identify_board(url) for url in board_urls)
+        payload = JobBoardPortfolio(
+            boards=tuple(
+                DiscoveredJobBoard(
+                    board=board,
+                    detection_method="linked_url_evidence",
+                    evidence_url=board.url,
+                )
+                for board in boards
+            ),
+            eligible_set_complete=True,
+        ).to_checkpoint_payload()
+        source_record = {
+            "job_list_page_url": board_urls[0],
+            "stages": [
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "adp",
+                },
+                {
+                    "stage": "opening_match",
+                    "status": "success",
+                    "provider": "adp",
+                },
+            ],
+            "trace": {"stages": {
+                "job_board_discovery": {
+                    "job_board_portfolio": {
+                        "eligible_count": 2,
+                        "eligible_set_complete": True,
+                        "primary_provider": "adp",
+                        "primary_url": board_urls[0],
+                        "checkpoint_payload": payload,
+                    },
+                    "provider_detection": {
+                        "method": "linked_url_evidence",
+                        "provider": "adp",
+                        "url": board_urls[0],
+                    },
+                },
+                "opening_match": {"board_portfolio": {"attempts": [{
+                    "board_url": board_urls[0],
+                    "provider": "adp",
+                    "status": "exact",
+                }]}},
+            }},
+        }
+
+        portfolio = _scoped_job_board_portfolio(source_record)
+
+        self.assertEqual(
+            tuple(item.board.url for item in portfolio.boards),
+            board_urls,
+        )
+        self.assertTrue(portfolio.eligible_set_complete)
+
+    def test_scoped_s5_seed_rejects_payload_primary_conflict(self):
+        board_urls = (
+            "https://recruiting.adp.com/srccar/public/nghome.guid?c=1181515&d=Corporate",
+            "https://recruiting.adp.com/srccar/public/nghome.guid?c=1181515&d=Retail",
+        )
+        adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named("adp")
+        boards = tuple(adapter.identify_board(url) for url in reversed(board_urls))
+        payload = JobBoardPortfolio(
+            boards=tuple(
+                DiscoveredJobBoard(
+                    board=board,
+                    detection_method="linked_url_evidence",
+                    evidence_url=board.url,
+                )
+                for board in boards
+            ),
+            eligible_set_complete=True,
+        ).to_checkpoint_payload()
+        source_record = {
+            "job_list_page_url": board_urls[0],
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "adp",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 2,
+                    "eligible_set_complete": True,
+                    "primary_provider": "adp",
+                    "primary_url": board_urls[0],
+                    "checkpoint_payload": payload,
+                },
+                "provider_detection": {
+                    "method": "linked_url_evidence",
+                    "provider": "adp",
+                    "url": board_urls[0],
+                },
+            }}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "conflicts with its summary"):
+            _scoped_job_board_portfolio(source_record)
+
+    def test_scoped_s5_seed_accepts_checkpoint_safe_portfolio_prefix(self):
+        board_url = (
+            "https://recruiting.adp.com/srccar/public/"
+            "nghome.guid?c=1181515&d=Corporate"
+        )
+        board = DEFAULT_PROVIDER_REGISTRY.adapter_named("adp").identify_board(
+            board_url
+        )
+        payload = JobBoardPortfolio(
+            boards=(DiscoveredJobBoard(
+                board=board,
+                detection_method="linked_url_evidence",
+                evidence_url=board_url,
+            ),),
+            eligible_set_complete=False,
+        ).to_checkpoint_payload()
+        source_record = {
+            "job_list_page_url": board_url,
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "adp",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 2,
+                    "eligible_set_complete": True,
+                    "primary_provider": "adp",
+                    "primary_url": board_url,
+                    "checkpoint_payload": payload,
+                },
+                "provider_detection": {
+                    "method": "linked_url_evidence",
+                    "provider": "adp",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        portfolio = _scoped_job_board_portfolio(source_record)
+
+        self.assertEqual(len(portfolio.boards), 1)
+        self.assertFalse(portfolio.eligible_set_complete)
+
+    def test_scoped_s5_seed_accepts_verified_legacy_exact_causal_prefix(self):
+        board_url = (
+            "https://eicl.fa.em5.oraclecloud.com/hcmUI/"
+            "CandidateExperience/en/sites/HAGroup"
+        )
+        opening_url = f"{board_url}/job/13555"
+        board = DEFAULT_PROVIDER_REGISTRY.adapter_named(
+            "oracle_hcm"
+        ).identify_board(board_url)
+        hiring_identity = HiringIdentityEvidence(
+            source_company_name="Example Cruises",
+            hiring_entity_name="Example Cruises",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://example.test",
+        )
+        provider_identity = ProviderIdentity(
+            hiring_entity_name="Example Cruises",
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            evidence_url="https://example.test/careers",
+            verification_method="verified_first_party_handoff",
+            relationship_verified=True,
+        )
+        opening_identity = OpeningIdentity(
+            hiring_entity_name="Example Cruises",
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            canonical_opening_url=opening_url,
+        )
+        selection_identity = OpeningSelectionEvidence(
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            canonical_opening_url=opening_url,
+            title="Deck Engineer",
+            location="Seattle, WA",
+            inventory_scope="full",
+            inventory_complete=True,
+            candidate_count=1,
+        )
+        source_record = {
+            "company_name": "Example Cruises",
+            "linkedin_job_title": "Deck Engineer",
+            "linkedin_job_location": "Seattle, WA",
+            "job_list_page_url": board_url,
+            "open_position_url": opening_url,
+            "identity_assertion": {
+                "verdict": "verified",
+                "failure_codes": [],
+                "hiring": hiring_identity.to_checkpoint_payload(),
+                "provider": provider_identity.to_checkpoint_payload(),
+                "opening": opening_identity.to_checkpoint_payload(),
+                "selection": selection_identity.to_checkpoint_payload(),
+            },
+            "stages": [
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "oracle_hcm",
+                },
+                {
+                    "stage": "opening_match",
+                    "status": "success",
+                    "provider": "oracle_hcm",
+                },
+            ],
+            "trace": {"stages": {
+                "job_board_discovery": {
+                    "job_board_portfolio": {
+                        "eligible_count": 2,
+                        "eligible_set_complete": True,
+                        "primary_provider": "oracle_hcm",
+                        "primary_url": board_url,
+                    },
+                    "provider_detection": {
+                        "method": "linked_url_evidence",
+                        "provider": "oracle_hcm",
+                        "url": board_url,
+                    },
+                },
+                "opening_match": {"board_portfolio": {"attempts": [{
+                    "board_url": board_url,
+                    "provider": "oracle_hcm",
+                    "status": "exact",
+                    "trace": {
+                        "selected": {"url": opening_url},
+                        "provider_api": {"provider_detection": {
+                            "source_method": "linked_url_evidence",
+                            "provider": "oracle_hcm",
+                            "url": board_url,
+                        }},
+                    },
+                }]}},
+            }},
+        }
+
+        portfolio = _scoped_job_board_portfolio(source_record)
+
+        self.assertEqual(len(portfolio.boards), 1)
+        self.assertEqual(portfolio.primary.board.url, board_url)
+        self.assertFalse(portfolio.eligible_set_complete)
+
+    def test_scoped_s5_seed_migrates_stale_primary_from_verified_exact_chain(self):
+        board_url = (
+            "https://eicl.fa.em5.oraclecloud.com/hcmUI/"
+            "CandidateExperience/en/sites/HAGroup"
+        )
+        stale_board_url = "https://hollandamericaprincess.pinpointhq.com/"
+        opening_url = f"{board_url}/job/13555"
+        board = DEFAULT_PROVIDER_REGISTRY.adapter_named(
+            "oracle_hcm"
+        ).identify_board(board_url)
+        hiring_identity = HiringIdentityEvidence(
+            source_company_name="Example Cruises",
+            hiring_entity_name="Example Cruises",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://example.test",
+        )
+        provider_identity = ProviderIdentity(
+            hiring_entity_name="Example Cruises",
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            evidence_url="https://example.test/careers",
+            verification_method="verified_first_party_handoff",
+            relationship_verified=True,
+        )
+        opening_identity = OpeningIdentity(
+            hiring_entity_name="Example Cruises",
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            canonical_opening_url=opening_url,
+        )
+        selection_identity = OpeningSelectionEvidence(
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            canonical_opening_url=opening_url,
+            title="Deck Engineer",
+            location="Seattle, WA",
+            inventory_scope="full",
+            inventory_complete=True,
+            candidate_count=1,
+        )
+        source_record = {
+            "company_name": "Example Cruises",
+            "linkedin_job_title": "Deck Engineer",
+            "linkedin_job_location": "Seattle, WA",
+            "job_list_page_url": board_url,
+            "open_position_url": opening_url,
+            "identity_assertion": {
+                "verdict": "verified",
+                "failure_codes": [],
+                "hiring": hiring_identity.to_checkpoint_payload(),
+                "provider": provider_identity.to_checkpoint_payload(),
+                "opening": opening_identity.to_checkpoint_payload(),
+                "selection": selection_identity.to_checkpoint_payload(),
+            },
+            "stages": [
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "pinpoint",
+                },
+                {
+                    "stage": "opening_match",
+                    "status": "success",
+                    "provider": "oracle_hcm",
+                },
+            ],
+            "trace": {"stages": {
+                "job_board_discovery": {
+                    "job_board_portfolio": {
+                        "eligible_count": 2,
+                        "eligible_set_complete": True,
+                        "primary_provider": "pinpoint",
+                        "primary_url": stale_board_url,
+                    },
+                    "provider_detection": {
+                        "method": "linked_url_evidence",
+                        "provider": "oracle_hcm",
+                        "url": board_url,
+                    },
+                },
+                "opening_match": {"board_portfolio": {"attempts": [{
+                    "board_url": board_url,
+                    "provider": "oracle_hcm",
+                    "status": "exact",
+                    "trace": {
+                        "selected": {"url": opening_url},
+                        "provider_api": {"provider_detection": {
+                            "source_method": "linked_url_evidence",
+                            "provider": "oracle_hcm",
+                            "url": board_url,
+                        }},
+                    },
+                }]}},
+            }},
+        }
+
+        portfolio = _scoped_job_board_portfolio(source_record)
+
+        self.assertEqual(len(portfolio.boards), 1)
+        self.assertEqual(portfolio.primary.board.provider, "oracle_hcm")
+        self.assertEqual(portfolio.primary.board.url, board_url)
+        self.assertFalse(portfolio.eligible_set_complete)
+
+        updates = _authoritative_stage_updates(
+            "job_board_discovery",
+            source_record,
+            scoped_stage_evidence=True,
+        )
+        self.assertEqual(updates["provider"], "oracle_hcm")
+
+    def test_scoped_s5_seed_rejects_legacy_exact_for_wrong_source_company(self):
+        board_url = (
+            "https://eicl.fa.em5.oraclecloud.com/hcmUI/"
+            "CandidateExperience/en/sites/HAGroup"
+        )
+        opening_url = f"{board_url}/job/13555"
+        board = DEFAULT_PROVIDER_REGISTRY.adapter_named(
+            "oracle_hcm"
+        ).identify_board(board_url)
+        hiring = HiringIdentityEvidence(
+            source_company_name="Another Cruises",
+            hiring_entity_name="Example Cruises",
+            relationship_type="brand_parent",
+            verification_method="verified_first_party_handoff",
+            verified=True,
+            evidence_url="https://example.test",
+        )
+        provider = ProviderIdentity(
+            hiring_entity_name="Example Cruises",
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            evidence_url="https://example.test/careers",
+            verification_method="verified_first_party_handoff",
+            relationship_verified=True,
+        )
+        opening = OpeningIdentity(
+            hiring_entity_name="Example Cruises",
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            canonical_opening_url=opening_url,
+        )
+        selection = OpeningSelectionEvidence(
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            canonical_opening_url=opening_url,
+            title="Deck Engineer",
+            location="Seattle, WA",
+            inventory_scope="full",
+            inventory_complete=True,
+            candidate_count=1,
+        )
+        source_record = {
+            "company_name": "Example Cruises",
+            "linkedin_job_title": "Deck Engineer",
+            "linkedin_job_location": "Seattle, WA",
+            "job_list_page_url": board_url,
+            "open_position_url": opening_url,
+            "identity_assertion": {
+                "verdict": "verified",
+                "failure_codes": [],
+                "hiring": hiring.to_checkpoint_payload(),
+                "provider": provider.to_checkpoint_payload(),
+                "opening": opening.to_checkpoint_payload(),
+                "selection": selection.to_checkpoint_payload(),
+            },
+            "stages": [
+                {"stage": "job_board_discovery", "status": "success", "provider": "oracle_hcm"},
+                {"stage": "opening_match", "status": "success", "provider": "oracle_hcm"},
+            ],
+            "trace": {"stages": {
+                "job_board_discovery": {
+                    "job_board_portfolio": {
+                        "eligible_count": 2,
+                        "eligible_set_complete": True,
+                        "primary_provider": "oracle_hcm",
+                        "primary_url": board_url,
+                    },
+                    "provider_detection": {
+                        "method": "linked_url_evidence",
+                        "provider": "oracle_hcm",
+                        "url": board_url,
+                    },
+                },
+                "opening_match": {"board_portfolio": {"attempts": [{
+                    "board_url": board_url,
+                    "provider": "oracle_hcm",
+                    "status": "exact",
+                    "trace": {
+                        "selected": {"url": opening_url},
+                        "provider_api": {"provider_detection": {
+                            "source_method": "linked_url_evidence",
+                            "provider": "oracle_hcm",
+                            "url": board_url,
+                        }},
+                    },
+                }]}},
+            }},
+        }
+
+        with self.assertRaisesRegex(ValueError, "attempts do not cover"):
+            _scoped_job_board_portfolio(source_record)
+
+        source_record["identity_assertion"]["hiring"]["source_company_name"] = (
+            "Example Cruises"
+        )
+        source_record["linkedin_job_title"] = "Chief Financial Officer"
+        with self.assertRaisesRegex(ValueError, "attempts do not cover"):
+            _scoped_job_board_portfolio(source_record)
+
+        source_record["linkedin_job_title"] = "Deck Engineer"
+        source_record["linkedin_job_location"] = "Miami, FL"
+        with self.assertRaisesRegex(ValueError, "attempts do not cover"):
+            _scoped_job_board_portfolio(source_record)
+
+    def test_scoped_s5_seed_rejects_ambiguous_legacy_exact_prefix(self):
+        board_url = (
+            "https://eicl.fa.em5.oraclecloud.com/hcmUI/"
+            "CandidateExperience/en/sites/HAGroup"
+        )
+        opening_url = f"{board_url}/job/13555"
+        board = DEFAULT_PROVIDER_REGISTRY.adapter_named(
+            "oracle_hcm"
+        ).identify_board(board_url)
+        hiring_identity = HiringIdentityEvidence(
+            source_company_name="Example Cruises",
+            hiring_entity_name="Example Cruises",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://example.test",
+        )
+        provider_identity = ProviderIdentity(
+            hiring_entity_name="Example Cruises",
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            evidence_url="https://example.test/careers",
+            verification_method="verified_first_party_handoff",
+            relationship_verified=True,
+        )
+        opening_identity = OpeningIdentity(
+            hiring_entity_name="Example Cruises",
+            provider="oracle_hcm",
+            tenant=board.identifier,
+            canonical_board_url=board_url,
+            canonical_opening_url=opening_url,
+        )
+        source_record = {
+            "job_list_page_url": board_url,
+            "open_position_url": opening_url,
+            "identity_assertion": {
+                "verdict": "verified",
+                "failure_codes": [],
+                "hiring": hiring_identity.to_checkpoint_payload(),
+                "provider": provider_identity.to_checkpoint_payload(),
+                "opening": opening_identity.to_checkpoint_payload(),
+            },
+            "stages": [
+                {
+                    "stage": "job_board_discovery",
+                    "status": "success",
+                    "provider": "pinpoint",
+                },
+                {
+                    "stage": "opening_match",
+                    "status": "success",
+                    "provider": "oracle_hcm",
+                },
+            ],
+            "trace": {"stages": {
+                "job_board_discovery": {
+                    "job_board_portfolio": {
+                        "eligible_count": 2,
+                        "eligible_set_complete": True,
+                        "primary_provider": "pinpoint",
+                        "primary_url": (
+                            "https://hollandamericaprincess.pinpointhq.com/"
+                        ),
+                    },
+                    "provider_detection": {
+                        "method": "linked_url_evidence",
+                        "provider": "oracle_hcm",
+                        "url": board_url,
+                    },
+                },
+                "opening_match": {"board_portfolio": {"attempts": [{
+                    "board_url": board_url,
+                    "provider": "oracle_hcm",
+                    "status": "exact",
+                    "trace": {
+                        "provider_api": {"provider_detection": {
+                            "source_method": "linked_url_evidence",
+                            "provider": "oracle_hcm",
+                            "url": board_url,
+                        }},
+                    },
+                }]}},
+            }},
+        }
+
+        with self.assertRaisesRegex(ValueError, "metadata is inconsistent"):
+            _scoped_job_board_portfolio(source_record)
 
     def test_scoped_s5_seed_keeps_generic_singleton_url_only_without_detection(self):
         board_url = "https://careers.example.test/jobs"

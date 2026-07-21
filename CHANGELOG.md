@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-21 - Deterministic multi-board projection and replay `.204`
+
+- Made the final typed S5 `JobBoardPortfolio` the single source for Job List
+  URL, provider detection, StageResult provider, primary summary and context
+  updates after all relationship ranking and promotion.
+- Added a versioned checkpoint-safe portfolio payload to S5 trace. Replay now
+  restores the complete replay-safe membership or an explicitly incomplete
+  replay-safe prefix instead of treating S6's early-stopped attempt prefix as
+  the full candidate set.
+- Added a fail-closed legacy migration for old multi-board Exact artifacts only
+  when provider detection, top-level URL, first S6 Exact, S6 StageResult and the
+  complete verified S7 source-company/provider/tenant/board/opening/title/location
+  chain all agree. The migrated typed portfolio remains authoritative over a
+  stale StageResult provider during replay resume.
+- Preserved rejection for payload, summary, provider, URL or identity conflicts;
+  the fix targets the Holland America Pinpoint/Oracle split without a company
+  branch.
+- Final gates pass 2557 tests (4 skipped), 25/25 provider, 6/6 resolver and 46
+  adapters with zero architecture issues. The original Holland capture replays
+  1/1; the unchanged `.202` Fresh100 snapshots replay 100/100 as 96 reproduced
+  plus 4 explicit budget recoveries, with zero mismatch, fixture gap or dropped
+  record.
+
 ## 2026-07-21 - Reject identity-apex allocation experiment `.203`
 
 - Rejected and removed `.202`'s `identity_apex_candidate` request window after

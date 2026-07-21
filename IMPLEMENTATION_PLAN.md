@@ -2713,6 +2713,31 @@ non-transport discovery clusters; this score must not be used to justify more
 website heuristics or to claim a clean network baseline. Full evidence is in
 `docs/FRESH_100_V202_NETWORK_RERUN_REPORT.md`.
 
+The blocking replay defect is now implemented as `.204`. S5 previously ranked
+a typed multi-board portfolio after preliminary trace publication, allowing the
+typed primary/top-level URL/S6/S7 to identify Oracle while the S5 summary and
+StageResult still identified Pinpoint. The final typed portfolio now atomically
+projects every public S5 surface and stores either the complete replay-safe
+portfolio or an explicitly incomplete replay-safe prefix. Replay treats S6
+attempts as a consumed prefix and only migrates a legacy stale primary when
+provider detection, top-level URL, first Exact attempt, S6 result and the
+complete verified S7 source-company/provider/tenant/board/opening/title/location
+chain agree. The migrated typed provider also remains authoritative over stale
+StageResult metadata. Missing or conflicting evidence still fails closed. The
+immutable `.202` Holland and 100-record replay gates remain
+the required Phase C evidence; implementation alone does not close the defect.
+See `docs/FRESH_100_V202_REPLAY_PORTFOLIO_CAUSAL_ANALYSIS.md`.
+
+Phase C is now complete. Holland replays 1/1 as the same verified Oracle Exact.
+The final `.204` code replays all 100 unchanged `.202` snapshots with 96
+reproduced, four explicit company-budget recoveries, zero mismatch, zero fixture
+gap and zero dropped record. Offline gates pass 2557 tests (4 skipped), 25/25
+provider, 6/6 resolver and 46 adapters with zero architecture issues. This
+closes the replay-infrastructure defect only; the `.202` live score remains
+20/100 and the next work item must come from a shared non-transport product
+cluster. Full evidence is in
+`docs/FRESH_100_V204_REPLAY_PORTFOLIO_PHASE_C.md`.
+
 The preceding identity-apex allocation experiment failed its own Phase C gate.
 In its isolated six-record run only one independent company (Arkema) passed S2,
 below the frozen minimum of three; the two Arkema

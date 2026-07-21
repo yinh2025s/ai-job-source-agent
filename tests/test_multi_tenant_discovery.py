@@ -25,13 +25,13 @@ class _StaticDiscovery:
 
 def _candidate(tenant, rank=1):
     return ProviderCandidate(
-        url=f"https://job-boards.greenhouse.io/{tenant}",
+        url=f"https://{tenant}.pinpointhq.com/",
         source_kind="targeted_board_search",
         source_url="https://www.bing.com/search?q=sony+jobs",
         company_name="Sony Interactive Entertainment",
         target_title="Software Engineer I",
-        provider_hint="greenhouse",
-        query='site:job-boards.greenhouse.io "Sony Interactive Entertainment"',
+        provider_hint="pinpoint",
+        query='site:pinpointhq.com "Sony Interactive Entertainment"',
         result_rank=rank,
     )
 
@@ -39,12 +39,13 @@ def _candidate(tenant, rank=1):
 def _first_party_board(tenant):
     return DiscoveredJobBoard(
         board=JobBoard(
-            f"https://job-boards.greenhouse.io/{tenant}",
-            "greenhouse",
+            f"https://{tenant}.pinpointhq.com/",
+            "pinpoint",
             tenant,
+            replay_safe=True,
         ),
         detection_method="linked_url_evidence",
-        evidence_url=f"https://job-boards.greenhouse.io/{tenant}",
+        evidence_url=f"https://{tenant}.pinpointhq.com/",
         relationship_evidence_url=CAREER_PAGE,
     )
 
@@ -70,17 +71,42 @@ def _context():
 
 class _SonyPortfolioService:
     def find_job_board_portfolio(self, *args, **kwargs):
-        boards = tuple(
-            _first_party_board(tenant)
-            for tenant in (
-                "haven",
-                "sonyinteractiveentertainmentglobal",
-                "siei",
-                "teamlfg",
-            )
+        entity_url = (
+            "https://sonyinteractiveentertainmentglobal.hcshiring.com/jobs"
+        )
+        boards = (
+            _first_party_board("haven"),
+            DiscoveredJobBoard(
+                board=JobBoard(
+                    entity_url,
+                    "healthcaresource",
+                    "sonyinteractiveentertainmentglobal",
+                    replay_safe=True,
+                ),
+                detection_method="linked_url_evidence",
+                evidence_url=entity_url,
+                relationship_evidence_url=CAREER_PAGE,
+            ),
+            _first_party_board("siei"),
+            _first_party_board("teamlfg"),
         )
         portfolio = JobBoardPortfolio(boards, True)
-        return boards[0].board.url, {"provider": "greenhouse"}, portfolio
+        original = boards[0]
+        return original.board.url, {
+            "provider": original.board.provider,
+            "job_list_page_url": original.board.url,
+            "provider_detection": {
+                "method": original.detection_method,
+                "provider": original.board.provider,
+                "url": original.board.url,
+            },
+            "job_board_portfolio": {
+                "eligible_count": len(boards),
+                "eligible_set_complete": True,
+                "primary_provider": original.board.provider,
+                "primary_url": original.board.url,
+            },
+        }, portfolio
 
 
 class MultiTenantDiscoveryTests(unittest.TestCase):
@@ -100,7 +126,61 @@ class MultiTenantDiscoveryTests(unittest.TestCase):
 
         self.assertEqual(
             execution.updates["job_list_page_url"],
-            "https://job-boards.greenhouse.io/sonyinteractiveentertainmentglobal",
+            "https://sonyinteractiveentertainmentglobal.hcshiring.com/jobs",
+        )
+        expected_url = (
+            "https://sonyinteractiveentertainmentglobal.hcshiring.com/jobs"
+        )
+        self.assertEqual(execution.result.provider, "healthcaresource")
+        self.assertEqual(
+            execution.result.evidence[0],
+            {"field": "job_list_page_url", "url": expected_url},
+        )
+        self.assertEqual(execution.updates["provider"], "healthcaresource")
+        self.assertEqual(
+            execution.updates["discovered_job_board"],
+            execution.updates["job_board_portfolio"].primary,
+        )
+        self.assertEqual(
+            execution.updates["discovered_job_board"].board.url,
+            expected_url,
+        )
+        self.assertEqual(execution.trace["job_list_page_url"], expected_url)
+        self.assertEqual(execution.trace["provider"], "healthcaresource")
+        self.assertEqual(
+            execution.trace["provider_detection"],
+            {
+                "method": "linked_url_evidence",
+                "provider": "healthcaresource",
+                "url": expected_url,
+                "evidence_url": expected_url,
+            },
+        )
+        summary = execution.trace["job_board_portfolio"]
+        self.assertEqual(summary["primary_url"], expected_url)
+        self.assertEqual(summary["primary_provider"], "healthcaresource")
+        self.assertEqual(summary["eligible_count"], 4)
+        self.assertFalse(summary["eligible_set_complete"])
+        payload = summary["checkpoint_payload"]
+        self.assertNotIn("relationship_evidence_url", repr(payload))
+        self.assertNotIn(CAREER_PAGE, repr(payload))
+        restored = JobBoardPortfolio.from_checkpoint_payload(payload)
+        self.assertEqual(restored.primary.board.url, expected_url)
+        self.assertEqual(restored.to_checkpoint_payload(), payload)
+        self.assertEqual(
+            execution.trace["job_board_portfolio_projection"],
+            {
+                "status": "superseded_conflict",
+                "fields": [
+                    "job_list_page_url",
+                    "provider",
+                    "provider_detection.url",
+                    "provider_detection.provider",
+                    "job_board_portfolio.primary_url",
+                    "job_board_portfolio.primary_provider",
+                ],
+                "resolution": "final_typed_portfolio",
+            },
         )
         self.assertTrue(execution.updates["provider_identity"].relationship_verified)
         self.assertEqual(

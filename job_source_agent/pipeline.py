@@ -1028,16 +1028,11 @@ class JobSourceAgent:
                 eligible_set_complete and len(deduped) <= 8
             ),
         )
-        selected_url = portfolio.primary.board.url
-        trace["job_board_portfolio"] = {
-            "eligible_count": len(portfolio.boards),
-            "eligible_set_complete": portfolio.eligible_set_complete,
-            "primary_provider": portfolio.primary.board.provider,
-            "primary_url": selected_url,
-            "primary_scope_mismatch": primary_scope_mismatch,
-        }
-        trace["job_list_page_url"] = selected_url
-        trace["provider"] = portfolio.primary.board.provider
+        selected_url = _project_job_board_portfolio_trace(
+            trace,
+            portfolio,
+            extra_summary={"primary_scope_mismatch": primary_scope_mismatch},
+        )
         return selected_url, trace, portfolio
 
     def _upgrade_observed_provider_handoff(
@@ -6030,6 +6025,100 @@ def _provider_company_scope_rank(
     if compact_company and compact_company in compact_locator:
         return 0
     return 1 if any(token in locator for token in company_tokens) else 2
+
+
+def _project_job_board_portfolio_trace(
+    trace: dict,
+    portfolio: JobBoardPortfolio,
+    *,
+    extra_summary: dict | None = None,
+) -> str:
+    """Publish one internally consistent trace projection of a typed portfolio."""
+
+    primary = portfolio.primary
+    board = primary.board
+    conflicts = _job_board_projection_conflicts(trace, board.url, board.provider)
+    checkpoint_payload = portfolio.to_checkpoint_payload()
+    detection = trace.get("provider_detection")
+    detection_matches_primary = (
+        isinstance(detection, dict)
+        and detection.get("provider") == board.provider
+        and isinstance(detection.get("url"), str)
+        and normalize_url(detection["url"]) == normalize_url(board.url)
+    )
+    summary = {
+        **(extra_summary or {}),
+        "eligible_count": len(portfolio.boards),
+        "eligible_set_complete": portfolio.eligible_set_complete,
+        "primary_provider": board.provider,
+        "primary_url": board.url,
+    }
+    if checkpoint_payload is not None:
+        summary["checkpoint_payload"] = checkpoint_payload
+    trace["job_board_portfolio"] = summary
+    trace["job_list_page_url"] = board.url
+    trace["provider"] = board.provider
+    trace["provider_detection"] = {
+        "method": (
+            detection.get("method")
+            if detection_matches_primary
+            else primary.detection_method
+        ),
+        "provider": board.provider,
+        "url": board.url,
+        "evidence_url": (
+            detection.get("evidence_url")
+            if detection_matches_primary and detection.get("evidence_url")
+            else primary.evidence_url
+        ),
+    }
+    if conflicts:
+        trace["job_board_portfolio_projection"] = {
+            "status": "superseded_conflict",
+            "fields": conflicts,
+            "resolution": "final_typed_portfolio",
+        }
+    else:
+        trace.pop("job_board_portfolio_projection", None)
+    return board.url
+
+
+def _job_board_projection_conflicts(
+    trace: dict,
+    primary_url: str,
+    primary_provider: str,
+) -> list[str]:
+    expected = {
+        "job_list_page_url": primary_url,
+        "provider": primary_provider,
+        "provider_detection.url": primary_url,
+        "provider_detection.provider": primary_provider,
+        "job_board_portfolio.primary_url": primary_url,
+        "job_board_portfolio.primary_provider": primary_provider,
+    }
+    detection = trace.get("provider_detection")
+    summary = trace.get("job_board_portfolio")
+    observed = {
+        "job_list_page_url": trace.get("job_list_page_url"),
+        "provider": trace.get("provider"),
+        "provider_detection.url": (
+            detection.get("url") if isinstance(detection, dict) else None
+        ),
+        "provider_detection.provider": (
+            detection.get("provider") if isinstance(detection, dict) else None
+        ),
+        "job_board_portfolio.primary_url": (
+            summary.get("primary_url") if isinstance(summary, dict) else None
+        ),
+        "job_board_portfolio.primary_provider": (
+            summary.get("primary_provider") if isinstance(summary, dict) else None
+        ),
+    }
+    return [
+        field
+        for field, value in observed.items()
+        if value not in (None, "") and value != expected[field]
+    ]
 
 
 def _is_scoped_cross_site_job_list_route(url: str) -> bool:
