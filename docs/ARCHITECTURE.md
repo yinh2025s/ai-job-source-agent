@@ -358,6 +358,14 @@ ADR-0012 将该跨进程优化限制为 execution-checkpoint 内的 typed URL ev
 
 Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、owner `replay` 的基础设施结果；Fetcher 在 exception 边界直接携带 typed reason 和脱敏 request identity，S4/S5 aggregation 与 availability diagnostics 必须保留它，不能改写为网络失败、官网不存在或岗位不存在。Replay manifest 将 request identity 与 `Page.url`、跨域 `final_url`、body hash/length 绑定；现代 manifest 缺项、歧义或损坏 fail closed，legacy GET 和 failure-only capture 保持兼容。Embedded URL 与 provider-config 扫描在 escape decoding 前剥离 HTML comments，避免 retired integration 进入活动证据集。
 
+Scoped replay 对 S2 mutable producer state 使用 capture-time input
+provenance，而不是从 canonical result 反推。Website trace 保存 LinkedIn
+evidence 提供的原始有序 official URL；replay 原样恢复 URL 拼写，因此根路径
+空 path 与 `/` 即使在页面导航中等价，也不会在 strict outcome tape 中被静默
+替换。旧 capture 只能从带 `linkedin_cached_official_website` provenance 的
+verification allocation 恢复精确输入，最后才使用 canonical selected URL 兼容
+回退；缺少或冲突的 producer input 必须继续 fail closed。
+
 ## SOLID Rules
 
 ### Single Responsibility

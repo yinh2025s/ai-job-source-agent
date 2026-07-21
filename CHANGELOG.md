@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-21 - Exact scoped replay producer state `.209`
+
+- S2 trace now records the exact ordered LinkedIn official-website URLs that
+  entered resolution, preserving root-path spelling instead of reconstructing
+  mutable cache state from a canonicalized final selection.
+- Scoped replay restores cache-backed producer inputs from that explicit field.
+  Older captures fall back to exact allocation-trace URLs before the lossy
+  selected-candidate representation; strict request identity remains unchanged.
+- The five-record `.208` diagnostic artifact now replays 5/5 as reproduced with
+  zero mismatch, fixture gap or tape divergence. This is a cross-version
+  migration diagnostic; clean same-version `.209` live/replay remains pending.
+- Development verification is intentionally scoped to 246 replay, resolver and
+  checkpoint tests. The 2500+ full suite is deferred to the single integration
+  gate after focused same-version acceptance.
+
 ## 2026-07-21 - Deterministic replay query and hiring projection `.208`
 
 - Replay preflight now accepts an S6 title-filtered generic Job List display URL

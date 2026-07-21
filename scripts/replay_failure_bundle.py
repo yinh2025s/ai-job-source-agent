@@ -1165,6 +1165,54 @@ def _seed_scoped_replay_producer_state(
     if not isinstance(linkedin_company_url, str) or not linkedin_company_url:
         return
 
+    cached_urls = _trace_cached_official_urls(website_trace)
+    if not cached_urls:
+        return
+
+    FilesystemLinkedInWebsiteEvidenceStore(
+        checkpoint_root / LINKEDIN_EVIDENCE_CACHE_FILENAME
+    ).save(
+        company.company_name,
+        linkedin_company_url,
+        tuple(cached_urls),
+    )
+
+
+def _trace_cached_official_urls(website_trace: dict) -> list[str]:
+    """Recover the exact ordered cache inputs used by website resolution."""
+
+    explicit_urls = website_trace.get("linkedin_official_evidence_urls")
+    if isinstance(explicit_urls, list):
+        exact = _unique_nonempty_strings(explicit_urls)
+        if exact:
+            return exact
+
+    allocation_urls: list[str] = []
+    allocations = website_trace.get("verification_allocations")
+    if isinstance(allocations, list):
+        for allocation in allocations:
+            if not isinstance(allocation, dict):
+                continue
+            for field in ("selected", "excluded"):
+                entries = allocation.get(field)
+                if not isinstance(entries, list):
+                    continue
+                for entry in entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    sources = entry.get("sources")
+                    url = entry.get("url")
+                    if (
+                        isinstance(sources, list)
+                        and "linkedin_cached_official_website" in sources
+                        and isinstance(url, str)
+                        and url.strip()
+                    ):
+                        allocation_urls.append(url)
+    exact = _unique_nonempty_strings(allocation_urls)
+    if exact:
+        return exact
+
     cached_urls: list[str] = []
     candidates = website_trace.get("candidates", [])
     selected = website_trace.get("selected")
@@ -1186,16 +1234,15 @@ def _seed_scoped_replay_producer_state(
             and url not in cached_urls
         ):
             cached_urls.append(url)
-    if not cached_urls:
-        return
+    return cached_urls
 
-    FilesystemLinkedInWebsiteEvidenceStore(
-        checkpoint_root / LINKEDIN_EVIDENCE_CACHE_FILENAME
-    ).save(
-        company.company_name,
-        linkedin_company_url,
-        tuple(cached_urls),
-    )
+
+def _unique_nonempty_strings(values: list[object]) -> list[str]:
+    unique: list[str] = []
+    for value in values:
+        if isinstance(value, str) and value.strip() and value not in unique:
+            unique.append(value)
+    return unique
 
 
 def _scoped_execution_company(company, source_record: dict):

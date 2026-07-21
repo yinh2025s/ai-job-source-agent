@@ -317,6 +317,9 @@ class CompanyWebsiteResolver:
             linkedin_official_source = linkedin_evidence.official_source
             if linkedin_official_source:
                 trace["linkedin_official_evidence_source"] = linkedin_official_source
+                trace["linkedin_official_evidence_urls"] = list(
+                    linkedin_official_candidates
+                )
             linkedin_evidence_loaded = True
         fast_candidates = dedupe_urls(
             preferred_candidates
@@ -568,6 +571,9 @@ class CompanyWebsiteResolver:
             linkedin_official_source = linkedin_evidence.official_source
             if linkedin_official_source:
                 trace["linkedin_official_evidence_source"] = linkedin_official_source
+                trace["linkedin_official_evidence_urls"] = list(
+                    linkedin_official_candidates
+                )
             loaded_linkedin_evidence_after_fast_path = True
         if loaded_linkedin_evidence_after_fast_path and linkedin_official_candidates:
             official_sources = _candidate_source_map(

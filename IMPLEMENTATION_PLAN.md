@@ -2692,6 +2692,29 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
+### Fresh100 `.209` Exact Scoped Replay Producer State
+
+The `.208` five-record live completed with four verified Exact outcomes and one
+NYC S2 network timeout. Its automatic failure replay passed, but full replay
+stopped on the second Versana posting because live requested
+`https://versana.io` while replay reconstructed the cache input from the final
+canonical selection as `https://versana.io/`. Strict tape identity correctly
+rejected that producer-state drift.
+
+`.209` records the exact ordered official URLs consumed from LinkedIn evidence.
+Scoped replay restores those URLs verbatim; legacy captures first use allocation
+trace entries carrying `linkedin_cached_official_website`, then retain the old
+selected-candidate fallback. It does not equate distinct request identities or
+ignore unconsumed tape entries. A migration replay over the immutable `.208`
+capture now reports 5/5 reproduced, zero mismatch, zero fixture gap and zero
+tape divergence.
+
+Next freeze `.209` and repeat the same five-record live from entirely new roots,
+then run its same-version full replay and URL/identity audit. During this focused
+cycle run only replay/resolver/checkpoint tests; the 2500+ full suite runs once
+after same-version acceptance, immediately before the next integrated Fresh100
+gate.
+
 ### Fresh100 `.208` Replay Query Projection
 
 Phase B implements the replay defect exposed by the `.207` full bundle. An S6

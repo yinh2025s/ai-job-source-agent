@@ -1950,6 +1950,94 @@ class FailureReplayBundleTests(unittest.TestCase):
                 ("https://www.example-electric.test",),
             )
 
+    def test_scoped_replay_prefers_exact_cached_official_trace_inputs(self):
+        company = CompanyInput(
+            company_name="Example Electric",
+            linkedin_company_url="https://www.linkedin.com/company/example-electric",
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "website_resolution": {
+                        "linkedin_official_evidence_source": "cache",
+                        "linkedin_official_evidence_urls": [
+                            "https://example-electric.test"
+                        ],
+                        "selected": {
+                            "url": "https://example-electric.test/",
+                            "reasons": [
+                                "candidate source: linkedin_cached_official_website"
+                            ],
+                        },
+                    }
+                }
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_root = Path(directory)
+            _seed_scoped_replay_producer_state(
+                checkpoint_root,
+                company,
+                source_record,
+            )
+            store = FilesystemLinkedInWebsiteEvidenceStore(
+                checkpoint_root / LINKEDIN_EVIDENCE_CACHE_FILENAME
+            )
+
+            self.assertEqual(
+                store.load(company.company_name, company.linkedin_company_url),
+                ("https://example-electric.test",),
+            )
+
+    def test_scoped_replay_recovers_exact_cached_url_from_legacy_allocation(self):
+        company = CompanyInput(
+            company_name="Example Electric",
+            linkedin_company_url="https://www.linkedin.com/company/example-electric",
+        )
+        source_record = {
+            "trace": {
+                "stages": {
+                    "website_resolution": {
+                        "linkedin_official_evidence_source": "cache",
+                        "verification_allocations": [{
+                            "phase": "linkedin_official_recovery",
+                            "selected": [{
+                                "url": "https://example-electric.test",
+                                "sources": [
+                                    "linkedin_cached_official_website",
+                                    "linkedin_official_website",
+                                ],
+                            }],
+                            "excluded": [],
+                        }],
+                        "selected": {
+                            "url": "https://example-electric.test/",
+                            "reasons": [
+                                "candidate source: linkedin_cached_official_website"
+                            ],
+                        },
+                    }
+                }
+            },
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            checkpoint_root = Path(directory)
+            _seed_scoped_replay_producer_state(
+                checkpoint_root,
+                company,
+                source_record,
+            )
+            store = FilesystemLinkedInWebsiteEvidenceStore(
+                checkpoint_root / LINKEDIN_EVIDENCE_CACHE_FILENAME
+            )
+
+            self.assertEqual(
+                store.load(company.company_name, company.linkedin_company_url),
+                ("https://example-electric.test",),
+            )
+
     def test_scoped_replay_consumes_downstream_tape_after_cache_backed_website(self):
         company = CompanyInput(
             company_name="Example Electric",

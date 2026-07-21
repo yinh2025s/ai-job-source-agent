@@ -751,6 +751,10 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertEqual(website_url, "https://mrwalls.io/")
         self.assertEqual(trace["linkedin_official_evidence_source"], "cache")
+        self.assertEqual(
+            trace["linkedin_official_evidence_urls"],
+            ["https://mrwalls.io"],
+        )
         self.assertIn(
             "candidate source: linkedin_cached_official_website",
             trace["selected"]["reasons"],
@@ -871,6 +875,10 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertEqual(website_url, "https://acme.example")
         self.assertEqual(trace["linkedin_official_evidence_source"], "live")
+        self.assertEqual(
+            trace["linkedin_official_evidence_urls"],
+            ["https://acme.example"],
+        )
         self.assertEqual(store.saved, ("Acme", linkedin_url, ("https://acme.example",)))
 
     def test_exact_disambiguating_slug_selects_verified_extended_brand(self):
