@@ -8,7 +8,9 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from typing import ClassVar
+from typing import Callable, ClassVar
+
+from .contracts import FetchClient
 
 
 CISA_PUBLIC_DOMAIN_CSV_URL = (
@@ -125,6 +127,13 @@ class PublicDomainQueryResult:
     status: str
     candidates: tuple[PublicDomainCandidate, ...] = ()
     reason: str | None = None
+
+
+@dataclass(frozen=True)
+class PublicGovernmentIdentity:
+    organization_name: str
+    state: str
+    city: str | None = None
 
 
 @dataclass(frozen=True)
@@ -290,9 +299,10 @@ class PublicDomainRegistry:
                 candidate_limit,
                 "empty_dataset",
             )
+        public_dataset_digest = _public_dataset_sha256(parsed_rows)
         return cls(
             source_url=source_url,
-            dataset_sha256=digest,
+            dataset_sha256=public_dataset_digest,
             retrieved_at=retrieved_at,
             rows=tuple(parsed_rows),
             candidate_limit=candidate_limit,
@@ -383,6 +393,94 @@ class PublicDomainRegistry:
         return PublicDomainQueryResult("candidates", candidates=candidates)
 
 
+class CisaPublicDomainCandidateSource:
+    """Fetch and query the authoritative registry only for typed government inputs."""
+
+    def __init__(
+        self,
+        fetcher: FetchClient,
+        *,
+        clock: Callable[[], datetime] | None = None,
+        candidate_limit: int = _DEFAULT_CANDIDATE_LIMIT,
+    ) -> None:
+        self.fetcher = fetcher
+        self.clock = clock or (lambda: datetime.now(timezone.utc))
+        self.candidate_limit = candidate_limit
+
+    def discover(
+        self,
+        company_name: str,
+        job_location: str | None,
+    ) -> PublicDomainQueryResult:
+        identity = public_government_identity(company_name, job_location)
+        if identity is None:
+            return PublicDomainQueryResult(
+                "unsupported_identity",
+                reason="invalid_government_identity",
+            )
+        retrieved_at = self.clock()
+        page = self.fetcher.fetch(CISA_PUBLIC_DOMAIN_CSV_URL)
+        registry = PublicDomainRegistry.from_csv_bytes(
+            page.html.encode("utf-8"),
+            retrieved_at=retrieved_at,
+            now=retrieved_at,
+            candidate_limit=self.candidate_limit,
+        )
+        return registry.query(
+            identity.organization_name,
+            state=identity.state,
+            city=identity.city,
+        )
+
+
+def public_government_identity(
+    company_name: str,
+    job_location: str | None,
+) -> PublicGovernmentIdentity | None:
+    """Project an explicit City/State input without guessing an organization."""
+
+    if not isinstance(company_name, str):
+        return None
+    display = " ".join(company_name.strip().split())
+    location_state = _location_state(job_location)
+
+    city_match = re.fullmatch(
+        r"City\s+of\s+(.+?)(?:\s*,\s*([A-Za-z ]+))?",
+        display,
+        flags=re.I,
+    )
+    if city_match:
+        city = city_match.group(1).strip(" ,")
+        suffix_state = _normalize_state(city_match.group(2) or "")
+        state = suffix_state or location_state
+        if (
+            not city
+            or state is None
+            or (suffix_state is not None and location_state is not None and suffix_state != location_state)
+        ):
+            return None
+        return PublicGovernmentIdentity(
+            organization_name=f"City of {city}",
+            state=state,
+            city=city,
+        )
+
+    state_match = re.fullmatch(r"State\s+of\s+(.+?)", display, flags=re.I)
+    if state_match:
+        state_name = state_match.group(1).strip(" ,")
+        identity_state = _normalize_state(state_name)
+        if (
+            identity_state is None
+            or (location_state is not None and identity_state != location_state)
+        ):
+            return None
+        return PublicGovernmentIdentity(
+            organization_name=f"State of {state_name}",
+            state=identity_state,
+        )
+    return None
+
+
 def _validate_configuration(
     *,
     source_url: str,
@@ -436,6 +534,27 @@ def _build_row(values: dict[str, str], domain_name: str, row_number: int) -> _Re
     )
 
 
+def _public_dataset_sha256(rows: list[_RegistryRow]) -> str:
+    records = [
+        {
+            "city": row.city,
+            "domain_name": row.domain_name,
+            "domain_type": row.domain_type,
+            "organization_name": row.organization_name,
+            "state": row.state,
+            "suborganization_name": row.suborganization_name,
+        }
+        for row in sorted(rows, key=lambda item: item.domain_name)
+    ]
+    encoded = json.dumps(
+        records,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
 def _normalize_text(value: str) -> str:
     if not isinstance(value, str):
         return ""
@@ -448,6 +567,17 @@ def _normalize_state(value: str) -> str | None:
     if len(normalized) == 2 and normalized.upper() in _STATE_CODES:
         return normalized.upper()
     return _STATE_ABBREVIATIONS.get(normalized)
+
+
+def _location_state(value: str | None) -> str | None:
+    if not isinstance(value, str):
+        return None
+    parts = [part.strip() for part in value.split(",") if part.strip()]
+    if not parts:
+        return None
+    tail = re.sub(r"\b(?:USA|United States)\b", "", parts[-1], flags=re.I).strip()
+    match = re.search(r"\b([A-Za-z]{2}|[A-Za-z][A-Za-z ]+)\b", tail)
+    return _normalize_state(match.group(1)) if match else None
 
 
 def _government_identity_type(normalized_organization: str) -> str | None:

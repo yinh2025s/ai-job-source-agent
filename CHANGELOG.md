@@ -82,6 +82,16 @@
 
 ### Added
 
+- `.200` adds a source-backed CISA/get.gov public-domain registry route for
+  explicit U.S. `City of ...` and `State of ...` identities. The strict CSV
+  parser requires the current authoritative schema, bounded size/rows/results,
+  exact normalized organization, compatible government type, exact state and
+  exact city for city entities. It rejects stale, malformed, duplicate-domain,
+  wrong-state/type and ambiguous datasets, retains no security-contact email,
+  and emits only HTTPS candidates with dataset/row provenance. Resolver
+  integration still fetches and verifies homepage ownership before publishing
+  Website evidence; registry membership alone cannot authorize success.
+
 - `.196` splits the former eight-record `G-core/legal shortening` stage-shaped
   cluster before changing behavior. LinkedIn slug normalization now recognizes
   terminal `Limited` and `LLP`, strips terminal delimiter noise first, and uses

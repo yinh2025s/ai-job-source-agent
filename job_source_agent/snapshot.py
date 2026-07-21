@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import os
 import re
@@ -397,6 +399,7 @@ def snapshot_artifact_blob_path(root_dir: str | Path, digest: str, artifact_name
 
 
 def sanitize_snapshot_body(body: str) -> str:
+    body = _redact_public_domain_registry_contacts(body)
     redacted = re.sub(
         r"(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+/=-]{8,}",
         r"\1[REDACTED]",
@@ -445,6 +448,36 @@ def sanitize_snapshot_body(body: str) -> str:
         )
     redacted = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}", r"\1[REDACTED]", redacted)
     return redacted
+
+
+_PUBLIC_DOMAIN_REGISTRY_COLUMNS = (
+    "Domain name",
+    "Domain type",
+    "Organization name",
+    "Suborganization name",
+    "City",
+    "State",
+    "Security contact email",
+)
+
+
+def _redact_public_domain_registry_contacts(body: str) -> str:
+    if not isinstance(body, str) or not body.startswith("Domain name,Domain type,"):
+        return body
+    try:
+        rows = list(csv.reader(io.StringIO(body, newline=""), strict=True))
+    except csv.Error:
+        return "PUBLIC DOMAIN REGISTRY SNAPSHOT REDACTED: MALFORMED CSV\n"
+    if not rows or tuple(rows[0]) != _PUBLIC_DOMAIN_REGISTRY_COLUMNS:
+        return "PUBLIC DOMAIN REGISTRY SNAPSHOT REDACTED: SCHEMA MISMATCH\n"
+    if any(len(row) != len(_PUBLIC_DOMAIN_REGISTRY_COLUMNS) for row in rows[1:]):
+        return "PUBLIC DOMAIN REGISTRY SNAPSHOT REDACTED: MALFORMED ROW\n"
+    for row in rows[1:]:
+        row[-1] = "[REDACTED]"
+    output = io.StringIO(newline="")
+    writer = csv.writer(output, lineterminator="\n")
+    writer.writerows(rows)
+    return output.getvalue()
 
 
 def sanitize_snapshot_source(source: object) -> str:

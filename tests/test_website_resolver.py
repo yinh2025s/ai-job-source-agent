@@ -2,6 +2,10 @@ import unittest
 import time
 
 from job_source_agent.request_identity import build_request_identity
+from job_source_agent.public_domain_registry import (
+    CISA_PUBLIC_DOMAIN_CSV_URL,
+    CisaPublicDomainCandidateSource,
+)
 from job_source_agent.web import FetchError, Fetcher, Page, domain_of
 from job_source_agent.website_resolver import (
     CompanyWebsiteResolver,
@@ -20,6 +24,52 @@ from job_source_agent.website_resolver import (
 
 
 class WebsiteResolverTests(unittest.TestCase):
+    def test_authoritative_public_domain_candidate_still_requires_homepage_identity(self):
+        dataset = (
+            "Domain name,Domain type,Organization name,Suborganization name,City,State,Security contact email\n"
+            "pharr-tx.gov,City,City of Pharr,,Pharr,TX,(blank)\n"
+        )
+
+        class GovernmentFetcher:
+            def __init__(self):
+                self.calls = []
+
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                self.calls.append(url)
+                if url == CISA_PUBLIC_DOMAIN_CSV_URL:
+                    return Page(url, dataset)
+                if domain_of(url) == "pharr-tx.gov":
+                    return Page(
+                        url,
+                        "<html><head><title>City of Pharr, Texas</title></head>"
+                        "<body>Official website of the City of Pharr</body></html>",
+                    )
+                raise FetchError(
+                    "not available",
+                    reason_code="DNS_FAILED",
+                    retryable=True,
+                )
+
+        fetcher = GovernmentFetcher()
+        resolver = CompanyWebsiteResolver(
+            fetcher,
+            public_domain_source=CisaPublicDomainCandidateSource(fetcher),
+        )
+
+        website, trace = resolver.resolve(
+            "City of Pharr, TX",
+            "https://www.linkedin.com/company/pharr-tx",
+            "Pharr, TX",
+        )
+
+        self.assertEqual(website, "https://pharr-tx.gov/")
+        self.assertEqual(trace["public_domain_registry"]["status"], "candidates")
+        self.assertEqual(
+            trace["public_domain_registry"]["selected_url"],
+            "https://pharr-tx.gov/",
+        )
+        self.assertIn(CISA_PUBLIC_DOMAIN_CSV_URL, fetcher.calls)
+
     def test_speculative_only_domain_requires_consistent_content_identity(self):
         resolver = CompanyWebsiteResolver(Fetcher(offline=True))
         canonical_only = WebsiteCandidate(

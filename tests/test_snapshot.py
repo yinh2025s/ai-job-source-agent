@@ -19,6 +19,30 @@ from job_source_agent.web import FetchError, Fetcher, Page
 
 
 class SnapshotTests(unittest.TestCase):
+    def test_sanitize_snapshot_body_redacts_public_domain_contact_column(self):
+        body = (
+            "Domain name,Domain type,Organization name,Suborganization name,City,State,Security contact email\n"
+            "pharr-tx.gov,City,City of Pharr,,Pharr,TX,private-contact@example.gov\n"
+        )
+
+        sanitized = sanitize_snapshot_body(body)
+
+        self.assertNotIn("private-contact", sanitized)
+        self.assertIn("pharr-tx.gov", sanitized)
+        self.assertIn("[REDACTED]", sanitized)
+
+    def test_malformed_public_domain_csv_is_removed_instead_of_persisted(self):
+        body = (
+            "Domain name,Domain type,Organization name,Suborganization name,City,State,Security contact email\n"
+            'pharr-tx.gov,City,"City of Pharr,,Pharr,TX,private-contact@example.gov\n'
+        )
+
+        sanitized = sanitize_snapshot_body(body)
+
+        self.assertNotIn("private-contact", sanitized)
+        self.assertNotIn("pharr-tx.gov", sanitized)
+        self.assertIn("MALFORMED", sanitized)
+
     def test_sanitize_url_redacts_sensitive_query_values(self):
         sanitized = sanitize_url("https://example.com/jobs?access_token=abc123&query=data")
 

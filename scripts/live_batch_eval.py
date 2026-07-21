@@ -63,6 +63,7 @@ from job_source_agent.models import (
     dataclass_to_dict,
 )
 from job_source_agent.process_budget import ProcessBudgetExceeded, RemoteProcessError, run_with_process_budget
+from job_source_agent.public_domain_registry import CisaPublicDomainCandidateSource
 from job_source_agent.reasons import canonical_reason_code, make_stage_result
 from job_source_agent.run_configuration import (
     BATCH_EXECUTION_SCHEMA_VERSION,
@@ -1520,7 +1521,11 @@ def _downstream_rerun_stage(args: argparse.Namespace) -> str | None:
 def prepare_company(company: CompanyInput, args: argparse.Namespace) -> CompanyInput:
     fetcher = build_company_fetcher(args)
     identity_resolver = CompanyIdentityResolver()
-    website_resolver = CompanyWebsiteResolver(fetcher, verify_limit=args.verify_limit)
+    website_resolver = CompanyWebsiteResolver(
+        fetcher,
+        verify_limit=args.verify_limit,
+        public_domain_source=CisaPublicDomainCandidateSource(fetcher),
+    )
     company_evidence_store = _company_discovery_evidence_store(args)
     stored_website = None
     if (

@@ -51,6 +51,20 @@ flag-off 无回归，平均不超过两次调用/公司，并报告成本、失�
 
 ## 当前执行轮次（2026-07-20，`.199`）
 
+### `.200`：authoritative public-domain registry（Phase B）
+
+blind v2/v3 已封存且未观察后，四家公司公共机构候选生成簇进入实现。新增独立 CISA/get.gov CSV contract：
+只有显式 `City of ...` / `State of ...` 身份、精确 organization、兼容 government type、州一致以及 city
+实体城市一致时才产生有 dataset/row provenance 的 `.gov` 候选。真实 `City of Pharr, TX` 这类 display
+suffix 仅在 suffix 与岗位州一致时投影为 registry organization，错州不允许归一化过去。CSV schema、大小、
+行数、domain collision、候选数和 freshness 全部 fail closed，security contact email 不进入内存 row、trace
+或持久化证据。
+
+该 source 位于普通 search 前，但只决定待验证候选顺序；resolver 仍必须 fetch homepage 并通过现有公司
+identity、redirect、parking 与 region gate，S3-S7 不变。Phase B 局部 contract/integration tests 已通过；
+下一步冻结 `.200`，串行运行 City of Pharr、City of Sioux Falls、City of College Station、State of Montana
+四条 focused live、4/4 replay 和逐 URL 审计，未通过不得宣布 cluster closure。
+
 ### `.199`：blind holdout selection/runtime lineage（Phase B）
 
 旧 holdout schema 同时要求“实现前封存”与“运行代码必须等于封存代码”，导致实现后的新版本永远无法消费

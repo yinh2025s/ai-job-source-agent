@@ -92,6 +92,15 @@ S6 的职责进一步拆成三层：provider/matcher 记录官方库存读取状
 
 S5 不把 generic career landing page 自动视作 job list。成功必须来自已知 provider、页面中的具体 job-detail evidence，或经过有界 traversal 后抵达的明确 first-party listing/search route；仅链接到下游搜索页的导航页面不能继承该搜索页的证据。
 
+### Authoritative Public-Domain Candidates
+
+S2 对显式美国 `City of ...` / `State of ...` identity 可以在 direct/LinkedIn 路径未成功后查询
+CISA/get.gov 的 current full CSV。该 source 严格匹配 organization、government type、state 和 city，
+只产生带 dataset/row digest 的 bounded `.gov` 候选，不产生 Website success。CSV schema 漂移、超限、
+过期、domain collision、错州/错 type 或多候选超限全部 fail closed，security contact 字段不进入内部
+row 或 trace。每个候选仍进入普通 homepage fetch、redirect、parking、region 和 body/title identity gate；
+后续 S3-S7 不读取 registry membership 来建立招聘关系或 opening identity。
+
 ### Parallel Provider Candidate Discovery
 
 ADR-0025 在不改变 S1-S7 顺序的前提下，把 S5 的入口从单一 career handoff 扩展为三个

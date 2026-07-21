@@ -25,6 +25,7 @@ from .posting_identity import LinkedInPostingIdentityProbe
 from .providers import ProviderRegistry, build_default_provider_registry
 from .provider_search_discovery import ProviderSearchCandidateDiscovery
 from .provider_candidates import MAX_PROVIDER_CANDIDATES
+from .public_domain_registry import CisaPublicDomainCandidateSource
 from .rendered_fetcher import RenderedFetcher, SmartRenderedFetcher
 from .retrying_fetcher import RetryingFetcher
 from .run_configuration import AgentConfig, DeterministicRunConfig
@@ -221,6 +222,7 @@ def build_application_from_fetcher(
             if evidence_cache_path is not None
             else None
         ),
+        public_domain_source=CisaPublicDomainCandidateSource(fetcher),
     )
     company_discovery_store = (
         FilesystemCompanyDiscoveryEvidenceStore(company_discovery_evidence_path)

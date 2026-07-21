@@ -15,6 +15,10 @@ from .contracts import FetchClient
 from .fetch_failure import project_fetch_error
 from .homepage_navigation import HomepageNavigationEvidence, evidence_from_verified_homepage
 from .identity_evidence import LinkedInWebsiteEvidenceStore
+from .public_domain_registry import (
+    CISA_PUBLIC_DOMAIN_CSV_URL,
+    CisaPublicDomainCandidateSource,
+)
 from .web import FetchError, Page, domain_of, extract_links, normalize_url
 
 
@@ -134,11 +138,13 @@ class CompanyWebsiteResolver:
         overrides_path: str | Path | None = None,
         verify_limit: int = 3,
         linkedin_evidence_store: LinkedInWebsiteEvidenceStore | None = None,
+        public_domain_source: CisaPublicDomainCandidateSource | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.overrides = self._load_overrides(overrides_path)
         self.verify_limit = verify_limit
         self.linkedin_evidence_store = linkedin_evidence_store
+        self.public_domain_source = public_domain_source
 
     def resolve(
         self,
@@ -660,6 +666,96 @@ class CompanyWebsiteResolver:
                 trace,
                 self._navigation_evidence_for_selected(fast_selected),
             )
+        if self.public_domain_source is not None:
+            try:
+                registry_result = self.public_domain_source.discover(
+                    company_name,
+                    job_location,
+                )
+            except FetchError as exc:
+                _retain_fetch_error(
+                    fetch_errors,
+                    exc,
+                    phase="public_domain_registry_fetch",
+                    url=CISA_PUBLIC_DOMAIN_CSV_URL,
+                    evidence_tier=2,
+                )
+                trace["public_domain_registry"] = {
+                    "status": "unavailable",
+                    "reason": exc.reason_code or "FETCH_FAILED",
+                    "source_url": CISA_PUBLIC_DOMAIN_CSV_URL,
+                }
+            else:
+                registry_candidates = [
+                    candidate.url for candidate in registry_result.candidates
+                ]
+                registry_trace = {
+                    "status": registry_result.status,
+                    "reason": registry_result.reason,
+                    "candidate_count": len(registry_result.candidates),
+                    "candidates": [
+                        {
+                            "url": candidate.url,
+                            "domain_type": candidate.domain_type,
+                            "organization_name": candidate.organization_name,
+                            "city": candidate.city,
+                            "state": candidate.state,
+                            "source_url": candidate.provenance.source_url,
+                            "dataset_sha256": candidate.provenance.dataset_sha256,
+                            "row_sha256": candidate.provenance.row_sha256,
+                            "row_number": candidate.provenance.row_number,
+                            "retrieved_at": candidate.provenance.retrieved_at,
+                        }
+                        for candidate in registry_result.candidates
+                    ],
+                }
+                trace["public_domain_registry"] = registry_trace
+                if registry_candidates:
+                    registry_verification_name = (
+                        registry_result.candidates[0].organization_name
+                    )
+                    registry_sources = _candidate_source_map(
+                        (
+                            "authoritative_public_domain_registry",
+                            registry_candidates,
+                        ),
+                    )
+                    registry_scored = self._rank_and_verify_candidates(
+                        registry_candidates,
+                        registry_verification_name,
+                        linkedin_company_url,
+                        job_location=job_location,
+                        candidate_sources=registry_sources,
+                        fetch_errors=fetch_errors,
+                        allocation_trace=trace["verification_allocations"],
+                        allocation_phase="authoritative_public_domain_registry",
+                    )
+                    trace["candidates"].extend(
+                        {
+                            "url": candidate.url,
+                            "score": candidate.score,
+                            "reasons": candidate.reasons,
+                        }
+                        for candidate in registry_scored
+                    )
+                    registry_selected = self._select_verified_candidate(
+                        registry_scored
+                    )
+                    if registry_selected is not None:
+                        registry_trace["selected_url"] = registry_selected.url
+                        trace["selected"] = {
+                            "url": registry_selected.url,
+                            "score": registry_selected.score,
+                            "reasons": registry_selected.reasons
+                            + ["verified authoritative public-domain candidate"],
+                        }
+                        return (
+                            registry_selected.url,
+                            trace,
+                            self._navigation_evidence_for_selected(
+                                registry_selected
+                            ),
+                        )
         with self._route_fetch_policy("search_evidence"):
             search_evidence = self._search_candidates_with_evidence(
                 company_name,
@@ -2693,6 +2789,7 @@ def _candidate_evidence_tier(sources: set[str]) -> int:
         return 1
     if sources.intersection(
         {
+            "authoritative_public_domain_registry",
             "linkedin_evidence",
             "linkedin_slug",
             "regional_recovery",
@@ -2979,6 +3076,7 @@ def _allocate_verification_slots(
     for source in (
         "preferred_input",
         "linkedin_official_website",
+        "authoritative_public_domain_registry",
         "linkedin_evidence",
         "search_evidence",
         "linkedin_slug",
@@ -2998,7 +3096,11 @@ def _allocate_verification_slots(
             record_decision()
             return selected
 
-    direct_evidence_sources = {"linkedin_evidence", "search_evidence"}
+    direct_evidence_sources = {
+        "authoritative_public_domain_registry",
+        "linkedin_evidence",
+        "search_evidence",
+    }
     for candidate in scored:
         domain = domain_of(candidate.url)
         if domain in selected_domains:

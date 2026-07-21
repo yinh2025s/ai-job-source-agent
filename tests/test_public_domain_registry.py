@@ -9,11 +9,14 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from job_source_agent.public_domain_registry import (
+    CisaPublicDomainCandidateSource,
     CISA_PUBLIC_DOMAIN_CSV_URL,
     PUBLIC_DOMAIN_REGISTRY_SOURCE,
     PUBLIC_DOMAIN_REGISTRY_SCHEMA_VERSION,
     PublicDomainRegistry,
+    public_government_identity,
 )
+from job_source_agent.web import Page
 
 
 FIXTURES = Path(__file__).parent / "fixtures" / "public_domain_registry"
@@ -43,6 +46,42 @@ def make_csv(rows: list[list[str]]) -> bytes:
 
 
 class PublicDomainRegistryTests(unittest.TestCase):
+    def test_projects_actual_fresh_cohort_city_suffix_and_state_identity(self) -> None:
+        self.assertEqual(
+            public_government_identity("City of Pharr, TX", "Pharr, TX"),
+            public_government_identity("City of Pharr", "Pharr, Texas"),
+        )
+        self.assertEqual(
+            public_government_identity("State of Montana", "Townsend, MT").state,
+            "MT",
+        )
+        self.assertIsNone(
+            public_government_identity("City of Pharr, TX", "Pharr, NM")
+        )
+        self.assertIsNone(public_government_identity("Pharr, TX", "Pharr, TX"))
+
+    def test_live_source_fetches_only_for_supported_identity(self) -> None:
+        class FakeFetcher:
+            def __init__(self) -> None:
+                self.urls: list[str] = []
+
+            def fetch(self, url: str, data=None, headers=None, *, interaction=None) -> Page:
+                self.urls.append(url)
+                return Page(url, fixture("valid.csv").decode("utf-8"))
+
+        fetcher = FakeFetcher()
+        source = CisaPublicDomainCandidateSource(fetcher, clock=lambda: NOW)
+
+        unsupported = source.discover("Example Company", "Austin, TX")
+        matched = source.discover("City of Pharr, TX", "Pharr, TX")
+
+        self.assertEqual(unsupported.status, "unsupported_identity")
+        self.assertEqual(fetcher.urls, [CISA_PUBLIC_DOMAIN_CSV_URL])
+        self.assertEqual(
+            tuple(candidate.domain_name for candidate in matched.candidates),
+            ("pharr-tx.gov",),
+        )
+
     def test_four_government_inputs_produce_only_exact_source_backed_candidates(self) -> None:
         registry = load()
         cases = (
@@ -145,13 +184,23 @@ class PublicDomainRegistryTests(unittest.TestCase):
             PUBLIC_DOMAIN_REGISTRY_SCHEMA_VERSION,
         )
         self.assertEqual(candidate.provenance.source_url, CISA_PUBLIC_DOMAIN_CSV_URL)
-        self.assertEqual(candidate.provenance.dataset_sha256, hashlib.sha256(content).hexdigest())
+        self.assertRegex(candidate.provenance.dataset_sha256, r"^[0-9a-f]{64}$")
         self.assertRegex(candidate.provenance.row_sha256, r"^[0-9a-f]{64}$")
         self.assertEqual(candidate.provenance.row_number, 2)
         self.assertEqual(candidate.provenance.retrieved_at, "2026-07-21T11:00:00Z")
         self.assertNotIn("success", result.status)
         self.assertNotIn("email", repr(payload).casefold())
         self.assertNotIn("private-contact", repr(registry).casefold())
+
+        redacted_contact = content.replace(
+            b"private-contact@example.gov",
+            b"[REDACTED]",
+        )
+        redacted_registry = load(redacted_contact)
+        self.assertEqual(
+            candidate.provenance.dataset_sha256,
+            redacted_registry.dataset_sha256,
+        )
 
     def test_malformed_schema_changed_empty_and_invalid_utf8_datasets_fail_closed(self) -> None:
         invalid_datasets = (
