@@ -2136,16 +2136,30 @@ class OpeningMatchStage:
         if relationship is None:
             return None
         relationship_type, hiring_entity_name = relationship
-        hiring = HiringIdentityEvidence(
-            source_company_name=context.company.company_name,
-            hiring_entity_name=hiring_entity_name,
-            relationship_type=relationship_type,
-            verification_method="stored_handoff_revalidated_provider_inventory",
-            verified=True,
-            evidence_url=stored.relationship_evidence_url,
-        )
+        prior_hiring = context.hiring_identity_evidence
+        if (
+            prior_hiring is not None
+            and prior_hiring.verified
+            and _strict_entity_key(prior_hiring.hiring_entity_name)
+            == _strict_entity_key(hiring_entity_name)
+        ):
+            hiring = prior_hiring
+        elif (
+            _strict_entity_key(context.company.company_name)
+            == _strict_entity_key(hiring_entity_name)
+        ):
+            hiring = HiringIdentityEvidence(
+                source_company_name=context.company.company_name,
+                hiring_entity_name=hiring_entity_name,
+                relationship_type=relationship_type,
+                verification_method="stored_handoff_revalidated_provider_inventory",
+                verified=True,
+                evidence_url=stored.relationship_evidence_url,
+            )
+        else:
+            return None
         provider = ProviderIdentity(
-            hiring_entity_name=hiring_entity_name,
+            hiring_entity_name=hiring.hiring_entity_name,
             provider=board.provider,
             tenant=board.identifier,
             canonical_board_url=board.url,
@@ -4047,9 +4061,11 @@ def _stored_provider_relationship(
         or not _same_url(stored.relationship_evidence_url, record.career.url)
     ):
         return None
-    # The historical first-party handoff binds the source brand to the tenant;
-    # the current complete native inventory revalidates the same public board.
-    return "brand_parent", tenant
+    # The historical first-party handoff authorizes the provider board, but its
+    # tenant is an opaque provider locator rather than a hiring-entity name.
+    # Preserve the entity already resolved upstream instead of projecting the
+    # tenant into the identity chain.
+    return "same_entity", company_name
 
 
 def _tenant_entity_match_rank(

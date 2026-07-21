@@ -23,6 +23,25 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
+## 当前执行轮次（2026-07-21，`.210`）
+
+`.209` 已完成冻结 Fresh100 冷启动：100 条全部执行，得到 19 Exact、78 Website、
+60 Career 和 56 Job List。19 条 Exact 的 company/title/location/provider/tenant/board/
+opening 审计全部通过，观察到的错误 URL、跨公司、跨 tenant 和错误 location 均为 0。
+同版本 full replay 执行 100/100，但只有 95 reproduced、4 budget recovery 和 1 mismatch，
+因此 `.209` 不满足 replay acceptance，不能宣称 100/100 replay 通过。
+
+唯一 mismatch 来自通用 stored-provider identity projection：缓存中的 Paylocity tenant
+被当作招聘主体发布。`.210` 把 provider relationship authorization 与 hiring entity
+分离，保留已验证的 S3 identity；测试覆盖 Paylocity、Ashby、Workday 和 portfolio
+incomplete 路径。Fresh100 的 81 条非 Exact 已按可执行根因重分，详见
+`docs/FRESH_100_V209_CAUSAL_ANALYSIS.md`。
+
+下一步只做 scoped migration replay 和相关局部测试验证 `.210` identity 修复；随后从
+至少三家独立公司的 `opening inventory incomplete` 或 `website transport timeout`
+簇中选择一项通用修复。编辑期间不重复运行 2500+ 全量测试；全量门禁只在本轮集成
+完成、版本冻结并准备 live gate 时运行一次。
+
 ## 当前架构轨道（2026-07-20，LLM Candidate Reasoning Phase A）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理

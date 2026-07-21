@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-21 - Stored provider tenant identity isolation `.210`
+
+- Stored first-party handoff evidence continues to authorize its exact
+  provider, tenant and canonical board, but an opaque ATS tenant is no longer
+  projected into `hiring_entity_name`.
+- Stored-inventory revalidation now preserves an already verified upstream
+  hiring identity, including a verified parent/brand relationship. Without
+  such evidence it may only construct a same-entity identity for the source
+  company; an unexplained alternate employer fails closed.
+- The defect was provider-independent and is covered across Paylocity opaque
+  UUID/slug locators, Ashby tenants and Workday parent/site locators. A
+  portfolio-incomplete regression also preserves the entity while retaining
+  the exact provider tenant.
+- The frozen `.209` Fresh100 run remains immutable. Its 81 non-Exact records
+  are causally partitioned in
+  `docs/FRESH_100_V209_CAUSAL_ANALYSIS.md`; the one Heritage replay mismatch is
+  the motivating observed instance, not a company-specific rule.
+
 ## 2026-07-21 - Exact scoped replay producer state `.209`
 
 - S2 trace now records the exact ordered LinkedIn official-website URLs that

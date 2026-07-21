@@ -1110,6 +1110,113 @@ class DiscoveryStageTests(unittest.TestCase):
             execution.updates["hiring_identity_evidence"].verified
         )
 
+    def test_stored_inventory_partial_preserves_entity_for_opaque_tenant(self):
+        class EmptyInventoryService:
+            def match_discovered_board(self, discovered, *args):
+                return None, discovered.board.url, {
+                    "provider_api": {
+                        "provider": "paylocity",
+                        "inventory": {
+                            "source": "native_adapter",
+                            "status": "verified_filtered_empty",
+                            "complete": True,
+                        },
+                        "adapter_trace": {
+                            "tenant_identity_conflict": False,
+                            "errors": [],
+                        },
+                    }
+                }
+
+        tenant = (
+            "2b1b2eb0-de2b-493b-b401-bc5d39eed788|"
+            "heritage-restaurant-group"
+        )
+        board_url = (
+            "https://recruiting.paylocity.com/recruiting/jobs/All/"
+            "2b1b2eb0-de2b-493b-b401-bc5d39eed788/Heritage-Restaurant-Group"
+        )
+        board = JobBoard(provider="paylocity", identifier=tenant, url=board_url)
+        discovered = DiscoveredJobBoard(
+            board=board,
+            detection_method="linked_url_evidence",
+            evidence_url=board_url,
+        )
+        base = self._stored_career_record()
+        alternate = DiscoveredJobBoard(
+            board=JobBoard(
+                provider="generic",
+                url="https://acme.example/careers/jobs",
+            ),
+            detection_method="linked_url_evidence",
+            evidence_url=base.career.url,
+        )
+        record = VerifiedCompanyDiscoveryEvidence(
+            company_name=base.company_name,
+            linkedin_company_url=base.linkedin_company_url,
+            website=base.website,
+            career=base.career,
+            provider_boards=(
+                VerifiedProviderBoardEvidence(
+                    provider="paylocity",
+                    tenant=tenant,
+                    canonical_board_url=board_url,
+                    relationship_evidence_url=base.career.url,
+                    verification_method="first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=1.0,
+                ),
+            ),
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Acme",
+                linkedin_company_url="https://www.linkedin.com/company/acme",
+                job_title="Missing Role",
+            )
+        )
+        context.hiring_entity_name = "Acme Parent"
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme Parent",
+            relationship_type="brand_parent",
+            verification_method="official_parent_career_handoff",
+            verified=True,
+            evidence_url=base.website.url,
+        )
+        context.job_list_page_url = board.url
+        context.discovered_job_board = discovered
+        context.job_board_portfolio = JobBoardPortfolio(
+            boards=(discovered, alternate),
+            eligible_set_complete=False,
+        )
+        context.trace["stages"] = {
+            "job_board_discovery": {
+                "selected": {"source_kind": "stored_verified_provider_board"}
+            }
+        }
+
+        execution = OpeningMatchStage(
+            EmptyInventoryService(),
+            max_job_board_attempts=1,
+            company_discovery_evidence_store=self._EvidenceStore(record),
+        ).run(context)
+
+        self.assertEqual(
+            execution.result.reason_code,
+            "JOB_BOARD_PORTFOLIO_INCOMPLETE",
+        )
+        self.assertEqual(execution.updates["hiring_entity_name"], "Acme Parent")
+        self.assertEqual(
+            execution.updates["hiring_identity_evidence"].hiring_entity_name,
+            "Acme Parent",
+        )
+        self.assertEqual(
+            execution.updates["hiring_identity_evidence"].relationship_type,
+            "brand_parent",
+        )
+        self.assertEqual(execution.updates["provider_identity"].tenant, tenant)
+
     def test_stored_inventory_allows_verified_parent_brand_tenant_segment(self):
         self.assertTrue(
             _stored_tenant_matches_hiring_entity("Gucci", "kering/Gucci")
@@ -1177,8 +1284,38 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(execution.updates["provider_identity"].tenant, f"url:{root}")
         self.assertEqual(execution.updates["opening_identity"].canonical_board_url, root)
 
-    def test_stored_first_party_chain_binds_brand_to_different_provider_tenant(self):
+    def test_stored_first_party_chain_does_not_project_provider_tenant_as_entity(self):
         record = self._stored_career_record()
+        cases = (
+            (
+                "paylocity",
+                "2b1b2eb0-de2b-493b-b401-bc5d39eed788|heritage-restaurant-group",
+                "https://recruiting.paylocity.com/recruiting/jobs/All/"
+                "2b1b2eb0-de2b-493b-b401-bc5d39eed788/Heritage-Restaurant-Group",
+            ),
+            ("ashby", "parentco", "https://jobs.ashbyhq.com/parentco"),
+            (
+                "workday",
+                "parent/Brand",
+                "https://parent.wd1.myworkdayjobs.com/Brand",
+            ),
+        )
+        for provider, tenant, board_url in cases:
+            with self.subTest(provider=provider):
+                stored = VerifiedProviderBoardEvidence(
+                    provider=provider,
+                    tenant=tenant,
+                    canonical_board_url=board_url,
+                    relationship_evidence_url=record.career.url,
+                    verification_method="verified_first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=1.0,
+                )
+                self.assertEqual(
+                    _stored_provider_relationship(record, stored, "Acme", tenant),
+                    ("same_entity", "Acme"),
+                )
+
         stored = VerifiedProviderBoardEvidence(
             provider="ashby",
             tenant="parentco",
@@ -1187,11 +1324,6 @@ class DiscoveryStageTests(unittest.TestCase):
             verification_method="verified_first_party_handoff",
             source="first_party_handoff",
             observed_at=1.0,
-        )
-
-        self.assertEqual(
-            _stored_provider_relationship(record, stored, "Acme", "parentco"),
-            ("brand_parent", "parentco"),
         )
         unbound = VerifiedProviderBoardEvidence(
             provider=stored.provider,

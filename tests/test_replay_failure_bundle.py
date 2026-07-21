@@ -702,9 +702,10 @@ class FailureReplayBundleTests(unittest.TestCase):
             "career_discovery",
         )
 
-        self.assertEqual(live_identity.relationship_type, "brand_parent")
-        self.assertEqual(replay_identity.relationship_type, "brand_parent")
-        self.assertEqual(replay_identity.hiring_entity_name, "deepsetai")
+        self.assertEqual(live_identity.relationship_type, "same_entity")
+        self.assertEqual(live_identity.hiring_entity_name, "Haystack")
+        self.assertEqual(replay_identity.relationship_type, "same_entity")
+        self.assertEqual(replay_identity.hiring_entity_name, "Haystack")
         self.assertNotIn("hiring_entity_name", replay_input)
         self.assertEqual(
             checkpointed_prefix[-1].updates["hiring_entity_name"],
