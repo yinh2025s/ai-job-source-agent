@@ -163,17 +163,21 @@ class WorkdayAdapter:
                 detail_url = _detail_url(job, board.url, board_host)
                 if not title or not detail_url:
                     continue
+                raw = {
+                    key: job.get(key)
+                    for key in ("bulletFields", "externalPath", "postedOn")
+                    if key in job
+                }
+                hiring_organization_name = _hiring_organization_name(job)
+                if hiring_organization_name is not None:
+                    raw["hiring_organization_name"] = hiring_organization_name
                 candidates.append(
                     JobCandidate(
                         title=title,
                         url=detail_url,
                         provider=self.name,
                         location=_location(job),
-                        raw={
-                            key: job.get(key)
-                            for key in ("bulletFields", "externalPath", "postedOn")
-                            if key in job
-                        },
+                        raw=raw,
                     )
                 )
             if not postings or (total is None and len(postings) < _PAGE_SIZE):
@@ -308,6 +312,18 @@ def _is_same_workday_host(url: str, expected_host: str) -> bool:
 def _location(job: dict) -> str | None:
     location = job.get("locationsText") or job.get("location")
     return str(location) if location else None
+
+
+def _hiring_organization_name(job: dict) -> str | None:
+    value = job.get("hiringOrganizationName")
+    if value is None:
+        value = job.get("hiringOrganization")
+    if isinstance(value, dict):
+        value = value.get("name")
+    if not isinstance(value, str):
+        return None
+    normalized = " ".join(value.split())
+    return normalized if normalized and len(normalized) <= 200 else None
 
 
 def _nonnegative_int(value) -> int | None:

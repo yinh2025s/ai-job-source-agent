@@ -297,7 +297,7 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.assertEqual(restored, execution)
         self.assertIsInstance(restored.updates["job_board_portfolio"], JobBoardPortfolio)
 
-    def test_runtime_only_suffix_saves_safe_primary_without_secret(self):
+    def test_runtime_only_suffix_invalidates_the_entire_stage_checkpoint(self):
         portfolio = JobBoardPortfolio(
             boards=(
                 DiscoveredJobBoard(
@@ -330,12 +330,12 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.store.save(self.fingerprint, execution)
 
         restored = self.store.load(self.fingerprint, "job_board_discovery")
-        self.assertIsNotNone(restored)
-        restored_portfolio = restored.updates["job_board_portfolio"]
-        self.assertEqual(restored_portfolio.boards, (portfolio.primary,))
-        self.assertFalse(restored_portfolio.eligible_set_complete)
-        checkpoint = next(self.root.rglob("job_board_discovery.json"))
-        self.assertNotIn("portfolio-do-not-persist", checkpoint.read_text(encoding="utf-8"))
+        self.assertIsNone(restored)
+        for checkpoint in self.root.rglob("job_board_discovery.json"):
+            self.assertNotIn(
+                "portfolio-do-not-persist",
+                checkpoint.read_text(encoding="utf-8"),
+            )
 
     def test_invalid_job_board_portfolio_update_type_is_rejected(self):
         execution = StageExecution(

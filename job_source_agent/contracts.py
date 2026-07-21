@@ -17,7 +17,7 @@ from .web import Page
 from .browser_interaction import BrowserInteraction
 
 
-CONTRACT_SCHEMA_VERSION = "1.6"
+CONTRACT_SCHEMA_VERSION = "1.7"
 
 
 @runtime_checkable

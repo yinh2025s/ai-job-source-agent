@@ -578,7 +578,7 @@ class JobBoardPortfolioTests(unittest.TestCase):
                     eligible_set_complete=True,
                 )
 
-    def test_runtime_only_suffix_preserves_replay_safe_primary_as_incomplete(self):
+    def test_runtime_only_suffix_makes_entire_portfolio_non_checkpointable(self):
         portfolio = JobBoardPortfolio(
             boards=(self._board(), self._board(
                 url="https://jobs.example.test/runtime",
@@ -590,10 +590,7 @@ class JobBoardPortfolioTests(unittest.TestCase):
 
         payload = portfolio.to_checkpoint_payload()
 
-        self.assertIsNotNone(payload)
-        restored = JobBoardPortfolio.from_checkpoint_payload(payload)
-        self.assertEqual(restored.boards, (portfolio.primary,))
-        self.assertFalse(restored.eligible_set_complete)
+        self.assertIsNone(payload)
 
     def test_runtime_only_primary_does_not_promote_lower_ranked_replay_board(self):
         runtime_primary = self._board(

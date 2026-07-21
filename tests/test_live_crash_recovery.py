@@ -21,19 +21,59 @@ from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 
 ROOT = Path(__file__).resolve().parents[1]
 READY_PREFIX = "CHECKPOINT_READY:"
+RUNTIME_SECRET = "runtime-only-s5-secret-must-not-persist"
 
 
 CHILD_PROGRAM = r"""
+from dataclasses import replace
 import json
+import os
 import signal
 import sys
 from argparse import Namespace
 
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.models import CompanyInput
+from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from scripts.live_batch_eval import run_pipeline_phase
 
 input_path, checkpoint_dir, stop_after = sys.argv[1:]
 record = json.loads(open(input_path, encoding="utf-8").read())[0]
+runtime_secret = os.environ["CRASH_TEST_RUNTIME_SECRET"]
+
+# Add a sentinel only to the S5 value presented to the checkpoint boundary.
+# The live pipeline context keeps the original portfolio, so this exercises
+# persistence privacy without changing S6/S7 behavior.
+original_save = FilesystemCheckpointStore.save
+def save_with_runtime_secret(self, execution_fingerprint, execution):
+    portfolio = execution.updates.get("job_board_portfolio")
+    if execution.result.stage == "job_board_discovery" and isinstance(
+        portfolio, JobBoardPortfolio
+    ):
+        secret_board = DiscoveredJobBoard(
+            board=JobBoard(
+                url="https://runtime-only.example/jobs",
+                provider="generic",
+                identifier=runtime_secret,
+                replay_safe=False,
+            ),
+            detection_method="page_evidence",
+            evidence_url="https://runtime-only.example/jobs",
+        )
+        secret_portfolio = replace(
+            portfolio,
+            boards=(*portfolio.boards, secret_board),
+        )
+        execution = replace(
+            execution,
+            updates={
+                **execution.updates,
+                "job_board_portfolio": secret_portfolio,
+            },
+        )
+    return original_save(self, execution_fingerprint, execution)
+
+FilesystemCheckpointStore.save = save_with_runtime_secret
 args = Namespace(
     checkpoint_dir=checkpoint_dir,
     fixtures_dir="samples/sites",
@@ -297,8 +337,11 @@ class LiveCrashRecoveryTests(unittest.TestCase):
             stop_after="career_discovery",
             resume_from="job_board_discovery",
             interruption_signal=signal.SIGTERM,
+            expected_completed=PIPELINE_STAGES[:4],
             expected_restored=PIPELINE_STAGES[:4],
             expected_first_saved="job_board_discovery",
+            expected_effective_start="job_board_discovery",
+            expected_missing=(),
         )
 
     def test_sigkill_after_s5_resumes_from_s6(self):
@@ -306,8 +349,11 @@ class LiveCrashRecoveryTests(unittest.TestCase):
             stop_after="job_board_discovery",
             resume_from="opening_match",
             interruption_signal=signal.SIGKILL,
-            expected_restored=PIPELINE_STAGES[:5],
-            expected_first_saved="opening_match",
+            expected_completed=PIPELINE_STAGES[:5],
+            expected_restored=PIPELINE_STAGES[:4],
+            expected_first_saved="job_board_discovery",
+            expected_effective_start="job_board_discovery",
+            expected_missing=("job_board_discovery",),
         )
 
     def _assert_signal_recovery(
@@ -316,8 +362,11 @@ class LiveCrashRecoveryTests(unittest.TestCase):
         stop_after: str,
         resume_from: str,
         interruption_signal: signal.Signals,
+        expected_completed: tuple[str, ...],
         expected_restored: tuple[str, ...],
         expected_first_saved: str,
+        expected_effective_start: str,
+        expected_missing: tuple[str, ...],
     ) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -344,6 +393,7 @@ class LiveCrashRecoveryTests(unittest.TestCase):
                     stop_after,
                 ],
                 cwd=ROOT,
+                env={**os.environ, "CRASH_TEST_RUNTIME_SECRET": RUNTIME_SECRET},
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=True,
@@ -353,7 +403,7 @@ class LiveCrashRecoveryTests(unittest.TestCase):
                 ready_line = self._read_ready_line(first, timeout=10)
                 self.assertTrue(ready_line.startswith(READY_PREFIX), ready_line)
                 completed = ready_line.removeprefix(READY_PREFIX).split(",")
-                self.assertEqual(completed, list(expected_restored))
+                self.assertEqual(completed, list(expected_completed))
 
                 os.kill(first.pid, interruption_signal)
                 return_code = first.wait(timeout=5)
@@ -433,10 +483,34 @@ class LiveCrashRecoveryTests(unittest.TestCase):
             self.assertEqual(restored, list(expected_restored))
             self.assertEqual(saved[0], expected_first_saved)
             self.assertTrue(set(restored).isdisjoint(saved))
+            resume_trace = traces[0]["trace"]["source_trace"]["resume"]
             self.assertEqual(
-                traces[0]["trace"]["source_trace"]["resume"]["effective_start_stage"],
+                resume_trace["requested_start_stage"],
                 resume_from,
             )
+            self.assertEqual(
+                resume_trace["effective_start_stage"],
+                expected_effective_start,
+            )
+            self.assertEqual(
+                resume_trace["missing_checkpoints"],
+                list(expected_missing),
+            )
+
+            lineage = traces[0]["trace"]["stage_evidence_lineage"]
+            producer_by_stage = {
+                item["stage"]: item["producer_attempt_id"] for item in lineage
+            }
+            restored_attempts = {
+                producer_by_stage[stage] for stage in expected_restored
+            }
+            recomputed_attempts = {
+                producer_by_stage[stage]
+                for stage in PIPELINE_STAGES[len(expected_restored):]
+            }
+            self.assertEqual(len(restored_attempts), 1)
+            self.assertEqual(len(recomputed_attempts), 1)
+            self.assertTrue(restored_attempts.isdisjoint(recomputed_attempts))
 
             run_configuration = DeterministicRunConfig.from_agent_config(
                 AgentConfig(
@@ -452,11 +526,24 @@ class LiveCrashRecoveryTests(unittest.TestCase):
             )
             fingerprint = execution_fingerprint(record, run_configuration.digest)
             store = FilesystemCheckpointStore(checkpoint_dir)
-            for stage in PIPELINE_STAGES:
+            for stage in expected_restored:
+                execution = store.load(fingerprint, stage)
+                self.assertIsNotNone(execution, stage)
+                self.assertEqual(execution.result.stage, stage)
+            self.assertIsNone(
+                store.load(fingerprint, "job_board_discovery"),
+                "runtime-only S5 must be recomputed instead of restoring a prefix",
+            )
+            for stage in PIPELINE_STAGES[5:]:
                 execution = store.load(fingerprint, stage)
                 self.assertIsNotNone(execution, stage)
                 self.assertEqual(execution.result.stage, stage)
             self.assertFalse(list(checkpoint_dir.rglob("*.tmp")))
+            checkpoint_text = "".join(
+                checkpoint_path.read_text(encoding="utf-8")
+                for checkpoint_path in checkpoint_dir.rglob("*.json")
+            )
+            self.assertNotIn(RUNTIME_SECRET, checkpoint_text)
             for checkpoint_path in checkpoint_dir.rglob("*.json"):
                 json.loads(checkpoint_path.read_text(encoding="utf-8"))
 

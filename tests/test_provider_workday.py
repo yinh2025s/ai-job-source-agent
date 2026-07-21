@@ -118,6 +118,7 @@ class WorkdayAdapterTests(unittest.TestCase):
                             "externalPath": "/job/New-York-NY/Data-Analyst_R123",
                             "locationsText": "New York, NY",
                             "postedOn": "Posted Today",
+                            "hiringOrganization": {"name": "Acme Analytics"},
                         },
                         {
                             "title": "Platform Engineer",
@@ -152,11 +153,49 @@ class WorkdayAdapterTests(unittest.TestCase):
             "https://company.wd5.myworkdayjobs.com/en-US/acme/job/New-York-NY/Data-Analyst_R123",
         )
         self.assertEqual(result.candidates[0].location, "New York, NY")
+        self.assertEqual(
+            result.candidates[0].raw["hiring_organization_name"],
+            "Acme Analytics",
+        )
         self.assertEqual(result.trace["candidate_count"], 2)
         self.assertEqual(result.inventory_scope, "title_filtered")
         self.assertTrue(result.inventory_complete)
         self.assertEqual(result.trace["inventory_scope"], result.inventory_scope)
         self.assertEqual(result.trace["inventory_complete"], result.inventory_complete)
+
+    def test_ignores_malformed_or_oversized_hiring_organization(self):
+        adapter = WorkdayAdapter()
+        board = adapter.identify_board(
+            "https://company.wd5.myworkdayjobs.com/en-US/acme"
+        )
+        fetcher = RecordingFetcher(
+            json.dumps(
+                {
+                    "jobPostings": [
+                        {
+                            "title": "Role A",
+                            "externalPath": "/job/Role-A_R1",
+                            "hiringOrganization": {"name": ["not", "text"]},
+                        },
+                        {
+                            "title": "Role B",
+                            "externalPath": "/job/Role-B_R2",
+                            "hiringOrganizationName": "x" * 201,
+                        },
+                    ]
+                }
+            )
+        )
+
+        result = adapter.list_jobs(fetcher, board, JobQuery())
+
+        self.assertEqual(len(result.candidates), 2)
+        self.assertTrue(
+            all(
+                "hiring_organization_name" not in candidate.raw
+                for candidate in result.candidates
+            )
+        )
 
     def test_paginates_with_tenant_compatible_page_size(self):
         adapter = WorkdayAdapter()

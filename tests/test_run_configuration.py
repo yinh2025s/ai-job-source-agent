@@ -19,7 +19,21 @@ class DeterministicRunConfigTests(unittest.TestCase):
 
         self.assertEqual(implicit.to_payload(), explicit.to_payload())
         self.assertEqual(implicit.digest, explicit.digest)
-        self.assertEqual(implicit.to_payload()["schema_version"], "1.4")
+        self.assertEqual(implicit.to_payload()["schema_version"], "1.5")
+
+    def test_schema_1_4_route_evaluation_payload_is_preserved_exactly(self):
+        payload = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                enable_parallel_candidate_discovery=True,
+                evaluate_all_candidate_routes=True,
+            )
+        ).to_payload()
+        payload["schema_version"] = "1.4"
+
+        configuration = DeterministicRunConfig.from_payload(payload)
+
+        self.assertEqual(configuration.to_payload(), payload)
+        self.assertTrue(configuration.evaluate_all_candidate_routes)
 
     def test_parallel_candidate_discovery_is_explicit_and_deterministic(self):
         disabled = DeterministicRunConfig.from_agent_config(AgentConfig())

@@ -2692,6 +2692,26 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
+### Fresh100 `.207` Route-Local Outcome Competition
+
+Phase A and the offline implementation are complete for the shared
+`FIRST_PARTY_GENERIC_AND_EMBEDDED_TYPED_ROUTE_COEXIST_UNTIL_S6` cluster.
+`JobBoardPortfolio` now retains route-bound relationship evidence, and S6
+evaluates each board with its own hiring/provider/opening identity instead of
+letting one globally selected tenant decide the company outcome. Unauthorized
+search routes may improve candidate recall but cannot publish Exact or a
+company-wide no-match. Runtime-only portfolio membership is checkpointed
+all-or-none so replay cannot silently lose an alternative route.
+
+The integrated offline gate is 2568 tests with 4 skipped, 25/25 provider,
+6/6 resolver and 46 adapters with zero architecture issues. The next serial
+gate is a cold, isolated Fresh100 run on frozen `.207` code, followed by a
+100/100 same-version replay, full Exact identity audit and comparison against
+both `.206` network runs. Code remains frozen during the live benchmark. If the
+shared three-company trigger does not recover across at least three independent
+companies, the change cannot be called cluster closure and the causal grouping
+must be revised before another repair round.
+
 ### Fresh100 `.206` Network Rerun 2 Decision
 
 The second frozen `.206` run used the identical observed Fresh100 input and new

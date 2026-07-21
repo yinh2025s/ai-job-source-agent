@@ -729,7 +729,7 @@ class DiscoveryStageTests(unittest.TestCase):
         )
         self.assertEqual(store.saved, [])
 
-    def test_stored_provider_board_is_only_an_unverified_s5_candidate(self):
+    def test_stored_provider_board_is_retained_as_identity_ambiguous_partial(self):
         record = self._stored_career_record()
         record = VerifiedCompanyDiscoveryEvidence(
             company_name=record.company_name,
@@ -764,7 +764,11 @@ class DiscoveryStageTests(unittest.TestCase):
             company_discovery_evidence_store=store,
         ).run(context)
 
-        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
         self.assertEqual(
             execution.updates["job_list_page_url"],
             "https://job-boards.greenhouse.io/acme",
@@ -784,7 +788,7 @@ class DiscoveryStageTests(unittest.TestCase):
             "stored_candidate_requires_inventory_revalidation",
         )
 
-    def test_stored_provider_career_is_only_an_unverified_s5_candidate(self):
+    def test_stored_provider_career_is_retained_as_identity_ambiguous_partial(self):
         base = self._stored_career_record()
         career_url = (
             "https://recruiting.paylocity.com/recruiting/jobs/All/"
@@ -817,7 +821,11 @@ class DiscoveryStageTests(unittest.TestCase):
             company_discovery_evidence_store=self._EvidenceStore(record),
         ).run(context)
 
-        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
         self.assertEqual(execution.updates["provider"], "paylocity")
         self.assertEqual(execution.updates["job_list_page_url"], career_url)
         self.assertEqual(
@@ -929,7 +937,7 @@ class DiscoveryStageTests(unittest.TestCase):
 
         self.assertEqual(execution.result.reason_code, "COMPANY_IDENTITY_AMBIGUOUS")
 
-    def test_current_career_route_precedes_unverified_stored_provider_candidate(self):
+    def test_unverified_current_career_route_precedes_stored_lead_as_partial(self):
         record = self._stored_career_record()
         record = VerifiedCompanyDiscoveryEvidence(
             company_name=record.company_name,
@@ -964,14 +972,24 @@ class DiscoveryStageTests(unittest.TestCase):
             company_discovery_evidence_store=self._EvidenceStore(record),
         ).run(context)
 
-        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
         self.assertEqual(
             execution.updates["job_list_page_url"],
-            "https://boards.greenhouse.io/acme",
+            "https://job-boards.greenhouse.io/acme",
+        )
+        self.assertFalse(
+            execution.updates["provider_identity"].relationship_verified
+        )
+        self.assertFalse(
+            execution.updates["job_board_portfolio"].eligible_set_complete
         )
         self.assertEqual(
             execution.trace["candidate_discovery"]["selected_wave"],
-            "website_direct",
+            "direct",
         )
 
     def test_deterministic_hiring_identity_failure_blocks_stored_provider(self):

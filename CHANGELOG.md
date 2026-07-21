@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-07-21 - Route-local candidate outcome competition `.207`
+
+- Replaced S5's single globally selected provider identity with a schema-2
+  `JobBoardPortfolio` that binds every candidate board to its discovery route
+  and immutable hiring-relationship evidence. External Apply, first-party
+  Career and provider-search candidates may now coexist through S6; search or
+  tenant-name similarity alone cannot authorize Exact or company-wide absence.
+- S6 now validates inventory, company relationship, provider, tenant, board,
+  opening, title and location per route. It continues after a rejected opening,
+  prefers a verified Exact over incomplete/no-match alternatives, and fails
+  closed when two different verified Exact identities remain.
+- Mixed runtime-only portfolios are recomputed from S5 instead of persisting a
+  replay-safe prefix that silently drops routes. Pipeline contract is `1.7`,
+  deterministic run configuration is `1.5`, and adapter version is
+  `2026-07-21.207`.
+- Offline integration gates pass 2568 tests (4 skipped), 25/25 provider, 6/6
+  resolver and 46 adapters with zero architecture issues. A clean, frozen-code
+  Fresh100 live run and same-version replay remain the current acceptance gate;
+  no live recall improvement is claimed yet.
+
 ## 2026-07-21 - Fresh100 `.206` network rerun 2
 
 - Repeated the same observed Fresh100 cohort from a clean export of frozen

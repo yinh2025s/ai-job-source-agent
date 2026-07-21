@@ -414,7 +414,7 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
 
         self.assertNotEqual(execution.result.status, "success")
 
-    def test_inventory_revalidated_tenant_probe_can_restore_relationship_without_s2(self):
+    def test_tenant_probe_without_provider_employer_stays_as_untrusted_candidate(self):
         discovery = CompositeCandidateDiscovery(
             (_StaticCandidateDiscovery(_verified_tenant_probe_candidate("acme")),),
             limit=12,
@@ -430,18 +430,24 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             enable_parallel_candidate_discovery=True,
         ).run(context)
 
-        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
         self.assertEqual(
             execution.updates["job_list_page_url"],
             "https://jobs.ashbyhq.com/acme",
         )
-        self.assertTrue(execution.updates["provider_identity"].relationship_verified)
-        self.assertEqual(
-            execution.updates["hiring_identity_evidence"].verification_method,
-            "provider_tenant_match",
+        self.assertFalse(
+            execution.updates["provider_identity"].relationship_verified
         )
+        portfolio = execution.updates["job_board_portfolio"]
+        self.assertEqual(len(portfolio.boards), 1)
+        self.assertEqual(len(portfolio.route_evidence), 1)
+        self.assertFalse(portfolio.route_evidence[0].authorized)
 
-    def test_official_career_direct_handoff_runs_before_search_wave(self):
+    def test_exhaustive_mode_runs_search_after_official_career_route(self):
         events = []
 
         class _SearchDiscovery(_StaticCandidateDiscovery):
@@ -462,17 +468,21 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
                 (_SearchDiscovery(),), limit=12
             ),
             enable_parallel_candidate_discovery=True,
+            evaluate_all_candidate_routes=True,
         ).run(context)
 
-        self.assertEqual(events, ["website_direct"])
+        self.assertEqual(events, ["website_direct", "search"])
         self.assertEqual(execution.result.status, "success")
+        fallback = execution.trace["candidate_route_probe"]
         self.assertEqual(
-            execution.trace["candidate_scheduler"],
-            {
-                "strategy": "direct_then_website_then_search",
-                "website_direct_status": "success",
-                "search_wave": "not_run",
-            },
+            fallback["candidate_discovery"]["strategy"],
+            "exhaustive_route_evaluation",
+        )
+        self.assertEqual(
+            fallback["candidate_discovery"]["waves"]["search"]["sources"][0][
+                "status"
+            ],
+            "success",
         )
 
     def test_exhaustive_route_evaluation_runs_search_after_verified_direct(self):
@@ -526,8 +536,18 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
         )
         routes = execution.trace["route_evaluation"]["routes"]
         self.assertEqual(routes["external_apply"]["relationship_verified_count"], 1)
-        self.assertEqual(routes["provider_search"]["relationship_verified_count"], 1)
+        self.assertEqual(routes["provider_search"]["relationship_verified_count"], 0)
+        self.assertEqual(routes["provider_search"]["provider_verified_count"], 1)
         self.assertFalse(routes["website_career"]["input_available"])
+        portfolio = execution.updates["job_board_portfolio"]
+        self.assertEqual(len(portfolio.boards), 2)
+        search_routes = [
+            route
+            for route in portfolio.route_evidence
+            if route.route_kind == "provider_search"
+        ]
+        self.assertEqual(len(search_routes), 1)
+        self.assertFalse(search_routes[0].authorized)
 
     def test_exhaustive_route_evaluation_records_legacy_website_board(self):
         search = _TrackedWaveDiscovery(
@@ -591,7 +611,11 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             evidence_url="https://job-boards.greenhouse.io/acme",
         )
         candidate_execution = StageExecution(
-            result=make_stage_result("job_board_discovery", "success"),
+            result=make_stage_result(
+                "job_board_discovery",
+                "partial",
+                reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+            ),
             updates={
                 "job_list_page_url": candidate_board.board.url,
                 "provider": "greenhouse",
@@ -644,6 +668,7 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             DEFAULT_PROVIDER_REGISTRY,
         )
 
+        self.assertEqual(execution.result.status, "success")
         self.assertEqual(
             execution.updates["job_list_page_url"],
             "https://job-boards.greenhouse.io/acme",
@@ -656,7 +681,10 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             "https://job-boards.greenhouse.io/acme",
         )
         self.assertTrue(identity.relationship_verified)
-        self.assertEqual(identity.verification_method, "tenant_name_match")
+        self.assertEqual(
+            identity.verification_method,
+            "verified_first_party_handoff",
+        )
 
     def test_verified_first_party_inventory_promotes_native_board_without_search_probe(self):
         context = PipelineContext.from_company(
@@ -786,7 +814,20 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             execution.trace["relationship_verification"]["direct"]["status"],
             "rejected",
         )
-        self.assertTrue(execution.updates["provider_identity"].relationship_verified)
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
+        self.assertFalse(
+            execution.updates["provider_identity"].relationship_verified
+        )
+        portfolio = execution.updates["job_board_portfolio"]
+        self.assertEqual(
+            {board.board.identifier for board in portfolio.boards},
+            {"acme", "notion"},
+        )
+        self.assertFalse(any(route.authorized for route in portfolio.route_evidence))
 
     def test_cross_tenant_fallback_never_becomes_verified_from_search_rank(self):
         direct = _TrackedWaveDiscovery(
@@ -857,7 +898,11 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             enable_parallel_candidate_discovery=True,
         ).run(context)
 
-        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
         self.assertFalse(execution.trace["relationship_evidence"]["verified"])
         self.assertEqual(
             execution.trace["relationship_evidence"]["evidence_type"],
@@ -868,6 +913,12 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             execution.updates["provider_identity"].verification_method,
             "linked_url_only",
         )
+        portfolio = execution.updates["job_board_portfolio"]
+        self.assertIn(
+            "acme",
+            {board.board.identifier for board in portfolio.boards},
+        )
+        self.assertFalse(any(route.authorized for route in portfolio.route_evidence))
 
     def test_guessed_cross_tenant_candidate_stays_untrusted(self):
         context = PipelineContext.from_company(
@@ -889,9 +940,20 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             enable_parallel_candidate_discovery=True,
         ).run(context)
 
-        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
         self.assertFalse(execution.trace["relationship_evidence"]["verified"])
         self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+        self.assertIn("job_board_portfolio", execution.updates)
+        self.assertFalse(
+            any(
+                route.authorized
+                for route in execution.updates["job_board_portfolio"].route_evidence
+            )
+        )
 
     def test_verified_first_party_handoff_still_establishes_relationship(self):
         candidate = ProviderCandidate(
@@ -1228,7 +1290,7 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             "exact",
         )
 
-    def test_verified_company_tenant_is_ranked_before_unrelated_search_result(self):
+    def test_same_name_search_tenant_is_ranked_but_remains_untrusted(self):
         def search_candidate(tenant, rank):
             return ProviderCandidate(
                 url=f"https://jobs.ashbyhq.com/{tenant}",
@@ -1265,11 +1327,21 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             execution.updates["job_list_page_url"],
             "https://jobs.ashbyhq.com/acme",
         )
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
         self.assertEqual(
             execution.updates["provider_identity"].verification_method,
-            "provider_tenant_match",
+            "linked_url_only",
         )
-        self.assertTrue(execution.updates["provider_identity"].relationship_verified)
+        self.assertFalse(execution.updates["provider_identity"].relationship_verified)
+        portfolio = execution.updates["job_board_portfolio"]
+        self.assertEqual(
+            {board.board.identifier for board in portfolio.boards},
+            {"acme", "notion"},
+        )
 
     def test_candidate_relationship_canonicalizes_evidence_url(self):
         discovery = CompositeCandidateDiscovery(
@@ -1302,7 +1374,10 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
 
         relationship = execution.trace["relationship_evidence"]
         self.assertEqual(relationship["evidence_url"], "https://jobs.ashbyhq.com/acme")
-        self.assertTrue(relationship["verified"])
+        self.assertFalse(relationship["verified"])
+        self.assertEqual(relationship["evidence_type"], "unverified_candidate")
+        self.assertEqual(execution.result.status, "partial")
+        self.assertIn("job_board_portfolio", execution.updates)
 
     def test_candidate_contract_rejects_invalid_identity_evidence_url(self):
         with self.assertRaisesRegex(ValueError, "canonical identity evidence"):
@@ -1357,11 +1432,22 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
         )
         self.assertEqual(
             execution.trace["relationship_evidence"]["evidence_type"],
-            "provider_tenant_match",
+            "unverified_candidate",
         )
-        self.assertTrue(execution.trace["relationship_evidence"]["verified"])
+        self.assertFalse(execution.trace["relationship_evidence"]["verified"])
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
+        portfolio = execution.updates["job_board_portfolio"]
+        self.assertEqual(
+            {board.board.identifier for board in portfolio.boards},
+            {"acme", "notion"},
+        )
+        self.assertFalse(any(route.authorized for route in portfolio.route_evidence))
 
-    def test_targeted_opening_priority_does_not_override_tenant_identity(self):
+    def test_targeted_opening_priority_does_not_authorize_search_tenant(self):
         wrong_opening = ProviderCandidate(
             url="https://jobs.ashbyhq.com/notion/role-123",
             source_kind="targeted_opening_search",
@@ -1401,7 +1487,18 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             execution.updates["job_list_page_url"],
             "https://jobs.ashbyhq.com/acme",
         )
-        self.assertTrue(execution.trace["relationship_evidence"]["verified"])
+        self.assertEqual(execution.result.status, "partial")
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
+        self.assertFalse(execution.trace["relationship_evidence"]["verified"])
+        portfolio = execution.updates["job_board_portfolio"]
+        self.assertEqual(
+            {board.board.identifier for board in portfolio.boards},
+            {"acme", "notion"},
+        )
+        self.assertFalse(any(route.authorized for route in portfolio.route_evidence))
 
 
 if __name__ == "__main__":

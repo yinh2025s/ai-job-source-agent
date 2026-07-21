@@ -105,6 +105,9 @@ def workday_inventory(*, tenant="acme", total=1, count=1, include_target=True):
                         else f"/job/Remote/Other-Role-{index}_R{index}"
                     ),
                     "locationsText": "Remote",
+                    "hiringOrganization": {
+                        "name": tenant.replace("-", " ").title()
+                    },
                 }
                 for index in range(count)
             ],
@@ -147,6 +150,43 @@ class TargetedCandidatePipelineE2ETests(unittest.TestCase):
     def s5_trace(result):
         return result.trace["stages"][STAGE_JOB_BOARD_DISCOVERY]
 
+    def assert_untrusted_targeted_candidate_reaches_s6(
+        self,
+        result,
+        *,
+        provider,
+        board_url,
+    ):
+        s5_result = next(
+            stage
+            for stage in result.stage_results
+            if stage.stage == STAGE_JOB_BOARD_DISCOVERY
+        )
+        self.assertEqual(s5_result.status, "partial")
+        self.assertEqual(s5_result.reason_code, "COMPANY_IDENTITY_AMBIGUOUS")
+
+        trace = self.s5_trace(result)
+        self.assertEqual(trace["job_list_page_url"], board_url)
+        self.assertEqual(trace["provider"], provider)
+        self.assertFalse(trace["relationship_verified"])
+        self.assertEqual(
+            trace["relationship_evidence"]["evidence_type"],
+            "unverified_candidate",
+        )
+        portfolio = trace["job_board_portfolio"]
+        self.assertEqual(portfolio["eligible_count"], 1)
+        self.assertEqual(portfolio["primary_provider"], provider)
+        self.assertEqual(portfolio["primary_url"], board_url)
+
+        attempts = result.trace["stages"][STAGE_OPENING_MATCH][
+            "board_portfolio"
+        ]["attempts"]
+        self.assertEqual(len(attempts), 1)
+        self.assertEqual(attempts[0]["provider"], provider)
+        self.assertEqual(attempts[0]["board_url"], board_url)
+        self.assertEqual(attempts[0]["status"], "verified_exact")
+        self.assertTrue(attempts[0]["authorized"])
+
     def assert_bounded_targeted_search(self, result, backend):
         trace = self.s5_trace(result)
         pool = trace["candidate_discovery"]["pool"]
@@ -180,11 +220,33 @@ class TargetedCandidatePipelineE2ETests(unittest.TestCase):
         statuses = self.statuses(result)
         self.assertEqual(statuses[STAGE_WEBSITE_RESOLUTION], "failed")
         self.assertEqual(statuses[STAGE_CAREER_DISCOVERY], "not_run")
-        self.assertEqual(statuses[STAGE_JOB_BOARD_DISCOVERY], "success")
+        self.assert_untrusted_targeted_candidate_reaches_s6(
+            result,
+            provider="oracle_hcm",
+            board_url=(
+                "https://eohh.fa.us2.oraclecloud.com/hcmUI/"
+                "CandidateExperience/en/sites/CX_1"
+            ),
+        )
         self.assertEqual(statuses[STAGE_OPENING_MATCH], "success")
         self.assertEqual(statuses[STAGE_RESULT_VALIDATION], "success")
         self.assertEqual(result.open_position_url, ORACLE_DETAIL)
         self.assertEqual(result.identity_assertion["verdict"], "verified")
+        self.assertEqual(
+            result.identity_assertion["provider"]["provider"],
+            "oracle_hcm",
+        )
+        oracle_tenant = json.loads(result.identity_assertion["provider"]["tenant"])
+        self.assertEqual(oracle_tenant["tenant"], "eohh")
+        self.assertEqual(oracle_tenant["site"], "CX_1")
+        self.assertEqual(
+            result.identity_assertion["selection"]["location"],
+            "Remote",
+        )
+        self.assertEqual(
+            result.identity_assertion["selection"]["canonical_opening_url"],
+            ORACLE_DETAIL,
+        )
         self.assertEqual(
             result.identity_assertion["hiring"]["verification_method"],
             "provider_inventory",
@@ -212,12 +274,29 @@ class TargetedCandidatePipelineE2ETests(unittest.TestCase):
         statuses = self.statuses(result)
         self.assertEqual(statuses[STAGE_WEBSITE_RESOLUTION], "success")
         self.assertEqual(statuses[STAGE_CAREER_DISCOVERY], "failed")
-        self.assertEqual(statuses[STAGE_JOB_BOARD_DISCOVERY], "success")
+        self.assert_untrusted_targeted_candidate_reaches_s6(
+            result,
+            provider="workday",
+            board_url=WORKDAY_BOARD,
+        )
         self.assertEqual(statuses[STAGE_OPENING_MATCH], "success")
         self.assertEqual(statuses[STAGE_RESULT_VALIDATION], "success")
         self.assertEqual(result.open_position_url, WORKDAY_DETAIL)
         self.assertEqual(result.identity_assertion["verdict"], "verified")
+        self.assertEqual(result.identity_assertion["provider"]["provider"], "workday")
         self.assertEqual(result.identity_assertion["provider"]["tenant"], "acme/acme")
+        self.assertEqual(
+            result.identity_assertion["selection"]["location"],
+            "Remote",
+        )
+        self.assertEqual(
+            result.identity_assertion["selection"]["canonical_opening_url"],
+            WORKDAY_DETAIL,
+        )
+        self.assertEqual(
+            result.identity_assertion["hiring"]["verification_method"],
+            "provider_inventory",
+        )
         self.assert_bounded_targeted_search(result, backend)
 
     def test_wrong_oracle_hiring_organization_is_rejected_by_s7(self):

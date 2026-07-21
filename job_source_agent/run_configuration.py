@@ -7,12 +7,13 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RUN_CONFIGURATION_SCHEMA_VERSION = "1.4"
+RUN_CONFIGURATION_SCHEMA_VERSION = "1.5"
 BATCH_EXECUTION_SCHEMA_VERSION = "1.1"
 _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION = "1.0"
 _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION = "1.1"
 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION = "1.2"
 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION = "1.3"
+_ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION = "1.4"
 _MAX_BUDGET = 1_000
 _MAX_TIMEOUT_SECONDS = 300.0
 
@@ -80,6 +81,7 @@ class DeterministicRunConfig:
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             raise ValueError("Run configuration schema version is incompatible")
@@ -98,21 +100,27 @@ class DeterministicRunConfig:
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_career_discovery_transport_calls")
         if schema_version in {
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_job_board_attempts")
         if schema_version in {
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("enable_parallel_candidate_discovery")
-        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+        if schema_version in {
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             expected_fields.add("evaluate_all_candidate_routes")
         if not isinstance(agent, dict) or set(agent) != expected_fields:
             raise ValueError("Run configuration agent fields are incomplete or unsupported")
@@ -130,6 +138,7 @@ class DeterministicRunConfig:
             in {
                 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else 1
@@ -150,6 +159,7 @@ class DeterministicRunConfig:
                 _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else None
@@ -175,6 +185,7 @@ class DeterministicRunConfig:
             )
             if schema_version in {
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else False
@@ -184,7 +195,11 @@ class DeterministicRunConfig:
                 agent["evaluate_all_candidate_routes"],
                 "evaluate_all_candidate_routes",
             )
-            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            if schema_version
+            in {
+                _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+                RUN_CONFIGURATION_SCHEMA_VERSION,
+            }
             else False
         )
         if evaluate_all_candidate_routes and not enable_parallel_candidate_discovery:
@@ -223,6 +238,7 @@ class DeterministicRunConfig:
             _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION,
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_career_discovery_transport_calls"] = (
@@ -231,17 +247,22 @@ class DeterministicRunConfig:
         if self._schema_version in {
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_job_board_attempts"] = self.max_job_board_attempts
         if self._schema_version in {
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["enable_parallel_candidate_discovery"] = (
                 self.enable_parallel_candidate_discovery
             )
-        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+        if self._schema_version in {
+            _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             agent["evaluate_all_candidate_routes"] = self.evaluate_all_candidate_routes
         return {"schema_version": self._schema_version, "agent": agent}
 

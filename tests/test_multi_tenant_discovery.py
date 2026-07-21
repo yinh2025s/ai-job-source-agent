@@ -162,11 +162,42 @@ class MultiTenantDiscoveryTests(unittest.TestCase):
         self.assertEqual(summary["eligible_count"], 4)
         self.assertFalse(summary["eligible_set_complete"])
         payload = summary["checkpoint_payload"]
-        self.assertNotIn("relationship_evidence_url", repr(payload))
-        self.assertNotIn(CAREER_PAGE, repr(payload))
+        self.assertEqual(payload["schema_version"], "2.0")
+        first_party_routes = [
+            route
+            for route in payload["route_evidence"]
+            if route["source_kind"] == "first_party_ats_link"
+        ]
+        self.assertEqual(len(first_party_routes), 4)
+        self.assertTrue(
+            all(
+                route["hiring_relationship"]["verified"]
+                and route["hiring_relationship"]["evidence_type"]
+                == "first_party_handoff"
+                and route["hiring_relationship"]["evidence_url"] == CAREER_PAGE
+                for route in first_party_routes
+            )
+        )
+        serialized_payload = repr(payload).lower()
+        self.assertNotIn("token", serialized_payload)
+        self.assertNotIn("cookie", serialized_payload)
+        self.assertNotIn("api_key", serialized_payload)
         restored = JobBoardPortfolio.from_checkpoint_payload(payload)
         self.assertEqual(restored.primary.board.url, expected_url)
         self.assertEqual(restored.to_checkpoint_payload(), payload)
+        restored_first_party_routes = [
+            route
+            for route in restored.route_evidence
+            if route.source_kind == "first_party_ats_link"
+        ]
+        self.assertEqual(len(restored_first_party_routes), 4)
+        self.assertTrue(
+            all(
+                route.authorized
+                and route.hiring_relationship.evidence_url == CAREER_PAGE
+                for route in restored_first_party_routes
+            )
+        )
         self.assertEqual(
             execution.trace["job_board_portfolio_projection"],
             {
@@ -185,14 +216,14 @@ class MultiTenantDiscoveryTests(unittest.TestCase):
         self.assertTrue(execution.updates["provider_identity"].relationship_verified)
         self.assertEqual(
             execution.updates["provider_identity"].verification_method,
-            "tenant_name_match",
+            "verified_first_party_handoff",
         )
         self.assertEqual(
             {board.board.identifier for board in execution.updates["job_board_portfolio"].boards},
             {"sonyinteractiveentertainmentglobal", "siei", "teamlfg", "haven"},
         )
 
-    def test_acronym_and_legal_suffix_are_positive_entity_aliases(self):
+    def test_acronym_tenant_search_candidates_remain_unauthorized(self):
         for tenant in ("sie", "siei"):
             with self.subTest(tenant=tenant):
                 stage = JobBoardDiscoveryStage(
@@ -209,12 +240,37 @@ class MultiTenantDiscoveryTests(unittest.TestCase):
                     CompanyInput(company_name="Sony Interactive Entertainment")
                 ))
 
-                self.assertTrue(
-                    execution.updates["provider_identity"].relationship_verified
+                self.assertEqual(execution.result.status, "partial")
+                self.assertEqual(
+                    execution.result.reason_code,
+                    "COMPANY_IDENTITY_AMBIGUOUS",
                 )
                 self.assertEqual(
-                    execution.updates["provider_identity"].verification_method,
-                    "provider_tenant_match",
+                    execution.updates["job_list_page_url"],
+                    f"https://{tenant}.pinpointhq.com/",
+                )
+                provider_identity = execution.updates["provider_identity"]
+                self.assertFalse(provider_identity.relationship_verified)
+                self.assertEqual(provider_identity.tenant, tenant)
+                self.assertEqual(
+                    provider_identity.verification_method,
+                    "linked_url_only",
+                )
+                portfolio = execution.updates["job_board_portfolio"]
+                self.assertEqual(len(portfolio.boards), 1)
+                self.assertEqual(portfolio.primary.board.identifier, tenant)
+                self.assertEqual(len(portfolio.route_evidence), 1)
+                route = portfolio.route_evidence[0]
+                self.assertEqual(route.route_kind, "provider_search")
+                self.assertEqual(route.source_kind, "targeted_board_search")
+                self.assertFalse(route.authorized)
+                self.assertEqual(
+                    route.hiring_relationship.evidence_type,
+                    "unverified_candidate",
+                )
+                self.assertEqual(
+                    route.hiring_relationship.evidence_url,
+                    f"https://{tenant}.pinpointhq.com",
                 )
 
     def test_shared_parent_token_does_not_authorize_cross_tenant_search(self):
@@ -237,6 +293,14 @@ class MultiTenantDiscoveryTests(unittest.TestCase):
             execution.updates["provider_identity"].verification_method,
             "linked_url_only",
         )
+        portfolio = execution.updates["job_board_portfolio"]
+        self.assertEqual(portfolio.primary.board.identifier, "sony-pictures")
+        self.assertEqual(len(portfolio.route_evidence), 1)
+        route = portfolio.route_evidence[0]
+        self.assertEqual(route.route_kind, "provider_search")
+        self.assertEqual(route.source_kind, "targeted_board_search")
+        self.assertFalse(route.authorized)
+        self.assertFalse(route.hiring_relationship.verified)
 
 
 if __name__ == "__main__":

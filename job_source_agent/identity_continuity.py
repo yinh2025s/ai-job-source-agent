@@ -20,6 +20,7 @@ _VERIFICATION_METHOD = re.compile(r"^[a-z][a-z0-9_]{1,63}$")
 _PROVIDER = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _RELATIONSHIP_EVIDENCE_TYPES = {
     "first_party_handoff",
+    "first_party_inventory",
     "linkedin_external_apply",
     "provider_published_employer",
     "provider_tenant_match",
@@ -92,6 +93,13 @@ class HiringRelationshipEvidence:
 
     def to_trace_payload(self) -> dict[str, Any]:
         return _strict_payload(self)
+
+    def to_checkpoint_payload(self) -> dict[str, Any]:
+        return _strict_payload(self)
+
+    @classmethod
+    def from_checkpoint_payload(cls, payload: Any) -> HiringRelationshipEvidence:
+        return cls(**_validated_payload(payload, cls))
 
 
 @dataclass(frozen=True)

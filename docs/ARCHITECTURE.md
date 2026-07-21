@@ -128,6 +128,17 @@ bridge 默认启用；`--disable-parallel-candidate-discovery` 提供回滚。�
 replay 配置保持关闭，以维持嵌入方与历史 checkpoint 兼容。Provider 可通过自己的可选 canonicalization
 hook 统一旧/新 board 域名；中央 candidate builder 不包含 provider 名称分支。
 
+Schema `2.0` 的 `JobBoardPortfolio` 进一步把每个 board 与 route kind、source provenance 和
+`HiringRelationshipEvidence` 绑定。External Apply、官网/Career 与 provider search 路线可同时保留到
+S6，但路线之间不能借用 company、provider、tenant 或 board evidence。S6 对每条有界路线读取一次
+官方库存，并在接受 opening 前执行 route-local S7 identity chain 和 title/location gate；被拒绝的
+opening 不会阻止后续路线，verified Exact 优先于 incomplete 或 verified no-match，而两个不同的
+verified Exact fail closed。只有所有 eligible、authorized、complete 路线都完成后才允许发布公司级
+`OPENING_NOT_FOUND`/`NO_PUBLIC_OPENINGS`；未授权 search 路线的空库存不能证明公司没有岗位。
+包含 runtime-only board 的 portfolio 不再持久化可回放前缀，而是整体不落盘并从 S5 producer boundary
+重算，避免 checkpoint/replay 静默丢失竞争路线。该 contract 对应 pipeline schema `1.7`、run-config
+schema `1.5` 和 adapter `.207`。
+
 正常产品运行保留 staged direct-then-search 调度，减少已验证 direct handoff 存在时的网络开销。
 确定性配置 schema `1.4` 另提供 benchmark-only `evaluate_all_candidate_routes`：它强制三路独立
 产出并记录 route probe，再把所有候选送入同一 adapter、relationship、S6 和 S7 gate。Reporting
@@ -383,7 +394,7 @@ Fixture fetch 缺失使用 `OFFLINE_FIXTURE_MISSING`，这是 non-retryable、ow
 - 独立 `content_probe.py` 可供 S4/S5 从官网自己声明的同站 module bundle 读取公开 Magnolia Delivery payload，但只在 endpoint、app base、品牌一致 CMS host、HTTPS 标准端口和同 host response 全部验证后合并内容；该 probe 只补充页面证据，provider URL 仍进入原生 adapter 做 board/inventory 验证。
 - `live_batch_eval.py` 只负责公司级并发、两段 process hard budget 和输出；实际 S1-S7 执行委托 `PipelineApplication`，S1-S3 与 S4-S7 通过 filesystem stage checkpoint 衔接。每段先向 fetch wrapper 注入略早于 outer budget 的 soft deadline，逐请求压缩 socket timeout，并为结构化收尾和 checkpoint 发布预留最多 1 秒；process kill 只作不合作底层调用的最后保险。
 - `.201` 对 replay-enabled batch 的父进程超时增加一次有界 active-stage recapture。它使用新的 capture attempt 和同一 execution fingerprint，只在 worker 真实 finalize record-scoped、nonempty request scope 后替换原 terminal result；失败、异常或再次缺 scope 时保留原结果并让 replay integrity gate 失败。父进程不构造空 scope，也不从未完成 worker 猜测 request tape。
-- S5 多 Job Board 关系排序完成后，最终 typed `JobBoardPortfolio` 是 Job List URL、provider detection、StageResult provider、primary summary 和 context updates 的唯一投影来源。Trace 同时保存 `to_checkpoint_payload()` 产生的完整 replay-safe portfolio，或在含 runtime-only board 时保存明确标记 incomplete 的 replay-safe 前缀；S6 attempt 只表示实际消费的有序前缀，首个 Exact 后可以停止，不能反向充当完整 S5 候选集合。旧 artifact 只有在 provider detection、顶层 URL、首个 S6 Exact、S6 StageResult 与完整 verified S7 source-company/provider/tenant/board/opening/title/location 全部一致时才允许迁移 stale primary；迁移后的 typed provider 不得再被旧 StageResult 覆盖，任何缺失或冲突继续 fail closed。
+- S5 多 Job Board 关系排序完成后，最终 typed `JobBoardPortfolio` 是 Job List URL、provider detection、StageResult provider、primary summary 和 context updates 的唯一投影来源。Schema `2.0` 为每个 board 保存 route-bound hiring relationship；只有全体成员 replay-safe 时 `to_checkpoint_payload()` 才发布完整 portfolio，任一 runtime-only board 会使整个 payload 缺席并要求从 S5 producer boundary 重算，不能保存或恢复截断前缀。S6 attempt 只表示实际消费的有序前缀，不能反向充当完整 S5 候选集合。旧 artifact 只有在 provider detection、顶层 URL、首个 S6 Exact、S6 StageResult 与完整 verified S7 source-company/provider/tenant/board/opening/title/location 全部一致时才允许迁移 stale primary；迁移后的 typed provider 不得再被旧 StageResult 覆盖，任何缺失或冲突继续 fail closed。
 - ADR-0008 将 process hard budget 定义为 durable-publication deadline：worker 在独立 POSIX process group 中运行，大结果先写入 attempt-local、destination-atomic envelope，pipe 只发送 readiness；父进程只接受 deadline 前已 fsync/replace 完成的 envelope，并在 timeout/final cleanup 终止整个进程组。完整 stage checkpoint 保持可复用，不因下游 timeout 回滚；snapshot 按 blob/view/artifact/sequence 在前、durable JSONL index 在后的顺序发布，company completion 继续作为最后的 authoritative commit marker。`.56` 离线门禁为 859 tests、24/24 provider、6/6 resolver、23 adapters / 0 issues；Akkodis 在 45 秒 focused live 内 34.5 秒 exact，并由 8 fixtures 对完整 URL/provider identity 做 1/1 replay。
 - `.62` 将 ADR-0008 的“stage checkpoint 不回滚”落实到 parent timeout result：只恢复同一 execution fingerprint 下连续、兼容且已完成的 stage prefix，首个 gap 标记 `COMPANY_TIME_BUDGET_EXHAUSTED`，不读取 gap 后 checkpoint。Akkodis 即使在 S6 分页撞 hard deadline也不再丢失已完成的 S4/S5；本轮网络下 43.6 秒完整读取 9 页/83 条 inventory 并得到 verified no-match，16-fixture replay 1/1 reproduced。
 - ADR-0010 / `.64` 在 hard process deadline 内增加 provider cooperative stop：`FetchBudget` 与最小 `FetchClient` 分离，分页 guard 以 request timeout + publication reserve 决定是否允许下一请求；PageCache/Snapshot 显式透传 capability，未知/nonfinite timeout fail closed。被 guard 拒绝的 request 不发网络，但按 ADR-0006 保存脱敏 request identity 和 `FETCH_BUDGET_EXHAUSTED` terminal outcome，使离线 replay 复现同一 partial boundary。Sitecore 首个迁移；Akkodis 45 秒 focused live 保留 8 页/80 条正向 inventory 和 verified job list，bundle 1/1 reproduced。同一冻结 30-company 统一回归为 30/29/28/24，6 个 non-success 全部 reproduced、0 fixture gap、0 mismatch。

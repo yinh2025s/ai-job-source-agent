@@ -7,6 +7,9 @@ import re
 from typing import Any, Callable
 from urllib.parse import parse_qsl, quote, unquote, urlparse
 
+from .identity_continuity import HiringRelationshipEvidence
+from .result_identity import canonicalize_identity_url
+
 
 _DETECTION_METHODS = {
     "acquired_brand_handoff",
@@ -95,8 +98,11 @@ _SECRET_VALUE = re.compile(
     re.IGNORECASE,
 )
 _HTML_CONTENT = re.compile(r"<(?:!doctype|html|script|body|head)\b", re.IGNORECASE)
-_PORTFOLIO_SCHEMA_VERSION = "1.0"
+_PORTFOLIO_SCHEMA_VERSION = "2.0"
 _MAX_PORTFOLIO_BOARDS = 8
+_MAX_PORTFOLIO_ROUTES = 24
+_ROUTE_KINDS = {"external_apply", "provider_search", "website_career"}
+_SOURCE_KIND = re.compile(r"^[a-z][a-z0-9_]{0,79}$")
 
 
 @dataclass(frozen=True)
@@ -163,9 +169,69 @@ class DiscoveredJobBoard:
 
 
 @dataclass(frozen=True)
+class JobBoardRouteEvidence:
+    provider: str
+    canonical_board_url: str
+    route_kind: str
+    source_kind: str
+    hiring_relationship: HiringRelationshipEvidence | None = None
+
+    def __post_init__(self) -> None:
+        _validate_job_board_route_evidence(self)
+
+    @property
+    def authorized(self) -> bool:
+        return bool(
+            self.hiring_relationship is not None
+            and self.hiring_relationship.verified
+        )
+
+    def to_checkpoint_payload(self) -> dict[str, Any]:
+        return {
+            "provider": self.provider,
+            "canonical_board_url": self.canonical_board_url,
+            "route_kind": self.route_kind,
+            "source_kind": self.source_kind,
+            "hiring_relationship": (
+                self.hiring_relationship.to_checkpoint_payload()
+                if self.hiring_relationship is not None
+                else None
+            ),
+        }
+
+    @classmethod
+    def from_checkpoint_payload(cls, payload: Any) -> JobBoardRouteEvidence:
+        expected = {
+            "provider",
+            "canonical_board_url",
+            "route_kind",
+            "source_kind",
+            "hiring_relationship",
+        }
+        if not isinstance(payload, dict) or set(payload) != expected:
+            raise ValueError("Job-board route evidence payload has unsupported fields")
+        relationship_payload = payload.get("hiring_relationship")
+        relationship = (
+            None
+            if relationship_payload is None
+            else HiringRelationshipEvidence.from_checkpoint_payload(
+                relationship_payload
+            )
+        )
+        return cls(
+            provider=payload.get("provider"),
+            canonical_board_url=payload.get("canonical_board_url"),
+            route_kind=payload.get("route_kind"),
+            source_kind=payload.get("source_kind"),
+            hiring_relationship=relationship,
+        )
+
+
+@dataclass(frozen=True)
 class JobBoardPortfolio:
     boards: tuple[DiscoveredJobBoard, ...]
     eligible_set_complete: bool
+    route_evidence: tuple[JobBoardRouteEvidence, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_job_board_portfolio(self)
@@ -174,24 +240,39 @@ class JobBoardPortfolio:
     def primary(self) -> DiscoveredJobBoard:
         return self.boards[0]
 
+    def routes_for(
+        self,
+        discovered: DiscoveredJobBoard,
+    ) -> tuple[JobBoardRouteEvidence, ...]:
+        return tuple(
+            route
+            for route in self.route_evidence
+            if route.provider == discovered.board.provider
+            and _same_identity_url(
+                route.canonical_board_url,
+                discovered.board.url,
+            )
+        )
+
     def to_checkpoint_payload(self) -> dict[str, Any] | None:
-        board_payloads = []
+        board_payloads: list[dict[str, Any]] = []
         for discovered in self.boards:
             if not discovered.board.replay_safe:
-                break
+                return None
             payload = discovered.to_checkpoint_payload()
             if payload is None:
-                break
+                return None
             board_payloads.append(payload)
-        if not board_payloads:
+        if len(board_payloads) != len(self.boards):
             return None
         return {
             "schema_version": _PORTFOLIO_SCHEMA_VERSION,
             "boards": board_payloads,
-            "eligible_set_complete": (
-                self.eligible_set_complete
-                and len(board_payloads) == len(self.boards)
-            ),
+            "eligible_set_complete": self.eligible_set_complete,
+            "route_evidence": [
+                route.to_checkpoint_payload()
+                for route in self.route_evidence
+            ],
         }
 
     @classmethod
@@ -200,6 +281,7 @@ class JobBoardPortfolio:
             "schema_version",
             "boards",
             "eligible_set_complete",
+            "route_evidence",
         }:
             raise ValueError("Job-board portfolio payload has unsupported fields")
         if payload.get("schema_version") != _PORTFOLIO_SCHEMA_VERSION:
@@ -209,12 +291,19 @@ class JobBoardPortfolio:
             raise ValueError("Job-board portfolio boards must be a list")
         if not isinstance(payload.get("eligible_set_complete"), bool):
             raise ValueError("Job-board portfolio completeness must be boolean")
+        raw_routes = payload.get("route_evidence")
+        if not isinstance(raw_routes, list):
+            raise ValueError("Job-board portfolio route evidence must be a list")
         return cls(
             boards=tuple(
                 DiscoveredJobBoard.from_checkpoint_payload(item)
                 for item in raw_boards
             ),
             eligible_set_complete=payload["eligible_set_complete"],
+            route_evidence=tuple(
+                JobBoardRouteEvidence.from_checkpoint_payload(item)
+                for item in raw_routes
+            ),
         )
 
 
@@ -255,6 +344,26 @@ def is_replay_safe_job_board(board: JobBoard) -> bool:
     return bool(board.replay_safe and policy is not None and policy(board))
 
 
+def _validate_job_board_route_evidence(route: JobBoardRouteEvidence) -> None:
+    if not isinstance(route.provider, str) or not _PROVIDER_NAME.fullmatch(
+        route.provider
+    ):
+        raise ValueError("Job-board route provider is invalid")
+    if not isinstance(route.canonical_board_url, str) or not _is_public_https_url(
+        route.canonical_board_url
+    ):
+        raise ValueError("Job-board route URL must be public HTTPS")
+    if route.route_kind not in _ROUTE_KINDS:
+        raise ValueError("Job-board route kind is invalid")
+    if not isinstance(route.source_kind, str) or not _SOURCE_KIND.fullmatch(
+        route.source_kind
+    ):
+        raise ValueError("Job-board route source kind is invalid")
+    relationship = route.hiring_relationship
+    if relationship is not None and relationship.provider != route.provider:
+        raise ValueError("Job-board route relationship provider does not match")
+
+
 def _validate_job_board_portfolio(portfolio: JobBoardPortfolio) -> None:
     if not isinstance(portfolio.boards, tuple) or not (
         1 <= len(portfolio.boards) <= _MAX_PORTFOLIO_BOARDS
@@ -262,6 +371,10 @@ def _validate_job_board_portfolio(portfolio: JobBoardPortfolio) -> None:
         raise ValueError("Job-board portfolio must contain between one and eight boards")
     if not isinstance(portfolio.eligible_set_complete, bool):
         raise ValueError("Job-board portfolio completeness must be boolean")
+    if not isinstance(portfolio.route_evidence, tuple) or len(
+        portfolio.route_evidence
+    ) > _MAX_PORTFOLIO_ROUTES:
+        raise ValueError("Job-board portfolio route evidence is invalid")
     identities: set[tuple[str, str]] = set()
     for discovered in portfolio.boards:
         if not isinstance(discovered, DiscoveredJobBoard):
@@ -280,6 +393,53 @@ def _validate_job_board_portfolio(portfolio: JobBoardPortfolio) -> None:
         if identity in identities:
             raise ValueError("Job-board portfolio contains duplicate public board identity")
         identities.add(identity)
+    route_identities: set[tuple[str, str, str, str, str]] = set()
+    for route in portfolio.route_evidence:
+        if not isinstance(route, JobBoardRouteEvidence):
+            raise TypeError("Job-board portfolio routes must use route evidence")
+        _validate_job_board_route_evidence(route)
+        bound_board = next(
+            (
+                discovered.board
+                for discovered in portfolio.boards
+                if discovered.board.provider == route.provider
+                and _same_identity_url(
+                    discovered.board.url,
+                    route.canonical_board_url,
+                )
+            ),
+            None,
+        )
+        if bound_board is None:
+            raise ValueError("Job-board route evidence is not bound to a portfolio board")
+        relationship = route.hiring_relationship
+        if (
+            relationship is not None
+            and bound_board.identifier
+            and relationship.tenant != bound_board.identifier
+        ):
+            raise ValueError("Job-board route relationship tenant does not match")
+        route_identity = (
+            route.provider,
+            canonicalize_identity_url(route.canonical_board_url),
+            route.route_kind,
+            route.source_kind,
+            (
+                relationship.evidence_url
+                if relationship is not None
+                else ""
+            ),
+        )
+        if route_identity in route_identities:
+            raise ValueError("Job-board portfolio contains duplicate route evidence")
+        route_identities.add(route_identity)
+
+
+def _same_identity_url(left: str, right: str) -> bool:
+    try:
+        return canonicalize_identity_url(left) == canonicalize_identity_url(right)
+    except (TypeError, ValueError):
+        return False
 
 
 def _is_public_https_url(value: str) -> bool:
