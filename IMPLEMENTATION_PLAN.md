@@ -83,11 +83,17 @@ advisory failure，模型总延迟 P50/P95 为 8.20/10.84 秒。详细报告见
 通过同名政府官网，冻结 Wichita HTML 的定点验证则从错误官网变为 unresolved。
 
 这些修复不改写 `run-006` 的历史 A/B 成绩，也不构成新的 LLM uplift。`.200` 局部 gate 已通过 226 tests、
-6/6 resolver benchmark 和 46 native adapters / 0 architecture issues。只读失败分析进一步确认 11 个 ranker
-timeout 集中在 4.28-5.30 秒，而 runner 的 provider socket timeout 被硬编码为 3 秒。下一次 development rerun
-只把该 transport timeout 提高并冻结为 7 秒；共享 15 秒模型预算、prompt、schema、调用和费用上限不变。
-该变化必须进入 execution identity 与 manifest，仍不运行 Fresh100 或 blind v2/v3，也不因两个窄修复重复
-运行整套单测。
+6/6 resolver benchmark 和 46 native adapters / 0 architecture issues。只读失败分析确认 11 个 ranker timeout
+集中在 4.28-5.30 秒，而 runner 的 provider socket timeout 被硬编码为 3 秒；因此同一 development cohort 的
+`run-007` 只将该值提高并冻结为 7 秒，共享 15 秒模型预算、prompt、schema、调用和费用上限保持不变。
+
+`run-007` 已封存并完成 18/18 fixture replay，0 mismatch、0 fixture gap。transport 修复把 advisory failure
+从 14/18 降到 0/18；candidate recall@3 从 0/18 到 4/18，提升 22.22 个百分点，仍低于 25pp gate；eligible-G
+recovery 为 4/18，仍低于 40%。verified website 为 baseline 2/18、treatment 3/18；wrong URL、跨公司、跨
+tenant、invented URL 均为 0。28 次调用使用 29,921 prompt + 12,254 completion tokens，费用 USD 0.00762006，
+P50/P95 为 11.30/14.93 秒。唯一 Exact 是 Hays + Sons，人工 identity audit 通过，但该记录 LLM calls=0，
+不能算作模型 uplift。promotion 继续失败，feature 保持关闭，不运行 Fresh100 或 blind v2/v3，也不再针对
+development cohort 调 prompt。
 
 ## 当前执行轮次（2026-07-20，`.199`）
 

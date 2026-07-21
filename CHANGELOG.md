@@ -10,6 +10,17 @@
 
 ### Changed
 
+- Sealed post-stabilization `run-deepseek-v4-flash-007` proves the transport
+  diagnosis but still rejects promotion. With the provider timeout frozen at 7
+  seconds, advisory failures fell from 14/18 to 0/18 and candidate recall@3
+  improved from 0/18 to 4/18 (+22.22 percentage points). Eligible-G recovery
+  was 4/18, below the 40% gate. Wrong verified URL, cross-company,
+  cross-tenant, invented URL, replay mismatch and fixture gap counts were all
+  zero. The run made 28 calls, used 29,921 prompt and 12,254 completion tokens,
+  and cost USD 0.00762006. Its one Exact, Hays + Sons, passed manual identity
+  review but made zero LLM calls and is not attributed to the model. The
+  feature remains off; no prompt tuning, Fresh100 or blind cohort follows.
+
 - The fixed DeepSeek development runner now freezes a 7-second provider HTTP
   timeout in its execution identity and both capture manifests. Run 006 showed
   eleven ranker transport timeouts clustered at 4.28-5.30 seconds while the

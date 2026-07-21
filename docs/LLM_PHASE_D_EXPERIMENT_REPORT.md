@@ -82,6 +82,38 @@ without changing this sealed result:
 2. every planner/ranker invocation resets usage before calling the provider, so
    timeout audit records cannot inherit prior-call tokens.
 
-The remaining question is the high planner/ranker advisory timeout rate. It
-must be addressed without weakening fail-closed fallback or URL verification,
-and requires a separately approved experiment rather than rewriting run-006.
+## Post-Stabilization Run 007
+
+Run 007 used commit `0233fbe`, the same 18-record development cohort, unchanged
+prompt/model/schema and a newly explicit 7-second provider transport timeout.
+It did not rewrite or reuse run-006 artifacts.
+
+| Metric | Baseline | Treatment | Required |
+| --- | ---: | ---: | ---: |
+| Candidate recall@3 | 0/18 | 4/18 | +25 percentage points |
+| Verified website recall | 2/18 | 3/18 | diagnostic |
+| Eligible-G recovery | - | 4/18 (22.22%) | at least 40% |
+| Exact opening | 0 | 1 | diagnostic |
+| Wrong verified URL | 0 | 0 | 0 |
+| Cross-company / cross-tenant | 0 / 0 | 0 / 0 | 0 / 0 |
+| Invented/modified treatment URL | - | 0 | 0 |
+| Advisory failures | - | 0/18 | diagnostic |
+
+- Replay: 18/18 reproduced, 0 mismatch, 0 fixture gap
+- Calls: 28; mean 1.56/company; maximum 2/company
+- Tokens: 29,921 prompt; 12,254 completion; 42,175 total
+- Provider-accounted cost: USD 0.00762006
+- Model latency P50/P95: 11.30/14.93 seconds per company
+
+The transport hypothesis was correct: all 14 planner/ranker decisions completed
+successfully and the old advisory timeout cluster disappeared. Safety also
+recovered to zero errors after the `.200` identity fix. Recall nevertheless
+missed both uplift gates, so the feature remains off.
+
+The only Exact was Hays + Sons, `Project Manager - Bloomington`, on the
+first-party `haysandsonscareers.com` tenant. Frozen-page review confirmed the
+company, title, Bloomington location, tenant and opening URL. The record made
+zero LLM calls and is therefore not evidence of model uplift.
+
+No further prompt tuning is justified on this development cohort. Fresh100 and
+blind v2/v3 remain unopened.
