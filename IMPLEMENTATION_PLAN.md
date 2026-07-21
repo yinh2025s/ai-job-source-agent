@@ -77,11 +77,15 @@ advisory failure，模型总延迟 P50/P95 为 8.20/10.84 秒。详细报告见
 `docs/LLM_PHASE_D_EXPERIMENT_REPORT.md`。
 
 因此 feature flag 保持默认关闭，不进行 prompt 定向调参，不打开 blind v2/v3，也不把单个 Exact 宣称为
-泛化提升。下一阶段须先单独处理两项非 prompt 工作：修正 Wichita 地域/实体碰撞的 deterministic identity
-contract，以及重置每次 provider 调用的 usage provenance，消除 timeout audit record 的 stale token 统计。
-这些工作需另行版本化和局部回归；是否启动新的 LLM 实验由本次失败分析后的新决策决定。失败 ranker linkage
-修复后的离线门禁为 2656 tests（4 skipped）、25/25 provider、6/6 resolver、46 native adapters / 0
-architecture issues；本次文档收尾不重复运行全量门禁。
+泛化提升。第一轮 post-experiment 稳定化已在 `.200` 完成两项非 prompt 修复：private legal entity 的单品牌词
+若撞到明确自称同名 municipality 的政府域，resolver 在产生 first-party/tenant 信任前 fail closed；planner/ranker
+每次 provider invocation 前清零 usage，失败 audit 不再继承上一次成功调用的 token。真正 `City of X` 输入仍可
+通过同名政府官网，冻结 Wichita HTML 的定点验证则从错误官网变为 unresolved。
+
+这些修复不改写 `run-006` 的历史 A/B 成绩，也不构成新的 LLM uplift。下一步先完成 `.200` 局部 resolver、
+identity、checkpoint、LLM accounting 与 architecture gate；是否启动新的 LLM 实验由本次失败分析后的新决策
+决定。失败 ranker linkage 修复前的冻结门禁为 2656 tests（4 skipped）、25/25 provider、6/6 resolver、
+46 native adapters / 0 architecture issues；`.200` 不因这两个窄修复重复运行整套单测。
 
 ## 当前执行轮次（2026-07-20，`.199`）
 

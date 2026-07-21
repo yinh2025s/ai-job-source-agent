@@ -10,6 +10,21 @@
 
 ### Changed
 
+- `.200` adds a fail-closed website entity-kind check for the general collision
+  where a private legal entity reduces to one brand token and a same-name
+  government domain identifies itself as `City/Town/County/State of <brand>`.
+  Such a candidate is rejected before its career links or same-name ATS tenant
+  can inherit first-party trust. Real public-sector inputs such as `City of
+  Acme` remain eligible. The frozen Wichita homepage from Phase D now resolves
+  to no website instead of binding `WICHITA COMPANY LIMITED` to Wichita city
+  government. The product adapter version advances to `2026-07-21.200`.
+
+- Structured planner and ranker adapters now clear their per-call token usage
+  before invoking the provider. A timeout or malformed response can therefore
+  no longer inherit the preceding successful call's usage in an advisory audit
+  record. Sequential success-then-timeout tests cover both decision kinds; the
+  capture-time budget ledger behavior is unchanged.
+
 - The sealed DeepSeek Phase D `run-deepseek-v4-flash-006` completed the fixed
   18-record A/B and reproduced 18/18 records in fixture-only same-version replay
   with zero mismatch or fixture gap. It made 25 provider calls and the

@@ -41,6 +41,7 @@ class StructuredCompanyQueryPlanner(CompanyQueryPlanner):
     def plan(self, request: QueryPlannerRequest) -> QueryPlannerDecision:
         if not isinstance(request, QueryPlannerRequest):
             raise TypeError("request must use QueryPlannerRequest")
+        self._last_token_usage = TokenUsage(0, 0, 0)
         response = self._client.complete(
             StructuredLLMRequest(
                 decision_kind="query_plan",
@@ -68,6 +69,7 @@ class StructuredCompanyCandidateRanker(CompanyCandidateRanker):
     def rank(self, request: CandidateRankerRequest) -> CandidateRankerDecision:
         if not isinstance(request, CandidateRankerRequest):
             raise TypeError("request must use CandidateRankerRequest")
+        self._last_token_usage = TokenUsage(0, 0, 0)
         response = self._client.complete(
             StructuredLLMRequest(
                 decision_kind="candidate_rank",

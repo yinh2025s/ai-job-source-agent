@@ -85,6 +85,58 @@ class CandidateReasoningResolverAdapterTests(unittest.TestCase):
             for reason in trace["candidates"][0]["reasons"]
         ))
 
+    def test_private_legal_entity_is_not_confused_with_same_name_city(self):
+        class MunicipalFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://acme.gov/",
+                    html=(
+                        "<html><head><title>Acme, KS | Official Website</title></head>"
+                        "<body><h1>City of Acme</h1><p>Acme City Council</p></body></html>"
+                    ),
+                )
+
+        website, trace = CompanyWebsiteResolver(
+            MunicipalFetcher(offline=True)
+        ).resolve_ranked_existing_candidates(
+            ("https://acme.gov",),
+            "Acme Company Limited",
+            job_location="Acme, KS",
+        )
+
+        self.assertIsNone(website)
+        self.assertIn(
+            "private company conflicts with public-sector website identity",
+            trace["candidates"][0]["reasons"],
+        )
+
+    def test_city_input_still_accepts_matching_official_city_website(self):
+        class MunicipalFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://acme.gov/",
+                    html=(
+                        "<html><head><title>City of Acme | Official Website</title></head>"
+                        "<body><h1>City of Acme</h1><p>Official municipal services.</p></body></html>"
+                    ),
+                )
+
+        website, trace = CompanyWebsiteResolver(
+            MunicipalFetcher(offline=True)
+        ).resolve_ranked_existing_candidates(
+            ("https://acme.gov",),
+            "City of Acme",
+            job_location="Acme, KS",
+        )
+
+        self.assertEqual(website, "https://acme.gov/")
+        self.assertNotIn(
+            "private company conflicts with public-sector website identity",
+            trace["selected"]["reasons"],
+        )
+
     def test_wrong_parent_identity_is_rejected(self):
         class ParentFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):

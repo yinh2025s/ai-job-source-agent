@@ -74,9 +74,14 @@ recovery, zero wrong URLs and zero cross-company output. The feature stays off.
 No blind v2/v3 or Fresh100 cohort was opened, and no prompt-specific fix should
 be derived from this development cohort.
 
-Before another LLM experiment, independently fix and test:
+Post-experiment stabilization `.200` completed the first two independent fixes
+without changing this sealed result:
 
-1. deterministic company/geography identity collisions such as Wichita;
-2. timeout usage provenance in provider audit records;
-3. the high planner/ranker advisory timeout rate without weakening fail-closed
-   fallback or URL verification.
+1. deterministic private-company/municipality identity collisions now fail
+   closed before first-party ATS trust can propagate;
+2. every planner/ranker invocation resets usage before calling the provider, so
+   timeout audit records cannot inherit prior-call tokens.
+
+The remaining question is the high planner/ranker advisory timeout rate. It
+must be addressed without weakening fail-closed fallback or URL verification,
+and requires a separately approved experiment rather than rewriting run-006.

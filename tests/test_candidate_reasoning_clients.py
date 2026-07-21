@@ -116,6 +116,38 @@ class CandidateReasoningClientsTest(unittest.TestCase):
             },
         )
 
+    def test_planner_failed_call_does_not_reuse_previous_token_usage(self):
+        client = ScriptedLLMClient(
+            StructuredLLMResponse(
+                self._planner_payload(),
+                token_usage=TokenUsage(12, 4, 16),
+            ),
+            TimeoutError("provider timeout"),
+        )
+        planner = StructuredCompanyQueryPlanner(client)
+
+        planner.plan(self._planner_request())
+        self.assertEqual(planner.last_token_usage, TokenUsage(12, 4, 16))
+        with self.assertRaises(TimeoutError):
+            planner.plan(self._planner_request())
+        self.assertEqual(planner.last_token_usage, TokenUsage(0, 0, 0))
+
+    def test_ranker_failed_call_does_not_reuse_previous_token_usage(self):
+        client = ScriptedLLMClient(
+            StructuredLLMResponse(
+                self._ranker_payload(),
+                token_usage=TokenUsage(20, 3, 23),
+            ),
+            TimeoutError("provider timeout"),
+        )
+        ranker = StructuredCompanyCandidateRanker(client)
+
+        ranker.rank(self._ranker_request())
+        self.assertEqual(ranker.last_token_usage, TokenUsage(20, 3, 23))
+        with self.assertRaises(TimeoutError):
+            ranker.rank(self._ranker_request())
+        self.assertEqual(ranker.last_token_usage, TokenUsage(0, 0, 0))
+
     def test_planner_rejects_url_emitting_and_unknown_fields(self):
         url_payload = self._planner_payload()
         url_payload["queries"][0]["query"] = "https://example.invalid/careers"

@@ -1533,6 +1533,7 @@ class CompanyWebsiteResolver:
                 for reason in (
                     "hosted non-company destination rejected",
                     "parked domain rejected",
+                    "private company conflicts with public-sector website identity",
                     "parent/group website requires downstream hiring relationship evidence",
                     "regional locale identity continuity rejected",
                     "deployment hostname",
@@ -1854,6 +1855,17 @@ class CompanyWebsiteResolver:
 
         html_prefix = page.html[:5000]
         homepage_title = _html_title(_bounded_html_head(page.html))
+        if _private_company_public_sector_identity_conflict(
+            company_name,
+            resolved_url,
+            homepage_title,
+            page.html,
+        ):
+            score -= 200
+            reasons.append(
+                "private company conflicts with public-sector website identity"
+            )
+            return WebsiteCandidate(resolved_url, score, reasons, page)
         structured_identity = _structured_organization_confirms_identity(
             page.html, company_tokens
         )
@@ -2118,6 +2130,39 @@ class _CanonicalLinkParser(HTMLParser):
 
 def _is_ambiguous_company_name(company_tokens: list[str]) -> bool:
     return len(company_tokens) == 1 and len(company_tokens[0]) <= 5
+
+
+def _private_company_public_sector_identity_conflict(
+    company_name: str,
+    resolved_url: str,
+    homepage_title: str,
+    html: str,
+) -> bool:
+    company_tokens = _exact_identity_tokens(company_name)
+    if len(company_tokens) != 1:
+        return False
+    if re.search(
+        r"\b(?:co|company|corp|corporation|inc|incorporated|limited|llc|llp|ltd|plc)\b",
+        company_name,
+        flags=re.I,
+    ) is None:
+        return False
+    host = domain_of(resolved_url).casefold()
+    if not (host.endswith(".gov") or ".gov." in host):
+        return False
+    identity_text = " ".join(
+        (
+            homepage_title,
+            *_structured_organization_identities(html),
+            _visible_body_text(html[:100000]),
+        )
+    )
+    brand = re.escape(company_tokens[0])
+    return re.search(
+        rf"\b(?:borough|city|county|municipality|state|town|village)\s+of\s+{brand}\b",
+        identity_text,
+        flags=re.I,
+    ) is not None
 
 
 def _company_name_loses_identity_separator(company_name: str) -> bool:
