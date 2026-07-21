@@ -292,6 +292,13 @@ class CandidateReasoningCoordinator:
             if planner_request.linkedin_company_slug
             else (),
         )
+        ranker_request_payload = _ranker_request_payload(
+            ranker_request,
+            invocation_input_evidence_digest=metadata.input_evidence_digest,
+        )
+        ranker_query_ids = tuple(
+            dict.fromkeys(item.query_id for item in baseline_order)
+        )[:MAX_PLANNER_QUERIES]
         rank_input_digest = _rank_input_digest(metadata.input_evidence_digest, baseline_order)
         ranker_key = _decision_key("candidate_rank", metadata, rank_input_digest)
         ranker_record = self._load_record(
@@ -328,43 +335,37 @@ class CandidateReasoningCoordinator:
             except TimeoutError:
                 return self._audited_fallback(
                     eligibility, baseline_order, "TIMEOUT", "candidate_rank", metadata,
-                    _ranker_request_payload(ranker_request), baseline_order,
-                    tuple(dict.fromkeys(item.query_id for item in baseline_order))[:MAX_PLANNER_QUERIES],
+                    ranker_request_payload, baseline_order, ranker_query_ids,
                     (self._clock() - started) * 1_000,
                 )
             except JSONDecodeError:
                 return self._audited_fallback(
                     eligibility, baseline_order, "MALFORMED_JSON", "candidate_rank", metadata,
-                    _ranker_request_payload(ranker_request), baseline_order,
-                    tuple(dict.fromkeys(item.query_id for item in baseline_order))[:MAX_PLANNER_QUERIES],
+                    ranker_request_payload, baseline_order, ranker_query_ids,
                     (self._clock() - started) * 1_000,
                 )
             except (TypeError, ValueError):
                 return self._audited_fallback(
                     eligibility, baseline_order, "SCHEMA_INVALID", "candidate_rank", metadata,
-                    _ranker_request_payload(ranker_request), baseline_order,
-                    tuple(dict.fromkeys(item.query_id for item in baseline_order))[:MAX_PLANNER_QUERIES],
+                    ranker_request_payload, baseline_order, ranker_query_ids,
                     (self._clock() - started) * 1_000,
                 )
             except Exception:
                 return self._audited_fallback(
                     eligibility, baseline_order, "PROVIDER_ERROR", "candidate_rank", metadata,
-                    _ranker_request_payload(ranker_request), baseline_order,
-                    tuple(dict.fromkeys(item.query_id for item in baseline_order))[:MAX_PLANNER_QUERIES],
+                    ranker_request_payload, baseline_order, ranker_query_ids,
                     (self._clock() - started) * 1_000,
                 )
             if self._expired(ranker_deadline):
                 return self._audited_fallback(
                     eligibility, baseline_order, "TIMEOUT", "candidate_rank", metadata,
-                    _ranker_request_payload(ranker_request), baseline_order,
-                    tuple(dict.fromkeys(item.query_id for item in baseline_order))[:MAX_PLANNER_QUERIES],
+                    ranker_request_payload, baseline_order, ranker_query_ids,
                     (self._clock() - started) * 1_000,
                 )
             if not isinstance(ranker_decision, CandidateRankerDecision):
                 return self._audited_fallback(
                     eligibility, baseline_order, "SCHEMA_INVALID", "candidate_rank", metadata,
-                    _ranker_request_payload(ranker_request), baseline_order,
-                    tuple(dict.fromkeys(item.query_id for item in baseline_order))[:MAX_PLANNER_QUERIES],
+                    ranker_request_payload, baseline_order, ranker_query_ids,
                     (self._clock() - started) * 1_000,
                 )
 
@@ -386,7 +387,7 @@ class CandidateReasoningCoordinator:
                 decision=ranker_decision,
                 metadata=metadata,
                 duration_ms=(self._clock() - started) * 1_000,
-                query_ids=tuple(dict.fromkeys(candidate.query_id for candidate in baseline_order))[:MAX_PLANNER_QUERIES],
+                query_ids=ranker_query_ids,
                 token_usage=_reported_token_usage(self._ranker),
             )
             try:

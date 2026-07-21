@@ -10,6 +10,17 @@
 
 ### Changed
 
+- DeepSeek Phase D product replay now binds failed candidate-rank decisions to
+  their originating invocation digest, matching the linkage already present on
+  successful rank decisions. The unsealed `run-deepseek-v4-flash-005` exposed
+  the gap: live correctly captured ten ranker `TIMEOUT` records, but bundle
+  selection omitted them and strict replay rejected the first unexpected rank
+  request. A product-level regression test now proves a timed-out ranker is
+  included in the selected bundle and replayed with zero additional model
+  calls. Run 005 remains preserved and is not used for promotion metrics.
+  Full offline gates pass 2656 tests (4 skipped), 25/25 provider cases, 6/6
+  resolver cases, and 46 native adapters with zero architecture issues.
+
 - `.199` blind selection is now sealed without changing S2-S7 behavior. An
   S1-only pool of 239 unique identities produced two schema-1.1 cohorts of 40
   records each. Both have zero historical/post-selection overlap, zero website

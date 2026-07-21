@@ -74,6 +74,15 @@ class _Ranker:
         )
 
 
+class _TimeoutRanker:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def rank(self, request):
+        self.calls += 1
+        raise TimeoutError("ranker timed out")
+
+
 class _DeterministicProductFetcher(Fetcher):
     def __init__(self) -> None:
         super().__init__(offline=True)
@@ -201,6 +210,70 @@ class LLMProductReplayTest(unittest.TestCase):
                     [company],
                     incompatible,
                 )
+
+    def test_failed_ranker_is_linked_into_bundle_and_replayed_without_model(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            run_configuration = self._run_configuration()
+            planner = _Planner()
+            ranker = _TimeoutRanker()
+            fetcher = _DeterministicProductFetcher()
+            company = CompanyInput(
+                company_name="Example Labs",
+                linkedin_company_url="https://www.linkedin.com/company/example-labs",
+                job_title="AI Engineer",
+                job_location="Seattle, WA",
+            )
+            audited_store = AuditedLLMDecisionStore(
+                root / "live-decisions",
+                execution_identity=EXECUTION,
+                run_configuration_digest=run_configuration.digest,
+                llm_provider=run_configuration.llm_provider,
+                model_id=run_configuration.llm_model,
+                prompt_version=run_configuration.llm_prompt_version,
+                adapter_version=ADAPTER,
+            )
+            live_service = self._live_service(
+                planner,
+                ranker,
+                CompanyWebsiteResolver(fetcher),
+                audited_store,
+                run_configuration,
+            )
+            live_application = build_application_from_fetcher(
+                fetcher,
+                run_configuration=run_configuration,
+                candidate_reasoning_service=live_service,
+            )
+
+            live = live_application.pipeline.discover(
+                company,
+                stop_after=STAGE_WEBSITE_RESOLUTION,
+                execution_fingerprint_override=EXECUTION,
+            )
+            replay_store, service_factory, provenance = _prepare_llm_decision_replay(
+                SimpleNamespace(llm_decision_dir=str(root / "live-decisions")),
+                root / "bundle",
+                [company],
+                run_configuration,
+            )
+
+            self.assertEqual(provenance["record_count"], 2)
+            replay_application = build_application_from_fetcher(
+                _DeterministicProductFetcher(),
+                run_configuration=run_configuration,
+                candidate_reasoning_service_factory=service_factory,
+            )
+            replay = replay_application.pipeline.discover(
+                company,
+                stop_after=STAGE_WEBSITE_RESOLUTION,
+                execution_fingerprint_override=EXECUTION,
+            )
+
+            self.assertEqual(replay.company_website_url, live.company_website_url)
+            replay_store.assert_consumed()
+            self.assertEqual(planner.calls, 1)
+            self.assertEqual(ranker.calls, 1)
 
     def test_flag_off_needs_no_decision_artifact_and_changes_nothing(self):
         run_configuration = DeterministicRunConfig.from_agent_config(AgentConfig())

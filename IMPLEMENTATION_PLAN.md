@@ -23,7 +23,7 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构轨道（2026-07-21，LLM Candidate Reasoning Phase B complete）
+## 当前架构轨道（2026-07-21，LLM Candidate Reasoning Phase D active）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
 DNS/TLS/timeout/403、provider inventory、S6 title/location、S7、岗位关闭、已验证 no-match 或未披露
@@ -55,7 +55,10 @@ cohort 冻结与产品级 fixture replay 正确，不能宣称模型带来 recal
 `docs/LLM_PHASE_D_EXPERIMENT_PROPOSAL.md`。用户已于 2026-07-21 指定并批准 DeepSeek API；实验固定
 `deepseek-v4-flash` 非思考 JSON 模式、最多 36 次调用和 USD 0.50 硬上限。DeepSeek adapter、串行费用
 ledger、answer-free capture/evaluator 分离、fresh artifact root 和 same-version replay runner 正在本独立分支
-完成离线门禁；代码提交冻结前不得调用。完整 fresh100 与 blind v2/v3 仍禁止运行。
+执行。前五次诊断运行均保留且不计 promotion：其中 `run-005` 完成两个 live arm，但暴露出失败 ranker
+decision 缺失 invocation linkage、因而在 bundle selection 中被遗漏的产品级 replay 缺口。通用修复为成功和
+失败 ranker 统一写入同一个 input digest，并以 timeout product replay 测试封住；修复提交和完整离线门禁
+冻结后，使用全新 `run-006` 目录重跑同一 18 条。完整 fresh100 与 blind v2/v3 仍禁止运行。
 
 第一阶段批量 gate 不接受单例修复：candidate recall@3 至少提升 25 个百分点，eligible G-development 至少
 40% 恢复正确官网候选，verified website 错误、模型新造 URL、跨公司和跨 tenant 均为 0，replay 100%，
@@ -63,8 +66,10 @@ flag-off 无回归，平均不超过两次调用/公司，并报告成本、失�
 公司示例、人工正确 URL 或 closure matrix 调 prompt。完整 contract 见
 `docs/adr/0029-bound-llm-candidate-reasoning.md`。
 
-当前离线门禁：2611 tests（4 skipped）、25/25 provider、6/6 resolver、46 native adapters / 0 architecture
-issues。真实模型调用为 0，live benchmark 调用为 0。
+当前发布判断仍为 feature flag 默认关闭；任何未封存运行、replay divergence 或未完成的人工 identity audit
+都不能形成 uplift 声明。失败 ranker linkage 修复后的离线门禁为 2656 tests（4 skipped）、25/25 provider、
+6/6 resolver、46 native adapters / 0 architecture issues。最终 Phase D 数字只从首个完成 18/18 fixture
+replay 的封存目录读取。
 
 ## 当前执行轮次（2026-07-20，`.199`）
 
