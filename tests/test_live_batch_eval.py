@@ -37,7 +37,6 @@ from job_source_agent.company_discovery_evidence_store import (
     FilesystemCompanyDiscoveryEvidenceStore,
 )
 from job_source_agent.evidence_scope import (
-    EMPTY_RECORDS_SHA256,
     EvidenceScopeRef,
     StageEvidenceLineage,
 )
@@ -1519,8 +1518,10 @@ class LiveBatchEvalTests(unittest.TestCase):
                 capture_attempt_id="capture-attempt-test",
                 execution_fingerprint=fingerprint,
                 stage="career_discovery",
-                request_count=0,
-                records_sha256=EMPTY_RECORDS_SHA256,
+                request_count=1,
+                records_sha256="b" * 64,
+                first_sequence=1,
+                last_sequence=1,
             )
             recaptured = DiscoveryResult(
                 company_name=company.company_name,
@@ -1559,6 +1560,163 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual(stats["attempted"], 1)
         self.assertEqual(stats["replaced"], 1)
         self.assertEqual(completed[1][0]["pipeline_status"], "success")
+
+    def test_outer_timeout_recapture_uses_fresh_bounded_budget_and_provenance(self):
+        company = CompanyInput(
+            company_name="Timeout Boundary",
+            company_website_url="https://timeout.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.failure_bundle_dir = str(Path(directory) / "bundle")
+            args.replay_bundle_dir = None
+            args.company_time_budget = 120
+            args.website_time_budget = 25
+            stages = [
+                {
+                    "stage": stage,
+                    "status": "failed" if stage == "website_resolution" else (
+                        "not_run" if PIPELINE_STAGES.index(stage) > 1 else "success"
+                    ),
+                    "retryable": stage == "website_resolution",
+                    "reason_code": (
+                        "COMPANY_TIME_BUDGET_EXHAUSTED"
+                        if stage == "website_resolution"
+                        else None
+                    ),
+                }
+                for stage in PIPELINE_STAGES
+            ]
+            original = (
+                {
+                    "error": "company_time_budget_exhausted",
+                    "pipeline_status": "failed",
+                    "stages": stages,
+                },
+                {"stages": stages},
+                25.0,
+            )
+            completed = {1: original}
+            fingerprint = execution_fingerprint(
+                dataclass_to_dict(company),
+                _run_configuration(args).digest,
+            )
+            scope = EvidenceScopeRef(
+                snapshot_store_id="snapshot-store-test",
+                scope_id="c" * 64,
+                capture_attempt_id="fresh-timeout-recapture",
+                execution_fingerprint=fingerprint,
+                stage="website_resolution",
+                request_count=1,
+                records_sha256="d" * 64,
+                first_sequence=1,
+                last_sequence=1,
+            )
+            recaptured = DiscoveryResult(
+                company_name=company.company_name,
+                company_website_url=company.company_website_url,
+                pipeline_status="failed",
+                stage_results=[StageResult(**stage) for stage in stages],
+                trace={
+                    "stage_evidence_lineage": [
+                        dataclass_to_dict(
+                            StageEvidenceLineage(
+                                stage="website_resolution",
+                                execution_fingerprint=fingerprint,
+                                producer_attempt_id="fresh-timeout-recapture",
+                                snapshot_scope=scope,
+                            )
+                        )
+                    ]
+                },
+            )
+            completion_store = Mock()
+
+            with patch(
+                "scripts.live_batch_eval.run_company",
+                return_value=recaptured,
+            ) as run:
+                stats = _recapture_retryable_missing_boundaries(
+                    [company], completed, completion_store, args
+                )
+
+        recovery_company, recovery_args = run.call_args.args
+        self.assertIsNot(recovery_args, args)
+        self.assertEqual(args.company_time_budget, 120)
+        self.assertEqual(args.website_time_budget, 25)
+        self.assertEqual(recovery_args.company_time_budget, 120)
+        self.assertEqual(recovery_args.website_time_budget, 50)
+        self.assertEqual(
+            recaptured.trace["outer_worker_timeout_boundary_recovery"],
+            {
+                "source": "parent_process_budget_exceeded",
+                "stage": "website_resolution",
+                "original_company_time_budget_sec": 120.0,
+                "original_website_time_budget_sec": 25.0,
+                "recovery_company_time_budget_sec": 120.0,
+                "recovery_website_time_budget_sec": 50.0,
+            },
+        )
+        self.assertEqual(recovery_company.source_trace, company.source_trace)
+        self.assertEqual(stats["outer_timeout_recovery_attempted"], 1)
+        self.assertEqual(stats["outer_timeout_recovery_replaced"], 1)
+        self.assertEqual(stats["replaced"], 1)
+
+    def test_outer_timeout_recapture_never_invents_an_empty_scope(self):
+        company = CompanyInput(
+            company_name="Timeout Boundary",
+            company_website_url="https://timeout.example",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            args.failure_bundle_dir = str(Path(directory) / "bundle")
+            args.replay_bundle_dir = None
+            stages = [
+                {
+                    "stage": stage,
+                    "status": "failed" if stage == "website_resolution" else (
+                        "not_run" if PIPELINE_STAGES.index(stage) > 1 else "success"
+                    ),
+                    "retryable": stage == "website_resolution",
+                    "reason_code": (
+                        "COMPANY_TIME_BUDGET_EXHAUSTED"
+                        if stage == "website_resolution"
+                        else None
+                    ),
+                }
+                for stage in PIPELINE_STAGES
+            ]
+            original = (
+                {
+                    "error": "company_time_budget_exhausted",
+                    "pipeline_status": "failed",
+                    "stages": stages,
+                },
+                {"stages": stages},
+                25.0,
+            )
+            completed = {1: original}
+            recaptured = DiscoveryResult(
+                company_name=company.company_name,
+                company_website_url=company.company_website_url,
+                pipeline_status="failed",
+                stage_results=[StageResult(**stage) for stage in stages],
+            )
+            completion_store = Mock()
+
+            with patch(
+                "scripts.live_batch_eval.run_company",
+                return_value=recaptured,
+            ):
+                stats = _recapture_retryable_missing_boundaries(
+                    [company], completed, completion_store, args
+                )
+
+        self.assertIs(completed[1], original)
+        completion_store.save.assert_not_called()
+        self.assertEqual(stats["outer_timeout_recovery_attempted"], 1)
+        self.assertEqual(stats["outer_timeout_recovery_replaced"], 0)
+        self.assertEqual(stats["boundary_still_missing"], 1)
 
     def test_automatic_boundary_recapture_keeps_original_when_scope_is_unfinalized(self):
         company = CompanyInput(

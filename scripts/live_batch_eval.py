@@ -847,6 +847,8 @@ def _recapture_retryable_missing_boundaries(
         "replaced": 0,
         "boundary_still_missing": 0,
         "execution_failed": 0,
+        "outer_timeout_recovery_attempted": 0,
+        "outer_timeout_recovery_replaced": 0,
     }
     if not (
         getattr(args, "failure_bundle_dir", None)
@@ -875,18 +877,46 @@ def _recapture_retryable_missing_boundaries(
             stats["eligible"] += 1
             stats["attempted"] += 1
             recapture_company = copy.deepcopy(company)
+            recapture_args = args
+            outer_timeout_provenance = None
+            if _is_outer_worker_timeout(result_record):
+                recapture_args = _outer_timeout_boundary_recovery_args(
+                    args,
+                    retry_stage,
+                )
+                outer_timeout_provenance = {
+                    "source": "parent_process_budget_exceeded",
+                    "stage": retry_stage,
+                    "original_company_time_budget_sec": float(
+                        getattr(args, "company_time_budget", 45)
+                    ),
+                    "original_website_time_budget_sec": float(
+                        getattr(args, "website_time_budget", 20)
+                    ),
+                    "recovery_company_time_budget_sec": float(
+                        recapture_args.company_time_budget
+                    ),
+                    "recovery_website_time_budget_sec": float(
+                        recapture_args.website_time_budget
+                    ),
+                }
+                stats["outer_timeout_recovery_attempted"] += 1
             fingerprint = execution_fingerprint(
                 dataclass_to_dict(recapture_company),
                 run_configuration.digest,
             )
             stage_store.invalidate_from(fingerprint, retry_stage)
-            args.batch_completion_retry_stages = {fingerprint: retry_stage}
+            recapture_args.batch_completion_retry_stages = {fingerprint: retry_stage}
             recapture_started = time.monotonic()
             try:
-                recaptured = run_company(recapture_company, args)
+                recaptured = run_company(recapture_company, recapture_args)
             except Exception:
                 stats["execution_failed"] += 1
                 continue
+            if outer_timeout_provenance is not None:
+                recaptured.trace["outer_worker_timeout_boundary_recovery"] = (
+                    outer_timeout_provenance
+                )
             recapture_elapsed = round(time.monotonic() - recapture_started, 1)
             recaptured_result = recaptured.result_record()
             recaptured_trace = dataclass_to_dict(recaptured.trace_record())
@@ -907,9 +937,55 @@ def _recapture_retryable_missing_boundaries(
                 total_elapsed,
             )
             stats["replaced"] += 1
+            if recapture_args is not args:
+                stats["outer_timeout_recovery_replaced"] += 1
     finally:
         args.batch_completion_retry_stages = original_retry_stages
     return stats
+
+
+def _is_outer_worker_timeout(result_record: dict) -> bool:
+    """Return whether this record was produced after a parent process hard timeout."""
+
+    return (
+        isinstance(result_record, dict)
+        and result_record.get("error") == "company_time_budget_exhausted"
+    )
+
+
+def _outer_timeout_boundary_recovery_args(
+    args: argparse.Namespace,
+    retry_stage: str,
+) -> argparse.Namespace:
+    """Grant one bounded, fresh attempt enough time to publish a real stage scope.
+
+    A killed worker cannot safely describe its in-flight requests from the parent.
+    The only replayable repair is a separate capture attempt that runs the same
+    stage and lets the child finalize its own evidence scope. This budget is
+    deliberately bounded and applies only to the retryable outer-timeout path.
+    """
+
+    if retry_stage not in PIPELINE_STAGES:
+        raise ValueError(f"Unknown retry stage: {retry_stage!r}")
+    recovery_args = copy.copy(args)
+    original_company_budget = max(
+        0.001,
+        float(getattr(args, "company_time_budget", 45)),
+    )
+    original_website_budget = min(
+        original_company_budget,
+        max(0.001, float(getattr(args, "website_time_budget", 20))),
+    )
+    recovery_website_budget = min(
+        original_company_budget,
+        max(original_website_budget * 2.0, original_website_budget + 15.0),
+    )
+    recovery_args.website_time_budget = recovery_website_budget
+    recovery_args.company_time_budget = max(
+        original_company_budget,
+        recovery_website_budget,
+    )
+    return recovery_args
 
 
 def _has_finalized_capture_boundary(trace_record: dict, stage: str) -> bool:
