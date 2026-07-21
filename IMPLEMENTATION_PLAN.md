@@ -49,6 +49,13 @@ mismatch、0 fixture gap。Heritage 在两次 clean live 中均因 S2 network ti
 候选簇；主线依据共同触发条件和预期批量恢复选择第二轮、也是当前治理上限内最后一轮
 通用架构修复。
 
+只读比较已否定两个大标签本身的 cluster 身份。第二轮选定更窄的 trusted generic
+opening scheduling：至少 Sentar、Crawford Thomas Recruiting、Crosby 在已有 verified
+Job List 后，unfiltered landing-page JS asset 探测先于 full-title official route，耗尽 S6
+deadline。Phase B 只调整请求顺序，保留全部 identity/location/URL gates；Phase C focused
+live 至少恢复三家才允许 closure。完整 contract 见
+`docs/FRESH_100_V210_TRUSTED_OPENING_SEARCH_SCHEDULING_PHASE_A.md`。
+
 ## 当前架构轨道（2026-07-20，LLM Candidate Reasoning Phase A）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理

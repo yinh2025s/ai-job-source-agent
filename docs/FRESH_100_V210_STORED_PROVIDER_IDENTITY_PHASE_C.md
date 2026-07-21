@@ -8,6 +8,8 @@
   `2aae8aedbe3db69e5890268bff389129ce739d84f3cf5b44b8a89d68ac70ab4d`
 - Source archive SHA-256:
   `87e94e54ec3256c16501167854e91b196c6561c34ead610ab4fc3476d27e149b`
+- Release archive SHA-256:
+  `3401457cca5d5489505d93fa2b61845dbb95a1fcdd6d7a689971fc40e55b6d6c`
 - Run root: `/private/tmp/fresh3-v210-stored-identity-20260721-run1`
 
 The three-record run used new checkpoint, completion, evidence, snapshot and
