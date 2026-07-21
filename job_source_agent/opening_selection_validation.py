@@ -79,7 +79,7 @@ def validate_opening_selection(
         selection.location,
         target_location,
     )
-    if location_classification == "mismatch":
+    if location_classification in {"missing", "mismatch"}:
         title_location = _explicit_title_location(selection.title)
         if title_location and classify_location(title_location, target_location) in {
             "exact",
@@ -98,15 +98,22 @@ def validate_opening_selection(
         and _opening_url_has_conflicting_state(open_position_url, target_location)
     ):
         location_classification = "mismatch"
+    if (
+        location_classification == "missing"
+        and _title_confirms_location_independence(selection.title)
+    ):
+        location_classification = "title_location_independent"
+    if (
+        location_classification == "missing"
+        and _opening_url_confirms_location_independence(open_position_url)
+    ):
+        location_classification = "url_location_independent"
     if strict and location_classification == "mismatch":
         failures.append("OPENING_LOCATION_MISMATCH")
     if (
         strict
         and target_location
         and location_classification == "missing"
-        and selection.inventory_scope == "unknown"
-        and not selection.inventory_complete
-        and selection.candidate_count > 1
     ):
         failures.append("OPENING_LOCATION_UNVERIFIED")
     if strict and selection.candidate_count < 1:
@@ -282,6 +289,29 @@ def _opening_url_confirms_target_location(
         for name, code in _US_STATES.items()
     )
     return state_present and target_city.issubset(path_token_set)
+
+
+def _title_confirms_location_independence(title: str) -> bool:
+    tokens = set(_basic_location(title).split())
+    return bool(
+        "remote" in tokens
+        or {"work", "home"}.issubset(tokens)
+        or {"location", "independent"}.issubset(tokens)
+        or "nationwide" in tokens
+    )
+
+
+def _opening_url_confirms_location_independence(opening_url: str) -> bool:
+    path_tokens: set[str] = set()
+    for segment in urlparse(opening_url).path.casefold().split("/"):
+        if segment and not _looks_like_opaque_requisition_id(segment):
+            path_tokens.update(re.findall(r"[a-z]+", segment))
+    return bool(
+        "remote" in path_tokens
+        or {"work", "home"}.issubset(path_tokens)
+        or {"location", "independent"}.issubset(path_tokens)
+        or "nationwide" in path_tokens
+    )
 
 
 def _looks_like_opaque_requisition_id(segment: str) -> bool:

@@ -316,7 +316,7 @@ class OpeningSelectionValidationTests(unittest.TestCase):
         self.assertIn("OPENING_LOCATION_UNVERIFIED", issues)
         self.assertEqual(location, "missing")
 
-    def test_unique_incomplete_selection_can_remain_location_unstated(self):
+    def test_unique_incomplete_selection_with_missing_location_is_rejected(self):
         issues, location = validate_opening_selection(
             selection=_selection(
                 location=None,
@@ -331,8 +331,91 @@ class OpeningSelectionValidationTests(unittest.TestCase):
             target_location="New York, NY",
         )
 
-        self.assertNotIn("OPENING_LOCATION_UNVERIFIED", issues)
+        self.assertIn("OPENING_LOCATION_UNVERIFIED", issues)
         self.assertEqual(location, "missing")
+
+    def test_complete_single_candidate_with_missing_location_is_rejected(self):
+        issues, location = validate_opening_selection(
+            selection=_selection(
+                location=None,
+                inventory_scope="full",
+                inventory_complete=True,
+                candidate_count=1,
+            ),
+            provider=_provider(),
+            opening=_opening(),
+            open_position_url="https://jobs.lever.co/acme/role-1",
+            target_title="AI Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertIn("OPENING_LOCATION_UNVERIFIED", issues)
+        self.assertEqual(location, "missing")
+
+    def test_title_city_qualifier_can_supply_missing_selection_location(self):
+        issues, location = validate_opening_selection(
+            selection=_selection(
+                title="AI Engineer - NYC",
+                location=None,
+            ),
+            provider=_provider(),
+            opening=_opening(),
+            open_position_url="https://jobs.lever.co/acme/role-1",
+            target_title="AI Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertNotIn("OPENING_LOCATION_UNVERIFIED", issues)
+        self.assertEqual(location, "title_qualifier")
+
+    def test_remote_title_can_supply_location_independent_evidence(self):
+        issues, location = validate_opening_selection(
+            selection=_selection(title="AI Engineer - Remote", location=None),
+            provider=_provider(),
+            opening=_opening(),
+            open_position_url="https://jobs.lever.co/acme/role-1",
+            target_title="AI Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertNotIn("OPENING_LOCATION_UNVERIFIED", issues)
+        self.assertEqual(location, "title_location_independent")
+
+    def test_remote_url_can_supply_location_independent_evidence(self):
+        opening_url = "https://jobs.acme.test/jobs/remote-ai-engineer/role-1"
+        issues, location = validate_opening_selection(
+            selection=_selection(
+                title="AI Engineer",
+                location=None,
+                canonical_opening_url=opening_url,
+            ),
+            provider=_provider(canonical_board_url="https://jobs.acme.test"),
+            opening=_opening(canonical_opening_url=opening_url),
+            open_position_url=opening_url,
+            target_title="AI Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertNotIn("OPENING_LOCATION_UNVERIFIED", issues)
+        self.assertEqual(location, "url_location_independent")
+
+    def test_remote_title_cannot_override_explicit_conflicting_url_state(self):
+        opening_url = "https://jobs.acme.test/jobs/remote-engineer-california/role-1"
+        issues, location = validate_opening_selection(
+            selection=_selection(
+                title="AI Engineer - Remote",
+                location=None,
+                canonical_opening_url=opening_url,
+            ),
+            provider=_provider(canonical_board_url="https://jobs.acme.test"),
+            opening=_opening(canonical_opening_url=opening_url),
+            open_position_url=opening_url,
+            target_title="AI Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertIn("OPENING_LOCATION_MISMATCH", issues)
+        self.assertEqual(location, "mismatch")
 
 
 if __name__ == "__main__":
