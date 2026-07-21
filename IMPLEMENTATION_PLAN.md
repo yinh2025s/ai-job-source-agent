@@ -82,10 +82,12 @@ advisory failure，模型总延迟 P50/P95 为 8.20/10.84 秒。详细报告见
 每次 provider invocation 前清零 usage，失败 audit 不再继承上一次成功调用的 token。真正 `City of X` 输入仍可
 通过同名政府官网，冻结 Wichita HTML 的定点验证则从错误官网变为 unresolved。
 
-这些修复不改写 `run-006` 的历史 A/B 成绩，也不构成新的 LLM uplift。下一步先完成 `.200` 局部 resolver、
-identity、checkpoint、LLM accounting 与 architecture gate；是否启动新的 LLM 实验由本次失败分析后的新决策
-决定。失败 ranker linkage 修复前的冻结门禁为 2656 tests（4 skipped）、25/25 provider、6/6 resolver、
-46 native adapters / 0 architecture issues；`.200` 不因这两个窄修复重复运行整套单测。
+这些修复不改写 `run-006` 的历史 A/B 成绩，也不构成新的 LLM uplift。`.200` 局部 gate 已通过 226 tests、
+6/6 resolver benchmark 和 46 native adapters / 0 architecture issues。只读失败分析进一步确认 11 个 ranker
+timeout 集中在 4.28-5.30 秒，而 runner 的 provider socket timeout 被硬编码为 3 秒。下一次 development rerun
+只把该 transport timeout 提高并冻结为 7 秒；共享 15 秒模型预算、prompt、schema、调用和费用上限不变。
+该变化必须进入 execution identity 与 manifest，仍不运行 Fresh100 或 blind v2/v3，也不因两个窄修复重复
+运行整套单测。
 
 ## 当前执行轮次（2026-07-20，`.199`）
 

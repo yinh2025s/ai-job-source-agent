@@ -10,6 +10,14 @@
 
 ### Changed
 
+- The fixed DeepSeek development runner now freezes a 7-second provider HTTP
+  timeout in its execution identity and both capture manifests. Run 006 showed
+  eleven ranker transport timeouts clustered at 4.28-5.30 seconds while the
+  runner silently used a 3-second socket timeout. The shared 15-second
+  planner/ranker model budget, prompt, schemas, call cap and cost cap are
+  unchanged. This is an experiment transport correction, not a product
+  promotion or prompt adjustment.
+
 - `.200` adds a fail-closed website entity-kind check for the general collision
   where a private legal entity reduces to one brand token and a same-name
   government domain identifies itself as `City/Town/County/State of <brand>`.

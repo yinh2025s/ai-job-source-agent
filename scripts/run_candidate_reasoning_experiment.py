@@ -62,6 +62,7 @@ HARD_COST_CAP_USD = Decimal("0.50")
 INPUT_PRICE_USD_PER_MILLION = Decimal("0.14")
 OUTPUT_PRICE_USD_PER_MILLION = Decimal("0.28")
 MODEL_OUTPUT_LIMITS = {"query_plan": 1_000, "candidate_rank": 1_600}
+PROVIDER_TIMEOUT_SECONDS = 7.0
 
 
 def run_experiment(
@@ -91,6 +92,7 @@ def run_experiment(
             "cohort_sha256": sha256_file(root / "cohort.json"),
             "model": model,
             "prompt_version": PROMPT_VERSION,
+            "provider_timeout_seconds": PROVIDER_TIMEOUT_SECONDS,
             "treatment_run_configuration_digest": treatment_run.digest,
         }
     )
@@ -104,6 +106,7 @@ def run_experiment(
             "record_count": len(cohort),
             "model": model,
             "prompt_version": PROMPT_VERSION,
+            "provider_timeout_seconds": PROVIDER_TIMEOUT_SECONDS,
             "execution_identity": execution_identity,
             "labels_loaded": False,
         },
@@ -116,7 +119,10 @@ def run_experiment(
         service_factory=None,
     )
 
-    raw_client = DeepSeekReasoningClient(model=model, timeout_seconds=3.0)
+    raw_client = DeepSeekReasoningClient(
+        model=model,
+        timeout_seconds=PROVIDER_TIMEOUT_SECONDS,
+    )
     budget_client = BudgetedLLMReasoningClient(
         raw_client,
         LLMExperimentBudgetConfig(
@@ -232,6 +238,7 @@ def run_experiment(
         "provider": PROVIDER,
         "prompt_version": PROMPT_VERSION,
         "adapter_version": DEEPSEEK_ADAPTER_VERSION,
+        "provider_timeout_seconds": PROVIDER_TIMEOUT_SECONDS,
         "execution_identity": execution_identity,
         "baseline_run_configuration": baseline_run.to_payload(),
         "baseline_run_configuration_digest": baseline_run.digest,

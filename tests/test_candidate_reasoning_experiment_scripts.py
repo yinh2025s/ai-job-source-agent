@@ -12,6 +12,7 @@ from scripts.evaluate_candidate_reasoning_experiment import (
     _verified_website_conflicts,
 )
 from scripts.run_candidate_reasoning_experiment import (
+    PROVIDER_TIMEOUT_SECONDS,
     _agent_config,
     _common_config_digest,
     _require_new_root,
@@ -21,6 +22,9 @@ from scripts.run_candidate_reasoning_experiment import (
 
 
 class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
+    def test_provider_timeout_covers_observed_ranker_latency(self):
+        self.assertEqual(PROVIDER_TIMEOUT_SECONDS, 7.0)
+
     def test_baseline_and_treatment_share_every_non_llm_setting(self):
         baseline = _agent_config(llm=False)
         treatment = _agent_config(llm=True, model="deepseek-v4-flash")
