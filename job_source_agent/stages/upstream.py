@@ -740,6 +740,13 @@ def _candidate_reasoning_transport_cause(
 ) -> str | None:
     if not isinstance(resolution_failure, dict):
         return None
+    if (
+        resolution_failure.get("kind") == "verification_blocked"
+        and resolution_failure.get("phase") == "linkedin_company"
+    ):
+        # LinkedIn commonly rejects anonymous company-page enrichment while the
+        # public slug remains valid input for alternate candidate discovery.
+        return None
     reason_code = resolution_failure.get("reason_code")
     return (
         reason_code

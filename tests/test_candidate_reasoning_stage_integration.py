@@ -19,9 +19,18 @@ from job_source_agent.web import Fetcher
 
 
 class FailedDeterministicResolver:
-    def __init__(self, *, reason_code="WEBSITE_NOT_RESOLVED", candidates=()):
+    def __init__(
+        self,
+        *,
+        reason_code="WEBSITE_NOT_RESOLVED",
+        candidates=(),
+        failure_kind=None,
+        failure_phase=None,
+    ):
         self.reason_code = reason_code
         self.candidates = list(candidates)
+        self.failure_kind = failure_kind
+        self.failure_phase = failure_phase
         self.verification_calls = []
 
     def resolve_with_navigation_evidence(self, *args, **kwargs):
@@ -33,6 +42,8 @@ class FailedDeterministicResolver:
                 "resolution_failure": {
                     "reason_code": self.reason_code,
                     "error": "deterministic resolver retained failure",
+                    "kind": self.failure_kind,
+                    "phase": self.failure_phase,
                 },
             },
             None,
@@ -122,6 +133,26 @@ class CandidateReasoningStageIntegrationTest(unittest.TestCase):
             execution.trace["candidate_reasoning"]["eligibility_state"],
             "TRANSPORT_FORBIDDEN",
         )
+
+    def test_linkedin_enrichment_failure_does_not_mask_typed_g_condition(self):
+        resolver = FailedDeterministicResolver(
+            reason_code="FETCH_FAILED",
+            failure_kind="verification_blocked",
+            failure_phase="linkedin_company",
+        )
+        reasoning = ReasoningService()
+
+        execution = WebsiteResolutionStage(
+            resolver,
+            candidate_reasoning_service=reasoning,
+        ).run(self._context())
+
+        self.assertIsNone(reasoning.calls[0][1].transport_cause)
+        self.assertEqual(
+            execution.trace["candidate_reasoning"]["eligibility_state"],
+            "ELIGIBLE",
+        )
+        self.assertEqual(execution.result.reason_code, "FETCH_FAILED")
 
     def test_external_apply_and_disabled_service_do_not_invoke_reasoning(self):
         for external_apply_url, enabled in (

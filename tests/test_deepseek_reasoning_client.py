@@ -221,6 +221,7 @@ class DeepSeekReasoningClientTest(unittest.TestCase):
                 "total_tokens": 15,
                 "prompt_cache_hit_tokens": 0,
                 "prompt_cache_miss_tokens": 10,
+                "prompt_tokens_details": {"cached_tokens": 0},
                 "completion_tokens_details": {"reasoning_tokens": 0},
             },
         )
@@ -244,6 +245,31 @@ class DeepSeekReasoningClientTest(unittest.TestCase):
                 api_key=SECRET,
                 transport=RecordingTransport(rejected),
             ).complete(self._planner_request())
+
+    def test_rejects_unknown_or_malformed_prompt_token_details(self):
+        details = (
+            {"unexpected": 0},
+            {"cached_tokens": -1},
+            {"cached_tokens": True},
+            {"cached_tokens": "0"},
+        )
+        for prompt_details in details:
+            with self.subTest(prompt_details=prompt_details):
+                with self.assertRaisesRegex(ValueError, "prompt token usage"):
+                    DeepSeekReasoningClient(
+                        api_key=SECRET,
+                        transport=RecordingTransport(
+                            self._response(
+                                self._planner_decision(),
+                                usage={
+                                    "prompt_tokens": 10,
+                                    "completion_tokens": 5,
+                                    "total_tokens": 15,
+                                    "prompt_tokens_details": prompt_details,
+                                },
+                            )
+                        ),
+                    ).complete(self._planner_request())
 
     def test_rejects_non_stop_finish_reason(self):
         response = self._response(self._planner_decision())

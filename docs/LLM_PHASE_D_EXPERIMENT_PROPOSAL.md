@@ -5,6 +5,14 @@ configured outside the repository. Real calls remain gated on a clean frozen com
 the fixed 18-record runner, offline gates, call/cost enforcement and fresh artifact
 roots.
 
+Two attempted product captures are retained as unsealed diagnostics, not A/B results.
+The first found an absolute-deadline runner defect before any API call. The corrected
+run completed both live arms, but all unresolved records were classified
+`TRANSPORT_FORBIDDEN`, so it also produced zero model decisions. The product transport
+gate remains unchanged. A separate synthetic smoke reached DeepSeek and identified the
+OpenAI-compatible `prompt_tokens_details.cached_tokens` usage extension now handled by
+adapter v2.
+
 ## Provider And Model
 
 - Approved provider: DeepSeek API.

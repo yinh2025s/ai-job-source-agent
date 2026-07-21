@@ -320,6 +320,13 @@ zero, cross-company/provider/tenant output is zero, replay is 100%, flag-off is
 unchanged, mean calls are at most two per company, and cost/failure/P50/P95 are
 reported. Recovering one or two companies does not pass.
 
+An anonymous LinkedIn company-page enrichment rejection is not by itself a global
+transport root cause: the already supplied public company slug remains usable for
+alternate candidate discovery. The stage may therefore project that explicitly scoped
+failure to a typed `G` condition. Transport failures from search, DNS/TLS, candidate
+verification, rate limits, login walls or other phases continue to take priority and
+remain ineligible.
+
 If this gate fails, the feature remains disabled. Prompt tuning may not add
 company-specific examples, expected URLs, closure data, or hand-authored
 answers. The next decision is to improve search sources, provider-first evidence,

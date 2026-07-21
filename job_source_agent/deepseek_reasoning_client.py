@@ -21,7 +21,7 @@ from .candidate_reasoning_contracts import (
 
 DEEPSEEK_CHAT_COMPLETIONS_URL = "https://api.deepseek.com/chat/completions"
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-flash"
-DEEPSEEK_ADAPTER_VERSION = "deepseek-http-v1"
+DEEPSEEK_ADAPTER_VERSION = "deepseek-http-v2"
 DEFAULT_TIMEOUT_SECONDS = 8.0
 MAX_REQUEST_BYTES = 64 * 1024
 MAX_RESPONSE_BYTES = 128 * 1024
@@ -45,6 +45,7 @@ _USAGE_FIELDS = frozenset(
         "total_tokens",
         "prompt_cache_hit_tokens",
         "prompt_cache_miss_tokens",
+        "prompt_tokens_details",
         "completion_tokens_details",
     }
 )
@@ -274,6 +275,17 @@ def _token_usage(envelope: Mapping[str, Any]) -> TokenUsage:
     values = {name: usage[name] for name in required}
     if any(isinstance(value, bool) or not isinstance(value, int) for value in values.values()):
         raise ValueError("DeepSeek token usage must contain integers")
+    prompt_details = usage.get("prompt_tokens_details")
+    if prompt_details is not None:
+        if (
+            not isinstance(prompt_details, dict)
+            or set(prompt_details) - {"cached_tokens"}
+            or any(
+                isinstance(value, bool) or not isinstance(value, int) or value < 0
+                for value in prompt_details.values()
+            )
+        ):
+            raise ValueError("DeepSeek prompt token usage is malformed")
     completion_details = usage.get("completion_tokens_details")
     if completion_details is not None:
         if (

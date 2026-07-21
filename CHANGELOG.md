@@ -96,6 +96,17 @@
   all public fetches before any model call. The runner now uses per-request timeout plus
   bounded retries, and a regression test prevents reintroducing that deadline.
 
+- A second real capture completed both live arms but remained unsealed because every
+  unresolved record was transport-forbidden at the candidate-reasoning gate, producing
+  zero model decisions. A subsequent synthetic provider smoke exposed the current
+  `prompt_tokens_details.cached_tokens` usage extension; adapter v2 validates that
+  field without relaxing response content, reasoning, or unknown-field checks.
+
+- Candidate reasoning eligibility no longer misclassifies an explicitly scoped
+  anonymous LinkedIn company-page enrichment rejection as a global transport outage.
+  The public LinkedIn slug may proceed through typed-G candidate discovery, while
+  search, DNS/TLS, candidate verification and other transport failures remain blocked.
+
 - Product-level LLM decision capture and replay are now closed on the isolated
   experiment branch. Live fake/provider-neutral runs write strict redacted
   `llm-decisions.jsonl` and `llm-decision-manifest.json` artifacts bound to the
