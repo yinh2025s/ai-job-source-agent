@@ -1009,17 +1009,6 @@ class CompanyWebsiteResolver:
             for candidate in non_direct_to_verify
             if candidate not in reserved_slug_to_verify
         ]
-        identity_apex_candidate = next(
-            (
-                candidate
-                for candidate in to_verify
-                if _is_identity_shaped_apex_candidate(
-                    candidate.url,
-                    company_name,
-                )
-            ),
-            None,
-        )
 
         def verify_wave(
             wave: list[WebsiteCandidate],
@@ -1072,10 +1061,7 @@ class CompanyWebsiteResolver:
                 evidence_tier = _candidate_evidence_tier(
                     source_set
                 )
-                with self._candidate_fetch_policy(
-                    source_set,
-                    identity_apex_priority=(candidate is identity_apex_candidate),
-                ):
+                with self._candidate_fetch_policy(source_set):
                     scored_candidate = self._score_candidate(
                         candidate.url,
                         company_name,
@@ -1219,12 +1205,7 @@ class CompanyWebsiteResolver:
             policy=route,
         )
 
-    def _candidate_fetch_policy(
-        self,
-        sources: set[str],
-        *,
-        identity_apex_priority: bool = False,
-    ):
+    def _candidate_fetch_policy(self, sources: set[str]):
         retry_scope = getattr(self.fetcher, "retry_scope", None)
         retryable_sources = {
             "linkedin_cached_official_website",
@@ -1239,17 +1220,6 @@ class CompanyWebsiteResolver:
             return nullcontext()
         remaining_reader = getattr(self.fetcher, "remaining_fetch_seconds", None)
         remaining = remaining_reader() if callable(remaining_reader) else None
-        if identity_apex_priority:
-            max_elapsed = (
-                min(6.0, max(2.0, remaining * 0.30))
-                if isinstance(remaining, (int, float))
-                else 6.0
-            )
-            return retry_scope(
-                max_retries=0,
-                max_elapsed_seconds=max_elapsed,
-                policy="identity_apex_candidate",
-            )
         max_elapsed = (
             min(2.0, max(0.75, remaining * 0.15))
             if isinstance(remaining, (int, float))
@@ -2679,20 +2649,6 @@ def _core_company_tokens(company_tokens: list[str]) -> list[str]:
     if len(company_tokens) > 1 and company_tokens[-1] in {"group"}:
         return company_tokens[:-1]
     return company_tokens
-
-
-def _is_identity_shaped_apex_candidate(url: str, company_name: str) -> bool:
-    host = domain_of(url).casefold().removeprefix("www.")
-    if not host.endswith(".com") or host.count(".") != 1:
-        return False
-    label = host.removesuffix(".com")
-    if not label or re.fullmatch(r"[a-z0-9-]+", label) is None:
-        return False
-    core_tokens = _core_company_tokens(_exact_identity_tokens(company_name))
-    if not core_tokens:
-        return False
-    normalized_label = label.replace("-", "")
-    return normalized_label == "".join(core_tokens)
 
 
 def _strip_non_brand_qualifiers(company_name: str) -> str:

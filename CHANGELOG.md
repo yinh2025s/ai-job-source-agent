@@ -1,5 +1,17 @@
 # Changelog
 
+## 2026-07-21 - Reject identity-apex allocation experiment `.203`
+
+- Rejected and removed `.202`'s `identity_apex_candidate` request window after
+  its frozen six-record focused gate recovered only one independent company,
+  below the predeclared minimum of three.
+- Preserved the `.202` commit, causal analysis, and a read-only archive of its
+  live snapshots and replay evidence. Four records remained S2 timeouts; two Arkema postings crossed S2
+  but were correctly rejected by S7 and no Exact was produced.
+- Restored the prior provider-neutral speculative request policy and advanced
+  the adapter version so `.202` checkpoints cannot be mistaken for `.203`
+  behavior.
+
 ## 2026-07-21 - Fresh100 `.202` network rerun
 
 - Ran the full Fresh100 cohort from clean isolated roots with explicit

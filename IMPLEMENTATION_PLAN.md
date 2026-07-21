@@ -2713,6 +2713,15 @@ non-transport discovery clusters; this score must not be used to justify more
 website heuristics or to claim a clean network baseline. Full evidence is in
 `docs/FRESH_100_V202_NETWORK_RERUN_REPORT.md`.
 
+The preceding identity-apex allocation experiment failed its own Phase C gate.
+In its isolated six-record run only one independent company (Arkema) passed S2,
+below the frozen minimum of three; the two Arkema
+postings then remained correct S7 rejections and the other four records timed
+out in S2. `.203` therefore removes the special request window and restores the
+ordinary speculative policy. The experiment remains preserved as negative
+evidence and is not described as a closed transport or resolver cluster. See
+`docs/FRESH_100_V202_IDENTITY_APEX_FOCUSED_REPORT.md`.
+
 ### Fresh100 `.200` Network Rerun Decision
 
 The isolated full rerun at commit `bc33bce` completed 100/100 live records with
