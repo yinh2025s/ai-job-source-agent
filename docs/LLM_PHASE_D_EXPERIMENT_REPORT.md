@@ -117,3 +117,24 @@ zero LLM calls and is therefore not evidence of model uplift.
 
 No further prompt tuning is justified on this development cohort. Fresh100 and
 blind v2/v3 remain unopened.
+
+## Remaining Failure Clusters
+
+The post-run audit separates candidate production from candidate verification:
+
+1. **Correct candidate not produced: 11/14 LLM-eligible records.**
+   `search_bounded_candidate_query()` stops after the first non-empty source.
+   In run 007, Bing RSS often filled the pool with dictionaries, tourism sites,
+   sign-in pages or same-name entities, so Bing HTML and DuckDuckGo were never
+   consulted. The ranker cannot recover a URL absent from its input.
+2. **Correct Top-3 candidate but verification transport failed: 3/14.**
+   Caesars, Rider Levett Bucknall and State of Montana all contained the
+   reference website in Top-3, then ended S2 with `NETWORK_TIMEOUT`.
+3. **Not part of either LLM cluster.** Hays + Sons was a deterministic bypass;
+   Jushi was transport-forbidden before model invocation.
+
+The next implementation should be offline-first: merge small per-source result
+quotas instead of allowing the first non-empty source to monopolize the pool,
+then test Top-3 verification deadlines so one slow host cannot starve later
+candidates. Neither change requires prompt edits or another paid call. A later
+development rerun is justified only after those fixtures and local gates pass.

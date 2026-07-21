@@ -95,6 +95,17 @@ P50/P95 为 11.30/14.93 秒。唯一 Exact 是 Hays + Sons，人工 identity aud
 不能算作模型 uplift。promotion 继续失败，feature 保持关闭，不运行 Fresh100 或 blind v2/v3，也不再针对
 development cohort 调 prompt。
 
+`run-007` 的剩余失败已按因果路径拆分。14 条实际进入 planner/ranker 的记录中，11 条的正确官网不在
+Top-3：`search_bounded_candidate_query()` 在 Bing RSS 返回任意结果后立即停止，哪怕前五条全是词典、旅游站、
+登录页或同名无关实体，导致 HTML/DDG source 没有机会进入候选池。另 3 条（Caesars、RLB、State of
+Montana）已经把正确官网排进 Top-3，但 S2 均以 `NETWORK_TIMEOUT` 结束，属于候选验证 transport 而不是
+模型排序失败。Hays 是 deterministic bypass，Jushi 是 transport-forbidden，不能混入这两个 cluster。
+
+下一轮不调用模型：先让 bounded search 按 source 分配小配额并合并去重，禁止“首个非空 source 独占全部
+候选”；用 poisoned Bing + valid alternate source fixture 验证正确候选可进入统一池。随后单独检查 Top-3
+verification 的 per-candidate timeout/总 deadline，确保一个慢 host 不吞掉后续候选。两项离线通过后再决定
+是否值得运行同一 development cohort；在此之前不消费新的付费调用或 blind cohort。
+
 ## 当前执行轮次（2026-07-20，`.199`）
 
 ### `.199`：blind holdout selection/runtime lineage（Phase B）
