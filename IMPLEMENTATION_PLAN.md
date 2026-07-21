@@ -2692,6 +2692,39 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
+### Fresh100 `.200` Network Rerun Decision
+
+The isolated full rerun at commit `bc33bce` completed 100/100 live records with
+0 restored completions. It produced 28 raw Exact, 72 websites, 59 Career pages,
+and 57 verified Job Lists. Strict URL and identity audit accepts 23 Exact and
+holds five records: four lack opening-location evidence and one lacks an
+explicit cross-name hiring relationship. Network instability remains causal:
+19 terminal records were rate-limited by LinkedIn and 7 timed out. The `.200`
+public-domain registry produced correct candidates but its two newly exercised
+records were denied before homepage verification, so focused end-to-end closure
+is still open.
+
+The next implementation fan-out is therefore:
+
+1. Main line reviews and integrates the record-scoped replay fix only after this
+   frozen run is documented; Team Royal's missing stage boundary remains a
+   separate worker/snapshot cluster.
+2. Location evidence must become a hard Exact requirement for anonymous public
+   postings unless a stronger already-frozen contract explicitly authorizes a
+   location-independent role. The four observed records are acceptance inputs,
+   not company exceptions.
+3. First-party handoffs to a differently named tenant require typed hiring
+   relationship evidence before S7 can return Exact. Resolute Road/Braintree is
+   an observed instance, not a hardcoded mapping.
+4. Public-domain candidate generation remains accepted, while downstream
+   homepage verification is evaluated separately from LinkedIn 429s. No
+   government domain is trusted without the ordinary identity gate.
+5. Blind holdouts v2/v3 remain unopened until Fresh100 replay integrity and the
+   strict false-positive gates pass on one frozen version.
+
+Full details and immutable output digests are recorded in
+`docs/FRESH_100_V200_NETWORK_RERUN_REPORT.md`.
+
 Phase 0、Phase 1 和治理基线已经完成。接下来统一按以下顺序执行：
 
 1. Freeze fetch、stage、provider 和 checkpoint 小型 contracts。

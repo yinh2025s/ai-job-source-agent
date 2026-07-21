@@ -10,6 +10,19 @@
 
 ### Changed
 
+- A code-frozen `.200` Fresh100 network rerun completed 100/100 records from
+  clean checkpoint, evidence, completion and snapshot roots. Raw Exact increased
+  from 23 to 28, but strict audit accepts only 23: four openings lack location
+  evidence and one first-party handoff reaches a differently named Paylocity
+  tenant without an explicit hiring relationship. Website/Career/Job List were
+  72/59/57. Retryable terminals fell only from 30 to 27 as the dominant network
+  symptom changed from 29 timeouts to 19 LinkedIn rate-limited records plus 7
+  timeouts. The public-domain registry emitted correct government candidates but
+  did not achieve end-to-end recovery under the observed denials. Full replay
+  failed closed before execution because Team Royal lacked a finalized S2
+  capture boundary; no mismatch was hidden or waived. Blind holdouts remained
+  sealed and unobserved.
+
 - `.199` blind selection is now sealed without changing S2-S7 behavior. An
   S1-only pool of 239 unique identities produced two schema-1.1 cohorts of 40
   records each. Both have zero historical/post-selection overlap, zero website
