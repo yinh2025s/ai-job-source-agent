@@ -112,6 +112,10 @@
   ranker decision. The fixed experiment uses a 15-second shared model-time balance;
   search retains its separate bounded transport controls.
 
+- The A/B runner keeps the disabled baseline's canonical 8-second placeholder while
+  assigning the approved 15-second model-time balance only to the enabled treatment,
+  preserving deterministic flag-off configuration round trips.
+
 - Product-level LLM decision capture and replay are now closed on the isolated
   experiment branch. Live fake/provider-neutral runs write strict redacted
   `llm-decisions.jsonl` and `llm-decision-manifest.json` artifacts bound to the

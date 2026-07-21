@@ -326,7 +326,7 @@ def _agent_config(*, llm: bool, model: str = "") -> AgentConfig:
         llm_provider=PROVIDER if llm else "",
         llm_model=model if llm else "",
         llm_prompt_version=PROMPT_VERSION if llm else "",
-        llm_timeout=15.0,
+        llm_timeout=15.0 if llm else 8.0,
         llm_max_candidates=10,
         llm_max_calls_per_company=2,
     )

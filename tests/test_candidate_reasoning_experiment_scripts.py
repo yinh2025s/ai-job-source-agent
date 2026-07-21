@@ -31,6 +31,8 @@ class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
         )
         self.assertFalse(baseline.enable_llm_candidate_reasoning)
         self.assertTrue(treatment.enable_llm_candidate_reasoning)
+        self.assertEqual(baseline.llm_timeout, 8.0)
+        self.assertEqual(treatment.llm_timeout, 15.0)
 
     def test_experiment_root_must_be_fresh(self):
         with tempfile.TemporaryDirectory() as temporary:
