@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-21 - Fresh100 `.207` network rerun
+
+- Ran the full observed Fresh100 development cohort from clean roots on frozen
+  `.207` code: 24 strict S7 Exact, 79 websites, 62 Career pages and 60 verified
+  Job Lists. Twenty records observed network timeout, down from 25/26 in the two
+  `.206` runs, but Exact improved by only one over the better `.206` score.
+- All 24 Exact outcomes passed the hiring/company/provider/tenant/board/opening,
+  title and location audit; observed wrong URL, cross-company, cross-tenant and
+  wrong-location counts remain zero.
+- The declared OneApp/Home Depot/Crosby cluster restored zero Exact. Route-local
+  outcome competition prevented unsafe same-name boards from dominating, but
+  correct typed candidate production remains a separate unmet prerequisite;
+  `.207` therefore does not close the cluster.
+- Failure replay passed 76/76 with zero mismatch or fixture gap. Full replay
+  exported 100/100 but failed before execution on one NYC canonical-board versus
+  S6 query-projection preflight ambiguity, so the run is not release acceptance.
+  Evidence is recorded in `docs/FRESH_100_V207_NETWORK_RERUN_REPORT.md`.
+
 ## 2026-07-21 - Route-local candidate outcome competition `.207`
 
 - Replaced S5's single globally selected provider identity with a schema-2

@@ -2692,6 +2692,30 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
+### Fresh100 `.207` Network Rerun Decision
+
+Frozen `.207` completed a cold 100-record live run with 24 strict S7 Exact, 79
+websites, 62 Career pages and 60 verified Job Lists. Network timeout exposure
+fell from 25/26 records in the two `.206` runs to 20, but the best-score Exact
+delta was only +1 and cross-run churn remained. All 24 Exact identity chains
+passed with zero observed wrong URL/company/tenant/location.
+
+The route-local implementation must be retained as a correctness improvement,
+but the original OneApp/Home Depot/Crosby cluster is rejected as a closure
+claim: it recovered zero Exact. OneApp and Crosby prove that same-name provider
+boards can coexist and fail closed, while also proving that route competition
+cannot compensate for failure to produce the correct Pinpoint/ADP candidate.
+The Home Depot remains a separate first-party inventory extraction problem.
+
+Before any further live recall repair, fix the generic full-replay boundary
+exposed by NYC: S6 may display a title-filtered query URL without changing S5's
+canonical board identity. The change must keep real provider/tenant/board
+conflicts fail closed, advance the version, run only focused replay tests during
+development, and then receive one integration gate. The immutable `.207`
+capture remains non-acceptance because failure replay passed 76/76 but full
+replay stopped before execution at 100 exported / 0 replayed. Full evidence is
+in `docs/FRESH_100_V207_NETWORK_RERUN_REPORT.md`.
+
 ### Fresh100 `.207` Route-Local Outcome Competition
 
 Phase A and the offline implementation are complete for the shared
