@@ -2692,6 +2692,30 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
+### Fresh100 `.206` Network Rerun 2 Decision
+
+The second frozen `.206` run used the identical observed Fresh100 input and new
+isolated roots with 100 pending, zero restored and an explicit full-cohort
+guard. It produced 22 strict S7 Exact, 75 websites, 58 Career pages and 56
+verified Job Lists. All Exact identity chains passed; observed wrong URL,
+cross-company, cross-tenant and wrong-location counts remain zero.
+
+The rerun confirms score variance without establishing network recovery.
+Twenty-six records observed `NETWORK_TIMEOUT`, 22 ended in that terminal state,
+and retryable terminals remained 27. ProMach, BWXT and Prophetic became Exact,
+while Loveland Innovations, iClassPro, Indica Labs and Resolute Road Hospitality
+lost prior Exact outcomes to transport, producing a net Exact regression of
+one. Full replay passed 100/100 as 96 reproduced plus four explicit budget
+recoveries, with zero mismatch and zero fixture gap.
+
+The architecture plan therefore does not change. OneApp, The Home Depot and
+Crosby still satisfy the shared
+`FIRST_PARTY_GENERIC_AND_EMBEDDED_TYPED_ROUTE_COEXIST_UNTIL_S6` trigger. Resume
+the `.207` route-local evidence implementation and its offline gates before the
+next focused live validation; do not spend another repair round on an identical
+network rerun. Full evidence is in
+`docs/FRESH_100_V206_NETWORK_RERUN_2_REPORT.md`.
+
 ### Fresh100 `.206` Network Rerun Decision
 
 The frozen `.206` rerun used the unchanged observed Fresh100 input, an explicit

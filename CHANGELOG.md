@@ -1,5 +1,24 @@
 # Changelog
 
+## 2026-07-21 - Fresh100 `.206` network rerun 2
+
+- Repeated the same observed Fresh100 cohort from a clean export of frozen
+  `.206` code and entirely new checkpoint, completion, evidence and snapshot
+  roots: 22 strict S7 Exact, 75 websites, 58 Career pages and 56 verified Job
+  Lists.
+- The suspected network variance was reproduced but did not improve: 26 records
+  observed `NETWORK_TIMEOUT`, 22 ended there, and four prior Exact records were
+  lost to transport while three other openings became Exact.
+- All 22 Exact outcomes passed the company, hiring-relationship, provider,
+  tenant, board, opening, title and location audit. Wrong URL, cross-company,
+  cross-tenant and wrong-location counts remained zero.
+- Failure replay passed 78/78 and full replay passed 100/100 as 96 reproduced
+  plus four explicit budget recoveries, with zero mismatch or fixture gap.
+  Evidence is preserved in
+  `docs/FRESH_100_V206_NETWORK_RERUN_2_REPORT.md`; this diagnostic neither
+  replaces the first `.206` run nor changes the pending `.207` architecture
+  repair.
+
 ## 2026-07-21 - Fresh100 `.206` network rerun
 
 - Repeated the observed Fresh100 development cohort from clean isolated roots
