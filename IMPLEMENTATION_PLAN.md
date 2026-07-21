@@ -2713,9 +2713,10 @@ The next implementation fan-out is therefore:
    postings unless explicit title/URL evidence proves the target location or a
    location-independent role. The four observed records are acceptance inputs,
    not company exceptions.
-3. Team Royal's missing boundary is addressed by one bounded fresh active-stage
-   recapture after an outer timeout. A focused live and replay must prove the
-   new runner behavior; old `.200` snapshots remain immutable.
+3. Team Royal's missing boundary is closed by one bounded fresh active-stage
+   recapture after an outer timeout. The isolated `.201` focused live replaced
+   the missing boundary and replayed all 5/5 outcomes with 0 mismatch and 0
+   fixture gap; old `.200` snapshots remain immutable.
 4. The initial Resolute/Braintree audit finding was withdrawn. The provider
    board explicitly names Resolute; a Paylocity URL slug is a locator, not an
    employer assertion. No cross-name rule is added without a three-company
@@ -2728,6 +2729,16 @@ The next implementation fan-out is therefore:
 
 Full details and immutable output digests are recorded in
 `docs/FRESH_100_V200_NETWORK_RERUN_REPORT.md`.
+
+The `.201` focused gate confirms that all four raw Exact records lacking
+location evidence no longer publish Exact. IMG reaches its verified JazzHR
+board and is rejected with `OPENING_LOCATION_UNVERIFIED`; three records are
+blocked earlier by current timeout/429 outcomes. Team Royal's bounded recapture
+produces a finalized S2 boundary, and scoped replay passes 5/5 with zero mismatch
+or fixture gap. The next cluster must therefore separate retryable LinkedIn
+transport from records that can reach verified External Apply/provider evidence
+without S2; this gate does not justify a company-specific heuristic. Details are
+in `docs/FRESH_100_V201_FOCUSED_LIVE_REPORT.md`.
 
 Phase 0、Phase 1 和治理基线已经完成。接下来统一按以下顺序执行：
 

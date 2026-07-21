@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-21 - Fresh100 `.201` focused correctness gate
+
+- Ran five cold, isolated Fresh100 records against `.201`: all four former raw
+  Exact outcomes without location evidence were held, and IMG proved the full
+  `OPENING_LOCATION_UNVERIFIED` S7 path on its verified JazzHR board.
+- Team Royal exercised bounded outer-timeout recapture; the missing S2 capture
+  boundary was replaced with a real finalized `NETWORK_TIMEOUT` scope.
+- Full scoped replay passed 5/5 with 0 mismatch, 0 fixture gap, and 0 dropped
+  records. Three S2 timeouts and one LinkedIn 429 remain transport outcomes, not
+  evidence of opening-discovery recall.
+- Recorded the isolated evidence in
+  `docs/FRESH_100_V201_FOCUSED_LIVE_REPORT.md`; no company exception was added.
+
 本文件记录每个可交付迭代的功能、修复、架构和兼容性变化。格式参考
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/)，版本号遵循
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html)。
