@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-07-21 - Trusted opening-search scheduling `.211`
+
+- Generic opening matching still performs cheap extraction from the verified
+  Job List landing page first, but now defers expensive JS asset inventory
+  probing for that unfiltered page until title-directed official routes have
+  been attempted.
+- Declared GET, declared search, interactive and title-filtered fallback pages
+  retain immediate JS inventory handling because their response is already
+  scoped to the target query.
+- Deferred landing-page JS inventory runs at most once and retains the same
+  canonical URL, same-site, title, location, hiring organization and S7 gates.
+  No company, domain, tenant or job-ID rule was added.
+- Integrated verification passes 168 opening matcher, generic inventory,
+  availability and incomplete-discovery tests. Full integration remains
+  deferred until the focused live/replay gate.
+
 ## 2026-07-21 - Stored provider tenant identity isolation `.210`
 
 - Stored first-party handoff evidence continues to authorize its exact

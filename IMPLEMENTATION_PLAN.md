@@ -56,6 +56,12 @@ deadline。Phase B 只调整请求顺序，保留全部 identity/location/URL ga
 live 至少恢复三家才允许 closure。完整 contract 见
 `docs/FRESH_100_V210_TRUSTED_OPENING_SEARCH_SCHEDULING_PHASE_A.md`。
 
+Phase B 已在 `.211` 实现：unfiltered reused landing page 的 JS asset inventory
+延后到 title-directed routes 之后，声明式或 title-filtered route 仍即时处理。168 条
+opening 局部测试通过，安全负例保持 fail closed。下一步仅运行受影响 scoped replay，
+随后冻结 Sentar、Crawford Thomas Recruiting、Crosby、WENDEL 四条 focused live；
+少于三家恢复则拒绝 cluster closure，不继续第三轮架构修复。
+
 ## 当前架构轨道（2026-07-20，LLM Candidate Reasoning Phase A）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
