@@ -15,6 +15,17 @@
   architecture repair starts under the current two-round stabilization limit.
 - The immutable `.211` focused artifact is archived with the checksum recorded
   in `artifacts/releases/fresh4-v211-opening-scheduling-20260721-run1.tar.zst.sha256`.
+- Final `.212` offline integration passes 2574 tests with four skips, 25/25
+  provider benchmark cases, 6/6 resolver cases and 46 native adapters with zero
+  architecture issues. This is the single full-suite run for the integration
+  freeze.
+- The full `.209` Fresh100 artifact is preserved as a 91 MB compressed archive;
+  its checksum is recorded in
+  `artifacts/releases/fresh100-v209-cold-20260721-run1.tar.zst.sha256`.
+- A `.212` migration replay attempt over Frozen100 `.188` stopped on strict
+  outcome-tape divergence at Twitch's historical Greenhouse request. The
+  immutable `.188` 69-Exact result is untouched, but execution-level no-
+  regression under `.212` is not claimed. Sealed holdouts remain unobserved.
 
 ## 2026-07-21 - Trusted opening-search scheduling `.211`
 

@@ -70,6 +70,13 @@ Crawford 和 Crosby 的 terminal label 不再是 timeout，但没有任何 verif
 `.209` 因果报告、`.210` identity 修复结果和 `.211` rejected experiment；不运行 sealed
 holdout，也不再用 development cohort 驱动第三轮改动。
 
+最终 `.212` offline integration 已通过：2574 tests（4 skipped）、provider 25/25、
+resolver 6/6、46 adapters / 0 issues。Frozen100 `.188` 的跨版本 replay 在 Twitch 历史
+Greenhouse 请求发生 strict tape divergence，故只能确认原 69-Exact artifact 未被覆盖，
+不能宣称 `.212` execution no-regression。Fresh100 `.209` 完整 artifact 已归档；由于当前
+开发 cohort 仅 19 Exact、SYSTEM_GAP 尚未归零且 Frozen100 回归门未闭合，sealed v2/v3
+继续保持未观察，当前目标不能标记完成。
+
 ## 当前架构轨道（2026-07-20，LLM Candidate Reasoning Phase A）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
