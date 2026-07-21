@@ -2692,6 +2692,34 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
+### Fresh100 `.206` Network Rerun Decision
+
+The frozen `.206` rerun used the unchanged observed Fresh100 input, an explicit
+100-record guard, and clean isolated checkpoint, completion, evidence and
+snapshot roots. It produced 23 strict S7 Exact, 75 websites, 60 Career pages
+and 55 verified Job Lists. All Exact identity chains passed; observed wrong
+URL, cross-company, cross-tenant and wrong-location counts remain zero.
+
+Transport improved but remains unstable. Twenty-five records observed an S2
+network timeout; Slant CRM bypassed S2 through a verified Ashby route, leaving
+24 terminal network timeouts and 27 retryable terminals. Relative to `.202`,
+six Exact records recovered and Frost, ProMach and BWXT were lost to current
+transport, for a net Exact gain of three. The failure replay is 77/77 and the
+full replay is 100/100 as 97 reproduced plus three explicit company-budget
+recoveries, with zero mismatch and zero fixture gap. This rerun is development
+evidence, not a blind result or a replacement for `.188`.
+
+The next architecture item does not change because of the score increase.
+OneApp, The Home Depot and Crosby establish the shared
+`FIRST_PARTY_GENERIC_AND_EMBEDDED_TYPED_ROUTE_COEXIST_UNTIL_S6` trigger. S5 must
+retain board-bound route provenance and hiring-relationship evidence; S6 must
+evaluate route-local inventory and identity outcomes, continue after an
+identity-rejected opening, and permit company-level verified no-match only when
+every eligible authorized route is complete. Same-name search tenants have no
+acceptance or no-match authority without independent hiring evidence. The
+contract, checkpoint and replay changes must be frozen before implementation.
+Full rerun evidence is in `docs/FRESH_100_V206_NETWORK_RERUN_REPORT.md`.
+
 ### Fresh100 `.202` Network Rerun Decision
 
 The code-frozen `.202` rerun used an explicit 100-record guard and clean,

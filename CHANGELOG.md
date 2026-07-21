@@ -1,5 +1,22 @@
 # Changelog
 
+## 2026-07-21 - Fresh100 `.206` network rerun
+
+- Repeated the observed Fresh100 development cohort from clean isolated roots
+  on frozen `.206` code: 23 strict S7 Exact, 75 websites, 60 Career pages and 55
+  verified Job Lists.
+- All 23 Exact outcomes passed company, hiring-relationship, provider, tenant,
+  board, opening, title and location validation. Wrong URL, cross-company,
+  cross-tenant and wrong-location counts remained zero.
+- Network variance remained material: 25 records observed S2 timeout, 24 ended
+  in terminal `NETWORK_TIMEOUT`, and retryable terminals fell from 33 to 27.
+  Six `.202` misses recovered while Frost, ProMach and BWXT were lost to current
+  transport, for a net gain of three Exact.
+- Failure replay passed 77/77 and full replay passed 100/100 as 97 reproduced
+  plus three explicit budget recoveries, with zero mismatch or fixture gap.
+  Evidence is preserved in `docs/FRESH_100_V206_NETWORK_RERUN_REPORT.md` and a
+  read-only release archive; it does not replace `.188` or a blind holdout.
+
 ## 2026-07-21 - Reject generic direct scheduler experiment `.206`
 
 - Tested `.205`'s evidence-gated generic direct scheduling on seven independent
