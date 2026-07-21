@@ -1,5 +1,18 @@
 # Changelog
 
+## 2026-07-21 - Identity-shaped apex request allocation `.202`
+
+- Reclassified `.200` failures by executable cause and rejected ATS search-source
+  fallback as the next repair after live diagnostics returned DuckDuckGo
+  challenge 8/8 and Bing HTML results 0/8.
+- Added one bounded `identity_apex_candidate` request window for the first exact
+  core-name `.com` apex already selected by the resolver's verification
+  allocator. It receives no score, authority, retry or acceptance exemption.
+- Ordinary prefixes, unrelated `.com` domains, non-`.com` guesses and additional
+  candidates retain the short `speculative_candidate` policy.
+- Added resolver policy tests and recorded the causal contract in
+  `docs/FRESH_100_V200_IDENTITY_APEX_BUDGET_CAUSAL_ANALYSIS.md`.
+
 ## 2026-07-21 - Fresh100 `.201` focused correctness gate
 
 - Ran five cold, isolated Fresh100 records against `.201`: all four former raw

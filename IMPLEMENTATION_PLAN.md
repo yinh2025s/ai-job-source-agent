@@ -2740,6 +2740,18 @@ transport from records that can reach verified External Apply/provider evidence
 without S2; this gate does not justify a company-specific heuristic. Details are
 in `docs/FRESH_100_V201_FOCUSED_LIVE_REPORT.md`.
 
+Phase A of the next iteration rejected search-source fallback as the immediate
+repair: 37 non-Exact records had raw Bing RSS results but zero valid ATS leads,
+while a live eight-company diagnostic produced DuckDuckGo challenge 8/8 and
+Bing HTML parsed results 0/8. The selected cluster is instead the short request
+slice assigned to an already-generated exact core-name `.com` apex. Matlen
+Silver, American Fabrication and Arkema crossed S2 on those same official apexes
+in adjacent cold runs but timed out under the `.200` speculative slice. Phase B
+may only give one such apex a larger bounded request window; selection and all
+identity gates remain unchanged. Phase C requires at least three independent
+company recoveries or the cluster is rejected and reclassified. See
+`docs/FRESH_100_V200_IDENTITY_APEX_BUDGET_CAUSAL_ANALYSIS.md`.
+
 Phase 0、Phase 1 和治理基线已经完成。接下来统一按以下顺序执行：
 
 1. Freeze fetch、stage、provider 和 checkpoint 小型 contracts。

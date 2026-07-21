@@ -23,6 +23,33 @@ from job_source_agent.website_resolver import (
 )
 
 
+class _PolicyRecordingFetcher:
+    def __init__(self):
+        self.scopes = []
+
+    def remaining_fetch_seconds(self):
+        return 20.0
+
+    def retry_scope(self, **policy):
+        self.scopes.append(policy)
+
+        class Scope:
+            def __enter__(self):
+                return None
+
+            def __exit__(self, exc_type, exc_value, traceback):
+                return False
+
+        return Scope()
+
+    def fetch(self, url, data=None, headers=None, *, interaction=None):
+        raise FetchError(
+            "not available",
+            reason_code="DNS_FAILED",
+            retryable=True,
+        )
+
+
 class WebsiteResolverTests(unittest.TestCase):
     def test_authoritative_public_domain_candidate_still_requires_homepage_identity(self):
         dataset = (
@@ -2498,6 +2525,55 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertEqual(website_url, official_url)
         self.assertIn(official_url, fetcher.calls)
         self.assertNotIn("resolution_failure", trace)
+
+    def test_exact_identity_apex_dot_com_gets_larger_bounded_fetch_policy(self):
+        def fetch_policy(url):
+            fetcher = _PolicyRecordingFetcher()
+            resolver = CompanyWebsiteResolver(fetcher, verify_limit=1)
+            resolver._rank_and_verify_candidates(
+                [url],
+                "Acme Systems, LLC",
+                None,
+                candidate_sources={domain_of(url): {"speculative_guess"}},
+            )
+            self.assertEqual(len(fetcher.scopes), 1)
+            return fetcher.scopes[0]
+
+        ordinary_policy = fetch_policy("https://getbrand.com/")
+        self.assertEqual(ordinary_policy["policy"], "speculative_candidate")
+
+        for url in ("https://acmesystems.com/", "https://acme-systems.com/"):
+            with self.subTest(url=url):
+                identity_policy = fetch_policy(url)
+                self.assertEqual(
+                    identity_policy["policy"],
+                    "identity_apex_candidate",
+                )
+                self.assertGreater(
+                    identity_policy["max_elapsed_seconds"],
+                    ordinary_policy["max_elapsed_seconds"],
+                )
+
+    def test_non_identity_candidates_keep_speculative_fetch_policy(self):
+        for url in (
+            "https://getbrand.com/",
+            "https://widget-supply.com/",
+            "https://acmesystems.io/",
+        ):
+            with self.subTest(url=url):
+                fetcher = _PolicyRecordingFetcher()
+                CompanyWebsiteResolver(fetcher, verify_limit=1)._rank_and_verify_candidates(
+                    [url],
+                    "Acme Systems, LLC",
+                    None,
+                    candidate_sources={domain_of(url): {"speculative_guess"}},
+                )
+
+                self.assertEqual(len(fetcher.scopes), 1)
+                self.assertEqual(
+                    fetcher.scopes[0]["policy"],
+                    "speculative_candidate",
+                )
 
     def test_forbidden_www_candidate_does_not_probe_apex_as_transport_fallback(self):
         preferred_url = "https://www.acme.example"
