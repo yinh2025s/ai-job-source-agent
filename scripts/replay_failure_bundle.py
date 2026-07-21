@@ -56,7 +56,7 @@ from job_source_agent.models import (
     StageResult,
     dataclass_to_dict,
 )
-from job_source_agent.outcome_tape import OutcomeTape
+from job_source_agent.outcome_tape import OFFLINE_TAPE_DIVERGENCE, OutcomeTape
 from job_source_agent.providers.base import (
     PageAwareProviderAdapter,
     PageProbeProviderAdapter,
@@ -66,6 +66,7 @@ from job_source_agent.replay_record_plan import (
     ReplayRecordPlan,
     build_replay_record_plans,
 )
+from job_source_agent.reasons import REASON_SPECS, reason_spec
 from job_source_agent.scoped_replay import ScopedReplayController
 from job_source_agent.snapshot import SENSITIVE_BODY_FIELDS
 from job_source_agent.snapshot_replay import (
@@ -1015,6 +1016,14 @@ def _run_scoped_replay_records(
             company,
             source_record,
         )
+        record_company_discovery_evidence_path = (
+            _scoped_record_company_discovery_evidence_path(
+                record_checkpoint_root,
+                company,
+                source_record,
+                source_evidence_path=company_discovery_evidence_path,
+            )
+        )
         start_stage = resume_stage or PIPELINE_STAGES[0]
         start_index = PIPELINE_STAGES.index(start_stage)
         scopes_by_stage = {
@@ -1052,7 +1061,9 @@ def _run_scoped_replay_records(
             checkpoint_dir=record_checkpoint_root,
             run_configuration=run_configuration,
             capture_coordinator=controller,
-            company_discovery_evidence_path=company_discovery_evidence_path,
+            company_discovery_evidence_path=(
+                record_company_discovery_evidence_path
+            ),
         )
         try:
             same_attempt_continuation = (
@@ -1088,6 +1099,46 @@ def _run_scoped_replay_records(
             )
         discoveries.append(discovery)
     return discoveries
+
+
+def _scoped_record_company_discovery_evidence_path(
+    record_checkpoint_root: Path,
+    company,
+    source_record: dict,
+    *,
+    source_evidence_path: Path | None,
+) -> Path | None:
+    """Rebuild the mutable discovery-store view seen by one captured record.
+
+    The source evidence file is the batch-final state. Using it directly can
+    expose evidence written by this record to its own replay, while omitting it
+    loses evidence written by an earlier posting for the same company. Rebuild
+    only trace-proven inputs in a record-owned store and let replay writes stay
+    local to that record.
+    """
+
+    path = record_checkpoint_root / "company-discovery-evidence.json"
+    _reset_bundle_file_output(path)
+    store = FilesystemCompanyDiscoveryEvidenceStore(path)
+    source_store = (
+        FilesystemCompanyDiscoveryEvidenceStore(source_evidence_path)
+        if source_evidence_path is not None
+        else None
+    )
+    restored_discovery = _restore_stored_discovery_inputs(
+        store,
+        [company],
+        [source_record],
+    )
+    restored_provider = _restore_stored_provider_inputs(
+        store,
+        [company],
+        [source_record],
+        source_store=source_store,
+    )
+    if restored_discovery == 0 and restored_provider == 0:
+        return None
+    return path
 
 
 def _seed_scoped_replay_producer_state(
@@ -2338,7 +2389,15 @@ def _build_outcome_gate(
             and _is_budget_recovery(source_record, replay_result)
         ):
             classification = "budget_recovery"
-            reason = "company_budget_replay_advanced"
+            source_failure = _first_non_success_result_stage(source_record)
+            replay_failure = _first_non_success_result_stage(replay_result)
+            reason = (
+                "company_budget_replay_normalized"
+                if isinstance(source_failure, dict)
+                and isinstance(replay_failure, dict)
+                and source_failure.get("stage") == replay_failure.get("stage")
+                else "company_budget_replay_advanced"
+            )
         else:
             classification = "mismatch"
             reason = (
@@ -2864,11 +2923,21 @@ def _is_budget_recovery(source: dict | None, replay: dict | None) -> bool:
         if isinstance(stage, dict) and stage.get("stage") in PIPELINE_STAGES
     }
     completed = replay_by_name.get(source_stage)
-    if not isinstance(completed, dict) or completed.get("status") not in {
-        "success",
-        "not_applicable",
-    }:
+    if not isinstance(completed, dict):
         return False
+    if completed.get("status") not in {"success", "not_applicable"}:
+        reason_code = _optional_string(completed.get("reason_code"))
+        return bool(
+            completed.get("status") in {"failed", "partial", "unsupported"}
+            and reason_code in REASON_SPECS
+            and reason_code
+            not in {
+                "COMPANY_TIME_BUDGET_EXHAUSTED",
+                "OFFLINE_FIXTURE_MISSING",
+                OFFLINE_TAPE_DIVERGENCE,
+            }
+            and not reason_spec(reason_code).retryable
+        )
     replay_failure = _first_non_success_result_stage(replay)
     if replay_failure is None:
         return True

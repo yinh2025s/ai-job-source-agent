@@ -47,6 +47,7 @@ from scripts.replay_failure_bundle import (
     _restore_stored_provider_inputs,
     _scoped_execution_boundary_errors,
     _scoped_execution_company,
+    _scoped_record_company_discovery_evidence_path,
     _scoped_job_board_stage_url,
     _scoped_job_board_portfolio,
     _seed_scoped_replay_producer_state,
@@ -56,6 +57,141 @@ from scripts.replay_failure_bundle import (
 
 
 class FailureReplayBundleTests(unittest.TestCase):
+    def test_scoped_record_store_does_not_prefill_downstream_final_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            company = CompanyInput(
+                company_name="Northstar Systems",
+                linkedin_company_url=(
+                    "https://www.linkedin.com/company/northstar-systems"
+                ),
+            )
+            source_path = root / "batch-final-evidence.json"
+            observed_at = time.time()
+            FilesystemCompanyDiscoveryEvidenceStore(source_path).save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=VerifiedWebsiteEvidence(
+                    url="https://northstar.example",
+                    source="verified_resolver",
+                    evidence_url="https://northstar.example",
+                    observed_at=observed_at,
+                ),
+                career=VerifiedCareerEvidence(
+                    url="https://northstar.example/open-positions",
+                    website_url="https://northstar.example",
+                    source="first_party_navigation",
+                    evidence_url="https://northstar.example",
+                    observed_at=observed_at,
+                ),
+            )
+            record_path = _scoped_record_company_discovery_evidence_path(
+                root / "record-one",
+                company,
+                {"trace": {"source_trace": {
+                    "company_discovery_evidence_revision": "revision-one",
+                }}},
+                source_evidence_path=source_path,
+            )
+        self.assertIsNone(record_path)
+
+    def test_scoped_record_stores_isolate_same_company_posting_inputs(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            company = CompanyInput(
+                company_name="Example Electric",
+                linkedin_company_url=(
+                    "https://www.linkedin.com/company/example-electric"
+                ),
+            )
+            first_path = _scoped_record_company_discovery_evidence_path(
+                root / "record-one",
+                company,
+                {"trace": {"source_trace": {
+                    "company_discovery_evidence_revision": "revision-one",
+                }}},
+                source_evidence_path=None,
+            )
+            stored_url = "https://www.example-electric.test/"
+            second_path = _scoped_record_company_discovery_evidence_path(
+                root / "record-two",
+                company,
+                {"trace": {
+                    "source_trace": {
+                        "company_discovery_evidence_revision": "revision-one",
+                    },
+                    "stages": {"website_resolution": {
+                        "stored_candidate_url": stored_url,
+                        "candidates": [{
+                            "url": stored_url,
+                            "reasons": [
+                                "candidate source: stored_verified_company_evidence"
+                            ],
+                        }],
+                    }},
+                }},
+                source_evidence_path=None,
+            )
+            second = FilesystemCompanyDiscoveryEvidenceStore(second_path).load(
+                company.company_name,
+                company.linkedin_company_url,
+            )
+
+        self.assertIsNone(first_path)
+        self.assertIsNotNone(second_path)
+        self.assertIsNotNone(second)
+        self.assertEqual(second.website.url, stored_url)
+
+    def test_scoped_record_store_restores_trace_proven_career_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            company = CompanyInput(
+                company_name="Atlas Software",
+                linkedin_company_url=(
+                    "https://www.linkedin.com/company/atlas-software"
+                ),
+            )
+            website_url = "https://atlas.example/"
+            career_url = "https://atlas.example/careers"
+            record_path = _scoped_record_company_discovery_evidence_path(
+                root / "record-career",
+                company,
+                {"trace": {
+                    "source_trace": {
+                        "company_discovery_evidence_revision": "revision-two",
+                    },
+                    "stages": {
+                        "website_resolution": {
+                            "stored_candidate_url": website_url,
+                            "candidates": [{
+                                "url": website_url,
+                                "reasons": [
+                                    "candidate source: stored_verified_company_evidence"
+                                ],
+                            }],
+                        },
+                        "career_discovery": {
+                            "stored_company_discovery_candidate": {
+                                "authority": (
+                                    "candidate_requiring_current_revalidation"
+                                ),
+                                "website_url": website_url,
+                                "career_url": career_url,
+                            },
+                        },
+                    },
+                }},
+                source_evidence_path=None,
+            )
+            evidence = FilesystemCompanyDiscoveryEvidenceStore(record_path).load(
+                company.company_name,
+                company.linkedin_company_url,
+            )
+
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence.website.url, website_url)
+        self.assertEqual(evidence.career.url, career_url)
+
     def test_freeze_omits_provider_board_written_downstream(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -3087,6 +3223,88 @@ class FailureReplayBundleTests(unittest.TestCase):
             comparison["replay_outcome"]["result_identity"]["job_list_page_url"],
             "https://jobs.example.test/budget",
         )
+
+    def test_company_budget_timeout_can_normalize_within_same_stage(self):
+        source = {
+            "company_name": "Budget Normalization",
+            "company_website_url": "https://budget-normalization.example",
+            "pipeline_status": "failed",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                },
+            ],
+        }
+        replayed = {
+            **source,
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "CAREER_PAGE_NOT_FOUND",
+                },
+            ],
+        }
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Budget Normalization"}],
+            [replayed],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "passed")
+        self.assertEqual(gate["classification_counts"]["budget_recovery"], 1)
+        self.assertEqual(
+            gate["records"][0]["reason"],
+            "company_budget_replay_normalized",
+        )
+
+    def test_same_stage_budget_normalization_rejects_retryable_drift(self):
+        source = {
+            "company_name": "Budget Retryable",
+            "company_website_url": "https://budget-retryable.example",
+            "pipeline_status": "failed",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                },
+            ],
+        }
+        replayed = {
+            **source,
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "NETWORK_TIMEOUT",
+                },
+            ],
+        }
+
+        gate = _build_outcome_gate(
+            [{"company_name": "Budget Retryable"}],
+            [replayed],
+            source_records=[source],
+        )
+
+        self.assertEqual(gate["status"], "failed")
+        self.assertEqual(gate["classification_counts"]["mismatch"], 1)
 
     def test_budget_recovery_rejects_established_identity_drift(self):
         source = {
