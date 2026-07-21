@@ -23,7 +23,7 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构轨道（2026-07-21，LLM Candidate Reasoning Phase D active）
+## 当前架构轨道（2026-07-21，LLM Candidate Reasoning Phase D evaluated）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
 DNS/TLS/timeout/403、provider inventory、S6 title/location、S7、岗位关闭、已验证 no-match 或未披露
@@ -41,10 +41,11 @@ Phase A 架构审计与 Phase B 离线实现已经完成：provider-neutral inte
 schema、条件式 run-config 1.5、原子 decision store、失败审计、产品级 live artifact/bundle/replay、bounded search backend、S2
 eligibility、Top-3 resolver 二次验真及 composition fail-closed 均已落地。开关关闭时仍输出既有 schema 1.4，
 不查 decision store、不调用 service、不增加搜索请求或改变候选顺序；开启时必须显式注入 service，不会自动
-选择 vendor。live decision 以独立 `llm-decisions.jsonl` 和 `llm-decision-manifest.json` 原子保存，failure/full
+选择 vendor。DeepSeek Phase D adapter 仅在显式实验 composition 中注入；live decision 以独立
+`llm-decisions.jsonl` 和 `llm-decision-manifest.json` 原子保存，failure/full
 replay bundle 绑定两个文件的 digest、execution/run-config/provider/model/prompt/schema/adapter identity；fixture-only
-replay 区分 missing/extra/corrupt/incompatible/unexpected/unconsumed，并在结束时要求全部消费。当前代码没有真实
-模型 client、API endpoint、credential 或付费调用。
+replay 区分 missing/extra/corrupt/incompatible/unexpected/unconsumed，并在结束时要求全部消费。产品默认 composition
+仍不选择真实模型，credential 只从仓库外环境变量注入且不进入 artifact。
 
 Phase C 的通用 A/B 指标和 promotion gate 已实现，18 条固定 G-development 输入也已物化。输入只含原始
 公开 company/LinkedIn/job title/location 字段；人工 reference website 位于单独 evaluator-only labels 文件，
@@ -54,11 +55,12 @@ planner/ranker 请求构造不得读取。原始记录 digest 为
 cohort 冻结与产品级 fixture replay 正确，不能宣称模型带来 recall 提升。真实实验提案记录在
 `docs/LLM_PHASE_D_EXPERIMENT_PROPOSAL.md`。用户已于 2026-07-21 指定并批准 DeepSeek API；实验固定
 `deepseek-v4-flash` 非思考 JSON 模式、最多 36 次调用和 USD 0.50 硬上限。DeepSeek adapter、串行费用
-ledger、answer-free capture/evaluator 分离、fresh artifact root 和 same-version replay runner 正在本独立分支
-执行。前五次诊断运行均保留且不计 promotion：其中 `run-005` 完成两个 live arm，但暴露出失败 ranker
+ledger、answer-free capture/evaluator 分离、fresh artifact root 和 same-version replay runner 已在本独立分支
+完成。前五次诊断运行均保留且不计 promotion：其中 `run-005` 完成两个 live arm，但暴露出失败 ranker
 decision 缺失 invocation linkage、因而在 bundle selection 中被遗漏的产品级 replay 缺口。通用修复为成功和
-失败 ranker 统一写入同一个 input digest，并以 timeout product replay 测试封住；修复提交和完整离线门禁
-冻结后，使用全新 `run-006` 目录重跑同一 18 条。完整 fresh100 与 blind v2/v3 仍禁止运行。
+失败 ranker 统一写入同一个 input digest，并以 timeout product replay 测试封住。修复提交 `de36131` 和完整
+离线门禁冻结后，全新 `run-deepseek-v4-flash-006` 完成同一 18 条 A/B、封存及 18/18 fixture-only replay，
+0 mismatch、0 fixture gap。完整 fresh100 与 blind v2/v3 均未运行。
 
 第一阶段批量 gate 不接受单例修复：candidate recall@3 至少提升 25 个百分点，eligible G-development 至少
 40% 恢复正确官网候选，verified website 错误、模型新造 URL、跨公司和跨 tenant 均为 0，replay 100%，
@@ -66,10 +68,20 @@ flag-off 无回归，平均不超过两次调用/公司，并报告成本、失�
 公司示例、人工正确 URL 或 closure matrix 调 prompt。完整 contract 见
 `docs/adr/0029-bound-llm-candidate-reasoning.md`。
 
-当前发布判断仍为 feature flag 默认关闭；任何未封存运行、replay divergence 或未完成的人工 identity audit
-都不能形成 uplift 声明。失败 ranker linkage 修复后的离线门禁为 2656 tests（4 skipped）、25/25 provider、
-6/6 resolver、46 native adapters / 0 architecture issues。最终 Phase D 数字只从首个完成 18/18 fixture
-replay 的封存目录读取。
+`run-006` 的正式 promotion 结论为失败：baseline/treatment candidate recall@3 为 0/18 与 1/18，只提升
+5.56 个百分点；eligible-G recovery 为 1/18；verified website recall 为 3/18 与 4/18；treatment 仍有 1 条
+wrong/cross-company（WICHITA COMPANY LIMITED 被错误绑定到 Wichita 市政府）。唯一 Exact 为 Versana 的
+Raleigh DevOps opening，company/title/location/Lever tenant/opening URL 已逐项人工通过。25 次模型调用的
+provider-accounted 用量为 4,747 prompt + 1,988 completion tokens，成本 USD 0.00122122；14/18 记录存在
+advisory failure，模型总延迟 P50/P95 为 8.20/10.84 秒。详细报告见
+`docs/LLM_PHASE_D_EXPERIMENT_REPORT.md`。
+
+因此 feature flag 保持默认关闭，不进行 prompt 定向调参，不打开 blind v2/v3，也不把单个 Exact 宣称为
+泛化提升。下一阶段须先单独处理两项非 prompt 工作：修正 Wichita 地域/实体碰撞的 deterministic identity
+contract，以及重置每次 provider 调用的 usage provenance，消除 timeout audit record 的 stale token 统计。
+这些工作需另行版本化和局部回归；是否启动新的 LLM 实验由本次失败分析后的新决策决定。失败 ranker linkage
+修复后的离线门禁为 2656 tests（4 skipped）、25/25 provider、6/6 resolver、46 native adapters / 0
+architecture issues；本次文档收尾不重复运行全量门禁。
 
 ## 当前执行轮次（2026-07-20，`.199`）
 

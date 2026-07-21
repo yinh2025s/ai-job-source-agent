@@ -10,6 +10,20 @@
 
 ### Changed
 
+- The sealed DeepSeek Phase D `run-deepseek-v4-flash-006` completed the fixed
+  18-record A/B and reproduced 18/18 records in fixture-only same-version replay
+  with zero mismatch or fixture gap. It made 25 provider calls and the
+  authoritative budget ledger recorded 4,747 prompt tokens, 1,988 completion
+  tokens, and USD 0.00122122. The promotion gate failed: candidate recall@3
+  improved only 5.56 percentage points, eligible-G recovery was 1/18, and one
+  pre-existing deterministic Wichita identity collision remained a wrong
+  cross-company website. Treatment produced one Exact opening (Versana), whose
+  company, title, location, Lever tenant and opening URL passed manual review.
+  The feature remains off and no blind v2/v3 cohort was opened. The evaluator's
+  larger token estimate is retained as a diagnostic discrepancy because timeout
+  audit records can inherit stale per-client usage; the provider budget ledger
+  remains the capture-time cost authority.
+
 - DeepSeek Phase D product replay now binds failed candidate-rank decisions to
   their originating invocation digest, matching the linkage already present on
   successful rank decisions. The unsealed `run-deepseek-v4-flash-005` exposed
