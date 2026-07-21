@@ -292,25 +292,26 @@ def _opening_url_confirms_target_location(
 
 
 def _title_confirms_location_independence(title: str) -> bool:
-    tokens = set(_basic_location(title).split())
+    normalized = _basic_location(title)
     return bool(
-        "remote" in tokens
-        or {"work", "home"}.issubset(tokens)
-        or {"location", "independent"}.issubset(tokens)
-        or "nationwide" in tokens
+        re.search(
+            r"(?:^|[,(|/]|\s-\s*)remote(?=\s*(?:[-,|/)]|$))",
+            title.casefold(),
+        )
+        or re.search(r"(?:^| )work from home(?: |$)", normalized)
+        or re.search(r"(?:^| )location independent(?: |$)", normalized)
+        or re.search(r"(?:^| )nationwide(?: |$)", normalized)
     )
 
 
 def _opening_url_confirms_location_independence(opening_url: str) -> bool:
-    path_tokens: set[str] = set()
+    qualifiers = set()
     for segment in urlparse(opening_url).path.casefold().split("/"):
         if segment and not _looks_like_opaque_requisition_id(segment):
-            path_tokens.update(re.findall(r"[a-z]+", segment))
+            qualifiers.add(_basic_location(segment))
     return bool(
-        "remote" in path_tokens
-        or {"work", "home"}.issubset(path_tokens)
-        or {"location", "independent"}.issubset(path_tokens)
-        or "nationwide" in path_tokens
+        qualifiers
+        & {"remote", "work from home", "location independent", "nationwide"}
     )
 
 

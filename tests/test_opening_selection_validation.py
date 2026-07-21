@@ -382,7 +382,7 @@ class OpeningSelectionValidationTests(unittest.TestCase):
         self.assertEqual(location, "title_location_independent")
 
     def test_remote_url_can_supply_location_independent_evidence(self):
-        opening_url = "https://jobs.acme.test/jobs/remote-ai-engineer/role-1"
+        opening_url = "https://jobs.acme.test/jobs/remote/ai-engineer/role-1"
         issues, location = validate_opening_selection(
             selection=_selection(
                 title="AI Engineer",
@@ -398,6 +398,56 @@ class OpeningSelectionValidationTests(unittest.TestCase):
 
         self.assertNotIn("OPENING_LOCATION_UNVERIFIED", issues)
         self.assertEqual(location, "url_location_independent")
+
+    def test_remote_sensing_title_is_not_location_independent_evidence(self):
+        issues, location = validate_opening_selection(
+            selection=_selection(
+                title="Remote Sensing Engineer",
+                location=None,
+            ),
+            provider=_provider(),
+            opening=_opening(),
+            open_position_url="https://jobs.lever.co/acme/role-1",
+            target_title="Remote Sensing Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertIn("OPENING_LOCATION_UNVERIFIED", issues)
+        self.assertEqual(location, "missing")
+
+    def test_unrelated_work_and_home_title_tokens_are_not_location_evidence(self):
+        issues, location = validate_opening_selection(
+            selection=_selection(
+                title="Work Systems and Home Products Engineer",
+                location=None,
+            ),
+            provider=_provider(),
+            opening=_opening(),
+            open_position_url="https://jobs.lever.co/acme/role-1",
+            target_title="Work Systems and Home Products Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertIn("OPENING_LOCATION_UNVERIFIED", issues)
+        self.assertEqual(location, "missing")
+
+    def test_remote_slug_is_not_location_independent_url_evidence(self):
+        opening_url = "https://jobs.acme.test/jobs/remote-sensing-engineer/role-1"
+        issues, location = validate_opening_selection(
+            selection=_selection(
+                title="Remote Sensing Engineer",
+                location=None,
+                canonical_opening_url=opening_url,
+            ),
+            provider=_provider(canonical_board_url="https://jobs.acme.test"),
+            opening=_opening(canonical_opening_url=opening_url),
+            open_position_url=opening_url,
+            target_title="Remote Sensing Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertIn("OPENING_LOCATION_UNVERIFIED", issues)
+        self.assertEqual(location, "missing")
 
     def test_remote_title_cannot_override_explicit_conflicting_url_state(self):
         opening_url = "https://jobs.acme.test/jobs/remote-engineer-california/role-1"
