@@ -2709,11 +2709,18 @@ ignore unconsumed tape entries. A migration replay over the immutable `.208`
 capture now reports 5/5 reproduced, zero mismatch, zero fixture gap and zero
 tape divergence.
 
-Next freeze `.209` and repeat the same five-record live from entirely new roots,
-then run its same-version full replay and URL/identity audit. During this focused
-cycle run only replay/resolver/checkpoint tests; the 2500+ full suite runs once
-after same-version acceptance, immediately before the next integrated Fresh100
-gate.
+The clean `.209` gate at commit `bf71c4b` is complete from entirely new roots:
+four verified Exact outcomes and one NYC `NETWORK_TIMEOUT`; full replay is 5/5
+reproduced with zero mismatch, fixture gap or tape divergence. All four Exact
+chains pass company, title, location, provider, tenant, board and opening audit.
+The single integration gate passes 25/25 provider, 6/6 resolver and 46 adapters
+with zero architecture issues; its only full-suite setup error was the sandbox
+blocking a loopback bind, and that five-test class passes outside the sandbox.
+
+The next gate is one clean, frozen-code Fresh100 development-cohort run on
+`.209`, not another local test cycle. It must use new roots and first report the
+current causal failure distribution; it cannot use focused success to rewrite
+the cohort score or trigger per-company fixes during execution.
 
 ### Fresh100 `.208` Replay Query Projection
 

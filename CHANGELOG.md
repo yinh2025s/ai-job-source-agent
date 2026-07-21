@@ -8,12 +8,16 @@
 - Scoped replay restores cache-backed producer inputs from that explicit field.
   Older captures fall back to exact allocation-trace URLs before the lossy
   selected-candidate representation; strict request identity remains unchanged.
-- The five-record `.208` diagnostic artifact now replays 5/5 as reproduced with
-  zero mismatch, fixture gap or tape divergence. This is a cross-version
-  migration diagnostic; clean same-version `.209` live/replay remains pending.
-- Development verification is intentionally scoped to 246 replay, resolver and
-  checkpoint tests. The 2500+ full suite is deferred to the single integration
-  gate after focused same-version acceptance.
+- The five-record `.208` diagnostic artifact replays 5/5 as reproduced with
+  zero mismatch, fixture gap or tape divergence. The subsequent clean `.209`
+  live produces four verified Exact outcomes plus one NYC network timeout; its
+  full same-version replay reproduces all 5/5 with zero mismatch, fixture gap or
+  tape divergence.
+- Development verification used 246 replay, resolver and checkpoint tests. The
+  single post-focused integration gate then passed 25/25 provider cases, 6/6
+  resolver cases and 46 adapters with zero architecture issues. The 2568-test
+  run had only a sandbox loopback-bind setup error; that five-test HTTP contract
+  class passed separately with local socket permission.
 
 ## 2026-07-21 - Deterministic replay query and hiring projection `.208`
 
