@@ -2692,6 +2692,25 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
+### Fresh100 `.208` Replay Query Projection
+
+Phase B implements the replay defect exposed by the `.207` full bundle. An S6
+query URL can be recognized as a display projection only for a generic board
+with identical normalized scheme/host/path and a complete S7-verified identity
+chain still bound to the query-free S5 primary. Typed provider queries and every
+real board/path/identity conflict remain fail closed. S3 now deterministically
+publishes the effective hiring entity for both alternate and same-entity
+relationships, eliminating route-dependent top-level field drift.
+
+Relevant local gates pass 161 tests. A diagnostic `.208` replay over `.207`
+snapshots proves 100/100 records can execute with zero fixture gap, but its
+intentional output projection differences are cross-version and cannot satisfy
+same-version acceptance. The next gate is a clean five-record live on frozen
+`.208` code for NYC, two Versana postings and two B&D postings, followed by 5/5
+same-version replay and identity audit. Only after that focused gate passes does
+the main line run one integration gate; the 2500+ full suite is not repeated
+during each local edit.
+
 ### Fresh100 `.207` Network Rerun Decision
 
 Frozen `.207` completed a cold 100-record live run with 24 strict S7 Exact, 79

@@ -1711,6 +1711,155 @@ class FailureReplayBundleTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "metadata is inconsistent"):
             _scoped_job_board_portfolio(source_record)
 
+    def test_scoped_generic_seed_accepts_verified_s6_query_projection(self):
+        board_url = "https://careers.example.test/jobs"
+        opening_url = "https://careers.example.test/job/devops-engineer"
+        source_record = {
+            "company_name": "Example",
+            "job_list_page_url": f"{board_url}?q=DevOps+Engineer",
+            "open_position_url": opening_url,
+            "identity_assertion": {
+                "verdict": "verified",
+                "candidate_opening_url": opening_url,
+                "hiring": {
+                    "verified": True,
+                },
+                "provider": {
+                    "provider": "generic",
+                    "canonical_board_url": board_url,
+                    "relationship_verified": True,
+                },
+                "opening": {
+                    "provider": "generic",
+                    "canonical_board_url": board_url,
+                    "canonical_opening_url": opening_url,
+                },
+                "selection": {
+                    "provider": "generic",
+                    "canonical_board_url": board_url,
+                    "canonical_opening_url": opening_url,
+                },
+            },
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "generic",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "generic",
+                    "primary_url": board_url,
+                },
+                "provider_detection": {
+                    "method": "verified_first_party_action",
+                    "provider": "generic",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        self.assertIsNone(_scoped_job_board_portfolio(source_record))
+
+    def test_scoped_generic_seed_rejects_query_projection_with_board_conflict(self):
+        board_url = "https://careers.example.test/jobs"
+        opening_url = "https://careers.example.test/job/devops-engineer"
+        source_record = {
+            "job_list_page_url": f"{board_url}?q=DevOps+Engineer",
+            "open_position_url": opening_url,
+            "identity_assertion": {
+                "verdict": "verified",
+                "candidate_opening_url": opening_url,
+                "hiring": {"verified": True},
+                "provider": {
+                    "provider": "generic",
+                    "canonical_board_url": board_url,
+                    "relationship_verified": True,
+                },
+                "opening": {
+                    "provider": "generic",
+                    "canonical_board_url": board_url,
+                    "canonical_opening_url": opening_url,
+                },
+                "selection": {
+                    "provider": "generic",
+                    "canonical_board_url": "https://careers.example.test/other",
+                    "canonical_opening_url": opening_url,
+                },
+            },
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "generic",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "generic",
+                    "primary_url": board_url,
+                },
+                "provider_detection": {
+                    "method": "verified_first_party_action",
+                    "provider": "generic",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "metadata is inconsistent"):
+            _scoped_job_board_portfolio(source_record)
+
+    def test_scoped_typed_seed_rejects_top_level_query_projection(self):
+        board_url = "https://jobs.lever.co/example"
+        opening_url = f"{board_url}/devops-engineer"
+        source_record = {
+            "job_list_page_url": f"{board_url}?team=other",
+            "open_position_url": opening_url,
+            "identity_assertion": {
+                "verdict": "verified",
+                "candidate_opening_url": opening_url,
+                "hiring": {"verified": True},
+                "provider": {
+                    "provider": "lever",
+                    "canonical_board_url": board_url,
+                    "relationship_verified": True,
+                },
+                "opening": {
+                    "provider": "lever",
+                    "canonical_board_url": board_url,
+                    "canonical_opening_url": opening_url,
+                },
+                "selection": {
+                    "provider": "lever",
+                    "canonical_board_url": board_url,
+                    "canonical_opening_url": opening_url,
+                },
+            },
+            "stages": [{
+                "stage": "job_board_discovery",
+                "status": "success",
+                "provider": "lever",
+            }],
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": True,
+                    "primary_provider": "lever",
+                    "primary_url": board_url,
+                },
+                "provider_detection": {
+                    "method": "linked_url_evidence",
+                    "provider": "lever",
+                    "url": board_url,
+                },
+            }}},
+        }
+
+        with self.assertRaisesRegex(ValueError, "metadata is inconsistent"):
+            _scoped_job_board_portfolio(source_record)
+
     def test_scoped_preflight_rejects_ambiguous_s5_board_evidence(self):
         source_record = {
             "company_name": "Example",

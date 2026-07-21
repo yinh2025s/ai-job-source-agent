@@ -474,6 +474,14 @@ class HiringIdentityResolutionStage:
                 or context.company.hiring_entity_name
                 or context.company.company_name
             )
+            hiring_entity_name = str(hiring_entity_name).strip()
+            if not hiring_entity_name:
+                raise ValueError("Hiring entity name cannot be empty")
+            if "hiring_entity_name" not in updates:
+                updates["hiring_entity_name"] = hiring_entity_name
+                evidence.append(
+                    {"field": "hiring_entity_name", "value": hiring_entity_name}
+                )
             relationship_type = (
                 getattr(identity, "relationship_type", None) if identity else None
             )
@@ -486,7 +494,7 @@ class HiringIdentityResolutionStage:
             relationship_evidence_url = (
                 getattr(identity, "evidence_url", None) if identity else None
             )
-            if _same_entity(context.company.company_name, str(hiring_entity_name)):
+            if _same_entity(context.company.company_name, hiring_entity_name):
                 relationship_type = "same_entity"
                 relationship_verified = True
                 verification_method = "same_entity"
@@ -509,7 +517,7 @@ class HiringIdentityResolutionStage:
             )
             updates["hiring_identity_evidence"] = HiringIdentityEvidence(
                 source_company_name=context.company.company_name,
-                hiring_entity_name=str(hiring_entity_name),
+                hiring_entity_name=hiring_entity_name,
                 relationship_type=relationship_type,
                 verification_method=verification_method,
                 verified=bool(relationship_verified),

@@ -688,6 +688,15 @@ class UpstreamStageTests(unittest.TestCase):
 
         self.assertEqual(execution.result.status, "success")
         self.assertIn("input company remains", execution.result.detail)
+        self.assertEqual(execution.updates["hiring_entity_name"], "Acme")
+        self.assertEqual(
+            execution.updates["hiring_identity_evidence"].hiring_entity_name,
+            "Acme",
+        )
+        self.assertIn(
+            {"field": "hiring_entity_name", "value": "Acme"},
+            execution.result.evidence,
+        )
 
     def test_s3_stops_undisclosed_agency_without_selecting_client(self):
         context = PipelineContext.from_company(

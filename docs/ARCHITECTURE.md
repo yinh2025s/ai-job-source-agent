@@ -151,6 +151,11 @@ website resolution；page-derived generic board evidence 继续依赖 Career pro
 链为 `website_resolution -> career_discovery -> job_board_discovery`，不能只把最终 URL seed 成
 中间 checkpoint。Trace 中明确的 `pages_visited`/`selected_page_source` 与 native page-aware
 adapter provenance 都属于 page-derived evidence；缺少任一 required scope 时 preflight fail closed，
+S6 可以把 generic Job List 的最终展示 URL 更新为同 scheme/host/path 的 title-filtered query，但这
+不能改变 S5 canonical board identity。Replay 只在 S7 hiring/provider/opening/selection 全部 verified
+且三份 typed identity 仍精确绑定 S5 primary 时接受该 projection；typed provider、path change、fragment、
+query-bearing primary 或任何 identity conflict 继续 fail closed。成功的 S3 同时发布 typed hiring evidence
+和 effective hiring entity name，包括 same-entity，避免后续 route 决定兼容字段是否为空。
 不得从 global latest snapshot 猜测或补造空 tape。
 
 ### Career Inventory Following

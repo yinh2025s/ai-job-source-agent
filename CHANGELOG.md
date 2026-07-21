@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-07-21 - Deterministic replay query and hiring projection `.208`
+
+- Replay preflight now accepts an S6 title-filtered generic Job List display URL
+  only when it has the same scheme/host/path as the query-free S5 canonical
+  board and a complete verified S7 hiring/provider/opening/selection chain still
+  binds the Exact to that board. Typed providers, path changes and identity
+  conflicts remain rejected.
+- Successful S3 executions now always publish the effective hiring entity name
+  alongside typed hiring evidence, including same-entity relationships. This
+  removes route-dependent null/non-null output differences without changing
+  relationship authorization or URL gates.
+- Adapter version advances to `.208`. Relevant offline gates pass 161 tests.
+  A cross-version diagnostic executes all 100 immutable `.207` snapshots with
+  zero fixture gap, but does not count as same-version acceptance. The frozen
+  five-record live/replay gate is pending.
+
 ## 2026-07-21 - Fresh100 `.207` network rerun
 
 - Ran the full observed Fresh100 development cohort from clean roots on frozen

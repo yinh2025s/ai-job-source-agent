@@ -1954,6 +1954,77 @@ def _canonical_urls_match(left: object, right: object) -> bool:
         return False
 
 
+def _verified_generic_query_projection_matches_primary(
+    source_record: dict,
+    *,
+    primary_url: str,
+    primary_provider: str,
+) -> bool:
+    """Accept an S6 display query only when S7 retains the exact S5 board."""
+
+    if primary_provider != "generic":
+        return False
+    top_level_url = source_record.get("job_list_page_url")
+    if not isinstance(top_level_url, str):
+        return False
+    try:
+        primary = urlparse(canonicalize_identity_url(primary_url))
+        projected = urlparse(canonicalize_identity_url(top_level_url))
+    except (TypeError, ValueError):
+        return False
+    if (
+        not projected.query
+        or primary.query
+        or primary.fragment
+        or projected.fragment
+        or (primary.scheme, primary.netloc, primary.path)
+        != (projected.scheme, projected.netloc, projected.path)
+    ):
+        return False
+
+    assertion = source_record.get("identity_assertion")
+    if not isinstance(assertion, dict) or assertion.get("verdict") != "verified":
+        return False
+    hiring = assertion.get("hiring")
+    provider = assertion.get("provider")
+    opening = assertion.get("opening")
+    selection = assertion.get("selection")
+    if (
+        not isinstance(hiring, dict)
+        or hiring.get("verified") is not True
+        or not isinstance(provider, dict)
+        or provider.get("relationship_verified") is not True
+        or not isinstance(opening, dict)
+        or not isinstance(selection, dict)
+    ):
+        return False
+    for payload in (provider, opening, selection):
+        if (
+            payload.get("provider") != primary_provider
+            or not _canonical_urls_match(
+                payload.get("canonical_board_url"),
+                primary_url,
+            )
+        ):
+            return False
+    opening_url = source_record.get("open_position_url")
+    return bool(
+        isinstance(opening_url, str)
+        and _canonical_urls_match(
+            assertion.get("candidate_opening_url"),
+            opening_url,
+        )
+        and _canonical_urls_match(
+            opening.get("canonical_opening_url"),
+            opening_url,
+        )
+        and _canonical_urls_match(
+            selection.get("canonical_opening_url"),
+            opening_url,
+        )
+    )
+
+
 def _checkpointed_scoped_job_board_portfolio(
     payload: object,
     *,
@@ -2233,6 +2304,15 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
         else None
     )
     top_level_url = source_record.get("job_list_page_url")
+    top_level_projection_consistent = bool(
+        not isinstance(top_level_url, str)
+        or _canonical_urls_match(top_level_url, primary_url)
+        or _verified_generic_query_projection_matches_primary(
+            source_record,
+            primary_url=primary_url,
+            primary_provider=primary_provider,
+        )
+    )
     primary_metadata_valid = bool(
         isinstance(primary_url, str)
         and primary_url
@@ -2248,10 +2328,7 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
     )
     provider_projection_consistent = (
         generic_url_only
-        and (
-            not isinstance(top_level_url, str)
-            or _canonical_urls_match(top_level_url, primary_url)
-        )
+        and top_level_projection_consistent
     ) or (
         len(
             {
@@ -2266,10 +2343,7 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
         ) == 1
         and detected_url == primary_url
         and detected_provider == primary_provider
-        and (
-            not isinstance(top_level_url, str)
-            or _canonical_urls_match(top_level_url, primary_url)
-        )
+        and top_level_projection_consistent
     )
     if not primary_metadata_valid or not provider_projection_consistent:
         migrated = None
