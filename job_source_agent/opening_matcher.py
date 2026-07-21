@@ -204,95 +204,6 @@ class JobOpeningMatcher:
                 item["query"] = query.value
                 item["query_source"] = query.source
             trace["search_plan"].append(item)
-        deferred_landing_js: tuple[Page, str] | None = None
-
-        def match_js_declared_inventory(
-            page: Page,
-            *,
-            page_url: str,
-            interaction: JobSearchInteraction | None = None,
-        ) -> OpeningMatch | None:
-            js_inventory = discover_js_declared_inventory(self.fetcher, page, target_title)
-            trace.setdefault("js_declared_inventory", []).append(
-                {
-                    "status": js_inventory.trace.status,
-                    "retryable": js_inventory.trace.retryable,
-                    "blocked": js_inventory.trace.blocked,
-                    "assets_considered": list(js_inventory.trace.assets_considered),
-                    "assets_fetched": list(js_inventory.trace.assets_fetched),
-                    "endpoint_url": js_inventory.trace.endpoint_url,
-                    "request_fields": list(js_inventory.trace.request_fields),
-                    "candidate_count": js_inventory.trace.candidate_count,
-                    "detail": js_inventory.trace.detail,
-                    "inventory_scope": js_inventory.trace.inventory_scope,
-                }
-            )
-            if js_inventory.trace.status in {"verified", "candidate_cap_reached"}:
-                js_links = [
-                    RawLink(
-                        url=item.url,
-                        text=item.title,
-                        source_url=page_url,
-                        origin="verified_declared_inventory",
-                        location=item.location,
-                    )
-                    for item in js_inventory.candidates
-                ]
-                candidates = _opening_candidates_from_links(
-                    js_links,
-                    page_url=page_url,
-                    target_title=target_title,
-                    target_location=target_location,
-                    provider=trace["provider"],
-                    excluded_urls=(job_list_url,),
-                )
-                _record_candidates(trace, candidates)
-                api_trace["inventory"] = {
-                    "source": "js_declared_inventory",
-                    "scope": js_inventory.trace.inventory_scope,
-                    "status": (
-                        "verified_filtered_empty"
-                        if js_inventory.inventory_complete
-                        and not js_inventory.candidates
-                        else js_inventory.trace.status
-                    ),
-                    "complete": js_inventory.inventory_complete,
-                    "candidate_count": len(js_inventory.candidates),
-                }
-                api_trace["provider_detection"] = {
-                    "method": "verified_declared_inventory",
-                    "provider": "generic",
-                    "url": job_list_url,
-                    "endpoint_url": js_inventory.trace.endpoint_url,
-                    "inventory_complete": js_inventory.inventory_complete,
-                    "inventory_count": len(js_inventory.candidates),
-                    "inventory_scope": js_inventory.trace.inventory_scope,
-                }
-                if candidates:
-                    if interaction is not None:
-                        trace["interactive_search"]["disposition"] = "matched"
-                    selected = self._select_with_verified_detail(
-                        candidates,
-                        job_list_url=job_list_url,
-                        target_title=target_title,
-                        target_location=target_location,
-                        provider=trace["provider"],
-                        trace=trace,
-                    )
-                    if selected is not None:
-                        trace["selected"] = _selected_candidate_trace(selected)
-                        return selected
-            elif js_inventory.trace.blocked:
-                api_trace["inventory"] = {
-                    "source": "js_declared_inventory",
-                    "scope": "filtered",
-                    "status": js_inventory.trace.status,
-                    "complete": False,
-                    "candidate_count": 0,
-                    "reason_code": "BOT_PROTECTION",
-                }
-            return None
-
         for search_url, reusable_page, search_source, interaction, query, action in search_plan:
             trace["searched_urls"].append(search_url)
             if reusable_page is not None:
@@ -518,36 +429,98 @@ class JobOpeningMatcher:
                     trace["selected"] = _selected_candidate_trace(selected)
                     return selected, trace
 
-            # The unfiltered landing page is shared by every route. Probe its
-            # assets only after title-directed routes have had their cheap chance.
-            if search_source == "reused_landing_page":
-                deferred_landing_js = (page, page_url)
-            elif search_source in {
+            if search_source in {
+                "reused_landing_page",
                 "declared_get_form",
-                "declared_search_route",
                 "interactive_job_search",
-            } or title_filtered_fallback:
-                selected = match_js_declared_inventory(
+            }:
+                js_inventory = discover_js_declared_inventory(
+                    self.fetcher,
                     page,
-                    page_url=page_url,
-                    interaction=interaction,
+                    target_title,
                 )
-                if selected is not None:
-                    return selected, trace
+                js_trace = {
+                    "status": js_inventory.trace.status,
+                    "retryable": js_inventory.trace.retryable,
+                    "blocked": js_inventory.trace.blocked,
+                    "assets_considered": list(js_inventory.trace.assets_considered),
+                    "assets_fetched": list(js_inventory.trace.assets_fetched),
+                    "endpoint_url": js_inventory.trace.endpoint_url,
+                    "request_fields": list(js_inventory.trace.request_fields),
+                    "candidate_count": js_inventory.trace.candidate_count,
+                    "detail": js_inventory.trace.detail,
+                    "inventory_scope": js_inventory.trace.inventory_scope,
+                }
+                trace.setdefault("js_declared_inventory", []).append(js_trace)
+                if js_inventory.trace.status in {"verified", "candidate_cap_reached"}:
+                    js_links = [
+                        RawLink(
+                            url=item.url,
+                            text=item.title,
+                            source_url=page_url,
+                            origin="verified_declared_inventory",
+                            location=item.location,
+                        )
+                        for item in js_inventory.candidates
+                    ]
+                    candidates = _opening_candidates_from_links(
+                        js_links,
+                        page_url=page_url,
+                        target_title=target_title,
+                        target_location=target_location,
+                        provider=trace["provider"],
+                        excluded_urls=(job_list_url,),
+                    )
+                    _record_candidates(trace, candidates)
+                    api_trace["inventory"] = {
+                        "source": "js_declared_inventory",
+                        "scope": js_inventory.trace.inventory_scope,
+                        "status": (
+                            "verified_filtered_empty"
+                            if js_inventory.inventory_complete
+                            and not js_inventory.candidates
+                            else js_inventory.trace.status
+                        ),
+                        "complete": js_inventory.inventory_complete,
+                        "candidate_count": len(js_inventory.candidates),
+                    }
+                    api_trace["provider_detection"] = {
+                        "method": "verified_declared_inventory",
+                        "provider": "generic",
+                        "url": job_list_url,
+                        "endpoint_url": js_inventory.trace.endpoint_url,
+                        "inventory_complete": js_inventory.inventory_complete,
+                        "inventory_count": len(js_inventory.candidates),
+                        "inventory_scope": js_inventory.trace.inventory_scope,
+                    }
+                    if candidates:
+                        if interaction is not None:
+                            trace["interactive_search"]["disposition"] = "matched"
+                        selected = self._select_with_verified_detail(
+                            candidates,
+                            job_list_url=job_list_url,
+                            target_title=target_title,
+                            target_location=target_location,
+                            provider=trace["provider"],
+                            trace=trace,
+                        )
+                        if selected is not None:
+                            trace["selected"] = _selected_candidate_trace(selected)
+                            return selected, trace
+                elif js_inventory.trace.blocked:
+                    api_trace["inventory"] = {
+                        "source": "js_declared_inventory",
+                        "scope": "filtered",
+                        "status": js_inventory.trace.status,
+                        "complete": False,
+                        "candidate_count": 0,
+                        "reason_code": "BOT_PROTECTION",
+                    }
             if interaction is not None:
                 trace["interactive_search"]["disposition"] = "no_exact_match"
                 trace["interactive_search"][
                     "reason_code"
                 ] = "OPENING_DISCOVERY_INCOMPLETE"
-
-        if deferred_landing_js is not None:
-            deferred_page, deferred_page_url = deferred_landing_js
-            selected = match_js_declared_inventory(
-                deferred_page,
-                page_url=deferred_page_url,
-            )
-            if selected is not None:
-                return selected, trace
 
         native_inventory_incomplete = bool(
             trace["provider"] == "cws"

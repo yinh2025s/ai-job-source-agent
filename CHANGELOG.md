@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-07-21 - Rejected opening-scheduling cluster `.212`
+
+- The `.211` four-company focused live retained 4/4 verified Websites,
+  Careers and Job Lists but recovered 0/4 Exact openings. WENDEL and Crawford
+  moved from timeout to discovery-incomplete, Crosby became portfolio-
+  incomplete and Sentar still timed out; changed terminal labels are not counted
+  as recall recovery.
+- Same-version `.211` replay passed 4/4 with zero mismatch or fixture gap, so
+  the result is deterministic, but it does not satisfy the predeclared minimum
+  of three independent opening recoveries.
+- The deferred landing-page JS scheduling behavior is therefore reverted in
+  `.212`. Identity, URL and location gates were never relaxed. No third generic
+  architecture repair starts under the current two-round stabilization limit.
+- The immutable `.211` focused artifact is archived with the checksum recorded
+  in `artifacts/releases/fresh4-v211-opening-scheduling-20260721-run1.tar.zst.sha256`.
+
 ## 2026-07-21 - Trusted opening-search scheduling `.211`
 
 - Generic opening matching still performs cheap extraction from the verified

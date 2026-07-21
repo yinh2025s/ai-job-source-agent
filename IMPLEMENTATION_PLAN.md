@@ -62,6 +62,14 @@ opening 局部测试通过，安全负例保持 fail closed。下一步仅运行
 随后冻结 Sentar、Crawford Thomas Recruiting、Crosby、WENDEL 四条 focused live；
 少于三家恢复则拒绝 cluster closure，不继续第三轮架构修复。
 
+Phase C 已拒绝该 cluster：冻结 `.211` focused live 为 0/4 Exact，虽然 WENDEL、
+Crawford 和 Crosby 的 terminal label 不再是 timeout，但没有任何 verified opening
+恢复，不能计作成功；同版本 replay 为 4/4 reproduced、0 mismatch、0 fixture gap。
+`.212` 回滚 scheduling 行为，并按“两轮通用架构修复”上限停止继续尝试新架构规则。
+下一步只运行回滚相关局部测试和一次最终 offline integration gate，然后固定 Fresh100
+`.209` 因果报告、`.210` identity 修复结果和 `.211` rejected experiment；不运行 sealed
+holdout，也不再用 development cohort 驱动第三轮改动。
+
 ## 当前架构轨道（2026-07-20，LLM Candidate Reasoning Phase A）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
