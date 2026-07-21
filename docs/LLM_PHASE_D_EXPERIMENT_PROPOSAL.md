@@ -1,23 +1,28 @@
 # LLM Candidate Reasoning Phase D Proposal
 
-Status: awaiting explicit user approval. No real model call is authorized by this
-document.
+Status: DeepSeek provider use approved by the user on 2026-07-21. The credential is
+configured outside the repository. Real calls remain gated on a clean frozen commit,
+the fixed 18-record runner, offline gates, call/cost enforcement and fresh artifact
+roots.
 
 ## Provider And Model
 
-- Proposed provider: OpenAI API.
-- Proposed pinned model: `gpt-5-mini-2025-08-07`.
+- Approved provider: DeepSeek API.
+- Pinned model: `deepseek-v4-flash` in explicit non-thinking mode.
 - Reason: it supports structured outputs and is sufficient for two bounded tasks:
   producing at most three URL-free search queries and ordering at most ten existing
   candidate IDs. It is not used for browsing, verification, provider identity, S6,
   S7, or publication.
 
-No OpenAI client, endpoint, credential, or SDK is present in the branch yet. The
-provider adapter may be implemented only after approval and must remain behind the
-existing `LLMReasoningClient` interface.
+The provider adapter uses only the standard library and remains behind the existing
+`LLMReasoningClient` interface. It sends one non-streaming request, never retries,
+sets `thinking.type=disabled`, and requires JSON Output. `deepseek-chat` is not used
+because DeepSeek documents that alias as scheduled for deprecation on 2026-07-24.
 
-Official model reference and rates checked on 2026-07-21:
-`https://developers.openai.com/api/docs/models/gpt-5-mini`.
+Official model, JSON Output and rates checked on 2026-07-21:
+`https://api-docs.deepseek.com/quick_start/pricing`,
+`https://api-docs.deepseek.com/guides/json_mode`, and
+`https://api-docs.deepseek.com/api/create-chat-completion`.
 
 ## Exact Model Fields
 
@@ -60,8 +65,8 @@ before artifact persistence.
 - Estimated bounded input: at most about 225,000 tokens across the experiment.
 - Estimated bounded output: at most about 54,000 tokens, including reasoning/output
   allowance.
-- At published rates of USD 0.25/M input and USD 2.00/M output, the bounded estimate
-  is about USD 0.17.
+- At the published `deepseek-v4-flash` cache-miss rates of USD 0.14/M input and
+  USD 0.28/M output, the bounded estimate is about USD 0.047.
 - Proposed hard cost cap: USD 0.50. The runner must stop before issuing a call that
   could exceed the cap.
 
@@ -73,16 +78,20 @@ the estimate is not a substitute for usage accounting.
 Only sanitized structured requests/responses are retained locally. Provider response
 IDs may be used transiently for diagnostics but are not evidence and are not persisted
 in the decision record. Local artifacts use private directories, atomic files and no
-raw model text. The Responses request must set `store: false` and must not use
-background mode, conversations, files or provider-side tools. OpenAI states that API
-content is not used for training unless the customer opts in; default abuse-monitoring
-logs may retain customer content for up to 30 days. This experiment must not enable
-data sharing. Official policy checked on 2026-07-21:
-`https://platform.openai.com/docs/models/default-usage-policies-by-endpoint`.
+raw model text. The request does not use tools, files, browser state, `user_id`,
+streaming, thinking mode or chain-of-thought. DeepSeek does not document an API
+equivalent of `store:false`; its privacy policy says Inputs may be collected and that
+Personal Data may be processed and stored in the People's Republic of China. Therefore
+this experiment sends only public company identity, public job title/location and
+bounded public search evidence; personal profile data is prohibited. Official policy
+checked on 2026-07-21:
+`https://cdn.deepseek.com/policies/en-US/deepseek-privacy-policy.html?locale=en_US`.
 
-The credential is injected only as `OPENAI_API_KEY` in the process environment. It is
-never accepted as a CLI value, written to run config, logged, snapshotted, bundled or
-committed. A missing credential fails before creating the experiment ledger.
+The credential is injected only as `DEEPSEEK_API_KEY` in the process environment. The
+user-owned source file is outside the repository at
+`/private/tmp/ai-job-llm-phase-d-20260721/secrets/deepseek.env`, mode `0600`; the runner
+does not accept a key path or key value as CLI input. The secret is never written to run
+config, logs, snapshots, bundles or Git. A missing credential fails before dispatch.
 
 ## Isolation And Fallback
 
@@ -109,14 +118,15 @@ After live treatment, same-version replay reads only the frozen decision and HTT
 fixtures, constructs no real model client, and requires zero mismatch, zero fixture
 gap and zero unconsumed decision.
 
-## Approval Boundary
+## Approval And Execution Boundary
 
-Approval must explicitly name:
+The user's 2026-07-21 instruction to use the configured DeepSeek API authorizes:
 
-1. OpenAI as provider.
-2. `gpt-5-mini-2025-08-07` as the pinned model.
+1. DeepSeek as provider.
+2. `deepseek-v4-flash` as the pinned non-thinking model.
 3. At most 36 calls over the fixed 18 records.
 4. A USD 0.50 hard cost cap.
 
-Without that approval, Phase D does not start. Full Fresh100 and blind v2/v3 remain
-out of scope, and this branch is not merged into `main`.
+Execution may start only after the DeepSeek-ready code is committed and all offline
+gates pass. Full Fresh100 and blind v2/v3 remain out of scope, and this branch is not
+merged into `main`.

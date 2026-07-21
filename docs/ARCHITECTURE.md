@@ -183,6 +183,14 @@ The offline and product-replay foundation is implemented, but it does not enable
 structured client adapters, typed eligibility, conditional run configuration, atomic
 decision storage, strict replay, bounded search evidence, resolver re-verification and
 the A/B metrics gate are present. No fixed-cohort model A/B has run, so no recall uplift
+
+The isolated Phase D branch additionally provides a DeepSeek adapter for
+`deepseek-v4-flash`. It uses the fixed HTTPS Chat Completions endpoint, explicit
+non-thinking JSON mode, no tools, no streaming and no retry. A serial budget wrapper
+locks preflight, dispatch and accounting across both planner and ranker, with a 36-call
+limit and USD 0.50 hard cap. The capture runner requires a clean frozen branch and a
+fresh root, never loads evaluator labels, and seals baseline/treatment/decision/snapshot/
+checkpoint/replay digests before the separate evaluator may access reference websites.
 is claimed. Before any limited real experiment, provider, model, maximum call count,
 and estimated cost require explicit user approval. Passing requires batch-level recall
 uplift with zero wrong, cross-company, or cross-tenant URLs; one-company prompt tuning

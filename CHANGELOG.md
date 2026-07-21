@@ -82,6 +82,15 @@
 
 ### Added
 
+- DeepSeek Phase D preparation on the isolated LLM branch adds a standard-library
+  `deepseek-v4-flash` client in explicit non-thinking JSON mode, strict provider
+  envelope/content/usage validation, no retries, secret-safe errors, and an injected
+  transport for offline tests. A locked 36-call/USD 0.50 budget ledger performs
+  conservative UTF-8 preflight and provider-token accounting without retaining request
+  content. The fixed 18-record runner separates answer-free capture from label-based
+  evaluation, requires clean committed code and fresh artifact roots, seals full file
+  digests, and invokes fixture-only same-version replay before promotion metrics.
+
 - Product-level LLM decision capture and replay are now closed on the isolated
   experiment branch. Live fake/provider-neutral runs write strict redacted
   `llm-decisions.jsonl` and `llm-decision-manifest.json` artifacts bound to the

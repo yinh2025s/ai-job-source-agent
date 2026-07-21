@@ -52,8 +52,10 @@ planner/ranker 请求构造不得读取。原始记录 digest 为
 `d3c65152af084f1ad2bd994c4a6d67de1e09a66781437be00adb88ceb88368ae`，生成文件 SHA-256 为
 `b47545c9c09759a52600bf5cab18cedc4058de0df0667d157ab83357029f1733`。这仍只能证明离线 contract、回退、
 cohort 冻结与产品级 fixture replay 正确，不能宣称模型带来 recall 提升。真实实验提案记录在
-`docs/LLM_PHASE_D_EXPERIMENT_PROPOSAL.md`；下一步等待用户确认 provider/model 与费用。未经确认不得
-调用真实模型、进入 Phase D 或运行完整 fresh100。
+`docs/LLM_PHASE_D_EXPERIMENT_PROPOSAL.md`。用户已于 2026-07-21 指定并批准 DeepSeek API；实验固定
+`deepseek-v4-flash` 非思考 JSON 模式、最多 36 次调用和 USD 0.50 硬上限。DeepSeek adapter、串行费用
+ledger、answer-free capture/evaluator 分离、fresh artifact root 和 same-version replay runner 正在本独立分支
+完成离线门禁；代码提交冻结前不得调用。完整 fresh100 与 blind v2/v3 仍禁止运行。
 
 第一阶段批量 gate 不接受单例修复：candidate recall@3 至少提升 25 个百分点，eligible G-development 至少
 40% 恢复正确官网候选，verified website 错误、模型新造 URL、跨公司和跨 tenant 均为 0，replay 100%，

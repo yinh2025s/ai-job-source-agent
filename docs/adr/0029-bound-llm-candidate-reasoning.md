@@ -285,8 +285,11 @@ fixture. The Phase C metrics/gate implementation and an 18-record fixed
 eligible-G development input are complete, but no real-model A/B has run. The
 input contains no reference website URLs; evaluator-only labels are stored
 separately and must not be loaded while constructing planner/ranker requests.
-OpenAI `gpt-5-mini-2025-08-07` is proposed but not approved or implemented; no
-paid API has been enabled and no uplift is claimed.
+The user approved DeepSeek API use on 2026-07-21. Phase D pins
+`deepseek-v4-flash` in non-thinking JSON mode behind the provider-neutral client,
+with no retries, 36 calls maximum and a USD 0.50 hard cap. Capture never loads
+evaluator labels; same-version replay never constructs the DeepSeek client. No real
+experiment has run yet and no uplift is claimed.
 
 Phase A is this read-only design and ADR. It changes no runtime behavior.
 
