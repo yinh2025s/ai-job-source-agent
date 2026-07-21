@@ -2692,6 +2692,27 @@ priority = affected_companies × user_impact × recurrence × confidence / estim
 
 ## 推荐开发顺序
 
+### Fresh100 `.202` Network Rerun Decision
+
+The code-frozen `.202` rerun used an explicit 100-record guard and clean,
+isolated roots. It completed 100/100 live records with 20 strict Exact, 69
+websites, 56 Career pages and 52 verified Job Lists. All 20 Exact outcomes pass
+S7 and output validation; the four `.200` raw openings without location
+evidence remain rejected. The prior Arkema wrong-city false positive did not
+reappear.
+
+This rerun does not establish network recovery. It produced 30
+`NETWORK_TIMEOUT` terminals and 33 retryable outcomes, versus 7 timeouts plus 19
+rate-limited terminals in `.200`. Six former strict Exact records were lost to
+transport and only Frost and Holland America Line were newly recovered, moving
+strict Exact from 24 to 20. Full replay selected/exported 100/100 but failed
+closed before execution because Holland America Line has inconsistent scoped
+Job Board primary-detection metadata (`scoped_stage_seed_ambiguous`). The next
+step is causal analysis of that shared replay contract and the remaining
+non-transport discovery clusters; this score must not be used to justify more
+website heuristics or to claim a clean network baseline. Full evidence is in
+`docs/FRESH_100_V202_NETWORK_RERUN_REPORT.md`.
+
 ### Fresh100 `.200` Network Rerun Decision
 
 The isolated full rerun at commit `bc33bce` completed 100/100 live records with

@@ -1,5 +1,21 @@
 # Changelog
 
+## 2026-07-21 - Fresh100 `.202` network rerun
+
+- Ran the full Fresh100 cohort from clean isolated roots with explicit
+  `--limit 100 --require-full-cohort`: 20 strict Exact, 69 websites, 56 Career
+  pages and 52 verified Job Lists.
+- All 20 Exact outcomes passed S7 and output validation. The four former `.200`
+  location-unverified raw successes remained rejected, including the prior
+  Arkema wrong-city result.
+- Transport was worse than `.200`: 30 network timeouts and 33 retryable
+  terminals. Six prior strict Exact records were lost to transport while Frost
+  and Holland America Line were recovered.
+- Full replay selected/exported 100/100 but failed closed before execution on
+  one Holland America Line `scoped_stage_seed_ambiguous` integrity defect. The
+  run is recorded in `docs/FRESH_100_V202_NETWORK_RERUN_REPORT.md` and is not a
+  release acceptance result.
+
 ## 2026-07-21 - Identity-shaped apex request allocation `.202`
 
 - Reclassified `.200` failures by executable cause and rejected ATS search-source
