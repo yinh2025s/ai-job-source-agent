@@ -311,6 +311,13 @@ def _serialize_envelope(record: LLMDecisionRecord) -> dict[str, Any]:
     }
 
 
+def serialize_llm_decision_record(record: LLMDecisionRecord) -> dict[str, Any]:
+    """Return the strict, redacted persistence envelope used by bundle artifacts."""
+    if not isinstance(record, LLMDecisionRecord):
+        raise TypeError("record must use LLMDecisionRecord")
+    return _serialize_envelope(record)
+
+
 def _deserialize_envelope(payload: Any) -> LLMDecisionRecord:
     envelope = _exact_dict(payload, _ENVELOPE_FIELDS, "decision envelope")
     if envelope["schema_version"] != LLM_DECISION_STORE_SCHEMA_VERSION:
@@ -341,6 +348,11 @@ def _deserialize_envelope(payload: Any) -> LLMDecisionRecord:
     if record.schema_version != LLM_DECISION_SCHEMA_VERSION:
         raise ValueError("decision record schema version is incompatible")
     return record
+
+
+def deserialize_llm_decision_record(payload: Any) -> LLMDecisionRecord:
+    """Load one strict persistence envelope without permitting unknown fields."""
+    return _deserialize_envelope(payload)
 
 
 def _serialize_key(key: LLMDecisionKey) -> dict[str, str]:

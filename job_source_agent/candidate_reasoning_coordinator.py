@@ -531,7 +531,10 @@ def _ranker_record(
     query_ids: tuple[str, ...],
     token_usage: TokenUsage = TokenUsage(0, 0, 0),
 ) -> LLMDecisionRecord:
-    request_payload = _ranker_request_payload(request)
+    request_payload = _ranker_request_payload(
+        request,
+        invocation_input_evidence_digest=metadata.input_evidence_digest,
+    )
     response_payload = {
         "schema_version": decision.schema_version,
         "ranked_candidates": [
@@ -558,14 +561,21 @@ def _ranker_record(
     )
 
 
-def _ranker_request_payload(request: CandidateRankerRequest) -> dict[str, object]:
-    return {
+def _ranker_request_payload(
+    request: CandidateRankerRequest,
+    *,
+    invocation_input_evidence_digest: str | None = None,
+) -> dict[str, object]:
+    payload: dict[str, object] = {
         "normalized_company_name": request.normalized_company_name,
         "industry": request.industry,
         "company_location": request.company_location,
         "candidates": [_candidate_payload(item) for item in request.candidates],
         "context_evidence_ids": list(request.context_evidence_ids),
     }
+    if invocation_input_evidence_digest is not None:
+        payload["invocation_input_evidence_digest"] = invocation_input_evidence_digest
+    return payload
 
 
 def _record(

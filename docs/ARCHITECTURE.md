@@ -163,7 +163,23 @@ model. Prompt/model/schema/adapter/input-digest changes invalidate a fixture. Al
 behavior fields enter deterministic execution identity, while paths, credentials and
 vendor endpoints remain outside it.
 
-The offline foundation is implemented, but it does not enable a model. Strict DTOs,
+Product live capture wraps the decision store with `AuditedLLMDecisionStore`. Every
+decision actually saved or reused is serialized through the same strict redacted
+envelope into `llm-decisions.jsonl`; `llm-decision-manifest.json` binds the complete
+JSONL digest, record keys, execution identity, run-configuration digest, provider,
+model, prompt, decision/store schema and adapter version. Failure and full-outcome
+bundles copy only decisions belonging to selected answer-free invocation digests and
+record both artifact digests in `bundle-manifest.json`. LLM-enabled legacy/scoped
+bundles use schema 6/8; flag-off bundles retain schema 5/7 and need no LLM fixture.
+
+Replay composition receives a fixture-only service factory. It uses the ordinary
+offline resolver search transport, a single-pass `StrictReplayLLMDecisionStore`, and
+planner/ranker sentinels that have no vendor client. Missing, extra, corrupt,
+incompatible, unexpected and unconsumed fixtures are separate fail-closed outcomes.
+The replay gate calls `assert_consumed()` after all selected records; HTTP snapshots
+and decision fixtures remain separate evidence streams with one execution identity.
+
+The offline and product-replay foundation is implemented, but it does not enable a model. Strict DTOs,
 structured client adapters, typed eligibility, conditional run configuration, atomic
 decision storage, strict replay, bounded search evidence, resolver re-verification and
 the A/B metrics gate are present. No fixed-cohort model A/B has run, so no recall uplift

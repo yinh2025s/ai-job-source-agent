@@ -194,6 +194,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--summary-output", default="/tmp/live-batch-summary.json")
     parser.add_argument("--snapshot-dir", help="Optional directory for sanitized page snapshots.")
     parser.add_argument(
+        "--llm-decision-dir",
+        help=(
+            "Isolated live LLM decision artifact directory used only by an "
+            "explicitly injected candidate-reasoning runtime and replay bundles."
+        ),
+    )
+    parser.add_argument(
         "--failure-bundle-dir",
         help="Build an offline replay bundle for partial/failed/unsupported results after the batch.",
     )
@@ -516,6 +523,7 @@ def build_automatic_failure_bundle(
         limit=int(args.failure_bundle_limit),
         include_missing_website=True,
         legacy_run_config=None,
+        llm_decision_dir=getattr(args, "llm_decision_dir", None),
         company_discovery_evidence_store=(
             company_discovery_evidence_store
             if company_discovery_evidence_store is not None
@@ -552,6 +560,7 @@ def build_automatic_replay_bundle(
         limit=int(args.replay_bundle_limit),
         include_missing_website=True,
         legacy_run_config=None,
+        llm_decision_dir=getattr(args, "llm_decision_dir", None),
         company_discovery_evidence_store=(
             company_discovery_evidence_store
             if company_discovery_evidence_store is not None

@@ -266,9 +266,9 @@ Replay uses only a frozen decision fixture and a replay store; it must never
 construct or contact a real model client. Input
 digest, company identity, decision kind, prompt version, provider/model,
 decision schema, or adapter mismatch is typed `LLM_DECISION_INCOMPATIBLE`, not a
-cache miss followed by a live call. Missing, extra, corrupt, or unconsumed
-decision fixtures fail the replay gate with distinct missing, incompatible,
-corrupt, or divergence codes. A source run with no LLM call requires no fixture,
+cache miss followed by a live call. Missing, extra, corrupt, incompatible,
+unexpected, and unconsumed decision fixtures fail the replay gate with distinct
+typed codes. A source run with no LLM call requires no fixture,
 and historical flag-off bundles stay compatible. A replay that attempts a new
 unrecorded call fails rather than silently falling back and claiming reproduction.
 Request-aware web snapshots and LLM decision fixtures remain separate evidence
@@ -276,21 +276,23 @@ streams with one shared execution identity.
 
 ### Rollout And Measurement
 
-Implementation status on 2026-07-20: Phase A and the offline Phase B contract
-foundation are complete. Decision-store/service fixture replay is implemented,
-but scoped replay-bundle export, manifest binding, and consumption-integrity
-integration remain pending. The Phase C metrics/gate implementation and an 18-record fixed
+Implementation status on 2026-07-21: Phase A and Phase B are complete. Product
+live capture writes digest-bound JSONL/manifest artifacts; failure and
+full-outcome bundles freeze selected invocation decisions; fixture-only product
+replay constructs no model client and enforces complete single-pass consumption.
+Historical flag-off bundles stay on their existing schema and require no decision
+fixture. The Phase C metrics/gate implementation and an 18-record fixed
 eligible-G development input are complete, but no real-model A/B has run. The
 input contains no reference website URLs; evaluator-only labels are stored
 separately and must not be loaded while constructing planner/ranker requests.
-No provider/model has been selected, no paid API has been enabled, and no uplift
-is claimed.
+OpenAI `gpt-5-mini-2025-08-07` is proposed but not approved or implemented; no
+paid API has been enabled and no uplift is claimed.
 
 Phase A is this read-only design and ADR. It changes no runtime behavior.
 
-Phase B implements only provider-neutral interfaces, strict schemas, fake client,
-feature flag/configuration, decision records/store, and local fixture replay contracts.
-Formal scoped replay-bundle integration is a separate required gate before Phase D.
+Phase B implements provider-neutral interfaces, strict schemas, fake client,
+feature flag/configuration, decision records/store, product live artifact capture,
+failure/full-outcome bundle binding and fixture-only replay contracts.
 Synthetic company names and reserved example domains are used for contract tests.
 The flag remains disabled and no real model is called.
 

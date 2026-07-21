@@ -5,10 +5,17 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import time
 from dataclasses import dataclass, replace
 from typing import Callable
 
-from .candidate_reasoning_contracts import CandidateEvidence, LLMAdvisoryFailure
+from .candidate_reasoning_contracts import (
+    CandidateEvidence,
+    CandidateRankerRequest,
+    LLMAdvisoryFailure,
+    LLMDecisionStore,
+    QueryPlannerRequest,
+)
 from .candidate_reasoning_coordinator import (
     CandidateReasoningCoordinator,
     CandidateReasoningMetadata,
@@ -21,6 +28,9 @@ from .candidate_reasoning_inputs import (
     build_query_planner_request,
 )
 from .candidate_reasoning_policy import evaluate_candidate_reasoning_eligibility
+from .candidate_reasoning_search import ResolverCandidateSearchBackend
+from .run_configuration import DeterministicRunConfig
+from .website_resolver import CompanyWebsiteResolver
 
 
 @dataclass(frozen=True, slots=True)
@@ -118,24 +128,7 @@ class CandidateReasoningInvocationService:
                 baseline_candidates[:3],
                 LLMAdvisoryFailure("INPUT_POLICY_REJECTED", "query_plan"),
             )
-        request_payload = {
-            "normalized_company_name": request.normalized_company_name,
-            "linkedin_company_slug": request.linkedin_company_slug,
-            "public_company_summary": request.public_company_summary,
-            "job_title": request.job_title,
-            "job_location": request.job_location,
-            "industry": request.industry,
-            "company_location": request.company_location,
-            "rejected_candidates": [
-                {
-                    "candidate_id": item.candidate_id,
-                    "source": item.source,
-                    "rejection_reason": item.rejection_reason,
-                    "display_domain": item.display_domain,
-                }
-                for item in request.rejected_candidates
-            ],
-        }
+        request_payload = query_planner_request_payload(request)
         identity_payload = {
             "normalized_company_name": request.normalized_company_name.casefold(),
             "linkedin_company_slug": request.linkedin_company_slug,
@@ -158,6 +151,86 @@ class CandidateReasoningInvocationService:
             deadline=deadline,
             baseline_candidates=baseline_candidates,
         )
+
+
+def candidate_reasoning_input_evidence_digest(
+    company: PublicCompanyReasoningInput,
+) -> str:
+    """Return the exact answer-free invocation digest used by live and bundle selection."""
+    request = build_query_planner_request(company)
+    return _digest(query_planner_request_payload(request))
+
+
+def query_planner_request_payload(
+    request: QueryPlannerRequest,
+) -> dict[str, object]:
+    return {
+        "normalized_company_name": request.normalized_company_name,
+        "linkedin_company_slug": request.linkedin_company_slug,
+        "public_company_summary": request.public_company_summary,
+        "job_title": request.job_title,
+        "job_location": request.job_location,
+        "industry": request.industry,
+        "company_location": request.company_location,
+        "rejected_candidates": [
+            {
+                "candidate_id": item.candidate_id,
+                "source": item.source,
+                "rejection_reason": item.rejection_reason,
+                "display_domain": item.display_domain,
+            }
+            for item in request.rejected_candidates
+        ],
+    }
+
+
+def build_replay_candidate_reasoning_service(
+    resolver: CompanyWebsiteResolver,
+    decision_store: LLMDecisionStore,
+    run_configuration: DeterministicRunConfig,
+    *,
+    execution_identity: str,
+    adapter_version: str,
+) -> CandidateReasoningInvocationService:
+    """Build a fixture-only service that has no real model client to call."""
+    if not run_configuration.enable_llm_candidate_reasoning:
+        raise ValueError("replay candidate reasoning requires an enabled run configuration")
+    coordinator = CandidateReasoningCoordinator(
+        planner=_ReplayOnlyPlanner(),
+        ranker=_ReplayOnlyRanker(),
+        search_backend=ResolverCandidateSearchBackend(resolver),
+        decision_store=decision_store,
+        clock=time.monotonic,
+        max_candidates=run_configuration.llm_max_candidates,
+        max_calls_per_company=run_configuration.llm_max_calls_per_company,
+    )
+    runtime = CandidateReasoningRuntime(
+        feature_enabled=True,
+        llm_provider=run_configuration.llm_provider,
+        model_id=run_configuration.llm_model,
+        prompt_version=run_configuration.llm_prompt_version,
+        timeout_seconds=run_configuration.llm_timeout,
+        adapter_version=adapter_version,
+        execution_fingerprint=execution_identity,
+        replay_mode=True,
+        has_compatible_replay_fixture=True,
+    )
+    return CandidateReasoningInvocationService(
+        coordinator,
+        runtime,
+        monotonic_clock=time.monotonic,
+        wall_clock=time.time,
+    )
+
+
+class _ReplayOnlyPlanner:
+    def plan(self, request: QueryPlannerRequest):
+        raise AssertionError("replay attempted to call a query-planner model")
+
+
+class _ReplayOnlyRanker:
+    def rank(self, request: CandidateRankerRequest):
+        raise AssertionError("replay attempted to call a candidate-ranker model")
 
 
 def _digest(value: object) -> str:

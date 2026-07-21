@@ -232,6 +232,13 @@ class JobSourceAgent:
         enable_parallel_candidate_discovery: bool = False,
         evaluate_all_candidate_routes: bool = False,
         career_search_timeout: float | None = None,
+        enable_llm_candidate_reasoning: bool = False,
+        llm_provider: str = "",
+        llm_model: str = "",
+        llm_prompt_version: str = "",
+        llm_timeout: float = 8.0,
+        llm_max_candidates: int = 10,
+        llm_max_calls_per_company: int = 2,
         run_configuration: DeterministicRunConfig | None = None,
     ) -> None:
         self.fetcher = fetcher
@@ -266,6 +273,13 @@ class JobSourceAgent:
             enable_parallel_candidate_discovery=enable_parallel_candidate_discovery,
             evaluate_all_candidate_routes=evaluate_all_candidate_routes,
             career_search_timeout=career_search_timeout,
+            enable_llm_candidate_reasoning=enable_llm_candidate_reasoning,
+            llm_provider=llm_provider,
+            llm_model=llm_model,
+            llm_prompt_version=llm_prompt_version,
+            llm_timeout=llm_timeout,
+            llm_max_candidates=llm_max_candidates,
+            llm_max_calls_per_company=llm_max_calls_per_company,
         )
         if (
             run_configuration is not None

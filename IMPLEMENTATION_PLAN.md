@@ -23,7 +23,7 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构轨道（2026-07-20，LLM Candidate Reasoning Phase B foundation）
+## 当前架构轨道（2026-07-21，LLM Candidate Reasoning Phase B complete）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
 DNS/TLS/timeout/403、provider inventory、S6 title/location、S7、岗位关闭、已验证 no-match 或未披露
@@ -38,19 +38,21 @@ planner 和一次 ranker。任何 malformed/schema/timeout/client/unknown-ID/uns
 advisory failure，并完整回退当前 deterministic baseline，不能覆盖原失败原因。
 
 Phase A 架构审计与 Phase B 离线实现已经完成：provider-neutral interfaces、structured fake client、严格
-schema、条件式 run-config 1.5、原子 decision store、失败审计、decision-store/service fixture replay、bounded search backend、S2
+schema、条件式 run-config 1.5、原子 decision store、失败审计、产品级 live artifact/bundle/replay、bounded search backend、S2
 eligibility、Top-3 resolver 二次验真及 composition fail-closed 均已落地。开关关闭时仍输出既有 schema 1.4，
 不查 decision store、不调用 service、不增加搜索请求或改变候选顺序；开启时必须显式注入 service，不会自动
-选择 vendor。正式 scoped replay bundle 的 decision fixture 导出、manifest 绑定与消费完整性尚未接入；
-完成前不得进入 Phase D。当前代码没有真实模型 client、API endpoint、credential 或付费调用。
+选择 vendor。live decision 以独立 `llm-decisions.jsonl` 和 `llm-decision-manifest.json` 原子保存，failure/full
+replay bundle 绑定两个文件的 digest、execution/run-config/provider/model/prompt/schema/adapter identity；fixture-only
+replay 区分 missing/extra/corrupt/incompatible/unexpected/unconsumed，并在结束时要求全部消费。当前代码没有真实
+模型 client、API endpoint、credential 或付费调用。
 
 Phase C 的通用 A/B 指标和 promotion gate 已实现，18 条固定 G-development 输入也已物化。输入只含原始
 公开 company/LinkedIn/job title/location 字段；人工 reference website 位于单独 evaluator-only labels 文件，
 planner/ranker 请求构造不得读取。原始记录 digest 为
 `d3c65152af084f1ad2bd994c4a6d67de1e09a66781437be00adb88ceb88368ae`，生成文件 SHA-256 为
 `b47545c9c09759a52600bf5cab18cedc4058de0df0667d157ab83357029f1733`。这仍只能证明离线 contract、回退、
-cohort 冻结与局部 fixture replay 正确，不能宣称模型带来 recall 提升。下一步先完成 scoped replay bundle
-集成；之后再选择 provider/model，按固定 18 条、最多两次调用/公司估算费用并向用户确认。未经确认不得
+cohort 冻结与产品级 fixture replay 正确，不能宣称模型带来 recall 提升。真实实验提案记录在
+`docs/LLM_PHASE_D_EXPERIMENT_PROPOSAL.md`；下一步等待用户确认 provider/model 与费用。未经确认不得
 调用真实模型、进入 Phase D 或运行完整 fresh100。
 
 第一阶段批量 gate 不接受单例修复：candidate recall@3 至少提升 25 个百分点，eligible G-development 至少
@@ -59,7 +61,7 @@ flag-off 无回归，平均不超过两次调用/公司，并报告成本、失�
 公司示例、人工正确 URL 或 closure matrix 调 prompt。完整 contract 见
 `docs/adr/0029-bound-llm-candidate-reasoning.md`。
 
-当前离线门禁：2605 tests（4 skipped）、25/25 provider、6/6 resolver、46 native adapters / 0 architecture
+当前离线门禁：2611 tests（4 skipped）、25/25 provider、6/6 resolver、46 native adapters / 0 architecture
 issues。真实模型调用为 0，live benchmark 调用为 0。
 
 ## 当前执行轮次（2026-07-20，`.199`）

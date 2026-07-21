@@ -19,6 +19,14 @@ from job_source_agent.checkpoint import (
     CHECKPOINT_SCHEMA_VERSION,
     execution_fingerprint,
 )
+from job_source_agent.candidate_reasoning_inputs import (
+    PublicCompanyReasoningInput,
+    linkedin_company_slug,
+)
+from job_source_agent.candidate_reasoning_service import (
+    build_replay_candidate_reasoning_service,
+    candidate_reasoning_input_evidence_digest,
+)
 from job_source_agent.composition import (
     AgentConfig,
     FetcherConfig,
@@ -48,6 +56,13 @@ from job_source_agent.job_board import (
     JobBoardPortfolio,
     is_replay_safe_job_board,
 )
+from job_source_agent.llm_decision_bundle import (
+    LLMDecisionBundleError,
+    freeze_llm_decision_fixture,
+    inspect_llm_decision_fixture,
+    load_llm_decision_fixture,
+)
+from job_source_agent.llm_decision_store import LLMDecisionReplayError
 from job_source_agent.evaluation import result_provider, summarize_results
 from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.models import (
@@ -87,6 +102,8 @@ from scripts.export_replay_input import (
 
 BUNDLE_SCHEMA_VERSION = 5
 SCOPED_BUNDLE_SCHEMA_VERSION = 7
+LLM_BUNDLE_SCHEMA_VERSION = 6
+LLM_SCOPED_BUNDLE_SCHEMA_VERSION = 8
 SCOPED_REPLAY_SOURCE_KINDS = _SCOPED_REPLAY_SOURCE_KINDS
 SCOPED_REPLAY_PRODUCER_DEPENDENCIES = {
     "career_discovery": "website_resolution",
@@ -186,6 +203,13 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--llm-decision-dir",
+        help=(
+            "Source live LLM decision artifact directory. Required only when "
+            "the selected run configuration enabled candidate reasoning."
+        ),
+    )
+    parser.add_argument(
         "--legacy-run-config",
         choices=("composition-defaults",),
         help="Explicitly replay legacy records that predate deterministic run metadata.",
@@ -197,7 +221,14 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     try:
         manifest = replay_failure_bundle(args)
-    except (FailureReplayError, SnapshotReplayError, OSError, json.JSONDecodeError) as exc:
+    except (
+        FailureReplayError,
+        SnapshotReplayError,
+        LLMDecisionBundleError,
+        LLMDecisionReplayError,
+        OSError,
+        json.JSONDecodeError,
+    ) as exc:
         raise SystemExit(f"failure replay failed: {exc}") from exc
     print(json.dumps(manifest["summary"], sort_keys=True), flush=True)
     print(f"bundle: {Path(args.output_dir).resolve()}", flush=True)
@@ -315,6 +346,17 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
     input_path = output_root / "replay-input.json"
     _write_json_atomic(input_path, replay_records)
     companies = load_company_inputs(input_path)
+    try:
+        llm_replay_store, llm_service_factory, llm_decision_fixture = (
+            _prepare_llm_decision_replay(
+                args,
+                output_root,
+                companies,
+                run_configuration,
+            )
+        )
+    except (LLMDecisionBundleError, LLMDecisionReplayError, TypeError, ValueError) as error:
+        raise FailureReplayError(f"LLM decision fixture rejected: {error}") from error
     company_discovery_evidence_path, company_discovery_evidence = (
         _freeze_company_discovery_evidence(
             args,
@@ -341,9 +383,14 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             output_root / "checkpoints",
             run_configuration,
             company_discovery_evidence_path,
+            llm_service_factory,
         )
         snapshot_summary = scoped_manifest["summary"]
-        bundle_schema_version = SCOPED_BUNDLE_SCHEMA_VERSION
+        bundle_schema_version = (
+            LLM_SCOPED_BUNDLE_SCHEMA_VERSION
+            if llm_decision_fixture is not None
+            else SCOPED_BUNDLE_SCHEMA_VERSION
+        )
         replay_paths = {
             "tapes": "offline/tapes",
             "snapshot_manifest": "offline/scoped-replay-manifest.json",
@@ -359,14 +406,24 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             output_root / "offline" / "sites",
             run_configuration,
             company_discovery_evidence_path,
+            llm_service_factory,
         )
         snapshot_summary = fixture_result.summary
-        bundle_schema_version = BUNDLE_SCHEMA_VERSION
+        bundle_schema_version = (
+            LLM_BUNDLE_SCHEMA_VERSION
+            if llm_decision_fixture is not None
+            else BUNDLE_SCHEMA_VERSION
+        )
         replay_paths = {
             "fixtures": "offline/sites",
             "snapshot_manifest": "offline/replay-manifest.json",
             "fetch_failures": "offline/fetch-failures.json",
         }
+    if llm_replay_store is not None:
+        try:
+            llm_replay_store.assert_consumed()
+        except LLMDecisionReplayError as error:
+            raise FailureReplayError(f"LLM decision replay failed: {error}") from error
     result_records = [result.result_record() for result in discoveries]
     trace_records = [dataclass_to_dict(result.trace_record()) for result in discoveries]
     summary = summarize_results(trace_records)
@@ -417,6 +474,14 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             "checkpoints": "checkpoints",
             **replay_paths,
             **(
+                {
+                    "llm_decisions": llm_decision_fixture["decisions_path"],
+                    "llm_decision_manifest": llm_decision_fixture["manifest_path"],
+                }
+                if llm_decision_fixture is not None
+                else {}
+            ),
+            **(
                 {"company_discovery_evidence": str(company_discovery_evidence_path.relative_to(output_root))}
                 if company_discovery_evidence_path is not None
                 else {}
@@ -434,6 +499,11 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         **(
             {"company_discovery_evidence": company_discovery_evidence}
             if getattr(args, "company_discovery_evidence_store", None)
+            else {}
+        ),
+        **(
+            {"llm_decision_fixture": llm_decision_fixture}
+            if llm_decision_fixture is not None
             else {}
         ),
         "summary": summary,
@@ -943,6 +1013,79 @@ def _write_scoped_tapes(
     return manifest
 
 
+def _prepare_llm_decision_replay(
+    args: argparse.Namespace,
+    output_root: Path,
+    companies: list,
+    run_configuration: DeterministicRunConfig,
+):
+    if not run_configuration.enable_llm_candidate_reasoning:
+        return None, None, None
+    source_value = getattr(args, "llm_decision_dir", None)
+    if not source_value:
+        raise FailureReplayError(
+            "LLM_DECISION_BUNDLE_MISSING: enabled replay requires --llm-decision-dir"
+        )
+    source_manifest = inspect_llm_decision_fixture(source_value)
+    for field, actual, expected in (
+        (
+            "run_configuration_digest",
+            source_manifest["run_configuration_digest"],
+            run_configuration.digest,
+        ),
+        ("llm_provider", source_manifest["llm_provider"], run_configuration.llm_provider),
+        ("model_id", source_manifest["model_id"], run_configuration.llm_model),
+        (
+            "prompt_version",
+            source_manifest["prompt_version"],
+            run_configuration.llm_prompt_version,
+        ),
+    ):
+        if actual != expected:
+            raise FailureReplayError(
+                f"LLM_DECISION_BUNDLE_INCOMPATIBLE: {field} does not match run configuration"
+            )
+    selected_digests = [
+        candidate_reasoning_input_evidence_digest(
+            PublicCompanyReasoningInput(
+                company_name=company.company_name,
+                linkedin_company_slug=linkedin_company_slug(
+                    company.linkedin_company_url
+                ),
+                job_title=company.job_title,
+                job_location=company.job_location,
+            )
+        )
+        for company in companies
+    ]
+    identity = {
+        "execution_identity": source_manifest["execution_identity"],
+        "run_configuration_digest": run_configuration.digest,
+        "llm_provider": run_configuration.llm_provider,
+        "model_id": run_configuration.llm_model,
+        "prompt_version": run_configuration.llm_prompt_version,
+        "adapter_version": source_manifest["adapter_version"],
+    }
+    provenance = freeze_llm_decision_fixture(
+        source_value,
+        output_root,
+        selected_input_evidence_digests=selected_digests,
+        **identity,
+    )
+    store, _ = load_llm_decision_fixture(output_root, **identity)
+
+    def service_factory(resolver):
+        return build_replay_candidate_reasoning_service(
+            resolver,
+            store,
+            run_configuration,
+            execution_identity=source_manifest["execution_identity"],
+            adapter_version=source_manifest["adapter_version"],
+        )
+
+    return store, service_factory, provenance
+
+
 def _run_legacy_replay_records(
     companies: list,
     replay_records: list[dict],
@@ -952,6 +1095,7 @@ def _run_legacy_replay_records(
     fixtures_dir: Path,
     run_configuration: DeterministicRunConfig,
     company_discovery_evidence_path: Path | None,
+    candidate_reasoning_service_factory=None,
 ) -> list:
     discoveries = []
     for company, replay_record, source_record, plan in zip(
@@ -974,6 +1118,7 @@ def _run_legacy_replay_records(
             checkpoint_dir=record_checkpoint_root,
             run_configuration=run_configuration,
             company_discovery_evidence_path=company_discovery_evidence_path,
+            candidate_reasoning_service_factory=candidate_reasoning_service_factory,
         )
         discoveries.append(
             application.pipeline.discover(company, start_at=resume_stage)
@@ -990,6 +1135,7 @@ def _run_scoped_replay_records(
     checkpoint_root: Path,
     run_configuration: DeterministicRunConfig,
     company_discovery_evidence_path: Path | None,
+    candidate_reasoning_service_factory=None,
 ) -> list:
     discoveries = []
     for company, replay_record, source_record, plan in zip(
@@ -1053,6 +1199,7 @@ def _run_scoped_replay_records(
             run_configuration=run_configuration,
             capture_coordinator=controller,
             company_discovery_evidence_path=company_discovery_evidence_path,
+            candidate_reasoning_service_factory=candidate_reasoning_service_factory,
         )
         try:
             same_attempt_continuation = (

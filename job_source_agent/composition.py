@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 from .application_runner import ApplicationRunner
 from .candidate_portfolio import CompositeCandidateDiscovery
@@ -144,6 +145,13 @@ def build_agent(
         ),
         evaluate_all_candidate_routes=settings.evaluate_all_candidate_routes,
         career_search_timeout=settings.career_search_timeout,
+        enable_llm_candidate_reasoning=settings.enable_llm_candidate_reasoning,
+        llm_provider=settings.llm_provider,
+        llm_model=settings.llm_model,
+        llm_prompt_version=settings.llm_prompt_version,
+        llm_timeout=settings.llm_timeout,
+        llm_max_candidates=settings.llm_max_candidates,
+        llm_max_calls_per_company=settings.llm_max_calls_per_company,
         run_configuration=run_configuration,
     )
 
@@ -158,6 +166,9 @@ def build_application(
     company_discovery_evidence_path: str | Path | None = None,
     run_configuration: DeterministicRunConfig | None = None,
     candidate_reasoning_service: CandidateReasoningInvocationService | None = None,
+    candidate_reasoning_service_factory: Callable[
+        [CompanyWebsiteResolver], CandidateReasoningInvocationService
+    ] | None = None,
 ) -> ApplicationComponents:
     capture_coordinator = (
         SnapshotCaptureCoordinator() if fetcher_config.snapshot_dir else None
@@ -177,6 +188,7 @@ def build_application(
         run_configuration=run_configuration,
         capture_coordinator=capture_coordinator,
         candidate_reasoning_service=candidate_reasoning_service,
+        candidate_reasoning_service_factory=candidate_reasoning_service_factory,
     )
 
 
@@ -192,6 +204,9 @@ def build_application_from_fetcher(
     run_configuration: DeterministicRunConfig | None = None,
     capture_coordinator: EvidenceCaptureCoordinator | None = None,
     candidate_reasoning_service: CandidateReasoningInvocationService | None = None,
+    candidate_reasoning_service_factory: Callable[
+        [CompanyWebsiteResolver], CandidateReasoningInvocationService
+    ] | None = None,
 ) -> ApplicationComponents:
     """Assemble the product pipeline around an injected fetch boundary."""
 
@@ -208,13 +223,8 @@ def build_application_from_fetcher(
         settings
     ).to_agent_config():
         raise ValueError("run_configuration does not match agent_config")
-    if settings.enable_llm_candidate_reasoning and (
-        candidate_reasoning_service is None
-        or not candidate_reasoning_service.enabled
-    ):
-        raise ValueError(
-            "LLM candidate reasoning is enabled but no enabled provider-neutral service was injected"
-        )
+    if candidate_reasoning_service is not None and candidate_reasoning_service_factory is not None:
+        raise ValueError("candidate reasoning service and factory are mutually exclusive")
     agent = build_agent(
         fetcher,
         settings,
@@ -233,6 +243,17 @@ def build_application_from_fetcher(
             else None
         ),
     )
+    if candidate_reasoning_service_factory is not None:
+        candidate_reasoning_service = candidate_reasoning_service_factory(
+            website_resolver
+        )
+    if settings.enable_llm_candidate_reasoning and (
+        candidate_reasoning_service is None
+        or not candidate_reasoning_service.enabled
+    ):
+        raise ValueError(
+            "LLM candidate reasoning is enabled but no enabled provider-neutral service was injected"
+        )
     company_discovery_store = (
         FilesystemCompanyDiscoveryEvidenceStore(company_discovery_evidence_path)
         if company_discovery_evidence_path is not None

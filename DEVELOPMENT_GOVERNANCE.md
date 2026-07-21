@@ -48,6 +48,10 @@
 - Run configuration 只允许固定数值/布尔字段以及经过长度和字符集约束的公开行为标识
   （例如 model ID 或 prompt version）；路径、endpoint、cookies、tokens、headers、HTML、
   API key 和登录态信息不得写入该 contract。
+- LLM decision 与 HTTP snapshot 是两条独立 evidence stream。启用 reasoning 的 live run
+  必须把结构化 decision JSONL、manifest、execution/run-config/provider/model/prompt/schema/adapter
+  identity 和完整 digest 放入隔离目录；replay 只能使用冻结 fixture，结束时必须验证没有
+  unexpected 或 unconsumed decision。flag-off 与历史无 LLM bundle 不得被迫生成空 fixture。
 
 ## Parallel Development Rules
 

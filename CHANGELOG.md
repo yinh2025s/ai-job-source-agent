@@ -82,6 +82,16 @@
 
 ### Added
 
+- Product-level LLM decision capture and replay are now closed on the isolated
+  experiment branch. Live fake/provider-neutral runs write strict redacted
+  `llm-decisions.jsonl` and `llm-decision-manifest.json` artifacts bound to the
+  execution identity, run configuration, provider/model/prompt, schemas and
+  adapter. Failure/full-outcome replay bundles freeze only selected invocation
+  decisions and record both artifact digests. Fixture-only replay constructs no
+  real model client and separately rejects missing, extra, corrupt,
+  incompatible, unexpected and unconsumed decisions. LLM-enabled legacy/scoped
+  bundles advance to schema 6/8, while flag-off bundles remain schema 5/7.
+
 - The off-by-default ADR-0029 Phase B foundation is implemented without choosing
   or calling a real model. Provider-neutral planner, ranker, client and decision
   store contracts enforce strict schema-1 payloads, at most three URL-free
@@ -90,15 +100,14 @@
   reference supplied IDs, and every selected URL is fetched and identity-checked
   again by `CompanyWebsiteResolver`. Visible External Apply, verified stored
   provider evidence, deterministic success, typed transport failures, budget
-  exhaustion and later-stage/terminal states bypass reasoning. Formal scoped
-  replay-bundle export and consumption integrity remain pending, so this
-  foundation is not yet eligible for a real-model experiment.
+  exhaustion and later-stage/terminal states bypass reasoning.
 
 - LLM decision persistence now content-addresses company identity, complete input
   and candidate evidence, provider/model/prompt/schema/adapter identity. Atomic
-  storage, failure audit records and strict service-level single-use replay reject missing,
-  corrupt, incompatible, changed-evidence and unconsumed fixtures; replay makes
-  zero model calls. The disabled run configuration remains schema 1.4 and omits
+  storage, failure audit records and strict product-level single-use replay reject
+  missing, extra, corrupt, incompatible, unexpected, changed-evidence and
+  unconsumed fixtures; replay makes zero model calls. The disabled run
+  configuration remains schema 1.4 and omits
   all LLM fields, while enabled runs use schema 1.5 and require an explicitly
   injected provider-neutral service. No provider SDK, endpoint, credential or
   paid API is present.
@@ -114,7 +123,7 @@
   deep links before fetch; deterministic negative tests cover unrelated,
   same-name regional-conflict and wrong-parent candidates.
   No real-model experiment has run and no uplift is claimed. Offline validation
-  passes 2605 tests (4 skipped), 25/25 provider cases, 6/6 resolver cases and 46
+  passes 2611 tests (4 skipped), 25/25 provider cases, 6/6 resolver cases and 46
   native adapters with zero architecture issues.
 
 - `.196` splits the former eight-record `G-core/legal shortening` stage-shaped
