@@ -2,8 +2,13 @@ import unittest
 
 from job_source_agent.candidate_reasoning_evaluation import (
     CandidateReasoningABObservation,
+    FrozenCandidate,
+    FrozenPlannerCausalABObservation,
+    FrozenRankerCausalABObservation,
     evaluate_candidate_reasoning_ab,
     evaluate_candidate_reasoning_gate,
+    evaluate_frozen_planner_causal_ab,
+    evaluate_frozen_ranker_causal_ab,
 )
 
 
@@ -25,6 +30,8 @@ def observation(record_id: str, **overrides):
         "completion_tokens": 20,
         "estimated_cost_usd": 0.01,
         "llm_latency_ms": 10.0,
+        "llm_plan_used": True,
+        "llm_causal_contribution": "planner_source_recovery",
     }
     values.update(overrides)
     return CandidateReasoningABObservation(record_id=record_id, **values)
@@ -43,6 +50,8 @@ class CandidateReasoningEvaluationTests(unittest.TestCase):
                 treatment_verified_website_url="https://c.example.test/",
                 llm_calls=1,
                 llm_latency_ms=100,
+                llm_plan_used=False,
+                llm_causal_contribution="none",
             ),
             observation("d", llm_latency_ms=40),
         )
@@ -75,6 +84,8 @@ class CandidateReasoningEvaluationTests(unittest.TestCase):
             replay_mismatch=True,
             llm_calls=3,
             advisory_failure=True,
+            llm_plan_used=False,
+            llm_causal_contribution="none",
         )
 
         report = evaluate_candidate_reasoning_ab((record,))
@@ -135,6 +146,130 @@ class CandidateReasoningEvaluationTests(unittest.TestCase):
         self.assertIn("reference_website_url", fields)
         self.assertNotIn("planner_request", fields)
         self.assertNotIn("ranker_request", fields)
+
+    def test_zero_llm_calls_and_network_variance_do_not_count_as_causal_recovery(self):
+        network_variance = observation(
+            "network-only",
+            llm_calls=0,
+            prompt_tokens=0,
+            completion_tokens=0,
+            estimated_cost_usd=0.0,
+            llm_latency_ms=0.0,
+            llm_plan_used=False,
+            llm_causal_contribution="none",
+        )
+
+        report = evaluate_candidate_reasoning_ab((network_variance,))
+
+        self.assertTrue(network_variance.treatment_recovers_g)
+        self.assertFalse(network_variance.has_valid_causal_recovery)
+        self.assertEqual(report.eligible_g_recovery_fraction.count, 0)
+        with self.assertRaisesRegex(ValueError, "llm_calls=0"):
+            observation(
+                "zero-call-uplift",
+                llm_calls=0,
+                prompt_tokens=0,
+                completion_tokens=0,
+                estimated_cost_usd=0.0,
+                llm_latency_ms=0.0,
+            )
+
+    def test_frozen_planner_metrics_measure_source_and_causal_recovery(self):
+        pool = frozen_pool("planner")
+        record = FrozenPlannerCausalABObservation(
+            record_id="planner",
+            candidate_pool=pool,
+            reference_candidate_id="target",
+            deterministic_source_candidate_ids=("other",),
+            llm_source_candidate_ids=("target", "other"),
+            deterministic_top_candidate_ids=("other",),
+            llm_top_candidate_ids=("target",),
+            llm_structured_output_success=True,
+            llm_calls=1,
+            prompt_tokens=10,
+            completion_tokens=2,
+            estimated_cost_usd=0.01,
+            llm_latency_ms=5.0,
+            verified_website_hit=True,
+        )
+
+        report = evaluate_frozen_planner_causal_ab((record,))
+
+        self.assertEqual(report.structured_output_success.count, 1)
+        self.assertEqual(report.deterministic_source_candidate_recall_at_10.count, 0)
+        self.assertEqual(report.llm_source_candidate_recall_at_10.count, 1)
+        self.assertEqual(report.llm_end_to_end_candidate_recall_at_3.count, 1)
+        self.assertEqual(report.true_causal_recoveries.count, 1)
+
+    def test_frozen_ranker_uses_only_reference_in_pool_for_conditional_recall(self):
+        in_pool = FrozenRankerCausalABObservation(
+            record_id="in-pool",
+            candidate_pool=frozen_pool("in-pool"),
+            reference_candidate_id="target",
+            deterministic_top_candidate_ids=("other",),
+            llm_top_candidate_ids=("target",),
+            llm_rank_invocation_success=True,
+            llm_fallback_used=False,
+            verified_website_hit=True,
+            true_causal_recovery=True,
+            llm_calls=1,
+        )
+        outside_pool = FrozenRankerCausalABObservation(
+            record_id="outside-pool",
+            candidate_pool=frozen_pool("outside-pool"),
+            reference_candidate_id="missing-reference",
+            deterministic_top_candidate_ids=("other",),
+            llm_top_candidate_ids=("target",),
+            llm_rank_invocation_success=True,
+            llm_fallback_used=True,
+            llm_calls=1,
+        )
+
+        report = evaluate_frozen_ranker_causal_ab((in_pool, outside_pool))
+
+        self.assertEqual(report.conditional_record_count, 1)
+        self.assertEqual(
+            (report.deterministic_conditional_recall_at_3.count,
+             report.deterministic_conditional_recall_at_3.denominator),
+            (0, 1),
+        )
+        self.assertEqual(report.llm_conditional_recall_at_3.count, 1)
+        self.assertEqual(report.rank_invocation_success.count, 2)
+        self.assertEqual(report.fallback_count, 1)
+        self.assertEqual(report.true_causal_recoveries.count, 1)
+
+    def test_frozen_pool_enforces_pool_ids_and_top_k_limits(self):
+        with self.assertRaisesRegex(ValueError, "outside the frozen pool"):
+            FrozenRankerCausalABObservation(
+                record_id="wrong-id",
+                candidate_pool=frozen_pool("wrong-id"),
+                reference_candidate_id="target",
+                deterministic_top_candidate_ids=("other",),
+                llm_top_candidate_ids=("not-in-pool",),
+                llm_rank_invocation_success=True,
+                llm_fallback_used=False,
+                llm_calls=1,
+            )
+        with self.assertRaisesRegex(ValueError, "exceeds limit 3"):
+            FrozenPlannerCausalABObservation(
+                record_id="too-many-top",
+                candidate_pool=frozen_pool("too-many-top", count=4),
+                reference_candidate_id="target",
+                deterministic_source_candidate_ids=("target",),
+                llm_source_candidate_ids=("target",),
+                deterministic_top_candidate_ids=("target", "other", "third", "fourth"),
+                llm_top_candidate_ids=("target",),
+                llm_structured_output_success=True,
+                llm_calls=1,
+            )
+
+
+def frozen_pool(record_id: str, count: int = 2):
+    identifiers = ("target", "other", "third", "fourth")[:count]
+    return tuple(
+        FrozenCandidate(candidate_id=identifier, url=f"https://{record_id}.example.test/{identifier}")
+        for identifier in identifiers
+    )
 
 
 if __name__ == "__main__":

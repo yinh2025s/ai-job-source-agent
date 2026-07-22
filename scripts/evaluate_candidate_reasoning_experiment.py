@@ -29,6 +29,11 @@ from job_source_agent.candidate_reasoning_experiment import (
 
 FLASH_INPUT_PRICE_PER_MILLION_USD = 0.14
 FLASH_OUTPUT_PRICE_PER_MILLION_USD = 0.28
+LEGACY_CAUSAL_DEFAULTS = {
+    "llm_plan_used": False,
+    "llm_rank_used": False,
+    "llm_causal_contribution": "none",
+}
 
 
 def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
@@ -138,6 +143,10 @@ def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
                     reasoning_record is not None
                     and reasoning_record.get("advisory_failure") is not None
                 ),
+                # Legacy captures do not persist evidence that an advisory
+                # decision was adopted. Calls and arm differences alone are
+                # not causal evidence, so historical evaluations fail closed.
+                **LEGACY_CAUSAL_DEFAULTS,
             )
         )
         supplemental.append(
@@ -155,6 +164,7 @@ def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
                 "treatment_identity_assertion": treatment_result.get("identity_assertion"),
                 "replay_classification": replay_by_company.get(company_name),
                 "llm_calls": usage_record["calls"],
+                **LEGACY_CAUSAL_DEFAULTS,
                 "advisory_failure": (
                     reasoning_record.get("advisory_failure")
                     if reasoning_record is not None
