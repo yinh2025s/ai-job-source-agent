@@ -220,7 +220,7 @@ class CandidateReasoningEvaluationTests(unittest.TestCase):
             reference_candidate_id="missing-reference",
             deterministic_top_candidate_ids=("other",),
             llm_top_candidate_ids=("target",),
-            llm_rank_invocation_success=True,
+            llm_rank_invocation_success=False,
             llm_fallback_used=True,
             llm_calls=1,
         )
@@ -234,11 +234,22 @@ class CandidateReasoningEvaluationTests(unittest.TestCase):
             (0, 1),
         )
         self.assertEqual(report.llm_conditional_recall_at_3.count, 1)
-        self.assertEqual(report.rank_invocation_success.count, 2)
+        self.assertEqual(report.rank_invocation_success.count, 1)
         self.assertEqual(report.fallback_count, 1)
         self.assertEqual(report.true_causal_recoveries.count, 1)
 
     def test_frozen_pool_enforces_pool_ids_and_top_k_limits(self):
+        with self.assertRaisesRegex(ValueError, "cannot also use fallback"):
+            FrozenRankerCausalABObservation(
+                record_id="success-and-fallback",
+                candidate_pool=frozen_pool("success-and-fallback"),
+                reference_candidate_id="target",
+                deterministic_top_candidate_ids=("other",),
+                llm_top_candidate_ids=("target",),
+                llm_rank_invocation_success=True,
+                llm_fallback_used=True,
+                llm_calls=1,
+            )
         with self.assertRaisesRegex(ValueError, "outside the frozen pool"):
             FrozenRankerCausalABObservation(
                 record_id="wrong-id",

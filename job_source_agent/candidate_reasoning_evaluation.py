@@ -332,6 +332,8 @@ class FrozenRankerCausalABObservation:
             self.llm_rank_invocation_success or self.llm_fallback_used or self.true_causal_recovery
         ):
             raise ValueError("llm_calls=0 cannot report ranker activity or recovery")
+        if self.llm_rank_invocation_success and self.llm_fallback_used:
+            raise ValueError("successful rank invocation cannot also use fallback")
         if self.true_causal_recovery and not (
             self.llm_rank_invocation_success
             and self.reference_candidate_id in allowed
@@ -538,6 +540,9 @@ def evaluate_frozen_planner_causal_ab(
     true_recovery = lambda record: (
         record.llm_calls > 0
         and record.llm_structured_output_success
+        and record.reference_candidate_id
+        not in record.deterministic_source_candidate_ids
+        and record.reference_candidate_id in record.llm_source_candidate_ids
         and record.reference_candidate_id not in record.deterministic_top_candidate_ids
         and record.reference_candidate_id in record.llm_top_candidate_ids
         and record.verified_website_hit

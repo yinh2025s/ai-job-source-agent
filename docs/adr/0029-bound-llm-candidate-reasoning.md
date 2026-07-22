@@ -200,11 +200,13 @@ model cites them with high confidence.
 
 Per company, the hard limits are one planner call, one ranker call, three search
 queries, ten ranker candidates, and three resolver verification candidates. The
-total model-call limit cannot exceed two. Planner and ranker share one monotonic
-LLM deadline, bounded by the remaining S2/website deadline; each call does not get
-a fresh timeout. Search requests still consume the existing search/transport
-budget. The LLM cannot consume the reserved S6 opening budget. Failure does not
-retry.
+total model-call limit cannot exceed two. One monotonic total deadline contains
+explicit planner, search, and ranker sub-budgets. Their sum cannot exceed the
+total, and a live configuration reserves at least one executable second for the
+ranker. Each provider call receives the smaller of its phase budget and the
+current total-deadline remainder; an adapter cannot hide a shorter transport
+timeout. Search receives only its own phase remainder. The LLM cannot consume
+the reserved S6 opening budget. Failure does not retry.
 
 The following fields are behavior identity and must enter the canonical run
 configuration digest:
@@ -214,15 +216,20 @@ configuration digest:
 - `llm_model`;
 - `llm_prompt_version`;
 - `llm_timeout`;
+- `llm_planner_timeout`;
+- `llm_search_timeout`;
+- `llm_ranker_timeout`;
 - `llm_max_candidates`;
 - `llm_max_calls_per_company`.
 
-The proposed deterministic schema revision is `1.5` only when the feature is
+The stabilized deterministic schema is `1.6` only when the feature is
 enabled. Provider, model, and prompt values are bounded public ASCII identifiers,
 never credentials or endpoints. With the flag disabled, canonical serialization
 continues to emit the existing schema `1.4` payload and digest so the rollback
 baseline has identical checkpoint identity, requests, and candidate order.
-Legacy schemas likewise mean disabled. An enabled configuration without an
+Enabled schema `1.5` remains readable only for historical fixture replay and
+derives bounded replay phases from its old total timeout. An enabled
+configuration without an
 injected client and compatible decision store fails composition validation; it
 does not silently select a default vendor. Enabling reasoning also requires the
 parallel candidate-discovery contract so deterministic direct/provider preflight
@@ -276,20 +283,24 @@ streams with one shared execution identity.
 
 ### Rollout And Measurement
 
-Implementation status on 2026-07-21: Phase A and Phase B are complete. Product
+Implementation status on 2026-07-22: post-experiment causal stabilization is
+implemented on the isolated branch. Product
 live capture writes digest-bound JSONL/manifest artifacts; failure and
 full-outcome bundles freeze selected invocation decisions; fixture-only product
 replay constructs no model client and enforces complete single-pass consumption.
 Historical flag-off bundles stay on their existing schema and require no decision
-fixture. The Phase C metrics/gate implementation and an 18-record fixed
-eligible-G development input are complete, but no real-model A/B has run. The
+fixture. The evaluator refuses to count `llm_calls=0`, independent live-network
+variance, or an unadopted decision as recovery. Planner source recall@10 and
+ranker conditional recall@3 use separate frozen-pool contracts. The 18-record
+fixed eligible-G development input is unchanged. The
 input contains no reference website URLs; evaluator-only labels are stored
 separately and must not be loaded while constructing planner/ranker requests.
 The user approved DeepSeek API use on 2026-07-21. Phase D pins
 `deepseek-v4-flash` in non-thinking JSON mode behind the provider-neutral client,
-with no retries, 36 calls maximum and a USD 0.50 hard cap. Capture never loads
-evaluator labels; same-version replay never constructs the DeepSeek client. No real
-experiment has run yet and no uplift is claimed.
+with no retries. Any future development runner is capped at 30 calls and USD
+0.05, although run 007 remains the one completed formal rerun and a second paid
+formal A/B is not authorized. Capture never loads evaluator labels and
+same-version replay never constructs the DeepSeek client.
 
 Phase A is this read-only design and ADR. It changes no runtime behavior.
 

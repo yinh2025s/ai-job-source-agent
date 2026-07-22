@@ -163,6 +163,15 @@ model. Prompt/model/schema/adapter/input-digest changes invalidate a fixture. Al
 behavior fields enter deterministic execution identity, while paths, credentials and
 vendor endpoints remain outside it.
 
+LLM run configuration schema `1.6` versions one total deadline plus planner,
+search, and ranker phase budgets. The phase sum cannot exceed the total and the
+ranker receives a reserved executable window. Planner and ranker calls carry the
+current bounded timeout through the provider-neutral client interface to the
+transport. Runtime trace distinguishes `llm_plan_used` from `llm_rank_used`;
+`llm_causal_contribution` remains `not_evaluated` until evaluator-only labels
+are applied. A zero-call or merely different live-arm result can never be
+promoted as LLM recovery.
+
 Product live capture wraps the decision store with `AuditedLLMDecisionStore`. Every
 decision actually saved or reused is serialized through the same strict redacted
 envelope into `llm-decisions.jsonl`; `llm-decision-manifest.json` binds the complete
@@ -179,19 +188,23 @@ incompatible, unexpected and unconsumed fixtures are separate fail-closed outcom
 The replay gate calls `assert_consumed()` after all selected records; HTTP snapshots
 and decision fixtures remain separate evidence streams with one execution identity.
 
-The offline and product-replay foundation is implemented, but it does not enable a model. Strict DTOs,
+The offline and product-replay foundation is implemented, but it does not enable
+a model. Strict DTOs,
 structured client adapters, typed eligibility, conditional run configuration, atomic
 decision storage, strict replay, bounded search evidence, resolver re-verification and
-the A/B metrics gate are present. No fixed-cohort model A/B has run, so no recall uplift
+the causal A/B metrics gate are present. Historical live-arm differences are not
+causal evidence unless an adopted LLM plan or ranking adds the correct frozen
+candidate and resolver verification succeeds.
 
 The isolated Phase D branch additionally provides a DeepSeek adapter for
 `deepseek-v4-flash`. It uses the fixed HTTPS Chat Completions endpoint, explicit
 non-thinking JSON mode, no tools, no streaming and no retry. A serial budget wrapper
-locks preflight, dispatch and accounting across both planner and ranker, with a 36-call
-limit and USD 0.50 hard cap. The capture runner requires a clean frozen branch and a
+locks preflight, dispatch and accounting across both planner and ranker. The
+stabilized runner caps future development capture at 30 calls and USD 0.05. The
+capture runner requires a clean frozen branch and a
 fresh root, never loads evaluator labels, and seals baseline/treatment/decision/snapshot/
 checkpoint/replay digests before the separate evaluator may access reference websites.
-is claimed. Before any limited real experiment, provider, model, maximum call count,
+Before any limited real experiment, provider, model, maximum call count,
 and estimated cost require explicit user approval. Passing requires batch-level recall
 uplift with zero wrong, cross-company, or cross-tenant URLs; one-company prompt tuning
 is not accepted.
