@@ -23,7 +23,7 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构轨道（2026-07-21，LLM Candidate Reasoning Phase D evaluated）
+## 当前架构轨道（2026-07-22，LLM Candidate Reasoning causal stabilization）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
 DNS/TLS/timeout/403、provider inventory、S6 title/location、S7、岗位关闭、已验证 no-match 或未披露
@@ -105,6 +105,25 @@ Montana）已经把正确官网排进 Top-3，但 S2 均以 `NETWORK_TIMEOUT` �
 候选”；用 poisoned Bing + valid alternate source fixture 验证正确候选可进入统一池。随后单独检查 Top-3
 verification 的 per-candidate timeout/总 deadline，确保一个慢 host 不吞掉后续候选。两项离线通过后再决定
 是否值得运行同一 development cohort；在此之前不消费新的付费调用或 blind cohort。
+
+### 当前 Goal 执行顺序
+
+Stage A 已完成 `run-006` 逐条因果审计，见
+`docs/LLM_RUN006_CAUSAL_AUDIT.md`。18 条唯一分类为 operational 13、deterministic/network variance 4、
+baseline identity defect 1；Versana 的 Exact 与所有 `llm_calls=0` 变化均不计 LLM uplift。原临时 artifact 已
+过期，现存 sealed summary 未保留每条完整 query 与 Top-10 pool；后续 bundle 必须把这两类证据作为 durable
+causal artifact，而不是靠 session 恢复。
+
+Stage B 是下一关键路径，只修实验基础设施：timeout 来自版本化 run config 并受 remaining deadline 约束；
+planner、search、ranker 使用显式子预算且为 ranker 保留最低可执行预算；每次调用独立清零 usage；失败调用
+usage 为零；结果增加 `llm_plan_used`、`llm_rank_used`、`llm_causal_contribution`。只有真正采用 LLM 计划或
+排序并新增正确候选的记录可计 recovery，`llm_calls=0` 和两组网络波动永远排除。
+
+Stage C 在 Stage B contract 冻结后实现两个离线因果实验：planner 对每条 query 使用冻结搜索响应，报告
+source candidate recall@10；baseline 与 LLM ranker读取完全相同的冻结 pool，只在 reference 已进入 pool 时
+报告 conditional recall@3。随后统一执行 LLM 专项、product live-to-bundle-to-replay fixture、flag-off、provider、
+resolver、architecture 和 diff gates。已有 `run-007` 是唯一正式 rerun；不再启动第二次付费正式 A/B，最终
+promotion 结论只基于可审计的既有实验和新离线因果门禁。
 
 ## 当前执行轮次（2026-07-20，`.199`）
 

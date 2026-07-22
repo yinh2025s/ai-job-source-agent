@@ -10,6 +10,14 @@
 
 ### Changed
 
+- Added a read-only per-record causal audit for sealed DeepSeek run 006. The 18
+  records classify exclusively as 13 operational failures, four deterministic
+  or live-network variances and one baseline identity defect. All eleven ranker
+  invocations timed out, Versana made zero LLM calls, and no run-006 outcome is
+  credited as a ranker-quality recovery. The audit also records that the
+  expired temporary root did not leave durable per-record query and Top-10 pool
+  evidence, which Stage C must retain in future causal bundles.
+
 - Sealed post-stabilization `run-deepseek-v4-flash-007` proves the transport
   diagnosis but still rejects promotion. With the provider timeout frozen at 7
   seconds, advisory failures fell from 14/18 to 0/18 and candidate recall@3
