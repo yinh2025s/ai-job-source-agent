@@ -12,7 +12,6 @@ from scripts.evaluate_candidate_reasoning_experiment import (
     _verified_website_conflicts,
 )
 from scripts.run_candidate_reasoning_experiment import (
-    PROVIDER_TIMEOUT_SECONDS,
     _agent_config,
     _common_config_digest,
     _require_new_root,
@@ -22,8 +21,17 @@ from scripts.run_candidate_reasoning_experiment import (
 
 
 class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
-    def test_provider_timeout_covers_observed_ranker_latency(self):
-        self.assertEqual(PROVIDER_TIMEOUT_SECONDS, 7.0)
+    def test_versioned_phase_budgets_cover_observed_ranker_latency(self):
+        treatment = _agent_config(llm=True, model="deepseek-v4-flash")
+        self.assertEqual(treatment.llm_planner_timeout, 7.0)
+        self.assertEqual(treatment.llm_search_timeout, 4.0)
+        self.assertEqual(treatment.llm_ranker_timeout, 7.0)
+        self.assertLessEqual(
+            treatment.llm_planner_timeout
+            + treatment.llm_search_timeout
+            + treatment.llm_ranker_timeout,
+            treatment.llm_timeout,
+        )
 
     def test_baseline_and_treatment_share_every_non_llm_setting(self):
         baseline = _agent_config(llm=False)
@@ -36,7 +44,7 @@ class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
         self.assertFalse(baseline.enable_llm_candidate_reasoning)
         self.assertTrue(treatment.enable_llm_candidate_reasoning)
         self.assertEqual(baseline.llm_timeout, 8.0)
-        self.assertEqual(treatment.llm_timeout, 15.0)
+        self.assertEqual(treatment.llm_timeout, 18.0)
 
     def test_experiment_root_must_be_fresh(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -458,19 +458,34 @@ class StructuredLLMResponse:
 
 @runtime_checkable
 class LLMReasoningClient(Protocol):
-    def complete(self, request: StructuredLLMRequest) -> StructuredLLMResponse:
+    def complete(
+        self,
+        request: StructuredLLMRequest,
+        *,
+        timeout_seconds: float,
+    ) -> StructuredLLMResponse:
         ...
 
 
 @runtime_checkable
 class CompanyQueryPlanner(Protocol):
-    def plan(self, request: QueryPlannerRequest) -> QueryPlannerDecision:
+    def plan(
+        self,
+        request: QueryPlannerRequest,
+        *,
+        timeout_seconds: float,
+    ) -> QueryPlannerDecision:
         ...
 
 
 @runtime_checkable
 class CompanyCandidateRanker(Protocol):
-    def rank(self, request: CandidateRankerRequest) -> CandidateRankerDecision:
+    def rank(
+        self,
+        request: CandidateRankerRequest,
+        *,
+        timeout_seconds: float,
+    ) -> CandidateRankerDecision:
         ...
 
 

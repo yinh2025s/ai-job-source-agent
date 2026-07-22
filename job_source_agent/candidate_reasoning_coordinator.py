@@ -92,13 +92,22 @@ class CandidateReasoningResult:
     eligibility: CandidateReasoningEligibilityResult
     candidates: tuple[CandidateEvidence, ...]
     advisory_failure: LLMAdvisoryFailure | None = None
-    used_llm_ranking: bool = False
+    llm_plan_used: bool = False
+    llm_rank_used: bool = False
 
     def __post_init__(self) -> None:
         if len(self.candidates) > MAX_OUTPUT_CANDIDATES:
             raise ValueError("Coordinator output exceeds the Top 3 limit")
-        if self.used_llm_ranking and self.advisory_failure is not None:
+        if self.llm_rank_used and self.advisory_failure is not None:
             raise ValueError("A failed advisory cannot supply the adopted ranking")
+        for name in ("llm_plan_used", "llm_rank_used"):
+            if not isinstance(getattr(self, name), bool):
+                raise TypeError(f"{name} must be boolean")
+
+    @property
+    def used_llm_ranking(self) -> bool:
+        """Compatibility alias for schema 1 decision artifacts."""
+        return self.llm_rank_used
 
 
 class CandidateReasoningCoordinator:
@@ -132,6 +141,9 @@ class CandidateReasoningCoordinator:
         planner_request: QueryPlannerRequest,
         metadata: CandidateReasoningMetadata,
         deadline: float,
+        planner_timeout_seconds: float = 3.0,
+        search_timeout_seconds: float = 2.0,
+        ranker_timeout_seconds: float = 3.0,
         baseline_candidates: tuple[CandidateEvidence, ...] = (),
     ) -> CandidateReasoningResult:
         eligibility = evaluate_candidate_reasoning_eligibility(eligibility_context)
@@ -140,6 +152,19 @@ class CandidateReasoningCoordinator:
             return CandidateReasoningResult(eligibility, baseline[:MAX_OUTPUT_CANDIDATES])
 
         if isinstance(deadline, bool) or not isinstance(deadline, (int, float)) or not math.isfinite(deadline):
+            return self._fallback(eligibility, baseline, "SCHEMA_INVALID", "query_plan")
+        phase_timeouts = (
+            planner_timeout_seconds,
+            search_timeout_seconds,
+            ranker_timeout_seconds,
+        )
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
+            or not math.isfinite(value)
+            or value <= 0
+            for value in phase_timeouts
+        ):
             return self._fallback(eligibility, baseline, "SCHEMA_INVALID", "query_plan")
 
         if self._expired(deadline):
@@ -174,8 +199,19 @@ class CandidateReasoningCoordinator:
         planner_was_loaded = planner_record is not None
         if planner_record is None:
             started = self._clock()
+            planner_call_timeout = self._phase_timeout(
+                deadline,
+                cap=planner_timeout_seconds,
+                reserve=search_timeout_seconds + ranker_timeout_seconds,
+            )
+            if planner_call_timeout <= 0:
+                return self._fallback(eligibility, baseline, "TIMEOUT", "query_plan")
+            planner_deadline = started + planner_call_timeout
             try:
-                planner_decision = self._planner.plan(planner_request)
+                planner_decision = self._planner.plan(
+                    planner_request,
+                    timeout_seconds=planner_call_timeout,
+                )
             except TimeoutError:
                 return self._audited_fallback(
                     eligibility, baseline, "TIMEOUT", "query_plan", metadata,
@@ -206,7 +242,7 @@ class CandidateReasoningCoordinator:
                     _planner_request_payload(planner_request), (), (),
                     (self._clock() - started) * 1_000,
                 )
-            if self._expired(deadline):
+            if self._expired(planner_deadline):
                 return self._audited_fallback(
                     eligibility, baseline, "TIMEOUT", "query_plan", metadata,
                     _planner_request_payload(planner_request), (), (),
@@ -231,12 +267,13 @@ class CandidateReasoningCoordinator:
             except Exception:
                 return self._fallback(eligibility, baseline, "DECISION_STORE_ERROR", "query_plan")
 
-        llm_seconds_remaining = max(0.0, deadline - self._clock())
+        search_started = self._clock()
         if planner_was_loaded:
-            llm_seconds_remaining = max(
-                0.0,
-                llm_seconds_remaining - (planner_record.duration_ms / 1_000),
-            )
+            search_started += planner_record.duration_ms / 1_000
+        search_deadline = min(
+            deadline - ranker_timeout_seconds,
+            search_started + search_timeout_seconds,
+        )
 
         queries = planner_decision.queries[:MAX_PLANNER_QUERIES]
 
@@ -245,14 +282,15 @@ class CandidateReasoningCoordinator:
         for index, query in enumerate(queries, start=1):
             if len(discovered) >= self._max_candidates:
                 break
-            if llm_seconds_remaining <= 0:
+            search_seconds_remaining = max(0.0, search_deadline - self._clock())
+            if search_seconds_remaining <= 0:
                 return self._fallback(eligibility, baseline, "TIMEOUT", "candidate_rank")
             query_id = f"llm-query-{index}"
             try:
                 results = self._search_backend.search(
                     query,
                     query_id=query_id,
-                    remaining_seconds=llm_seconds_remaining,
+                    remaining_seconds=search_seconds_remaining,
                 )
             except TimeoutError:
                 return self._fallback(eligibility, baseline, "TIMEOUT", "candidate_rank")
@@ -273,14 +311,23 @@ class CandidateReasoningCoordinator:
                     break
 
         baseline_order = _stable_candidates(tuple(discovered))[: self._max_candidates]
+        llm_plan_used = any(
+            candidate.candidate_id not in {item.candidate_id for item in baseline}
+            for candidate in baseline_order
+        )
         if not baseline_order:
             return CandidateReasoningResult(eligibility, ())
         if self._max_calls_per_company == 1:
             return CandidateReasoningResult(
                 eligibility,
                 baseline_order[:MAX_OUTPUT_CANDIDATES],
+                llm_plan_used=llm_plan_used,
             )
-        if llm_seconds_remaining <= 0:
+        ranker_call_timeout = self._phase_timeout(
+            deadline,
+            cap=ranker_timeout_seconds,
+        )
+        if ranker_call_timeout <= 0:
             return self._fallback(eligibility, baseline_order, "TIMEOUT", "candidate_rank")
 
         ranker_request = CandidateRankerRequest(
@@ -329,9 +376,12 @@ class CandidateReasoningCoordinator:
                 ranker_record = None
         if ranker_record is None:
             started = self._clock()
-            ranker_deadline = started + llm_seconds_remaining
+            ranker_deadline = started + ranker_call_timeout
             try:
-                ranker_decision = self._ranker.rank(ranker_request)
+                ranker_decision = self._ranker.rank(
+                    ranker_request,
+                    timeout_seconds=ranker_call_timeout,
+                )
             except TimeoutError:
                 return self._audited_fallback(
                     eligibility, baseline_order, "TIMEOUT", "candidate_rank", metadata,
@@ -397,11 +447,21 @@ class CandidateReasoningCoordinator:
         return CandidateReasoningResult(
             eligibility,
             ranked[:MAX_OUTPUT_CANDIDATES],
-            used_llm_ranking=True,
+            llm_plan_used=llm_plan_used,
+            llm_rank_used=True,
         )
 
     def _expired(self, deadline: float) -> bool:
         return self._clock() >= deadline
+
+    def _phase_timeout(
+        self,
+        deadline: float,
+        *,
+        cap: float,
+        reserve: float = 0.0,
+    ) -> float:
+        return max(0.0, min(float(cap), deadline - self._clock() - reserve))
 
     def _load_record(
         self,
@@ -461,6 +521,10 @@ class CandidateReasoningCoordinator:
             eligibility,
             candidates[:MAX_OUTPUT_CANDIDATES],
             LLMAdvisoryFailure(code, decision_kind),
+            llm_plan_used=any(
+                candidate.query_id.startswith("llm-query-")
+                for candidate in candidates
+            ),
         )
 
 

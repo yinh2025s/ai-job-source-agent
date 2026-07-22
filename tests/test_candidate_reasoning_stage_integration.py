@@ -78,7 +78,8 @@ class ReasoningService:
         return CandidateReasoningResult(
             eligibility,
             self.candidates if eligibility.eligible else (),
-            used_llm_ranking=bool(self.candidates and eligibility.eligible),
+            llm_plan_used=bool(self.candidates and eligibility.eligible),
+            llm_rank_used=bool(self.candidates and eligibility.eligible),
         )
 
 

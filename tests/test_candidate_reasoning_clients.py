@@ -25,9 +25,11 @@ class ScriptedLLMClient:
     def __init__(self, *responses: object) -> None:
         self._responses = list(responses)
         self.requests = []
+        self.timeouts = []
 
-    def complete(self, request):
+    def complete(self, request, *, timeout_seconds=8.0):
         self.requests.append(request)
+        self.timeouts.append(timeout_seconds)
         if not self._responses:
             raise AssertionError("unexpected structured LLM request")
         response = self._responses.pop(0)

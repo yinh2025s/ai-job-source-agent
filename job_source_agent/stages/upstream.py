@@ -300,6 +300,9 @@ class WebsiteResolutionStage:
                     "eligibility_reason": reasoning.eligibility.reason_code,
                     "candidate_count": len(reasoning.candidates),
                     "used_llm_ranking": reasoning.used_llm_ranking,
+                    "llm_plan_used": reasoning.llm_plan_used,
+                    "llm_rank_used": reasoning.llm_rank_used,
+                    "llm_causal_contribution": "not_evaluated",
                     "advisory_failure": (
                         reasoning.advisory_failure.code
                         if reasoning.advisory_failure is not None

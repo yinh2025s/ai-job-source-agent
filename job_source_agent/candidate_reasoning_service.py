@@ -44,6 +44,9 @@ class CandidateReasoningRuntime:
     execution_fingerprint: str = ""
     replay_mode: bool = False
     has_compatible_replay_fixture: bool = False
+    planner_timeout_seconds: float = 3.0
+    search_timeout_seconds: float = 2.0
+    ranker_timeout_seconds: float = 3.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.feature_enabled, bool):
@@ -54,10 +57,24 @@ class CandidateReasoningRuntime:
             raise TypeError("has_compatible_replay_fixture must be boolean")
         if self.has_compatible_replay_fixture and not self.replay_mode:
             raise ValueError("compatible replay fixture requires replay_mode")
-        if isinstance(self.timeout_seconds, bool) or not isinstance(self.timeout_seconds, (int, float)):
-            raise TypeError("timeout_seconds must be numeric")
-        if not math.isfinite(self.timeout_seconds) or self.timeout_seconds <= 0:
-            raise ValueError("timeout_seconds must be finite and positive")
+        for name in (
+            "timeout_seconds",
+            "planner_timeout_seconds",
+            "search_timeout_seconds",
+            "ranker_timeout_seconds",
+        ):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)):
+                raise TypeError(f"{name} must be numeric")
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        if (
+            self.planner_timeout_seconds
+            + self.search_timeout_seconds
+            + self.ranker_timeout_seconds
+            > self.timeout_seconds
+        ):
+            raise ValueError("phase timeouts cannot exceed timeout_seconds")
         if self.feature_enabled:
             # Reuse the metadata contract for public identifiers and digests.
             CandidateReasoningMetadata(
@@ -149,6 +166,9 @@ class CandidateReasoningInvocationService:
             planner_request=request,
             metadata=metadata,
             deadline=deadline,
+            planner_timeout_seconds=self._runtime.planner_timeout_seconds,
+            search_timeout_seconds=self._runtime.search_timeout_seconds,
+            ranker_timeout_seconds=self._runtime.ranker_timeout_seconds,
             baseline_candidates=baseline_candidates,
         )
 
@@ -210,6 +230,9 @@ def build_replay_candidate_reasoning_service(
         model_id=run_configuration.llm_model,
         prompt_version=run_configuration.llm_prompt_version,
         timeout_seconds=run_configuration.llm_timeout,
+        planner_timeout_seconds=run_configuration.llm_planner_timeout,
+        search_timeout_seconds=run_configuration.llm_search_timeout,
+        ranker_timeout_seconds=run_configuration.llm_ranker_timeout,
         adapter_version=adapter_version,
         execution_fingerprint=execution_identity,
         replay_mode=True,
@@ -224,12 +247,12 @@ def build_replay_candidate_reasoning_service(
 
 
 class _ReplayOnlyPlanner:
-    def plan(self, request: QueryPlannerRequest):
+    def plan(self, request: QueryPlannerRequest, *, timeout_seconds: float):
         raise AssertionError("replay attempted to call a query-planner model")
 
 
 class _ReplayOnlyRanker:
-    def rank(self, request: CandidateRankerRequest):
+    def rank(self, request: CandidateRankerRequest, *, timeout_seconds: float):
         raise AssertionError("replay attempted to call a candidate-ranker model")
 
 

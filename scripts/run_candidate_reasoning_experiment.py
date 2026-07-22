@@ -57,12 +57,11 @@ from scripts.replay_failure_bundle import replay_failure_bundle
 BRANCH = "codex/llm-candidate-reasoning-foundation"
 PROVIDER = "deepseek"
 PROMPT_VERSION = "deepseek-company-candidates-v1"
-MAX_CALLS = 36
-HARD_COST_CAP_USD = Decimal("0.50")
+MAX_CALLS = 30
+HARD_COST_CAP_USD = Decimal("0.05")
 INPUT_PRICE_USD_PER_MILLION = Decimal("0.14")
 OUTPUT_PRICE_USD_PER_MILLION = Decimal("0.28")
 MODEL_OUTPUT_LIMITS = {"query_plan": 1_000, "candidate_rank": 1_600}
-PROVIDER_TIMEOUT_SECONDS = 7.0
 
 
 def run_experiment(
@@ -92,7 +91,6 @@ def run_experiment(
             "cohort_sha256": sha256_file(root / "cohort.json"),
             "model": model,
             "prompt_version": PROMPT_VERSION,
-            "provider_timeout_seconds": PROVIDER_TIMEOUT_SECONDS,
             "treatment_run_configuration_digest": treatment_run.digest,
         }
     )
@@ -106,7 +104,10 @@ def run_experiment(
             "record_count": len(cohort),
             "model": model,
             "prompt_version": PROMPT_VERSION,
-            "provider_timeout_seconds": PROVIDER_TIMEOUT_SECONDS,
+            "provider_timeout_seconds": max(
+                treatment_run.llm_planner_timeout,
+                treatment_run.llm_ranker_timeout,
+            ),
             "execution_identity": execution_identity,
             "labels_loaded": False,
         },
@@ -121,7 +122,10 @@ def run_experiment(
 
     raw_client = DeepSeekReasoningClient(
         model=model,
-        timeout_seconds=PROVIDER_TIMEOUT_SECONDS,
+        timeout_seconds=max(
+            treatment_run.llm_planner_timeout,
+            treatment_run.llm_ranker_timeout,
+        ),
     )
     budget_client = BudgetedLLMReasoningClient(
         raw_client,
@@ -164,6 +168,9 @@ def run_experiment(
                 model_id=model,
                 prompt_version=PROMPT_VERSION,
                 timeout_seconds=treatment_run.llm_timeout,
+                planner_timeout_seconds=treatment_run.llm_planner_timeout,
+                search_timeout_seconds=treatment_run.llm_search_timeout,
+                ranker_timeout_seconds=treatment_run.llm_ranker_timeout,
                 adapter_version=DEEPSEEK_ADAPTER_VERSION,
                 execution_fingerprint=execution_identity,
             ),
@@ -238,7 +245,10 @@ def run_experiment(
         "provider": PROVIDER,
         "prompt_version": PROMPT_VERSION,
         "adapter_version": DEEPSEEK_ADAPTER_VERSION,
-        "provider_timeout_seconds": PROVIDER_TIMEOUT_SECONDS,
+        "provider_timeout_seconds": max(
+            treatment_run.llm_planner_timeout,
+            treatment_run.llm_ranker_timeout,
+        ),
         "execution_identity": execution_identity,
         "baseline_run_configuration": baseline_run.to_payload(),
         "baseline_run_configuration_digest": baseline_run.digest,
@@ -333,7 +343,10 @@ def _agent_config(*, llm: bool, model: str = "") -> AgentConfig:
         llm_provider=PROVIDER if llm else "",
         llm_model=model if llm else "",
         llm_prompt_version=PROMPT_VERSION if llm else "",
-        llm_timeout=15.0 if llm else 8.0,
+        llm_timeout=18.0 if llm else 8.0,
+        llm_planner_timeout=7.0 if llm else 3.0,
+        llm_search_timeout=4.0 if llm else 2.0,
+        llm_ranker_timeout=7.0 if llm else 3.0,
         llm_max_candidates=10,
         llm_max_calls_per_company=2,
     )
@@ -347,6 +360,9 @@ def _common_config_digest(config: AgentConfig) -> str:
         "llm_model",
         "llm_prompt_version",
         "llm_timeout",
+        "llm_planner_timeout",
+        "llm_search_timeout",
+        "llm_ranker_timeout",
         "llm_max_candidates",
         "llm_max_calls_per_company",
     ):

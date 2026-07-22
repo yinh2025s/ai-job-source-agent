@@ -151,7 +151,12 @@ class BudgetedLLMReasoningClient:
     def config(self) -> LLMExperimentBudgetConfig:
         return self._config
 
-    def complete(self, request: StructuredLLMRequest) -> StructuredLLMResponse:
+    def complete(
+        self,
+        request: StructuredLLMRequest,
+        *,
+        timeout_seconds: float = 8.0,
+    ) -> StructuredLLMResponse:
         if not isinstance(request, StructuredLLMRequest):
             raise LLMExperimentAccountingError(
                 "request must use StructuredLLMRequest"
@@ -177,7 +182,10 @@ class BudgetedLLMReasoningClient:
 
             started = time.perf_counter()
             try:
-                response = self._client.complete(request)
+                response = self._client.complete(
+                    request,
+                    timeout_seconds=timeout_seconds,
+                )
             except Exception:
                 self._append_entry(
                     decision_kind=decision_kind,

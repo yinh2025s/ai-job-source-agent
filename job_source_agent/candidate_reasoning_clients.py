@@ -38,7 +38,12 @@ class StructuredCompanyQueryPlanner(CompanyQueryPlanner):
     def last_token_usage(self) -> TokenUsage:
         return self._last_token_usage
 
-    def plan(self, request: QueryPlannerRequest) -> QueryPlannerDecision:
+    def plan(
+        self,
+        request: QueryPlannerRequest,
+        *,
+        timeout_seconds: float = 8.0,
+    ) -> QueryPlannerDecision:
         if not isinstance(request, QueryPlannerRequest):
             raise TypeError("request must use QueryPlannerRequest")
         self._last_token_usage = TokenUsage(0, 0, 0)
@@ -47,7 +52,8 @@ class StructuredCompanyQueryPlanner(CompanyQueryPlanner):
                 decision_kind="query_plan",
                 schema_name=QUERY_PLANNER_SCHEMA_NAME,
                 payload=_planner_payload(request),
-            )
+            ),
+            timeout_seconds=timeout_seconds,
         )
         if not isinstance(response, StructuredLLMResponse):
             raise TypeError("client must return StructuredLLMResponse")
@@ -66,7 +72,12 @@ class StructuredCompanyCandidateRanker(CompanyCandidateRanker):
     def last_token_usage(self) -> TokenUsage:
         return self._last_token_usage
 
-    def rank(self, request: CandidateRankerRequest) -> CandidateRankerDecision:
+    def rank(
+        self,
+        request: CandidateRankerRequest,
+        *,
+        timeout_seconds: float = 8.0,
+    ) -> CandidateRankerDecision:
         if not isinstance(request, CandidateRankerRequest):
             raise TypeError("request must use CandidateRankerRequest")
         self._last_token_usage = TokenUsage(0, 0, 0)
@@ -75,7 +86,8 @@ class StructuredCompanyCandidateRanker(CompanyCandidateRanker):
                 decision_kind="candidate_rank",
                 schema_name=CANDIDATE_RANKER_SCHEMA_NAME,
                 payload=_ranker_payload(request),
-            )
+            ),
+            timeout_seconds=timeout_seconds,
         )
         if not isinstance(response, StructuredLLMResponse):
             raise TypeError("client must return StructuredLLMResponse")

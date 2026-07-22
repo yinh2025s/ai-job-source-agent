@@ -115,9 +115,22 @@ class DeepSeekReasoningClient(LLMReasoningClient):
         self._timeout_seconds = float(timeout_seconds)
         self._transport = transport or _urllib_transport
 
-    def complete(self, request: StructuredLLMRequest) -> StructuredLLMResponse:
+    def complete(
+        self,
+        request: StructuredLLMRequest,
+        *,
+        timeout_seconds: float | None = None,
+    ) -> StructuredLLMResponse:
         if not isinstance(request, StructuredLLMRequest):
             raise TypeError("request must use StructuredLLMRequest")
+        if timeout_seconds is None:
+            timeout_seconds = self._timeout_seconds
+        if (
+            isinstance(timeout_seconds, bool)
+            or not isinstance(timeout_seconds, (int, float))
+            or not 0 < timeout_seconds <= 30
+        ):
+            raise ValueError("timeout_seconds must be between 0 and 30")
         body = _request_body(request, self._model)
         encoded = json.dumps(
             body,
@@ -137,7 +150,10 @@ class DeepSeekReasoningClient(LLMReasoningClient):
             },
             method="POST",
         )
-        response = self._send(http_request)
+        response = self._send(
+            http_request,
+            min(self._timeout_seconds, float(timeout_seconds)),
+        )
         envelope = _provider_envelope(response)
         payload = _model_payload(envelope)
         usage = _token_usage(envelope)
@@ -150,9 +166,13 @@ class DeepSeekReasoningClient(LLMReasoningClient):
             token_usage=usage,
         )
 
-    def _send(self, request: Request) -> DeepSeekHTTPResponse:
+    def _send(
+        self,
+        request: Request,
+        timeout_seconds: float,
+    ) -> DeepSeekHTTPResponse:
         try:
-            response = self._transport(request, self._timeout_seconds)
+            response = self._transport(request, timeout_seconds)
         except (TimeoutError, socket.timeout):
             raise TimeoutError("DeepSeek request timed out") from None
         except HTTPError as error:

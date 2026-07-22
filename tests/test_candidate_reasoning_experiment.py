@@ -87,7 +87,8 @@ class CandidateReasoningExperimentTest(unittest.TestCase):
                 ("NO_SOURCE_BACKED_CANDIDATE",),
             ),
             (candidate,),
-            used_llm_ranking=True,
+            llm_plan_used=True,
+            llm_rank_used=True,
         )
         service = RecordingCandidateReasoningService(_StubService(result))
         company = PublicCompanyReasoningInput("Example", "example")

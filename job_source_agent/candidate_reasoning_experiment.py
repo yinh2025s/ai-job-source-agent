@@ -67,6 +67,9 @@ class RecordingCandidateReasoningService:
             "eligibility_state": result.eligibility.state,
             "eligibility_reason": result.eligibility.reason_code,
             "used_llm_ranking": result.used_llm_ranking,
+            "llm_plan_used": result.llm_plan_used,
+            "llm_rank_used": result.llm_rank_used,
+            "llm_causal_contribution": "not_evaluated",
             "advisory_failure": (
                 {
                     "code": result.advisory_failure.code,

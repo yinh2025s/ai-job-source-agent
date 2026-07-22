@@ -37,6 +37,18 @@ class RecordingTransport:
 
 
 class DeepSeekReasoningClientTest(unittest.TestCase):
+    def test_per_invocation_timeout_clamps_configured_transport_limit(self):
+        transport = RecordingTransport(self._response(self._planner_decision()))
+        client = DeepSeekReasoningClient(
+            api_key=SECRET,
+            timeout_seconds=7.0,
+            transport=transport,
+        )
+
+        client.complete(self._planner_request(), timeout_seconds=2.5)
+
+        self.assertEqual(transport.calls[0][1], 2.5)
+
     def test_query_planner_emits_exact_bounded_non_thinking_request(self):
         transport = RecordingTransport(self._response(self._planner_decision()))
         client = DeepSeekReasoningClient(api_key=SECRET, transport=transport)

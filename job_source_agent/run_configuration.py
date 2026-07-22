@@ -9,12 +9,13 @@ from typing import Any
 
 
 RUN_CONFIGURATION_SCHEMA_VERSION = "1.4"
-LLM_RUN_CONFIGURATION_SCHEMA_VERSION = "1.5"
+LLM_RUN_CONFIGURATION_SCHEMA_VERSION = "1.6"
 BATCH_EXECUTION_SCHEMA_VERSION = "1.1"
 _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION = "1.0"
 _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION = "1.1"
 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION = "1.2"
 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION = "1.3"
+_LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION = "1.5"
 _MAX_BUDGET = 1_000
 _MAX_TIMEOUT_SECONDS = 300.0
 _PUBLIC_IDENTIFIER_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:/-]*$")
@@ -39,6 +40,9 @@ class AgentConfig:
     llm_model: str = ""
     llm_prompt_version: str = ""
     llm_timeout: float = 8.0
+    llm_planner_timeout: float = 3.0
+    llm_search_timeout: float = 2.0
+    llm_ranker_timeout: float = 3.0
     llm_max_candidates: int = 10
     llm_max_calls_per_company: int = 2
 
@@ -64,6 +68,9 @@ class DeterministicRunConfig:
     llm_model: str = ""
     llm_prompt_version: str = ""
     llm_timeout: float = 8.0
+    llm_planner_timeout: float = 3.0
+    llm_search_timeout: float = 2.0
+    llm_ranker_timeout: float = 3.0
     llm_max_candidates: int = 10
     llm_max_calls_per_company: int = 2
     _schema_version: str = field(
@@ -108,6 +115,9 @@ class DeterministicRunConfig:
                     "llm_model": config.llm_model,
                     "llm_prompt_version": config.llm_prompt_version,
                     "llm_timeout": config.llm_timeout,
+                    "llm_planner_timeout": config.llm_planner_timeout,
+                    "llm_search_timeout": config.llm_search_timeout,
+                    "llm_ranker_timeout": config.llm_ranker_timeout,
                     "llm_max_candidates": config.llm_max_candidates,
                     "llm_max_calls_per_company": config.llm_max_calls_per_company,
                 }
@@ -130,6 +140,7 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             raise ValueError("Run configuration schema version is incompatible")
@@ -149,6 +160,7 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_career_discovery_transport_calls")
@@ -156,21 +168,27 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_job_board_attempts")
         if schema_version in {
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("enable_parallel_candidate_discovery")
         if schema_version in {
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("evaluate_all_candidate_routes")
-        if schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION:
+        if schema_version in {
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
+            LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             expected_fields.update(
                 {
                     "enable_llm_candidate_reasoning",
@@ -180,6 +198,14 @@ class DeterministicRunConfig:
                     "llm_timeout",
                     "llm_max_candidates",
                     "llm_max_calls_per_company",
+                }
+            )
+        if schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION:
+            expected_fields.update(
+                {
+                    "llm_planner_timeout",
+                    "llm_search_timeout",
+                    "llm_ranker_timeout",
                 }
             )
         if not isinstance(agent, dict) or set(agent) != expected_fields:
@@ -199,6 +225,7 @@ class DeterministicRunConfig:
                 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
+                _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
                 LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else 1
@@ -220,6 +247,7 @@ class DeterministicRunConfig:
                 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
+                _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
                 LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else None
@@ -246,6 +274,7 @@ class DeterministicRunConfig:
             if schema_version in {
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
+                _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
                 LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else False
@@ -257,6 +286,7 @@ class DeterministicRunConfig:
             )
             if schema_version in {
                 RUN_CONFIGURATION_SCHEMA_VERSION,
+                _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
                 LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else False
@@ -271,14 +301,20 @@ class DeterministicRunConfig:
                 agent["enable_llm_candidate_reasoning"],
                 "enable_llm_candidate_reasoning",
             )
-            if schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION
+            if schema_version in {
+                _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
+                LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
+            }
             else False
         )
         if (
-            schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION
+            schema_version in {
+                _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
+                LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
+            }
             and not enable_llm_candidate_reasoning
         ):
-            raise ValueError("Run configuration schema 1.5 requires LLM reasoning enabled")
+            raise ValueError("LLM run configuration requires reasoning enabled")
         if enable_llm_candidate_reasoning and not enable_parallel_candidate_discovery:
             raise ValueError(
                 "LLM candidate reasoning requires parallel candidate discovery"
@@ -307,6 +343,29 @@ class DeterministicRunConfig:
             if enable_llm_candidate_reasoning
             else 8.0
         )
+        llm_planner_timeout = (
+            _required_timeout(agent["llm_planner_timeout"], "llm_planner_timeout")
+            if schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION
+            else llm_timeout * 0.4 if enable_llm_candidate_reasoning else 3.0
+        )
+        llm_search_timeout = (
+            _required_timeout(agent["llm_search_timeout"], "llm_search_timeout")
+            if schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION
+            else llm_timeout * 0.2 if enable_llm_candidate_reasoning else 2.0
+        )
+        llm_ranker_timeout = (
+            _required_timeout(agent["llm_ranker_timeout"], "llm_ranker_timeout")
+            if schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION
+            else llm_timeout * 0.4 if enable_llm_candidate_reasoning else 3.0
+        )
+        if schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION:
+            if llm_ranker_timeout < 1.0:
+                raise ValueError("llm_ranker_timeout must reserve at least 1 second")
+            if (
+                llm_planner_timeout + llm_search_timeout + llm_ranker_timeout
+                > llm_timeout
+            ):
+                raise ValueError("LLM phase budgets cannot exceed llm_timeout")
         llm_max_candidates = (
             _bounded_integer(
                 agent["llm_max_candidates"],
@@ -345,6 +404,9 @@ class DeterministicRunConfig:
             llm_model=llm_model,
             llm_prompt_version=llm_prompt_version,
             llm_timeout=llm_timeout,
+            llm_planner_timeout=llm_planner_timeout,
+            llm_search_timeout=llm_search_timeout,
+            llm_ranker_timeout=llm_ranker_timeout,
             llm_max_candidates=llm_max_candidates,
             llm_max_calls_per_company=llm_max_calls_per_company,
             _schema_version=schema_version,
@@ -366,6 +428,7 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_career_discovery_transport_calls"] = (
@@ -375,12 +438,14 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_job_board_attempts"] = self.max_job_board_attempts
         if self._schema_version in {
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["enable_parallel_candidate_discovery"] = (
@@ -388,10 +453,14 @@ class DeterministicRunConfig:
             )
         if self._schema_version in {
             RUN_CONFIGURATION_SCHEMA_VERSION,
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
             LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["evaluate_all_candidate_routes"] = self.evaluate_all_candidate_routes
-        if self._schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION:
+        if self._schema_version in {
+            _LEGACY_LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
+            LLM_RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
             agent.update(
                 {
                     "enable_llm_candidate_reasoning": self.enable_llm_candidate_reasoning,
@@ -401,6 +470,14 @@ class DeterministicRunConfig:
                     "llm_timeout": self.llm_timeout,
                     "llm_max_candidates": self.llm_max_candidates,
                     "llm_max_calls_per_company": self.llm_max_calls_per_company,
+                }
+            )
+        if self._schema_version == LLM_RUN_CONFIGURATION_SCHEMA_VERSION:
+            agent.update(
+                {
+                    "llm_planner_timeout": self.llm_planner_timeout,
+                    "llm_search_timeout": self.llm_search_timeout,
+                    "llm_ranker_timeout": self.llm_ranker_timeout,
                 }
             )
         return {"schema_version": self._schema_version, "agent": agent}
@@ -424,6 +501,9 @@ class DeterministicRunConfig:
             llm_model=self.llm_model,
             llm_prompt_version=self.llm_prompt_version,
             llm_timeout=self.llm_timeout,
+            llm_planner_timeout=self.llm_planner_timeout,
+            llm_search_timeout=self.llm_search_timeout,
+            llm_ranker_timeout=self.llm_ranker_timeout,
             llm_max_candidates=self.llm_max_candidates,
             llm_max_calls_per_company=self.llm_max_calls_per_company,
         )

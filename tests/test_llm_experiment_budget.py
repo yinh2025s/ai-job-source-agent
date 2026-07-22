@@ -31,7 +31,7 @@ class RecordingClient:
         self.max_active = 0
         self.lock = threading.Lock()
 
-    def complete(self, request):
+    def complete(self, request, *, timeout_seconds):
         with self.lock:
             self.calls += 1
             self.active += 1

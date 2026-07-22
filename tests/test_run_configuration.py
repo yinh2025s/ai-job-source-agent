@@ -53,7 +53,7 @@ class DeterministicRunConfigTests(unittest.TestCase):
         self.assertEqual(explicitly_disabled.to_payload(), baseline.to_payload())
         self.assertEqual(explicitly_disabled.digest, baseline.digest)
 
-    def test_enabled_llm_reasoning_uses_schema_1_5_and_round_trips(self):
+    def test_enabled_llm_reasoning_uses_schema_1_6_and_round_trips(self):
         config = AgentConfig(
             max_career_candidate_fetches=12,
             enable_parallel_candidate_discovery=True,
@@ -62,6 +62,9 @@ class DeterministicRunConfigTests(unittest.TestCase):
             llm_model="reasoner/v1",
             llm_prompt_version="company-candidates-v1",
             llm_timeout=12.5,
+            llm_planner_timeout=4.0,
+            llm_search_timeout=3.0,
+            llm_ranker_timeout=5.0,
             llm_max_candidates=7,
             llm_max_calls_per_company=2,
         )
@@ -69,7 +72,7 @@ class DeterministicRunConfigTests(unittest.TestCase):
         deterministic = DeterministicRunConfig.from_agent_config(config)
         payload = deterministic.to_payload()
 
-        self.assertEqual(payload["schema_version"], "1.5")
+        self.assertEqual(payload["schema_version"], "1.6")
         self.assertEqual(payload["agent"]["llm_model"], "reasoner/v1")
         self.assertEqual(
             DeterministicRunConfig.from_payload(payload).to_agent_config(),
@@ -80,7 +83,7 @@ class DeterministicRunConfigTests(unittest.TestCase):
             DeterministicRunConfig.from_agent_config(AgentConfig()).digest,
         )
 
-    def test_schema_1_5_rejects_disabled_missing_or_unsafe_llm_configuration(self):
+    def test_schema_1_6_rejects_disabled_missing_or_unsafe_llm_configuration(self):
         valid = DeterministicRunConfig.from_agent_config(
             AgentConfig(
                 enable_parallel_candidate_discovery=True,
@@ -98,6 +101,9 @@ class DeterministicRunConfigTests(unittest.TestCase):
             "llm_model": "model with spaces",
             "llm_prompt_version": "../secret",
             "llm_timeout": float("nan"),
+            "llm_planner_timeout": 0,
+            "llm_search_timeout": float("nan"),
+            "llm_ranker_timeout": 0.5,
             "llm_max_candidates": 11,
             "llm_max_calls_per_company": 3,
         }
@@ -132,6 +138,9 @@ class DeterministicRunConfigTests(unittest.TestCase):
             llm_model="model-a",
             llm_prompt_version="prompt-a",
             llm_timeout=8,
+            llm_planner_timeout=3,
+            llm_search_timeout=2,
+            llm_ranker_timeout=3,
             llm_max_candidates=10,
             llm_max_calls_per_company=2,
         )
@@ -141,6 +150,9 @@ class DeterministicRunConfigTests(unittest.TestCase):
             {"llm_model": "model-b"},
             {"llm_prompt_version": "prompt-b"},
             {"llm_timeout": 9},
+            {"llm_planner_timeout": 2},
+            {"llm_search_timeout": 1},
+            {"llm_ranker_timeout": 2},
             {"llm_max_candidates": 9},
             {"llm_max_calls_per_company": 1},
         )
@@ -153,6 +165,47 @@ class DeterministicRunConfigTests(unittest.TestCase):
                     DeterministicRunConfig.from_agent_config(variant).digest,
                     base_digest,
                 )
+
+    def test_schema_1_6_requires_phase_sum_within_total_budget(self):
+        with self.assertRaisesRegex(ValueError, "phase budgets"):
+            DeterministicRunConfig.from_agent_config(
+                AgentConfig(
+                    enable_parallel_candidate_discovery=True,
+                    enable_llm_candidate_reasoning=True,
+                    llm_provider="example",
+                    llm_model="model-v1",
+                    llm_prompt_version="prompt-v1",
+                    llm_timeout=8,
+                    llm_planner_timeout=4,
+                    llm_search_timeout=2,
+                    llm_ranker_timeout=3,
+                )
+            )
+
+    def test_legacy_schema_1_5_round_trips_with_derived_replay_phase_budgets(self):
+        payload = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                enable_parallel_candidate_discovery=True,
+                enable_llm_candidate_reasoning=True,
+                llm_provider="example",
+                llm_model="model-v1",
+                llm_prompt_version="prompt-v1",
+            )
+        ).to_payload()
+        payload["schema_version"] = "1.5"
+        for field in (
+            "llm_planner_timeout",
+            "llm_search_timeout",
+            "llm_ranker_timeout",
+        ):
+            payload["agent"].pop(field)
+
+        restored = DeterministicRunConfig.from_payload(payload)
+
+        self.assertEqual(restored.to_payload(), payload)
+        self.assertEqual(restored.llm_planner_timeout, 3.2)
+        self.assertEqual(restored.llm_search_timeout, 1.6)
+        self.assertEqual(restored.llm_ranker_timeout, 3.2)
 
     def test_exhaustive_route_evaluation_requires_parallel_discovery(self):
         with self.assertRaisesRegex(ValueError, "requires parallel"):

@@ -36,7 +36,7 @@ class _Planner:
     def __init__(self) -> None:
         self.calls = 0
 
-    def plan(self, request):
+    def plan(self, request, *, timeout_seconds):
         self.calls += 1
         return QueryPlannerDecision(
             "Example Labs",
@@ -58,7 +58,7 @@ class _Ranker:
     def __init__(self) -> None:
         self.calls = 0
 
-    def rank(self, request):
+    def rank(self, request, *, timeout_seconds):
         self.calls += 1
         return CandidateRankerDecision(
             tuple(
@@ -78,7 +78,7 @@ class _TimeoutRanker:
     def __init__(self) -> None:
         self.calls = 0
 
-    def rank(self, request):
+    def rank(self, request, *, timeout_seconds):
         self.calls += 1
         raise TimeoutError("ranker timed out")
 
