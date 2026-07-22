@@ -10,6 +10,18 @@
 
 ### Changed
 
+- Completed causal stabilization of the off-by-default LLM candidate reasoning
+  experiment. LLM run-config schema 1.6 versions total/planner/search/ranker
+  budgets, carries the current phase timeout to provider transport, reserves a
+  ranker window and records separate plan/rank adoption signals. Frozen query
+  fixtures now make source responses atomic, replayable and independent of live
+  network variance; planner source recall and identical-pool conditional ranker
+  recall are reported separately. Zero-call and unadopted outcomes cannot count
+  as recovery. Final gates pass 2,676 tests (4 skipped), provider 25/25,
+  resolver 6/6 and 46 native adapters with zero architecture issues. No new
+  DeepSeek call, Fresh100, blind cohort or second formal rerun was performed;
+  promotion remains rejected and the feature stays off.
+
 - Added a read-only per-record causal audit for sealed DeepSeek run 006. The 18
   records classify exclusively as 13 operational failures, four deterministic
   or live-network variances and one baseline identity defect. All eleven ranker

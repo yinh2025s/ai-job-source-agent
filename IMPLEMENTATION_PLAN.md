@@ -54,7 +54,8 @@ planner/ranker 请求构造不得读取。原始记录 digest 为
 `b47545c9c09759a52600bf5cab18cedc4058de0df0667d157ab83357029f1733`。这仍只能证明离线 contract、回退、
 cohort 冻结与产品级 fixture replay 正确，不能宣称模型带来 recall 提升。真实实验提案记录在
 `docs/LLM_PHASE_D_EXPERIMENT_PROPOSAL.md`。用户已于 2026-07-21 指定并批准 DeepSeek API；实验固定
-`deepseek-v4-flash` 非思考 JSON 模式、最多 36 次调用和 USD 0.50 硬上限。DeepSeek adapter、串行费用
+`deepseek-v4-flash` 非思考 JSON 模式；原 Phase D 授权上限为 36 次调用和 USD 0.50，当前稳定化 runner 已
+收紧为未来最多 30 次和 USD 0.05，且本 Goal 不再运行第二次正式 A/B。DeepSeek adapter、串行费用
 ledger、answer-free capture/evaluator 分离、fresh artifact root 和 same-version replay runner 已在本独立分支
 完成。前五次诊断运行均保留且不计 promotion：其中 `run-005` 完成两个 live arm，但暴露出失败 ranker
 decision 缺失 invocation linkage、因而在 bundle selection 中被遗漏的产品级 replay 缺口。通用修复为成功和
@@ -114,16 +115,23 @@ baseline identity defect 1；Versana 的 Exact 与所有 `llm_calls=0` 变化均
 过期，现存 sealed summary 未保留每条完整 query 与 Top-10 pool；后续 bundle 必须把这两类证据作为 durable
 causal artifact，而不是靠 session 恢复。
 
-Stage B 是下一关键路径，只修实验基础设施：timeout 来自版本化 run config 并受 remaining deadline 约束；
+Stage B 已完成：timeout 来自版本化 run config 并受 remaining deadline 约束；
 planner、search、ranker 使用显式子预算且为 ranker 保留最低可执行预算；每次调用独立清零 usage；失败调用
 usage 为零；结果增加 `llm_plan_used`、`llm_rank_used`、`llm_causal_contribution`。只有真正采用 LLM 计划或
 排序并新增正确候选的记录可计 recovery，`llm_calls=0` 和两组网络波动永远排除。
 
-Stage C 在 Stage B contract 冻结后实现两个离线因果实验：planner 对每条 query 使用冻结搜索响应，报告
+Stage C 已完成两个离线因果实验 contract：planner 对每条 query 使用冻结搜索响应，报告
 source candidate recall@10；baseline 与 LLM ranker读取完全相同的冻结 pool，只在 reference 已进入 pool 时
 报告 conditional recall@3。随后统一执行 LLM 专项、product live-to-bundle-to-replay fixture、flag-off、provider、
 resolver、architecture 和 diff gates。已有 `run-007` 是唯一正式 rerun；不再启动第二次付费正式 A/B，最终
 promotion 结论只基于可审计的既有实验和新离线因果门禁。
+
+Stage D 全部门禁已完成：2676 tests / 4 skipped、provider 25/25、resolver 6/6、46 native adapters / 0
+architecture issues，`git diff --check` clean。Stage E 没有再发起模型调用：`run-007` 保持唯一正式 rerun，
+其 4/18 candidate recall 没有冻结 query/pool 与新因果字段，不能追认为真实 LLM recovery；唯一 Exact Hays
+仍为 `llm_calls=0`。Stage F 因 22.22pp < 25pp、旧 recovery 22.22% < 40% 且新 causal recovery 未证实而
+拒绝 promotion。feature 继续默认关闭，branch 不进入 main，完整结论见
+`docs/LLM_CAUSAL_STABILIZATION_REPORT.md`，等待用户决定是否设计新的独立实验。
 
 ## 当前执行轮次（2026-07-20，`.199`）
 
