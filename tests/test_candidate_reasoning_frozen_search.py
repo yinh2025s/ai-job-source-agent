@@ -85,6 +85,16 @@ class FrozenCandidateSearchTest(unittest.TestCase):
         with self.assertRaises(FrozenQueryFixtureError):
             self.store.load(self.query)
 
+    def test_symlink_fixture_is_rejected(self):
+        self.root.mkdir()
+        target = Path(self.temporary.name) / "outside.json"
+        target.write_text("{}", encoding="utf-8")
+        fixture = self.root / f"{frozen_query_digest(self.query)}.json"
+        fixture.symlink_to(target)
+
+        with self.assertRaisesRegex(FrozenQueryFixtureError, "regular file"):
+            self.store.load(self.query)
+
     def test_mutated_duplicate_is_rejected(self):
         first = FrozenQueryResponse.capture(
             self.query, query_id="query-one", candidates=self._candidates("first title", "query-one")

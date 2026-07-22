@@ -186,6 +186,8 @@ class FilesystemFrozenQueryStore:
     def __init__(self, root: Path) -> None:
         if not isinstance(root, Path):
             raise TypeError("root must be a pathlib.Path")
+        if root.is_symlink():
+            raise FrozenQueryFixtureError("frozen query store root cannot be a symlink")
         self._root = root
 
     def load(self, query: SearchQuerySpec) -> FrozenQueryResponse | None:
@@ -231,7 +233,11 @@ class FilesystemFrozenQueryStore:
         if not self._root.exists():
             return frozenset()
         digests: set[str] = set()
-        for path in self._root.glob("*.json"):
+        for path in self._root.iterdir():
+            if path.is_symlink() or not path.is_file() or path.suffix != ".json":
+                raise FrozenQueryFixtureError(
+                    f"unexpected frozen query fixture entry: {path.name}"
+                )
             digest = path.stem
             if len(digest) != _DIGEST_LENGTH or any(char not in "0123456789abcdef" for char in digest):
                 raise FrozenQueryFixtureError(f"invalid frozen query fixture filename: {path.name}")
@@ -248,6 +254,8 @@ class FilesystemFrozenQueryStore:
         return self._root / f"{digest}.json"
 
     def _read(self, path: Path, *, expected_digest: str) -> FrozenQueryResponse:
+        if path.is_symlink() or not path.is_file():
+            raise FrozenQueryFixtureError("frozen query fixture must be a regular file")
         try:
             raw = path.read_bytes()
             decoded = json.loads(raw.decode("utf-8"))

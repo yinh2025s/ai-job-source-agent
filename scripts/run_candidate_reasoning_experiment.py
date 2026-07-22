@@ -29,6 +29,10 @@ from job_source_agent.candidate_reasoning_experiment import (
     sha256_file,
     write_json_atomic,
 )
+from job_source_agent.candidate_reasoning_frozen_search import (
+    FilesystemFrozenQueryStore,
+    RecordingFrozenCandidateSearchBackend,
+)
 from job_source_agent.candidate_reasoning_search import ResolverCandidateSearchBackend
 from job_source_agent.candidate_reasoning_service import (
     CandidateReasoningInvocationService,
@@ -148,13 +152,19 @@ def run_experiment(
         prompt_version=PROMPT_VERSION,
         adapter_version=DEEPSEEK_ADAPTER_VERSION,
     )
+    frozen_query_store = FilesystemFrozenQueryStore(
+        root / "treatment" / "query-responses"
+    )
     recording_holder: dict[str, RecordingCandidateReasoningService] = {}
 
     def service_factory(resolver):
         coordinator = CandidateReasoningCoordinator(
             planner=StructuredCompanyQueryPlanner(budget_client),
             ranker=StructuredCompanyCandidateRanker(budget_client),
-            search_backend=ResolverCandidateSearchBackend(resolver),
+            search_backend=RecordingFrozenCandidateSearchBackend(
+                ResolverCandidateSearchBackend(resolver),
+                frozen_query_store,
+            ),
             decision_store=decision_store,
             clock=time.monotonic,
             max_candidates=treatment_run.llm_max_candidates,
@@ -208,6 +218,9 @@ def run_experiment(
         raise RuntimeError("treatment exceeded the frozen call or cost budget")
     if not (decision_root / LLM_DECISIONS_FILENAME).is_file():
         raise RuntimeError("treatment produced no auditable LLM decisions")
+    frozen_query_digests = sorted(frozen_query_store.available_digests())
+    if not frozen_query_digests:
+        raise RuntimeError("treatment produced no frozen query responses")
 
     replay = replay_failure_bundle(
         SimpleNamespace(
@@ -261,6 +274,7 @@ def run_experiment(
         "actual_prompt_tokens": budget.prompt_tokens,
         "actual_completion_tokens": budget.completion_tokens,
         "actual_cost_usd": str(budget.estimated_actual_cost_usd),
+        "frozen_query_response_digests": frozen_query_digests,
         "replay_classification_counts": replay_counts,
         "labels_loaded_during_capture": False,
         "files": files,
