@@ -31,6 +31,7 @@ from ..models import (
     STAGE_HIRING_IDENTITY_RESOLUTION,
     STAGE_JOB_BOARD_DISCOVERY,
     STAGE_OPENING_MATCH,
+    STAGE_WEBSITE_RESOLUTION,
 )
 from ..opening_availability import diagnose_opening_availability
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
@@ -913,15 +914,19 @@ class JobBoardDiscoveryStage:
             "direct",
         )
         stored_provider_candidates = self._stored_provider_candidates(context)
-        if stored_provider_candidates:
+        llm_provider_candidates = self._llm_provider_candidates(context)
+        if stored_provider_candidates or llm_provider_candidates:
             direct_pool = ProviderCandidatePool.build(
-                (*direct_pool.candidates, *stored_provider_candidates),
+                (
+                    *direct_pool.candidates,
+                    *stored_provider_candidates,
+                    *llm_provider_candidates,
+                ),
                 limit=MAX_PROVIDER_CANDIDATES,
             )
-            direct_trace = {
-                **direct_trace,
-                "sources": [
-                    *direct_trace.get("sources", []),
+            supplemental_sources = []
+            if stored_provider_candidates:
+                supplemental_sources.append(
                     {
                         "source": "StoredProviderBoardDiscovery",
                         "wave": "direct",
@@ -932,7 +937,27 @@ class JobBoardDiscoveryStage:
                             "authority": "candidate_requiring_current_revalidation",
                             "candidate_count": len(stored_provider_candidates),
                         },
-                    },
+                    }
+                )
+            if llm_provider_candidates:
+                supplemental_sources.append(
+                    {
+                        "source": "LLMURLHypothesisDiscovery",
+                        "wave": "direct",
+                        "status": "success",
+                        "candidate_count": len(llm_provider_candidates),
+                        "trace": {
+                            "source": "llm_url_hypothesis",
+                            "authority": "untrusted_candidate_requiring_provider_and_identity_verification",
+                            "candidate_count": len(llm_provider_candidates),
+                        },
+                    }
+                )
+            direct_trace = {
+                **direct_trace,
+                "sources": [
+                    *direct_trace.get("sources", []),
+                    *supplemental_sources,
                 ],
                 "pool": direct_pool.to_trace_payload(),
             }
@@ -1033,7 +1058,11 @@ class JobBoardDiscoveryStage:
                 if (relationship := _candidate_hiring_relationship(context, item))
                 is not None
             )
-            if verified_direct or stored_provider_candidates:
+            if (
+                verified_direct
+                or stored_provider_candidates
+                or llm_provider_candidates
+            ):
                 pool = ProviderCandidatePool.build(
                     (*direct_pool.candidates, *search_pool.candidates),
                     limit=MAX_PROVIDER_CANDIDATES,
@@ -1046,7 +1075,11 @@ class JobBoardDiscoveryStage:
                     is not None
                 )
                 selected_wave = (
-                    "direct" if verified_direct else "search_with_stored_fallback"
+                    "direct"
+                    if verified_direct
+                    else "search_with_stored_fallback"
+                    if stored_provider_candidates
+                    else "search_with_llm_hypothesis_fallback"
                 )
             else:
                 pool = search_pool
@@ -1290,6 +1323,60 @@ class JobBoardDiscoveryStage:
                     )
                 except (TypeError, ValueError):
                     pass
+        return tuple(candidates)
+
+    def _llm_provider_candidates(
+        self,
+        context: PipelineContext,
+    ) -> tuple[ProviderCandidate, ...]:
+        stages = context.trace.get("stages", {})
+        website_trace = (
+            stages.get(STAGE_WEBSITE_RESOLUTION, {})
+            if isinstance(stages, dict)
+            else {}
+        )
+        reasoning_trace = (
+            website_trace.get("candidate_reasoning", {})
+            if isinstance(website_trace, dict)
+            else {}
+        )
+        urls = (
+            reasoning_trace.get("url_hypothesis_candidates", [])
+            if isinstance(reasoning_trace, dict)
+            else []
+        )
+        if not isinstance(urls, list):
+            return ()
+        candidates = []
+        for url in urls[:3]:
+            if not isinstance(url, str):
+                continue
+            adapter = self.provider_registry.adapter_for(url)
+            board = adapter.identify_board(url) if adapter is not None else None
+            if (
+                adapter is None
+                or board is None
+                or not adapter.supports_listing
+                or board.provider == "generic"
+            ):
+                continue
+            try:
+                candidates.append(
+                    ProviderCandidate(
+                        url=url,
+                        source_kind="llm_url_hypothesis",
+                        source_url=url,
+                        company_name=(
+                            context.hiring_entity_name
+                            or context.company.company_name
+                        ),
+                        target_title=context.company.job_title,
+                        target_location=context.company.job_location,
+                        provider_hint=board.provider,
+                    )
+                )
+            except (TypeError, ValueError):
+                continue
         return tuple(candidates)
 
     def _from_linkedin_native_source(
@@ -3350,6 +3437,7 @@ def _candidate_hiring_relationship(
         strength = 96
     elif candidate.source_kind not in {
         "guessed_path",
+        "llm_url_hypothesis",
         *STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
     } and alias_rank is not None:
         evidence_type = "provider_tenant_match"

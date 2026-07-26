@@ -23,7 +23,7 @@ from .candidate_reasoning_contracts import (
 )
 
 
-QUERY_PLANNER_SCHEMA_NAME = "company_query_planner_v1"
+QUERY_PLANNER_SCHEMA_NAME = "company_candidate_planner_v2"
 CANDIDATE_RANKER_SCHEMA_NAME = "company_candidate_ranker_v1"
 
 

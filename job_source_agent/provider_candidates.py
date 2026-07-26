@@ -19,6 +19,7 @@ SOURCE_PRIORITIES = {
     "stored_verified_provider_board": 350,
     "stored_verified_career_provider": 325,
     "targeted_opening_search": 300,
+    "llm_url_hypothesis": 275,
     "verified_tenant_probe": 250,
     "targeted_board_search": 200,
     "guessed_path": 100,

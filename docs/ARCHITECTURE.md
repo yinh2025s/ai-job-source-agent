@@ -132,21 +132,26 @@ adapter provenance 都属于 page-derived evidence；缺少任一 required scope
 ### Optional LLM Candidate Reasoning
 
 [ADR-0029](adr/0029-bound-llm-candidate-reasoning.md) defines an off-by-default,
-provider-neutral reasoning layer only for S2 candidate preparation. Deterministic
+provider-neutral reasoning layer for S2 candidate preparation with a bounded,
+untrusted S5 provider handoff. Deterministic
 direct Website, External Apply, and provider evidence are collected first into one
 immutable portfolio. A verified Website, verified provider/hiring relationship, or
 official External Apply route skips the model. Otherwise a pure eligibility gate may
 invoke one query planner and one candidate ranker for causal `G` cases where a
 source-backed website lead is missing or deterministically ambiguous.
 
-The planner emits at most three bounded search queries and no URLs. Search runs through
-the existing transport, and every result passes the existing public-URL safety filter
-before ranking. The ranker may only reorder at most ten supplied immutable candidate
-IDs; an unknown ID, URL-like output, malformed schema, timeout, client error, or
+The planner emits at most three bounded search queries and three zero-trust public
+HTTPS URL hypotheses. Query fields still reject URLs. Search results and hypotheses
+pass the public-URL safety filter before ranking. The ranker may only reorder at most
+ten supplied immutable candidate IDs; an unknown ID, ranker URL output, malformed
+schema, timeout, client error, or
 incompatible fixture rejects the complete advisory decision and restores the ordinary
 deterministic order. At most three existing URLs then enter
 `CompanyWebsiteResolver`, whose fetch, redirect, parking, region, and ownership gates
-remain the only way to publish Website evidence.
+remain the only way to publish Website evidence. ATS hypotheses retain explicit
+`llm_url_hypothesis` provenance when handed to S5. Provider recognition alone grants
+no hiring relationship; inventory/first-party evidence and S7 must still verify the
+company-provider-tenant-board-opening chain.
 
 The LLM has no role in DNS/TLS/403/timeout recovery, provider inventory, tenant
 validation, title/location matching, opening status, S7, unknown recruiting clients,
@@ -169,7 +174,9 @@ ranker receives a reserved executable window. Planner and ranker calls carry the
 current bounded timeout through the provider-neutral client interface to the
 transport. Runtime trace distinguishes `llm_plan_used` from `llm_rank_used`;
 `llm_causal_contribution` remains `not_evaluated` until evaluator-only labels
-are applied. A zero-call or merely different live-arm result can never be
+are applied. The evaluator separately freezes URL-hypothesis pools and may assign
+`url_hypothesis_recovery` only after the final website verification succeeds.
+A zero-call or merely different live-arm result can never be
 promoted as LLM recovery.
 
 Product live capture wraps the decision store with `AuditedLLMDecisionStore`. Every

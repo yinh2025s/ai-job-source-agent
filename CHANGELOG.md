@@ -10,6 +10,19 @@
 
 ### Changed
 
+- Extended the off-by-default LLM candidate planner with at most three
+  zero-trust public HTTPS URL hypotheses without adding a third model call.
+  Hypotheses are canonicalized, deduplicated, reject credentials, nonstandard
+  ports, fragments, sensitive query parameters, private/local addresses, and
+  search/social hosts, then enter the same bounded candidate ranking flow.
+  Website/Career hypotheses still require resolver fetch and company-identity
+  verification. ATS hypotheses retain `llm_url_hypothesis` provenance through
+  S5 and cannot establish a hiring relationship from their URL or tenant name;
+  provider inventory or first-party evidence plus S7 remains mandatory.
+  DeepSeek adapter identity is now `deepseek-http-v3`, the experiment prompt is
+  `deepseek-company-candidates-v2`, and causal evaluation schema 1.2 separately
+  audits `url_hypothesis_recovery`. No paid model or live benchmark was run.
+
 - Completed causal stabilization of the off-by-default LLM candidate reasoning
   experiment. LLM run-config schema 1.6 versions total/planner/search/ranker
   budgets, carries the current phase timeout to provider transport, reserves a

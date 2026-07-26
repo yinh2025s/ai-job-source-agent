@@ -13,14 +13,22 @@ from typing import Iterable, Literal
 from urllib.parse import urlsplit
 
 
-LLM_CANDIDATE_REASONING_EVALUATION_SCHEMA_VERSION = "1.1"
+LLM_CANDIDATE_REASONING_EVALUATION_SCHEMA_VERSION = "1.2"
 MAX_CANDIDATES_PER_OBSERVATION = 10
 TOP_K = 3
 LLMCausalContribution = Literal[
-    "none", "planner_source_recovery", "ranker_ordering_recovery"
+    "none",
+    "planner_source_recovery",
+    "ranker_ordering_recovery",
+    "url_hypothesis_recovery",
 ]
 _CAUSAL_CONTRIBUTIONS = frozenset(
-    {"none", "planner_source_recovery", "ranker_ordering_recovery"}
+    {
+        "none",
+        "planner_source_recovery",
+        "ranker_ordering_recovery",
+        "url_hypothesis_recovery",
+    }
 )
 
 
@@ -80,6 +88,7 @@ class CandidateReasoningABObservation:
     llm_plan_used: bool = False
     llm_rank_used: bool = False
     llm_causal_contribution: LLMCausalContribution = "none"
+    frozen_llm_hypothesis_urls: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.record_id, str) or not self.record_id.strip():
@@ -100,6 +109,7 @@ class CandidateReasoningABObservation:
             ("frozen_search_evidence_urls", MAX_CANDIDATES_PER_OBSERVATION),
             ("baseline_top_candidate_urls", TOP_K),
             ("treatment_top_candidate_urls", TOP_K),
+            ("frozen_llm_hypothesis_urls", MAX_CANDIDATES_PER_OBSERVATION),
         ):
             object.__setattr__(
                 self, field, _canonical_urls(getattr(self, field), field, maximum=maximum)
@@ -158,6 +168,19 @@ class CandidateReasoningABObservation:
                 and not self.llm_rank_used
             ):
                 raise ValueError("ranker contribution requires llm_rank_used")
+            if self.llm_causal_contribution == "url_hypothesis_recovery":
+                if not self.llm_plan_used:
+                    raise ValueError(
+                        "URL hypothesis contribution requires llm_plan_used"
+                    )
+                if (
+                    self.reference_candidate_url
+                    not in self.frozen_llm_hypothesis_urls
+                ):
+                    raise ValueError(
+                        "URL hypothesis contribution requires the reference "
+                        "candidate in the frozen hypothesis URL pool"
+                    )
 
     @property
     def baseline_candidate_hit(self) -> bool:
@@ -199,7 +222,10 @@ class CandidateReasoningABObservation:
 
     @property
     def invented_or_modified_treatment_url_count(self) -> int:
+        # The legacy metric name is retained for report compatibility. A URL is
+        # unaudited only when neither frozen source explicitly produced it.
         allowed = set(self.frozen_search_evidence_urls)
+        allowed.update(self.frozen_llm_hypothesis_urls)
         return sum(url not in allowed for url in self.treatment_top_candidate_urls)
 
 
@@ -396,6 +422,7 @@ class CandidateReasoningABReport:
     baseline_verified_website_recall: Metric
     treatment_verified_website_recall: Metric
     eligible_g_recovery_fraction: Metric
+    url_hypothesis_recoveries: Metric
     baseline_wrong_verified_url_count: int
     treatment_wrong_verified_url_count: int
     invented_or_modified_treatment_url_count: int
@@ -495,6 +522,10 @@ def evaluate_candidate_reasoning_ab(
         ),
         eligible_g_recovery_fraction=metric(
             lambda record: record.has_valid_causal_recovery
+        ),
+        url_hypothesis_recoveries=metric(
+            lambda record: record.llm_causal_contribution
+            == "url_hypothesis_recovery"
         ),
         baseline_wrong_verified_url_count=sum(
             record.baseline_wrong_verified_url for record in records

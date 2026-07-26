@@ -144,8 +144,66 @@ class CandidateReasoningEvaluationTests(unittest.TestCase):
         fields = CandidateReasoningABObservation.__dataclass_fields__
         self.assertIn("reference_candidate_url", fields)
         self.assertIn("reference_website_url", fields)
+        self.assertEqual(fields["frozen_llm_hypothesis_urls"].default, ())
         self.assertNotIn("planner_request", fields)
         self.assertNotIn("ranker_request", fields)
+
+    def test_url_hypothesis_recovery_is_audited_without_counting_as_invented(self):
+        hypothesis_url = "https://jobs.example.test/hypothesis/role"
+        record = observation(
+            "hypothesis",
+            reference_candidate_url=hypothesis_url,
+            frozen_search_evidence_urls=("https://search.example.test/result",),
+            frozen_llm_hypothesis_urls=(hypothesis_url,),
+            treatment_top_candidate_urls=(hypothesis_url,),
+            llm_plan_used=True,
+            llm_causal_contribution="url_hypothesis_recovery",
+        )
+
+        report = evaluate_candidate_reasoning_ab((record,))
+
+        self.assertTrue(record.has_valid_causal_recovery)
+        self.assertEqual(report.url_hypothesis_recoveries.count, 1)
+        self.assertEqual(report.url_hypothesis_recoveries.denominator, 1)
+        self.assertEqual(report.invented_or_modified_treatment_url_count, 0)
+
+    def test_url_hypothesis_recovery_requires_plan_and_frozen_hypothesis_pool(self):
+        hypothesis_url = "https://jobs.example.test/hypothesis/role"
+        with self.assertRaisesRegex(ValueError, "requires llm_plan_used"):
+            observation(
+                "hypothesis-no-plan",
+                reference_candidate_url=hypothesis_url,
+                frozen_search_evidence_urls=(),
+                frozen_llm_hypothesis_urls=(hypothesis_url,),
+                treatment_top_candidate_urls=(hypothesis_url,),
+                llm_plan_used=False,
+                llm_causal_contribution="url_hypothesis_recovery",
+            )
+        with self.assertRaisesRegex(ValueError, "frozen hypothesis URL pool"):
+            observation(
+                "hypothesis-not-frozen",
+                reference_candidate_url=hypothesis_url,
+                frozen_search_evidence_urls=(),
+                frozen_llm_hypothesis_urls=(),
+                treatment_top_candidate_urls=(hypothesis_url,),
+                llm_plan_used=True,
+                llm_causal_contribution="url_hypothesis_recovery",
+            )
+
+    def test_unfrozen_treatment_url_remains_invented_or_modified(self):
+        record = observation(
+            "unfrozen",
+            frozen_search_evidence_urls=(),
+            frozen_llm_hypothesis_urls=("https://allowed.example.test/",),
+            treatment_top_candidate_urls=("https://unfrozen.example.test/",),
+            llm_plan_used=False,
+            llm_causal_contribution="none",
+        )
+
+        report = evaluate_candidate_reasoning_ab((record,))
+
+        self.assertEqual(report.url_hypothesis_recoveries.count, 0)
+        self.assertEqual(report.invented_or_modified_treatment_url_count, 1)
 
     def test_zero_llm_calls_and_network_variance_do_not_count_as_causal_recovery(self):
         network_variance = observation(

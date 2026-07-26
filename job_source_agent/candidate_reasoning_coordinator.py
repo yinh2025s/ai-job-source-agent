@@ -12,6 +12,7 @@ from typing import Any, Callable, Protocol, runtime_checkable
 from .candidate_reasoning_contracts import (
     MAX_PLANNER_QUERIES,
     MAX_RANKER_CANDIDATES,
+    MAX_URL_HYPOTHESES,
     CandidateEvidence,
     CandidateRankerDecision,
     CandidateRankerRequest,
@@ -94,15 +95,18 @@ class CandidateReasoningResult:
     advisory_failure: LLMAdvisoryFailure | None = None
     llm_plan_used: bool = False
     llm_rank_used: bool = False
+    llm_hypothesis_used: bool = False
 
     def __post_init__(self) -> None:
         if len(self.candidates) > MAX_OUTPUT_CANDIDATES:
             raise ValueError("Coordinator output exceeds the Top 3 limit")
         if self.llm_rank_used and self.advisory_failure is not None:
             raise ValueError("A failed advisory cannot supply the adopted ranking")
-        for name in ("llm_plan_used", "llm_rank_used"):
+        for name in ("llm_plan_used", "llm_rank_used", "llm_hypothesis_used"):
             if not isinstance(getattr(self, name), bool):
                 raise TypeError(f"{name} must be boolean")
+        if self.llm_hypothesis_used and not self.llm_plan_used:
+            raise ValueError("URL hypothesis use requires an adopted LLM plan")
 
     @property
     def used_llm_ranking(self) -> bool:
@@ -279,6 +283,22 @@ class CandidateReasoningCoordinator:
 
         discovered: list[CandidateEvidence] = list(baseline)
         seen = {candidate.candidate_id for candidate in discovered}
+        for index, hypothesis in enumerate(
+            planner_decision.url_hypotheses[:MAX_URL_HYPOTHESES],
+            start=1,
+        ):
+            if len(discovered) >= self._max_candidates:
+                break
+            candidate = _hypothesis_candidate(
+                hypothesis.url,
+                hypothesis.purpose,
+                hypothesis.confidence,
+                index,
+            )
+            if candidate.candidate_id in seen:
+                continue
+            discovered.append(candidate)
+            seen.add(candidate.candidate_id)
         for index, query in enumerate(queries, start=1):
             if len(discovered) >= self._max_candidates:
                 break
@@ -315,6 +335,10 @@ class CandidateReasoningCoordinator:
             candidate.candidate_id not in {item.candidate_id for item in baseline}
             for candidate in baseline_order
         )
+        llm_hypothesis_used = any(
+            candidate.source == "llm-url-hypothesis"
+            for candidate in baseline_order[:MAX_OUTPUT_CANDIDATES]
+        )
         if not baseline_order:
             return CandidateReasoningResult(eligibility, ())
         if self._max_calls_per_company == 1:
@@ -322,6 +346,7 @@ class CandidateReasoningCoordinator:
                 eligibility,
                 baseline_order[:MAX_OUTPUT_CANDIDATES],
                 llm_plan_used=llm_plan_used,
+                llm_hypothesis_used=llm_hypothesis_used,
             )
         ranker_call_timeout = self._phase_timeout(
             deadline,
@@ -449,6 +474,10 @@ class CandidateReasoningCoordinator:
             ranked[:MAX_OUTPUT_CANDIDATES],
             llm_plan_used=llm_plan_used,
             llm_rank_used=True,
+            llm_hypothesis_used=any(
+                candidate.source == "llm-url-hypothesis"
+                for candidate in ranked[:MAX_OUTPUT_CANDIDATES]
+            ),
         )
 
     def _expired(self, deadline: float) -> bool:
@@ -523,7 +552,12 @@ class CandidateReasoningCoordinator:
             LLMAdvisoryFailure(code, decision_kind),
             llm_plan_used=any(
                 candidate.query_id.startswith("llm-query-")
+                or candidate.query_id == "llm-hypothesis"
                 for candidate in candidates
+            ),
+            llm_hypothesis_used=any(
+                candidate.source == "llm-url-hypothesis"
+                for candidate in candidates[:MAX_OUTPUT_CANDIDATES]
             ),
         )
 
@@ -558,6 +592,14 @@ def _planner_record(
         "queries": [{"query": item.query, "purpose": item.purpose} for item in decision.queries],
         "ambiguous": decision.ambiguous,
         "reason_codes": list(decision.reason_codes),
+        "url_hypotheses": [
+            {
+                "url": item.url,
+                "purpose": item.purpose,
+                "confidence": item.confidence,
+            }
+            for item in decision.url_hypotheses
+        ],
     }
     query_ids = tuple(f"llm-query-{index}" for index in range(1, len(decision.queries) + 1))
     return _record(
@@ -709,6 +751,24 @@ def _candidate_payload(candidate: CandidateEvidence) -> dict[str, object]:
         "query_id": candidate.query_id,
         "rank": candidate.rank,
     }
+
+
+def _hypothesis_candidate(
+    url: str,
+    purpose: str,
+    confidence: str,
+    rank: int,
+) -> CandidateEvidence:
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:20]
+    return CandidateEvidence(
+        candidate_id=f"llm-hypothesis-{digest}",
+        url=url,
+        title="",
+        snippet=f"Unverified {purpose} URL hypothesis ({confidence})",
+        source="llm-url-hypothesis",
+        query_id="llm-hypothesis",
+        rank=rank,
+    )
 
 
 def _rank_input_digest(

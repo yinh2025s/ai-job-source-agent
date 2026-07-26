@@ -13,6 +13,7 @@ from urllib.parse import parse_qsl, urlparse
 
 LLM_DECISION_SCHEMA_VERSION = "1"
 MAX_PLANNER_QUERIES = 3
+MAX_URL_HYPOTHESES = 3
 MAX_RANKER_CANDIDATES = 10
 
 QueryPurpose = Literal["official_website", "career_site", "provider_site"]
@@ -151,6 +152,25 @@ _SENSITIVE_QUERY_KEYS = frozenset(
         "token",
     }
 )
+_HYPOTHESIS_BLOCKED_EXACT_HOSTS = frozenset(
+    {
+        "bing.com",
+        "www.bing.com",
+        "duckduckgo.com",
+        "www.duckduckgo.com",
+        "google.com",
+        "www.google.com",
+    }
+)
+_HYPOTHESIS_BLOCKED_SUFFIX_HOSTS = frozenset(
+    {
+        "facebook.com",
+        "instagram.com",
+        "linkedin.com",
+        "twitter.com",
+        "x.com",
+    }
+)
 
 
 @dataclass(frozen=True)
@@ -220,6 +240,31 @@ class QueryPlannerRequest:
 
 
 @dataclass(frozen=True)
+class URLHypothesis:
+    """A model-proposed lead with no identity or first-party evidence authority."""
+
+    url: str
+    purpose: QueryPurpose
+    confidence: Confidence
+
+    def __post_init__(self) -> None:
+        _validate_https_url(self.url)
+        _reject_hypothesis_host(self.url)
+        object.__setattr__(self, "url", _canonical_hypothesis_url(self.url))
+        _validate_enum(self.purpose, QUERY_PURPOSES, "purpose")
+        _validate_enum(self.confidence, CONFIDENCE_LEVELS, "confidence")
+
+    @classmethod
+    def from_payload(cls, payload: Any) -> URLHypothesis:
+        value = _exact_object(
+            payload,
+            {"url", "purpose", "confidence"},
+            "URL hypothesis",
+        )
+        return cls(**value)
+
+
+@dataclass(frozen=True)
 class QueryPlannerDecision:
     normalized_company_name: str
     core_brand_tokens: tuple[str, ...]
@@ -228,6 +273,7 @@ class QueryPlannerDecision:
     queries: tuple[SearchQuerySpec, ...]
     ambiguous: bool
     reason_codes: tuple[str, ...]
+    url_hypotheses: tuple[URLHypothesis, ...] = ()
     schema_version: str = LLM_DECISION_SCHEMA_VERSION
 
     def __post_init__(self) -> None:
@@ -250,6 +296,11 @@ class QueryPlannerDecision:
             raise ValueError("queries exceeds limit")
         _require_instances(self.queries, SearchQuerySpec, "queries")
         _reject_duplicate((item.query, item.purpose) for item in self.queries)
+        _require_tuple(self.url_hypotheses, "url_hypotheses")
+        if len(self.url_hypotheses) > MAX_URL_HYPOTHESES:
+            raise ValueError("url_hypotheses exceeds limit")
+        _require_instances(self.url_hypotheses, URLHypothesis, "url_hypotheses")
+        _reject_duplicate(item.url for item in self.url_hypotheses)
         _validate_bool(self.ambiguous, "ambiguous")
         _validate_enum_tuple(self.reason_codes, PLANNER_REASON_CODES, "reason_codes", 10)
 
@@ -265,6 +316,8 @@ class QueryPlannerDecision:
             "ambiguous",
             "reason_codes",
         }
+        if isinstance(payload, dict) and "url_hypotheses" in payload:
+            expected.add("url_hypotheses")
         value = _exact_object(payload, expected, "planner decision")
         return cls(
             schema_version=value["schema_version"],
@@ -281,6 +334,10 @@ class QueryPlannerDecision:
             queries=tuple(SearchQuerySpec.from_payload(item) for item in _list(value["queries"], "queries")),
             ambiguous=value["ambiguous"],
             reason_codes=_string_tuple(value["reason_codes"], "reason_codes"),
+            url_hypotheses=tuple(
+                URLHypothesis.from_payload(item)
+                for item in _list(value.get("url_hypotheses", []), "url_hypotheses")
+            ),
         )
 
 
@@ -798,3 +855,29 @@ def _validate_https_url(value: Any) -> None:
         raise ValueError("Candidate URL cannot use a non-public address")
     if any(key.casefold() in _SENSITIVE_QUERY_KEYS for key, _ in parse_qsl(parsed.query, keep_blank_values=True)):
         raise ValueError("Candidate URL contains a sensitive query parameter")
+
+
+def _reject_hypothesis_host(value: str) -> None:
+    host = urlparse(value).hostname
+    assert host is not None
+    host = host.casefold().rstrip(".")
+    if host in _HYPOTHESIS_BLOCKED_EXACT_HOSTS or any(
+        host == blocked or host.endswith(f".{blocked}")
+        for blocked in _HYPOTHESIS_BLOCKED_SUFFIX_HOSTS
+    ):
+        raise ValueError("URL hypothesis cannot target a search or social host")
+
+
+def _canonical_hypothesis_url(value: str) -> str:
+    parsed = urlparse(value)
+    host = parsed.hostname
+    assert host is not None
+    host = host.casefold().rstrip(".")
+    if ":" in host:
+        host = f"[{host}]"
+    netloc = host if parsed.port in {None, 443} else f"{host}:{parsed.port}"
+    return parsed._replace(
+        scheme="https",
+        netloc=netloc,
+        path=parsed.path or "/",
+    ).geturl()

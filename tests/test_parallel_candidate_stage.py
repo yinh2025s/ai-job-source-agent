@@ -245,6 +245,48 @@ def _unrelated_direct_candidate():
 
 
 class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
+    def test_llm_provider_hypothesis_reaches_s5_without_granting_relationship(self):
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme", job_title="Engineer")
+        )
+        context.trace["stages"] = {
+            "website_resolution": {
+                "candidate_reasoning": {
+                    "url_hypothesis_candidates": [
+                        "https://jobs.ashbyhq.com/acme"
+                    ]
+                }
+            }
+        }
+
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery((), limit=12),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(
+            execution.trace["selected"]["source_kind"],
+            "llm_url_hypothesis",
+        )
+        self.assertEqual(
+            execution.updates["job_list_page_url"],
+            "https://jobs.ashbyhq.com/acme",
+        )
+        self.assertFalse(
+            execution.updates["provider_identity"].relationship_verified
+        )
+        self.assertEqual(
+            execution.updates["provider_identity"].verification_method,
+            "linked_url_only",
+        )
+        self.assertEqual(
+            execution.trace["relationship_evidence"]["evidence_type"],
+            "unverified_candidate",
+        )
+
     def test_provider_published_employer_can_bind_descriptor_name_without_s2(self):
         evidence = ProviderPublishedEmployerEvidence(
             employer_name="Slant",

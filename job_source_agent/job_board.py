@@ -12,6 +12,7 @@ _DETECTION_METHODS = {
     "acquired_brand_handoff",
     "external_apply_url",
     "linked_url_evidence",
+    "llm_url_hypothesis",
     "page_evidence",
     "page_probe",
     "targeted_search",

@@ -60,7 +60,7 @@ from scripts.replay_failure_bundle import replay_failure_bundle
 
 BRANCH = "codex/llm-candidate-reasoning-foundation"
 PROVIDER = "deepseek"
-PROMPT_VERSION = "deepseek-company-candidates-v1"
+PROMPT_VERSION = "deepseek-company-candidates-v2"
 MAX_CALLS = 30
 HARD_COST_CAP_USD = Decimal("0.05")
 INPUT_PRICE_USD_PER_MILLION = Decimal("0.14")

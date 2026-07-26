@@ -23,21 +23,24 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构轨道（2026-07-22，LLM Candidate Reasoning causal stabilization）
+## 当前架构轨道（2026-07-26，LLM Candidate Reasoning zero-trust URL hypotheses）
 
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
 DNS/TLS/timeout/403、provider inventory、S6 title/location、S7、岗位关闭、已验证 no-match 或未披露
-招聘主体。`ADR-0029` 已接受，并将 LLM 固定为可选 candidate planner/ranker，而不是事实来源：
-planner 只能生成最多三条搜索 query，ranker 只能引用最多十个输入 candidate ID，Top 3 仍必须由现有
-`CompanyWebsiteResolver` 抓取和验证后才能成为 Website evidence。Provider/tenant/S6/S7 contract 不放宽。
+招聘主体。`ADR-0029` 已接受并修订，将 LLM 固定为可选 candidate planner/ranker，而不是事实来源：
+planner 可在一次调用内生成最多三条搜索 query 和三个 public HTTPS URL hypothesis，ranker 只能引用最多
+十个输入 candidate ID。Website/Career Top 3 仍必须由现有 `CompanyWebsiteResolver` 抓取和验证后才能成为
+Website evidence；ATS hypothesis 只能以 `llm_url_hypothesis` 的零信任 provenance 进入 S5，单凭 URL、
+provider 识别或 tenant 名相似不能建立招聘关系。Provider inventory/first-party evidence 与 S7 完整身份链
+仍是发布硬门槛，Provider/tenant/S6/S7 contract 不放宽。
 
 调用顺序冻结为：先收集确定性 direct Website、External Apply 和 provider 证据；已有 verified Website、
 verified provider+hiring relationship 或官方 External Apply 时禁止调用；只有 source-backed candidate 缺失、
 全部是 speculative、同名实体无法排序或 legal/alias/acronym 信号未解决时，才进入独立 deadline 下的一次
-planner 和一次 ranker。任何 malformed/schema/timeout/client/unknown-ID/unsafe-output 都是可观测但非终态的
-advisory failure，并完整回退当前 deterministic baseline，不能覆盖原失败原因。
+planner 和一次 ranker，不增加第三次模型调用。任何 malformed/schema/timeout/client/unknown-ID/unsafe-output
+都是可观测但非终态的 advisory failure，并完整回退当前 deterministic baseline，不能覆盖原失败原因。
 
-Phase A 架构审计与 Phase B 离线实现已经完成：provider-neutral interfaces、structured fake client、严格
+Phase A 架构审计、Phase B 离线实现和 URL hypothesis v2 contract 已经完成：provider-neutral interfaces、structured fake client、严格
 schema、条件式 run-config 1.5、原子 decision store、失败审计、产品级 live artifact/bundle/replay、bounded search backend、S2
 eligibility、Top-3 resolver 二次验真及 composition fail-closed 均已落地。开关关闭时仍输出既有 schema 1.4，
 不查 decision store、不调用 service、不增加搜索请求或改变候选顺序；开启时必须显式注入 service，不会自动

@@ -302,6 +302,12 @@ class WebsiteResolutionStage:
                     "used_llm_ranking": reasoning.used_llm_ranking,
                     "llm_plan_used": reasoning.llm_plan_used,
                     "llm_rank_used": reasoning.llm_rank_used,
+                    "llm_hypothesis_used": reasoning.llm_hypothesis_used,
+                    "url_hypothesis_candidates": [
+                        candidate.url
+                        for candidate in reasoning.candidates
+                        if candidate.source == "llm-url-hypothesis"
+                    ],
                     "llm_causal_contribution": "not_evaluated",
                     "advisory_failure": (
                         reasoning.advisory_failure.code

@@ -2,6 +2,7 @@
 
 - Status: accepted
 - Date: 2026-07-20
+- Amended: 2026-07-26 (bounded zero-trust URL hypotheses)
 
 ## Context
 
@@ -30,7 +31,7 @@ final publication are explicitly outside this decision.
 
 The seven public stages remain unchanged. A new optional candidate-preparation
 application service sits behind the S2 website-resolution boundary and produces
-only untrusted website leads. `WebsiteResolutionStage` constructs a frozen,
+only untrusted website, Career, or provider leads. `WebsiteResolutionStage` constructs a frozen,
 allowlisted eligibility context from S1 identity, visible External Apply, stored
 verified provider evidence, replay mode, and typed budget/transport state. It does
 not pass the mutable `PipelineContext`, arbitrary `source_trace`, or raw stage
@@ -51,14 +52,16 @@ failure. It prepares the portfolio in this order:
 3. if a verified website, verified provider board, or official External Apply
    route is already sufficient, continue the existing route without an LLM call;
 4. otherwise evaluate the typed LLM eligibility predicate;
-5. ask a query planner for at most three search queries;
+5. ask a candidate planner for at most three search queries and three public
+   HTTPS URL hypotheses;
 6. execute those queries through the existing bounded search transport;
 7. apply deterministic URL safety and blocked-domain filters before model
    ranking;
 8. ask a ranker to order at most ten immutable search candidates by ID;
 9. send at most the Top 3 existing candidate URLs to
    `CompanyWebsiteResolver` for its current fetch, redirect, parking, region,
-   and company-identity verification.
+   and company-identity verification; provider hypotheses are separately
+   forwarded to S5 as untrusted leads and cannot masquerade as Website evidence.
 
 The prepared provider portfolio is reused by S5; it is not rediscovered merely
 because S2 ran. A verified provider or External Apply route can complete without
@@ -66,7 +69,8 @@ waiting for optional LLM work. The implementation must not introduce a second
 full provider search or a new public stage.
 
 The LLM path is not a success path. Its strongest output is an ordered list of
-candidate IDs. Only the existing resolver can publish Website evidence, and
+candidate IDs whose pool may include bounded model-proposed URL hypotheses.
+Only the existing resolver can publish Website evidence, and
 S5-S7 retain their current provider, tenant, inventory, title, location, status,
 and result-identity responsibilities.
 
@@ -109,14 +113,20 @@ The planner response uses schema version `1` and contains only:
 - possible aliases;
 - at most three bounded query strings with purpose
   `official_website`, `career_site`, or `provider_site`;
+- at most three canonical public HTTPS URL hypotheses with purpose and a
+  bounded confidence bucket;
 - `ambiguous`;
 - fixed reason codes.
 
-Planner output cannot contain a URL or a tool action. URL-like output, unknown
-keys, unknown reason codes, excessive arrays/text, malformed JSON, or a timeout
+Planner query fields cannot contain a URL, hostname, or tool action. A URL is
+allowed only inside `url_hypotheses`, where it must pass the public HTTPS,
+credential, port, fragment, sensitive-query, local/private-address, and blocked
+search/social-host contract. Unknown keys, duplicate or unsafe hypotheses,
+unknown reason codes, excessive arrays/text, malformed JSON, or a timeout
 rejects the whole decision and returns to the deterministic baseline.
 
-Every executed search result becomes immutable `CandidateEvidence` with a
+Every executed search result and accepted URL hypothesis becomes immutable
+`CandidateEvidence` with a
 generated candidate ID, normalized safe URL, bounded title/snippet, source,
 query ID, and source rank. Candidate IDs are unique within one input digest.
 Search documents and snippets are untrusted data, not instructions.
@@ -131,8 +141,12 @@ invalidates the whole response. Confidence changes verification order only.
 No request asks for or persists chain-of-thought. Structured reason codes and
 bounded decision metadata are the complete explanation surface.
 
-LLM-ordered leads retain ordinary `search_evidence` provenance. Ranking cannot
-promote them to direct, official, stored, provider, or relationship evidence.
+Search leads retain ordinary `search_evidence` provenance; hypotheses retain
+explicit `llm-url-hypothesis` provenance. Ranking cannot promote either source
+to direct, official, stored, provider, tenant, or relationship evidence.
+Provider hypotheses may enter the S5 provider registry, but URL parsing and a
+tenant-name resemblance remain `linked_url_only`; real provider inventory or
+first-party relationship evidence is still required before S7 publication.
 
 ### Eligibility And Fallback
 
@@ -199,7 +213,8 @@ model cites them with high confidence.
 ### Budget And Deterministic Configuration
 
 Per company, the hard limits are one planner call, one ranker call, three search
-queries, ten ranker candidates, and three resolver verification candidates. The
+queries, three URL hypotheses, ten ranker candidates, and three resolver
+verification candidates. The
 total model-call limit cannot exceed two. One monotonic total deadline contains
 explicit planner, search, and ranker sub-budgets. Their sum cannot exceed the
 total, and a live configuration reserves at least one executable second for the

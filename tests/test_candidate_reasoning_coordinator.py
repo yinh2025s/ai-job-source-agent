@@ -14,6 +14,7 @@ from job_source_agent.candidate_reasoning_contracts import (
     RankedCandidate,
     SearchQuerySpec,
     TokenUsage,
+    URLHypothesis,
 )
 from job_source_agent.candidate_reasoning_coordinator import (
     CandidateReasoningCoordinator,
@@ -181,6 +182,53 @@ class CandidateReasoningCoordinatorTest(unittest.TestCase):
         self.assertIn(
             "BRAND_MATCH",
             ranker_record.sanitized_response["ranked_candidates"][0]["reason_codes"],
+        )
+
+    def test_url_hypothesis_enters_candidate_pool_as_an_untrusted_lead(self):
+        self.planner.decision = QueryPlannerDecision(
+            normalized_company_name="Example Labs",
+            core_brand_tokens=("Example",),
+            legal_or_descriptive_suffixes=("Labs",),
+            possible_aliases=(),
+            queries=(),
+            ambiguous=False,
+            reason_codes=("NO_SOURCE_BACKED_CANDIDATE",),
+            url_hypotheses=(
+                URLHypothesis(
+                    "https://careers.example-labs.invalid/jobs",
+                    "career_site",
+                    "high",
+                ),
+            ),
+        )
+        coordinator = CandidateReasoningCoordinator(
+            planner=self.planner,
+            ranker=self.ranker,
+            search_backend=self.search,
+            decision_store=self.store,
+            clock=self.clock,
+            max_calls_per_company=1,
+        )
+
+        result = coordinator.run(
+            eligibility_context=self._eligible(),
+            planner_request=self._request(),
+            metadata=self._metadata(),
+            deadline=20.0,
+        )
+
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(
+            result.candidates[0].url,
+            "https://careers.example-labs.invalid/jobs",
+        )
+        self.assertEqual(result.candidates[0].source, "llm-url-hypothesis")
+        self.assertTrue(result.llm_plan_used)
+        self.assertTrue(result.llm_hypothesis_used)
+        self.assertFalse(result.llm_rank_used)
+        self.assertEqual(
+            self.store.records[0].sanitized_response["url_hypotheses"][0]["url"],
+            "https://careers.example-labs.invalid/jobs",
         )
 
     def test_coordinator_records_are_accepted_by_filesystem_store(self):

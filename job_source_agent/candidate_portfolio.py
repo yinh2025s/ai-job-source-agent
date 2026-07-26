@@ -154,6 +154,8 @@ class ProviderCandidatePortfolioBuilder:
             detection_method = (
                 "external_apply_url"
                 if candidate.source_kind == "external_apply"
+                else "llm_url_hypothesis"
+                if candidate.source_kind == "llm_url_hypothesis"
                 else "targeted_search"
                 if candidate.source_kind.startswith("targeted_")
                 else "linked_url_evidence"
@@ -194,6 +196,7 @@ class ProviderCandidatePortfolioBuilder:
                     and not truncated
                     and not any(
                         item.candidate.source_kind.startswith("targeted_")
+                        or item.candidate.source_kind == "llm_url_hypothesis"
                         or item.candidate.source_kind
                         in STORED_PROVIDER_CANDIDATE_SOURCE_KINDS
                         for item in selected
