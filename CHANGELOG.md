@@ -10,6 +10,15 @@
 
 ### Changed
 
+- Prepared the explicitly authorized, one-shot DeepSeek URL-hypothesis run 008
+  without making a paid call. The evaluator now reconstructs planner queries,
+  frozen search responses, URL hypotheses and ranker inputs by answer-free
+  invocation digest; strict causal credit requires trace-proven S2 or S5
+  adoption, deterministic identity verification and absence from the same
+  frozen search pool. Website, Career and ATS contributions, failed calls,
+  latency and replay gaps are reported separately. Capture sealing now requires
+  budget, evidence, frozen-query and snapshot artifacts.
+
 - Extended the off-by-default LLM candidate planner with at most three
   zero-trust public HTTPS URL hypotheses without adding a third model call.
   Hypotheses are canonicalized, deduplicated, reject credentials, nonstandard

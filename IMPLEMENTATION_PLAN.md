@@ -25,6 +25,13 @@
 
 ## 当前架构轨道（2026-07-26，LLM Candidate Reasoning zero-trust URL hypotheses）
 
+用户随后明确授权一次新的固定 18 条 URL-hypothesis A/B（run 008），用于回答
+`run-007` 的 22.22pp 为什么仍低于 promotion gate。该授权只覆盖本 development
+cohort、最多 30 次调用和 USD 0.05；不覆盖 Fresh100、blind cohort 或第二次付费重跑。
+运行前先修正旧 evaluator 将因果字段硬编码为 false 的缺陷，并冻结 planner query、
+query-response、URL hypothesis、ranker pool、S2/S5 adoption、S7 identity 和 replay
+的逐条关联。实验期间代码冻结，结果无论好坏均完整保留。
+
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
 DNS/TLS/timeout/403、provider inventory、S6 title/location、S7、岗位关闭、已验证 no-match 或未披露
 招聘主体。`ADR-0029` 已接受并修订，将 LLM 固定为可选 candidate planner/ranker，而不是事实来源：

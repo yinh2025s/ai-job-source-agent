@@ -435,18 +435,30 @@ def _sealed_files(root: Path) -> dict[str, str]:
             continue
         files[relative] = sha256_file(path)
     required = {
+        "capture-start.json",
         "cohort.json",
         "baseline/results.json",
         "baseline/trace.json",
+        "baseline/company-evidence.json",
         "treatment/results.json",
         "treatment/trace.json",
+        "treatment/budget.json",
         "treatment/candidate-records.json",
+        "treatment/company-evidence.json",
         f"treatment/decisions/{LLM_DECISIONS_FILENAME}",
         f"treatment/decisions/{LLM_DECISION_MANIFEST_FILENAME}",
         "replay/bundle-manifest.json",
     }
     if not required.issubset(files):
         raise RuntimeError("experiment artifact set is incomplete")
+    if not any(
+        relative.startswith("treatment/query-responses/")
+        and relative.endswith(".json")
+        for relative in files
+    ):
+        raise RuntimeError("experiment artifact set has no frozen query responses")
+    if not any(relative.startswith("treatment/snapshots/") for relative in files):
+        raise RuntimeError("experiment artifact set has no treatment snapshots")
     return files
 
 
