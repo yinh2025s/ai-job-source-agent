@@ -41,3 +41,4 @@ NNNN-short-decision-title.md
 - [ADR-0027: Bind Provider Candidates To Hiring Relationships](0027-bind-provider-candidates-to-hiring-relationships.md)
 - [ADR-0028: Cache Verified Company Discovery Evidence](0028-cache-verified-company-discovery-evidence.md)
 - [ADR-0030: Coordinate Independent Candidate Discovery Routes](0030-coordinate-independent-candidate-routes.md)
+- [ADR-0032: Inject Versioned Search Backends](0032-inject-versioned-search-backends.md)

@@ -9,3 +9,4 @@ live-results.json
 live-trace.json
 linkedin-results.json
 linkedin-trace.json
+artifacts/evaluations/**/.history.lock
