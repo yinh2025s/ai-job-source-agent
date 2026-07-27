@@ -23,27 +23,45 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，v273 release completion audit）
+## 当前架构进度（2026-07-28，Fresh100 current `.270` cold gate）
 
 v273 之后已经停止新批次，完成全量门禁、分组提交并推送。后端 release
-base `616d2d8` 已在 `origin/main`；本次只追加分组的完成度审计文档，不含
-产品行为修改。完整验收证据表见：
+base 和完成度审计均已在 `origin/main`。随后按既有产品 goal 对已有 Fresh100
+development cohort 执行了一次 current-version 冷启动门禁；这不是新 cohort，
+运行期间没有修改代码。完整证据见：
 
 - `docs/BACKEND_RELEASE_COMPLETION_AUDIT_V273.md`
+- `docs/FRESH_100_CURRENT_V270_COLD_GATE_PHASE_C.md`
 
-本轮 backend release cycle 已经收口，但不得把它描述为最终产品目标完成：
+本轮结果为 100/100 live、90 Website、78 Career、73 verified Job List 和
+32 S7 Exact；32 条 Exact 的错误 URL、错误地点、跨公司和跨 tenant 均为零。
+但是 same-version replay 未通过：B&D 留下一条未消费 request，排除该记录的
+99 条控制 replay 为 96 reproduced、2 mismatch、1 allowed budget recovery、
+0 fixture gap。
+
+根因不是一个共享阶段标签：
+
+- B&D 是单家公司 redirect-alias producer reconstruction；
+- Target Hospitality、Brown and Caldwell、ARUP Laboratories 共享 UltiPro
+  structured-State snapshot semantic drift，但只影响两个终态；
+- Brown 另有单家公司 pagination duplicate-ID。
+
+这些根因都没有满足“同触发、同代码路径、预期恢复至少三家公司”的实施门槛，
+因此本轮不修改行为代码、不启动新批次，也不继续 Frozen100。当前仍不得把
+backend release 描述为最终产品目标完成：
 
 - v273 是 30 条 development diagnostic cohort，不是 Fresh100 或 blind
   holdout；
-- 当前 Fresh100 只有 37 Exact、12 Verified No Match、1 External Blocked、
-  50 unresolved 的保守投影，没有 `.270` 的统一冷启动 100 条成绩；
-- 当前版本 Fresh100 100/100 replay 和 Frozen100 69 Exact 无回归均未证明；
+- Fresh100 current `.270` 冷启动只有 32/100 raw Exact，且没有完整 eligibility
+  annotations；
+- 当前版本 Fresh100 100/100 replay 未通过，Frozen100 69 Exact 无回归也未证明；
 - 两批真正陌生 cohort 的 eligible recall >=70% 门槛未满足，sealed v2/v3
   仍保持未观察状态。
 
-因此当前计划状态是：**暂停新 live 和行为实现，保留产品总目标为 open**。
-下一阶段只有在重新授权统一 Fresh100/Frozen100 验收，或按 one-shot contract
-执行 sealed holdout 时才启动；不得继续累积零散诊断批次或未提交修改。
+因此当前计划状态是：**暂停新 live 和不合格的行为实现，保留产品总目标为
+open**。只有后续独立证据使某一通用根因达到三家公司/三恢复门槛，才允许
+进入 Phase B；不得把三个不同 replay 症状包装成一个 cluster，也不得继续
+累积零散诊断批次或未提交修改。
 
 ### v273 current public backend diagnostic cohort
 

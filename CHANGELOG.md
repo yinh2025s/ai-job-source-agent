@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-28 - Fresh100 current `.270` cold gate
+
+- Ran the existing 100-record Fresh100 development cohort from new checkpoint,
+  completion, evidence, snapshot and replay roots on frozen commit `8ae36ef4`.
+- Completed 100/100 live records with 90 verified Websites, 78 Career pages,
+  73 verified Job Lists and 32 S7 Exact openings, up 13 Exact from `.209`.
+- Audited all 32 Exact publications with zero wrong URL, wrong location,
+  cross-company, cross-tenant or artifact-unproven result.
+- Kept eligibility recall and final `SYSTEM_GAP` unreported because this run
+  has no complete evaluation annotation set.
+- Failed the same-version replay gate: B&D left one request unconsumed; a
+  99-record control produced 96 reproduced, two outcome mismatches, one
+  allowed budget recovery and zero fixture gaps.
+- Reclassified the defects by cause. B&D redirect reconstruction affects one
+  company; UltiPro structured-State snapshot drift triggers in three companies
+  but changes only two terminal outcomes; Brown's duplicate pagination ID is a
+  separate one-company issue. No repair meets the three-recovery threshold.
+- Preserved the complete run as
+  `fresh100-current-v270-cold-20260728-run1.tar.zst` with tracked SHA-256
+  `214c8e6a044f6f64e2c2c9b5a1c48b381dbac78b8464e0539ca0c6152cd87d50`.
+- Made no behavior, plugin or LLM change and did not start a new cohort or the
+  Frozen100 current-version gate.
+
 ## 2026-07-28 - v273 release completion audit
 
 - Stopped all new live cohorts after v273 and retained the frozen `.270`
