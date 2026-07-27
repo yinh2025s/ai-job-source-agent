@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0",
+  "observed_at": "2026-07-28",
+  "purpose": "v274 GovernmentJobs declared-search focused regression",
+  "record_count": 3,
+  "postings": [
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/information-security-and-compliance-analyst-at-city-of-lubbock-4432727055",
+      "external_apply_url": null,
+      "company_name": "City of Lubbock",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/city-of-lubbock",
+      "job_title": "Information Security and Compliance Analyst",
+      "job_location": "Lubbock, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 20,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 1,
+          "keywords": "Cybersecurity Analyst",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/information-security-and-compliance-analyst-at-city-of-lubbock-4432727055",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/information-security-and-compliance-analyst-at-city-of-lubbock-4432727055"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/hr-operations-and-services-manager-at-city-of-college-station-4426127673",
+      "external_apply_url": null,
+      "company_name": "City of College Station",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/city-of-college-station",
+      "job_title": "HR Operations and Services Manager",
+      "job_location": "College Station, TX",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "benchmark_collection": {
+          "cohort_ordinal": 82,
+          "distinct_by": "linkedin_job_id",
+          "evidence_source": "public_search_card",
+          "query_index": 4,
+          "keywords": "Human Resources Manager",
+          "location": "United States",
+          "excluded_prior_cohort": "/Users/yinhuang/Project/AI Job Source agent/samples/evaluation/live100_three_route_cohort_20260717.json"
+        },
+        "linkedin_job_detail": {
+          "evidence_source": "public_job_detail",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-operations-and-services-manager-at-city-of-college-station-4426127673",
+          "status": "unavailable",
+          "reason": "no_visible_external_apply_link"
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/hr-operations-and-services-manager-at-city-of-college-station-4426127673"
+        }
+      }
+    },
+    {
+      "linkedin_job_url": "https://www.linkedin.com/jobs/view/registered-nurse-ii-iii-iv-v-vi-at-state-of-hawai%CA%BBi-4379210315",
+      "external_apply_url": null,
+      "company_name": "State of Hawaiʻi",
+      "company_website_url": "",
+      "hiring_entity_name": null,
+      "career_root_url": null,
+      "linkedin_html_path": null,
+      "linkedin_company_url": "https://www.linkedin.com/company/state-of-hawaii",
+      "job_title": "REGISTERED NURSE II, III, IV, V, VI",
+      "job_location": "Honolulu County, HI",
+      "source": "linkedin_public_jobs",
+      "source_trace": {
+        "diagnostic_collection": {
+          "cohort": "v245-development-diagnostic",
+          "role_family": "Registered Nurse",
+          "evidence_source": "public_search_card",
+          "fresh100_job_id_overlap": false
+        },
+        "linkedin_posting": {
+          "availability": "listed",
+          "apply_mode": "unknown",
+          "evidence_source": "public_search_card",
+          "job_url": "https://www.linkedin.com/jobs/view/registered-nurse-ii-iii-iv-v-vi-at-state-of-hawai%CA%BBi-4379210315"
+        }
+      }
+    }
+  ]
+}
