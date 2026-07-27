@@ -35,6 +35,7 @@ FLASH_OUTPUT_PRICE_PER_MILLION_USD = 0.28
 MIN_CANDIDATE_RECALL_DELTA_PP = 25.0
 MIN_STRICT_CAUSAL_RECOVERY_FRACTION = 0.40
 MAX_CALLS_PER_COMPANY = 2
+URL_HYPOTHESIS_EVALUATOR_VERSION = "1.1"
 
 
 def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
@@ -95,6 +96,7 @@ def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
         frozen_search = _frozen_search_urls_for_queries(
             root / "treatment" / "query-responses",
             artifacts["queries"],
+            artifacts["executed_query_ids"],
         )
         frozen_search = _normalize_candidates_for_reference(
             frozen_search, reference
@@ -255,6 +257,7 @@ def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
     )
     output = {
         "schema_version": EXPERIMENT_SCHEMA_VERSION,
+        "evaluator_version": URL_HYPOTHESIS_EVALUATOR_VERSION,
         "capture_manifest_sha256": _sha256(manifest_path),
         "model": manifest["model"],
         "prompt_version": manifest["prompt_version"],
@@ -347,6 +350,15 @@ def _decision_artifacts_by_digest(path: Path) -> dict[str, dict[str, Any]]:
             item["ranker_candidates"] = tuple(
                 _validated_ranker_candidate(value) for value in candidates
             )
+            item["executed_query_ids"] = tuple(
+                dict.fromkeys(
+                    value["query_id"]
+                    for value in candidates
+                    if isinstance(value, dict)
+                    and isinstance(value.get("query_id"), str)
+                    and value["query_id"].startswith("llm-query-")
+                )
+            )
             ranked = (
                 response.get("ranked_candidates", [])
                 if isinstance(response, dict)
@@ -369,6 +381,7 @@ def _empty_decision_artifacts() -> dict[str, tuple[Any, ...]]:
         "url_hypotheses": (),
         "ranker_candidates": (),
         "ranked_candidate_ids": (),
+        "executed_query_ids": (),
     }
 
 
@@ -412,16 +425,19 @@ def _validated_ranker_candidate(value: object) -> dict[str, str]:
 def _frozen_search_urls_for_queries(
     store_root: Path,
     queries: tuple[dict[str, str], ...],
+    executed_query_ids: tuple[str, ...],
 ) -> tuple[str, ...]:
-    if not queries:
+    if not queries or not executed_query_ids:
         return ()
     store = FilesystemFrozenQueryStore(store_root)
     urls: list[str] = []
-    for payload in queries:
+    for index, payload in enumerate(queries, start=1):
+        if f"llm-query-{index}" not in executed_query_ids:
+            continue
         response = store.load(SearchQuerySpec(**payload))
         if response is None:
             raise ExperimentIntegrityError(
-                "planner query is missing its frozen query response"
+                "executed planner query is missing its frozen query response"
             )
         for candidate in response.candidates:
             if candidate.url not in urls:

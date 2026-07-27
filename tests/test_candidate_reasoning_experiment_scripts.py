@@ -9,11 +9,20 @@ from unittest.mock import patch
 
 from scripts.evaluate_candidate_reasoning_experiment import (
     _decision_artifacts_by_digest,
+    _frozen_search_urls_for_queries,
     _normalize_candidate_for_reference,
     _normalize_candidates_for_reference,
     _strict_causal_recovery,
     _url_hypothesis_promotion_gate,
     _verified_website_conflicts,
+)
+from job_source_agent.candidate_reasoning_contracts import (
+    CandidateEvidence,
+    SearchQuerySpec,
+)
+from job_source_agent.candidate_reasoning_frozen_search import (
+    FilesystemFrozenQueryStore,
+    FrozenQueryResponse,
 )
 from scripts.run_candidate_reasoning_experiment import (
     _agent_config,
@@ -64,11 +73,13 @@ class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
                             "candidate_id": "search-1",
                             "url": "https://search.example.test/result",
                             "source": "resolver-search",
+                            "query_id": "llm-query-1",
                         },
                         {
                             "candidate_id": "hypothesis-1",
                             "url": "https://example.test/careers",
                             "source": "llm-url-hypothesis",
+                            "query_id": "llm-hypothesis",
                         },
                     ],
                 },
@@ -124,6 +135,7 @@ class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
             ),
         )
         self.assertEqual(record["queries"][0]["purpose"], "official_website")
+        self.assertEqual(record["executed_query_ids"], ("llm-query-1",))
         # The evaluator needs the source tags to distinguish a frozen search
         # candidate from a model-proposed URL when proving causal recovery.
         self.assertEqual(
@@ -141,6 +153,41 @@ class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
                 },
             ),
         )
+
+    def test_frozen_search_uses_only_queries_proven_executed_by_ranker_input(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            query = SearchQuerySpec('"Example" careers', "official_website")
+            response = FrozenQueryResponse.capture(
+                query,
+                query_id="llm-query-1",
+                candidates=(
+                    CandidateEvidence(
+                        "candidate-1",
+                        "https://example.test/",
+                        "Example",
+                        "Official site",
+                        "resolver-search",
+                        "llm-query-1",
+                        1,
+                    ),
+                ),
+            )
+            FilesystemFrozenQueryStore(root).save(response)
+
+            urls = _frozen_search_urls_for_queries(
+                root,
+                (
+                    {"query": query.query, "purpose": query.purpose},
+                    {
+                        "query": '"Example" jobs',
+                        "purpose": "career_site",
+                    },
+                ),
+                ("llm-query-1",),
+            )
+
+        self.assertEqual(urls, ("https://example.test/",))
 
     def test_strict_causal_recovery_requires_real_planner_hypothesis_flags(self):
         result = _strict_causal_recovery(
