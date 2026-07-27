@@ -667,6 +667,84 @@ class JobSearchActionTests(unittest.TestCase):
         self.assertEqual(len(result.actions), 1)
         self.assertEqual(result.interactive_actions, ())
 
+    def test_field_declared_same_origin_transport_uses_bounded_interaction(self):
+        for tenant in ("lubbock", "cstx", "hawaii"):
+            with self.subTest(tenant=tenant):
+                page = Page(
+                    url=f"https://www.governmentjobs.com/careers/{tenant}",
+                    html=(
+                        '<form class="search-form">'
+                        '<input id="keyword-search-input" name="keyword" '
+                        'placeholder="Search" '
+                        'data-action="/careers/Home/SearchByKeyword">'
+                        '<button type="submit">Search</button></form>'
+                    ),
+                )
+
+                result = discover_job_search_actions(page, "Data Analyst")
+
+                self.assertEqual(result.actions, ())
+                self.assertEqual(
+                    result.interactive_actions,
+                    (
+                        JobSearchInteraction(
+                            form_ordinal=0,
+                            query_name="keyword",
+                            query_id="keyword-search-input",
+                            target_title="Data Analyst",
+                            submit_text="Search",
+                            declared_action_url=(
+                                "https://www.governmentjobs.com"
+                                "/careers/Home/SearchByKeyword"
+                            ),
+                        ),
+                    ),
+                )
+                self.assertEqual(
+                    result.trace[0]["disposition"],
+                    "interactive_eligible",
+                )
+
+    def test_field_declared_action_changes_interaction_fingerprint(self):
+        def interaction(path):
+            result = discover_job_search_actions(
+                Page(
+                    "https://jobs.example.com/careers",
+                    (
+                        '<form class="job-search">'
+                        '<input name="keyword" placeholder="Search jobs" '
+                        f'data-action="{path}">'
+                        '<button type="submit">Search</button></form>'
+                    ),
+                ),
+                "Data Analyst",
+            )
+            return result.interactive_actions[0]
+
+        first = interaction("/careers/SearchByKeyword")
+        second = interaction("/careers/OtherSearch")
+
+        self.assertNotEqual(first.declared_action_url, second.declared_action_url)
+        self.assertNotEqual(first.fingerprint(), second.fingerprint())
+
+    def test_cross_origin_field_declared_transport_fails_closed(self):
+        page = Page(
+            url="https://jobs.example.com/careers",
+            html=(
+                '<form class="search-form">'
+                '<input id="keyword-search-input" name="keyword" '
+                'placeholder="Search jobs" '
+                'data-action="https://evil.example/search">'
+                '<button type="submit">Search</button></form>'
+            ),
+        )
+
+        result = discover_job_search_actions(page, "Data Analyst")
+
+        self.assertEqual(result.actions, ())
+        self.assertEqual(result.interactive_actions, ())
+        self.assertEqual(result.trace[0]["disposition"], "unsafe_action")
+
     def test_ambiguous_or_unsafe_interactive_forms_fail_closed(self):
         cases = {
             "multiple_unclassified_fields": (

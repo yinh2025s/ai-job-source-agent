@@ -847,6 +847,63 @@ class SmartRenderedFetcherTests(unittest.TestCase):
             "domcontentloaded",
         )
 
+    def test_job_search_interaction_revalidates_declared_action_before_click(self):
+        page = FakeInteractionPage()
+        field = FakeInteractionControl(
+            attrs={
+                "name": "keywords",
+                "id": "job-query",
+                "type": "search",
+                "data-action": "/careers/SearchByKeyword",
+            }
+        )
+        button = FakeInteractionControl(text="Search jobs")
+        page.forms = [FakeInteractionForm([field], [button])]
+        interaction = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="keywords",
+            query_id="job-query",
+            target_title="Platform Engineer",
+            submit_text="Search jobs",
+            declared_action_url=(
+                "https://jobs.example.com/careers/SearchByKeyword"
+            ),
+        )
+
+        with self.assertRaisesRegex(FetchError, "declared action changed"):
+            field.attrs["data-action"] = "/careers/OtherSearch"
+            _execute_job_search_interaction(
+                page,
+                page.url,
+                interaction,
+                timeout_seconds=1,
+                timeout_error_type=TimeoutError,
+                clock=lambda: 10.0,
+                sleeper=lambda _seconds: None,
+            )
+
+        self.assertEqual(field.fill_calls, [])
+        self.assertEqual(button.click_calls, [])
+
+        field.attrs["data-action"] = "/careers/SearchByKeyword"
+
+        def show_results():
+            page.dom = "<main>Platform Engineer results</main>"
+
+        button.on_click = show_results
+        html, _final_url = _execute_job_search_interaction(
+            page,
+            page.url,
+            interaction,
+            timeout_seconds=1,
+            timeout_error_type=TimeoutError,
+            clock=lambda: 10.0,
+            sleeper=lambda _seconds: None,
+        )
+
+        self.assertIn("Platform Engineer results", html)
+        self.assertEqual(len(button.click_calls), 1)
+
     def test_hcs_placeholder_field_and_span_action_succeed(self):
         page = FakeInteractionPage(url="https://careers.hcs.example/jobs")
         field = FakeInteractionControl(
