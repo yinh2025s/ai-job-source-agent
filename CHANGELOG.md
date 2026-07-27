@@ -14,6 +14,10 @@
 - Audited S2-S5 and S6-S7 failures by shared trigger and code path. No cluster
   meets both the three-company and three-expected-recovery implementation
   thresholds, so no Phase B behavior change is selected.
+- A deeper historical trace check split the apparent Caesars/Splashlight/
+  Nisga'a Career group: Splashlight is one semantic false negative, Caesars is
+  a challenge page, and Nisga'a is a correctly rejected soft error page. No
+  third independent semantic-verifier recovery exists in the retained traces.
 
 ## 2026-07-28 - GovernmentJobs declared search `.275`
 

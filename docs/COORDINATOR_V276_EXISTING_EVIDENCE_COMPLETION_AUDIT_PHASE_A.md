@@ -80,15 +80,26 @@ three-company and three-recovery rule. Its closest candidates were:
 | Near cluster | Companies | Evidence-backed recovery expectation |
 | --- | ---: | ---: |
 | official host repeatedly returns 403 | 6 | 0; no correct downstream candidate |
-| strong first-party Career candidate not published | 3 | 0 terminal recoveries; only two candidates are credible |
+| apparent first-party Career candidates not published | 3 | not one cause; only one semantic false negative |
 | eligible Career action does not become a Job List | 3 | 1 Job List |
 | resolver produces no authoritative Website | 3 | 0 |
 
-The strongest follow-up direction is the Career verifier path shared by Caesars
-Entertainment and Splashlight. Nisga'a Tek reaches the same stage label but its
-candidate is an error page, so it cannot be counted as a third expected
-recovery. Stage labels and search-result absence are not treated as causal
-equivalence.
+Deeper trace and code-path review splits the apparent three-company group:
+
+- Splashlight is the only verified semantic false negative. Its
+  `verified_homepage_navigation` candidate was fetched successfully, but the
+  Career verifier did not recognize `Join the team` / `Future opportunities`.
+- Caesars Entertainment returned a `Pardon Our Interruption` challenge page.
+  This is challenge-classification debt, not a valid Career page recovery.
+- Nisga'a Tek returned a soft error page that the current gate correctly
+  rejected.
+
+Historical artifacts contain no third independent semantic false negative with
+evidence of a downstream valid terminal. Salas O'Brien is a negative control:
+the same `verified_homepage_navigation` path already publishes its Career,
+Job List and Exact opening. The eligible semantic-verifier cluster therefore
+contains one company, not three. Stage labels and search-result absence are not
+treated as causal equivalence.
 
 ## Decision
 
