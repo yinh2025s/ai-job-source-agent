@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-27.270`. The registry auto-discovers 48 native adapter modules. The deterministic backend has a versioned optional SearXNG search boundary; `legacy` remains the default because the first frozen A/B increased raw candidate boards but produced no net new S7 Exact. Unverified provider candidates remain available internally for downstream validation but are no longer exposed as product Job Lists. Coordinator-v2 remains proposed and disabled, the extension acceptance line is paused, and no LLM branch code is merged.
+Current adapter iteration: `2026-07-28.275`. The registry auto-discovers 48 native adapter modules. GovernmentJobs declared searches now bind a bounded stable form marker, exact query field, same-origin action, and submit control before browser execution; the accepted three-tenant focused gate reached complete official title-filtered inventory with zero unsafe publication. The deterministic backend has a versioned optional SearXNG search boundary; `legacy` remains the default because the first frozen A/B increased raw candidate boards but produced no net new S7 Exact. Unverified provider candidates remain available internally for downstream validation but are no longer exposed as product Job Lists. Coordinator-v2 remains proposed and disabled, the extension acceptance line is paused, and no LLM branch code is merged.
 
 ## What It Returns
 

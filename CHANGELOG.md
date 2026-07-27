@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-07-28 - GovernmentJobs declared search `.275`
+
+- Reused a frozen three-company GovernmentJobs cluster; no new cohort or
+  sealed holdout was opened.
+- Rejected `.274` after all three browser actions failed because static form
+  ordinals did not survive browser initialization.
+- Added a bounded, fingerprinted form identity contract. Exact form attributes
+  are preferred; class fallback uses one stable token and still requires a
+  unique match before field, declared-action and submit-control revalidation.
+- Preserved markerless ordinal compatibility and retained interaction trace
+  across static fallback failures.
+- Focused live recovered complete title-filtered official inventory for
+  Lubbock, College Station and Hawaiʻi. All three current searches returned
+  zero matching postings, so no opening URL was fabricated.
+- Same-version replay reproduced 3/3 with zero mismatch or fixture gap. Wrong
+  URL, wrong location, cross-company and cross-tenant publication remained
+  zero.
+- The single integrated offline release gate passed 2,839 tests (4 skipped),
+  provider benchmark 25/25, resolver benchmark 6/6 and architecture validation
+  48/0.
+- Froze the focused artifact under
+  `v275-governmentjobs-focused-20260728-run1.tar.zst`; the tracked checksum is
+  `6d10d57b63855b271b173a94afa8317a5e6e5e942657d3f864166ff6338f723f`.
+- Stopped further live work. Release completion proceeds only through the
+  integrated offline gate, grouped commits and push.
+
 ## 2026-07-28 - Fresh100 current `.270` cold gate
 
 - Ran the existing 100-record Fresh100 development cohort from new checkpoint,

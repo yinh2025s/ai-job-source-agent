@@ -23,7 +23,34 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，Fresh100 current `.270` cold gate）
+## 当前架构进度（2026-07-28，GovernmentJobs `.275` focused closure）
+
+在 v273 停止新批次后，项目只复用了历史证据中已经满足三家公司门槛的
+GovernmentJobs 声明搜索失败簇。`.274` 的 static form ordinal 在浏览器初始化
+后失效，3/3 均在点击前失败，因此已按预设 acceptance contract 回滚并留档。
+
+`.275` 改为结构化稳定表单身份：优先使用精确 `id`、`data-testid` 或
+`aria-label`，没有强 marker 时选择一个确定性的 class token；浏览器最多检查
+32 个 form，必须唯一匹配，并在填入岗位名之前重新验证 query field、
+same-origin `data-action` 和 submit control。无 marker 的旧交互继续使用 ordinal，
+不改变历史 request identity。
+
+同一三条冻结样本的 fresh-state focused live 已恢复 3/3 完整的
+title-filtered GovernmentJobs inventory，tenant 分别为 `lubbock`、`cstx` 和
+`hawaii`。当前官方搜索均返回 0 个匹配岗位，因此终态是有证据的
+`OPENING_NOT_FOUND`，没有生成 opening URL。自动 replay 为 3/3 reproduced、
+0 mismatch、0 fixture gap，安全错误为零。集成离线门禁为 2,839 tests
+（4 skipped）、provider 25/25、resolver 6/6、architecture 48/0。完整记录见：
+
+- `docs/COORDINATOR_V274_GOVERNMENTJOBS_DECLARED_SEARCH_PHASE_C.md`
+- `docs/COORDINATOR_V275_STABLE_INTERACTION_FORM_IDENTITY_PHASE_A.md`
+- `docs/COORDINATOR_V275_STABLE_INTERACTION_FORM_IDENTITY_PHASE_C.md`
+
+本轮至此停止 live 和新批次。剩余动作仅为一次全量离线门禁、治理同步、
+分组提交和 push；不得继续累积未提交行为修改。该 focused closure 不改写
+Fresh100 `.270` 的 32/100 raw Exact，也不关闭产品总目标。
+
+### Fresh100 current `.270` cold gate
 
 v273 之后已经停止新批次，完成全量门禁、分组提交并推送。后端 release
 base 和完成度审计均已在 `origin/main`。随后按既有产品 goal 对已有 Fresh100
