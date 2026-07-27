@@ -32,6 +32,21 @@ cohort、最多 30 次调用和 USD 0.05；不覆盖 Fresh100、blind cohort 或
 query-response、URL hypothesis、ranker pool、S2/S5 adoption、S7 identity 和 replay
 的逐条关联。实验期间代码冻结，结果无论好坏均完整保留。
 
+`run-008` 已在 capture commit `f755fc7` 完成并封存，未 resume 或二次调用。
+Search candidate recall@3/@10 均为 0/18；LLM hypothesis 与 combined Top-3
+candidate recall 为 4/18，较 baseline 0/18 提升 22.22pp，仍低于 25pp gate。
+四个正确 hypothesis 均未完成 deterministic identity verification，因此 eligible
+与 strict causal recovery 均为 0/18，Website/Career/ATS 贡献为 0/0/0。
+Verified website 为 control 8/18、treatment 3/18；两组 Exact 均为 2，且分别来自
+existing provider/deterministic path，不归因于 LLM。Wrong/cross-company/
+cross-brand/cross-tenant/invented-adopted URL 均为 0；18/18 replay reproduced，
+0 mismatch、0 fixture gap。25 次调用使用 22,759 prompt + 11,081 completion
+tokens，费用 USD 0.00628894，P50/P95 单公司 LLM latency 为 7.515/9.047 秒。
+Promotion 失败，feature 保持关闭，不进入 Fresh100、blind、main 或第二次付费
+调优。最终门禁通过 2,695 tests（4 skipped）、provider 25/25、resolver 6/6
+和 46 native adapters / 0 architecture issues。完整报告见
+`docs/LLM_URL_HYPOTHESIS_RUN008_REPORT.md`。
+
 本轨道只处理 fresh cohort 中因正确官网候选未产生或排序不足而形成的 causal `G` 类，不处理
 DNS/TLS/timeout/403、provider inventory、S6 title/location、S7、岗位关闭、已验证 no-match 或未披露
 招聘主体。`ADR-0029` 已接受并修订，将 LLM 固定为可选 candidate planner/ranker，而不是事实来源：

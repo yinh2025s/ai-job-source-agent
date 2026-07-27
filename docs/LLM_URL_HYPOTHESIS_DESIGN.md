@@ -78,3 +78,17 @@ outside both pools remains a zero-tolerance gate failure.
 
 Reference URLs and labels remain evaluator-only data and must never be copied
 into planner, ranker, search, provider, or resolver requests.
+
+## Run 008 Evidence
+
+The one authorized fixed-development run is recorded in
+`docs/LLM_URL_HYPOTHESIS_RUN008_REPORT.md`. The model added four correct Top-3
+URL hypotheses while the frozen search pool recovered zero reference URLs, but
+none of the four completed deterministic verification. Candidate uplift was
+22.22 percentage points and strict causal recovery was 0/18, so promotion
+failed.
+
+This result preserves the design boundary: candidate generation is not product
+success. The feature remains off and the route is retained only as an
+experimental fallback. No Fresh100, blind holdout, main merge or second paid
+prompt experiment is authorized by this result.

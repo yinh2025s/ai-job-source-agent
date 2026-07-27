@@ -10,6 +10,19 @@
 
 ### Changed
 
+- Completed the one-shot fixed 18-record DeepSeek URL-hypothesis run 008 on
+  capture commit `f755fc7`. Frozen search recall was 0/18, LLM hypothesis and
+  combined candidate recall were 4/18 (+22.22pp), verified website recall was
+  8/18 control versus 3/18 treatment, and both arms returned the same two
+  deterministic/provider Exact openings. Strict causal LLM recovery was 0/18;
+  Website/Career/ATS contributions were all zero. All wrong, cross-company,
+  cross-brand, cross-tenant and invented-adopted URL counts remained zero;
+  replay was 18/18 with no gap or mismatch. The run used 25 calls and cost USD
+  0.00628894. Promotion failed, the feature remains off, and no Fresh100,
+  blind holdout, main merge or second paid run followed. Final gates pass
+  2,695 tests (4 skipped), provider 25/25, resolver 6/6 and 46 native adapters
+  with zero architecture issues.
+
 - Prepared the explicitly authorized, one-shot DeepSeek URL-hypothesis run 008
   without making a paid call. The evaluator now reconstructs planner queries,
   frozen search responses, URL hypotheses and ranker inputs by answer-free
