@@ -35,7 +35,7 @@ FLASH_OUTPUT_PRICE_PER_MILLION_USD = 0.28
 MIN_CANDIDATE_RECALL_DELTA_PP = 25.0
 MIN_STRICT_CAUSAL_RECOVERY_FRACTION = 0.40
 MAX_CALLS_PER_COMPANY = 2
-URL_HYPOTHESIS_EVALUATOR_VERSION = "1.1"
+URL_HYPOTHESIS_EVALUATOR_VERSION = "1.2"
 
 
 def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
@@ -131,6 +131,15 @@ def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
             frozen_search_urls=frozen_search,
             url_hypotheses=artifacts["url_hypotheses"],
         )
+        adopted_llm_urls = _llm_adopted_candidate_urls(treatment_record)
+        normalized_hypothesis_urls = {
+            _evaluation_url(item["url"]) for item in artifacts["url_hypotheses"]
+        }
+        invented_adopted_urls = tuple(
+            url
+            for url in adopted_llm_urls
+            if _evaluation_url(url) not in normalized_hypothesis_urls
+        )
         observation_contribution = (
             "url_hypothesis_recovery"
             if causal["strict"] and causal["surface"] in {"website", "career"}
@@ -212,6 +221,8 @@ def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
                 "planner_calls": usage_record["planner_calls"],
                 "ranker_calls": usage_record["ranker_calls"],
                 "failed_calls": usage_record["failed_calls"],
+                "prompt_tokens": usage_record["prompt_tokens"],
+                "completion_tokens": usage_record["completion_tokens"],
                 "llm_latency_ms": usage_record["latency_ms"],
                 "estimated_cost_usd": usage_record["cost_usd"],
                 "llm_plan_used": bool(
@@ -232,6 +243,11 @@ def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
                     else "none"
                 ),
                 "causal_evidence": causal["evidence"],
+                "adopted_llm_candidate_urls": list(adopted_llm_urls),
+                "invented_adopted_urls": list(invented_adopted_urls),
+                "treatment_cross_brand": _verified_website_conflicts(
+                    treatment_result.get("company_website_url"), reference
+                ),
                 "frozen_search_urls": list(frozen_search),
                 "frozen_url_hypotheses": list(artifacts["url_hypotheses"]),
                 "advisory_failure": (
@@ -277,7 +293,9 @@ def evaluate_experiment(root: Path, labels_path: Path) -> dict[str, Any]:
                     "wrong_verified_url",
                     "invented_or_modified_candidate_url",
                     "cross_company",
+                    "cross_brand",
                     "cross_tenant",
+                    "invented_adopted_url",
                     "replay_mismatch",
                     "replay_fixture_gap",
                     "budget_overrun",
@@ -590,6 +608,35 @@ def _same_or_descendant_url(actual: str, hypothesis: str) -> bool:
     )
 
 
+def _llm_adopted_candidate_urls(
+    treatment_trace: Mapping[str, Any],
+) -> tuple[str, ...]:
+    adopted: list[str] = []
+    website_selected = _stage_trace(treatment_trace, "website_resolution").get(
+        "selected"
+    )
+    if isinstance(website_selected, Mapping):
+        url = website_selected.get("url")
+        reason = website_selected.get("reason")
+        if (
+            isinstance(url, str)
+            and isinstance(reason, str)
+            and "candidate reasoning" in reason.casefold()
+        ):
+            adopted.append(url)
+    board_selected = _stage_trace(treatment_trace, "job_board_discovery").get(
+        "selected"
+    )
+    if (
+        isinstance(board_selected, Mapping)
+        and board_selected.get("source_kind") == "llm_url_hypothesis"
+    ):
+        url = board_selected.get("url")
+        if isinstance(url, str) and url not in adopted:
+            adopted.append(url)
+    return tuple(adopted)
+
+
 def _url_hypothesis_metrics(
     *,
     report: Any,
@@ -649,10 +696,21 @@ def _url_hypothesis_metrics(
             "denominator": total,
             "fraction": strict_count / total if total else 0.0,
         },
+        "eligible_recovery_rate": {
+            "count": strict_count,
+            "denominator": total,
+            "fraction": strict_count / total if total else 0.0,
+        },
         "causal_contribution_counts": surface_counts,
         "wrong_verified_url_count": report.treatment_wrong_verified_url_count,
+        "cross_brand_count": sum(
+            item["treatment_cross_brand"] is True for item in supplemental
+        ),
         "invented_or_modified_candidate_url_count": (
             report.invented_or_modified_treatment_url_count
+        ),
+        "invented_adopted_url_count": sum(
+            len(item["invented_adopted_urls"]) for item in supplemental
         ),
         "cross_company_count": report.cross_company_count,
         "cross_tenant_count": report.cross_tenant_count,
@@ -701,7 +759,9 @@ def _url_hypothesis_promotion_gate(
     zero_tolerance = {
         "wrong_verified_url_count": "wrong verified URL",
         "invented_or_modified_candidate_url_count": "invented candidate URL",
+        "invented_adopted_url_count": "invented adopted URL",
         "cross_company_count": "cross-company adoption",
+        "cross_brand_count": "cross-brand adoption",
         "cross_tenant_count": "cross-tenant adoption",
         "replay_mismatch_count": "replay mismatch",
         "replay_fixture_gap_count": "replay fixture gap",

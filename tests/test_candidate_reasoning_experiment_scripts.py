@@ -10,6 +10,7 @@ from unittest.mock import patch
 from scripts.evaluate_candidate_reasoning_experiment import (
     _decision_artifacts_by_digest,
     _frozen_search_urls_for_queries,
+    _llm_adopted_candidate_urls,
     _normalize_candidate_for_reference,
     _normalize_candidates_for_reference,
     _strict_causal_recovery,
@@ -285,7 +286,9 @@ class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
             "strict_causal_recoveries": {"fraction": 0.5},
             "wrong_verified_url_count": 0,
             "invented_or_modified_candidate_url_count": 0,
+            "invented_adopted_url_count": 0,
             "cross_company_count": 0,
+            "cross_brand_count": 0,
             "cross_tenant_count": 0,
             "replay_mismatch_count": 0,
             "replay_fixture_gap_count": 0,
@@ -314,6 +317,51 @@ class CandidateReasoningExperimentScriptsTest(unittest.TestCase):
         self.assertIn("replay fixture gap must remain zero", gate["failures"])
         self.assertIn("capture exceeded the call budget", gate["failures"])
         self.assertIn("capture exceeded the cost budget", gate["failures"])
+
+    def test_llm_adoption_requires_explicit_s2_or_s5_provenance(self):
+        trace = {
+            "trace": {
+                "stages": {
+                    "website_resolution": {
+                        "selected": {
+                            "url": "https://example.test/",
+                            "reason": "candidate reasoning followed by deterministic resolver verification",
+                        }
+                    },
+                    "job_board_discovery": {
+                        "selected": {
+                            "url": "https://jobs.example.test/tenant",
+                            "source_kind": "llm_url_hypothesis",
+                        }
+                    },
+                }
+            }
+        }
+
+        self.assertEqual(
+            _llm_adopted_candidate_urls(trace),
+            (
+                "https://example.test/",
+                "https://jobs.example.test/tenant",
+            ),
+        )
+        self.assertEqual(
+            _llm_adopted_candidate_urls(
+                {
+                    "trace": {
+                        "stages": {
+                            "website_resolution": {
+                                "selected": {
+                                    "url": "https://example.test/",
+                                    "reason": "deterministic LinkedIn evidence",
+                                }
+                            }
+                        }
+                    }
+                }
+            ),
+            (),
+        )
 
     def test_versioned_phase_budgets_cover_observed_ranker_latency(self):
         treatment = _agent_config(llm=True, model="deepseek-v4-flash")
