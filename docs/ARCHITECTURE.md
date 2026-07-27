@@ -73,6 +73,10 @@ ID, checkpoint root, application, cache, and
 tape cursor. Legacy v1/v2 snapshots use explicit bundle v5 materialization; scoped and
 legacy records cannot be mixed. Missing, extra, corrupt, cross-stage, or unconsumed
 outcomes fail closed, and unreferenced records from interrupted stages remain orphans.
+Caller-deadline and stage-reservation terminations are recorded as typed budget
+failures. Consuming one during outcome-tape replay makes the optional fetch-budget
+capability report exhausted, preserving request scheduling as well as transport
+outcomes; ordinary network timeouts never imply budget exhaustion.
 
 ## Standard Pipeline
 
@@ -106,8 +110,12 @@ row 或 trace。每个候选仍进入普通 homepage fetch、redirect、parking�
 ADR-0025 在不改变 S1-S7 顺序的前提下，把 S5 的入口从单一 career handoff 扩展为三个
 逻辑并行的候选源：LinkedIn External Apply、官网/Career 中的显式 ATS URL、provider-targeted
 search。它们只产生 `ProviderCandidate`，统一进入最多 12 条的 immutable candidate pool；排序
-只控制检查顺序，不产生验证结论。Search 使用现有 Bing/DuckDuckGo transport 的 exhaustive
-bounded 模式，多组 provider 查询共享预算，snippet 永远不能成为 success 或 relationship evidence。
+只控制检查顺序，不产生验证结论。Search 默认使用现有 Bing/DuckDuckGo transport 的 exhaustive
+bounded 模式，也可以由 composition root 注入 ADR-0032 的单请求 SearXNG JSON backend；
+多组 provider 查询继续共享 resolver 预算，snippet 永远不能成为 success 或 relationship evidence。
+Backend 只负责产生不可信 search hits，不能执行 retry、绕过 provider/tenant/relationship/S7，
+也不能把原始私有 endpoint 写入 run configuration 或 trace。Backend kind、contract version 和
+profile digest 进入 deterministic schema `1.8`；S4/S5 与 S6 same-site search 共享同一实例。
 `ProviderCandidate` 在 contract 边界使用与 identity chain 相同的 strict canonical URL；可归一化
 的 trailing/tracking 形式先规范化，control、credential、private host 或其他非 identity-safe URL
 在进入 portfolio 前拒绝，不能把下游 contract exception 变成 company worker crash。
@@ -136,15 +144,40 @@ opening 不会阻止后续路线，verified Exact 优先于 incomplete 或 verif
 verified Exact fail closed。只有所有 eligible、authorized、complete 路线都完成后才允许发布公司级
 `OPENING_NOT_FOUND`/`NO_PUBLIC_OPENINGS`；未授权 search 路线的空库存不能证明公司没有岗位。
 包含 runtime-only board 的 portfolio 不再持久化可回放前缀，而是整体不落盘并从 S5 producer boundary
-重算，避免 checkpoint/replay 静默丢失竞争路线。该 contract 对应 pipeline schema `1.7`、run-config
-schema `1.5` 和 adapter `.207`。
+重算，避免 checkpoint/replay 静默丢失竞争路线。该 contract 对应 pipeline schema `1.7`；当前
+run-config schema 为 `1.7`，adapter 为 `.217`。
 
-正常产品运行保留 staged direct-then-search 调度，减少已验证 direct handoff 存在时的网络开销。
+`stage_v1` 保留 staged direct-then-search 调度，减少已验证 direct handoff 存在时的网络开销。
 确定性配置 schema `1.4` 另提供 benchmark-only `evaluate_all_candidate_routes`：它强制三路独立
 产出并记录 route probe，再把所有候选送入同一 adapter、relationship、S6 和 S7 gate。Reporting
 只能把最终 typed S7 exact 反向归因给具备 verified board 与 relationship 的 route；候选数、搜索
 排名或 job-list 成功都不能算 exact。该模式用于 route recall/overlap 测量，不改变默认产品成功
 语义。
+
+ADR-0030 在 `.214` 增加 feature-flagged `coordinator_v2`。它从 S1 冻结 immutable
+`CandidateDiscoveryInput`，串行但逻辑独立地执行 External Apply、provider search 和
+Website/Career producer，并为每路记录 completed、not-applicable、suppressed、budget-exhausted
+或 failed。S3 只能用 exact rejected URL 与 evidence scope 压制对应 Website/Career 路线，
+不能阻断另外两路。Coordinator 只规范化、去重、保留 attribution 并在全局 cap 内为每个
+productive route 预留一个 candidate；它不识别 provider、不授权 tenant/relationship，也不
+选择 opening。S5 对每路原始候选分别执行 registry 和 hiring relationship 验证，因此同 URL
+的 External Apply 与 search attribution 不能互借授权。
+
+Provider search 在固定 query/fetch budget 内执行所有 scheduled queries，保留多个安全结果并
+按 query bucket round-robin 选取。九个 provider family 的起点由规范化 S1 company/title 的
+稳定 hash 决定，使固定小预算在 cohort 上不再永久饿死同一尾部 provider；单条记录仍只访问
+其预算允许的 family，未访问不等于 provider 不存在。`candidate_discovery_engine` 进入 schema
+`1.7` payload 与 digest；schema `1.6` 保留 staged/coordinator engine 并迁移到默认 10 秒
+reservation，未知、缺失或 coordinator-without-candidate-discovery 均 fail closed。
+CLI 与 live runner 只能用显式 flag 开启，默认仍为 `stage_v1`，直到 focused live/replay gate
+通过。
+
+`.214` 不宣称物理并行。三路仍在一个 canonical S5 capture boundary 内按确定顺序执行，避免
+线程共享 snapshot/tape。真实 overlap、route-local deadline reservation、snapshot/checkpoint
+scope 和 entry parity 是下一阶段；`.217` 仅在 canonical runner stage scope 内对 S4
+执行 cooperative deadline subtraction，触达 reservation 时返回 retryable
+`FETCH_BUDGET_EXHAUSTED`，S5 随 stage scope 退出自动释放预算。future、thread、fetcher 或 partial candidate pool 都不得
+持久化。
 
 Scoped full-outcome replay 必须从产生下游证据的最早 producer stage 开始。Career evidence 依赖
 website resolution；page-derived generic board evidence 继续依赖 Career producer，因此 replay

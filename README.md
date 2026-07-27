@@ -35,7 +35,7 @@ GitHub Actions runs the test suite across CPython 3.10-3.13 and repeats all offl
 
 The first Linux CI run passed all jobs: [run 29240521415](https://github.com/yinh2025s/ai-job-source-agent/actions/runs/29240521415).
 
-Current adapter iteration: `2026-07-17.94`. The registry auto-discovers 32 native adapter modules. External Apply, bounded provider-targeted search, and official Website/Career traversal now feed one untrusted candidate portfolio; native adapter, hiring relationship, tenant, title/location, active-opening and S7 identity checks still decide publication. The single final **observed development** 40-company run reaches 38 websites, 29 career pages, 22 verified job lists and 18 exact openings, up from 35/26/20/13. Among ten manually confirmed eligible system gaps, four recover exact openings and six remain defects; three frozen expected URLs match, with zero known wrong or unsafe exact URLs. Whole-output exact precision is not claimed because most exact records lack independent frozen URL labels. Scoped replay reproduces every replayable final-live record at 39/39 with zero mismatches; one live worker crashed before finalizing its S5 tape, and that missing boundary remains explicitly failed rather than fabricated. Authenticated LinkedIn extension Scan/Run remains a manual acceptance gate; the user performs the Chrome clicks and the backend validates bridge artifacts and logs.
+Current adapter iteration: `2026-07-27.270`. The registry auto-discovers 48 native adapter modules. The deterministic backend has a versioned optional SearXNG search boundary; `legacy` remains the default because the first frozen A/B increased raw candidate boards but produced no net new S7 Exact. Unverified provider candidates remain available internally for downstream validation but are no longer exposed as product Job Lists. Coordinator-v2 remains proposed and disabled, the extension acceptance line is paused, and no LLM branch code is merged.
 
 ## What It Returns
 
@@ -156,6 +156,32 @@ FAIL Tessera Labs
 ```
 
 Many modern career pages render concrete job cards with JavaScript or do not expose a public official career page at all. In those cases, `open_position_url` may be `null` while `job_list_page_url` is still useful. If no official career page can be verified, the agent returns a structured failure instead of inventing a job URL.
+
+### Optional Local SearXNG
+
+The `.243` deterministic backend can use a pinned local SearXNG JSON service without
+putting search credentials or rules in the browser extension:
+
+```bash
+SEARXNG_SECRET="$(openssl rand -hex 32)" \
+  docker compose -f deploy/searxng/compose.yml up -d
+
+python3 -m job_source_agent \
+  --input samples/linkedin_jobs.json \
+  --search-backend searxng \
+  --search-backend-url http://127.0.0.1:8888 \
+  --search-backend-profile-digest \
+    29ab14a1d3797b3494ce65de1eadb1603f521f46baee7ce5c5e28f700266b810 \
+  --output results.json \
+  --trace-output trace.json
+```
+
+The service binds only to `127.0.0.1`. The profile digest binds the pinned image
+and settings to checkpoints/replay, while the raw endpoint and search query are
+excluded from persisted run configuration. Search results are untrusted
+candidates and still pass provider, tenant, hiring relationship, inventory,
+title/location and S7 validation. This backend is opt-in; the `.239` focused
+A/B did not justify making it the default.
 
 LinkedIn's public guest job HTML does not reliably expose the off-site target behind its Apply control. An authenticated browser extension, a saved authenticated page, or another trusted extractor can provide that target as `external_apply_url`. The backend does not trust an arbitrary external URL as a result: S5 must map it to a supported native provider board, and S6 must read that provider's public inventory before returning a concrete opening. This fallback can therefore recover a job when the marketing website is blocked or unresolved without weakening normal website verification.
 
