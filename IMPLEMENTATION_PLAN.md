@@ -25,6 +25,26 @@
 
 ## 当前架构进度（2026-07-28，GovernmentJobs `.275` focused closure）
 
+### v276 existing-evidence completion audit
+
+v273 后继续停止新批次和行为代码修改。主线用 Fresh100 `.270` 冷启动 trace
+重建 causal ledger，发现旧 projection manifest 的 `37 Exact / 12 VNM /
+50 unresolved` 仍是 `.244` 时代的算术，不能描述 `.270` 证据。
+
+`.270` 原始 durable ledger 为 32 Exact、18 Verified No Match、1 External
+Blocked、49 unresolved。现有 reviewed terminal allowlist 产生 38 Exact、
+16 VNM、1 blocked、45 unresolved；再纳入 `.275` 对 City of Lubbock 和
+City of College Station 的完整 GovernmentJobs inventory no-match 证据后，
+当前保守投影为 **38 Exact / 18 VNM / 1 blocked / 43 unresolved**。
+
+这只是跨 code-frozen focused evidence 的 development projection，不覆盖
+`.270` 的 32/100 raw Exact，不代表 Fresh100 replay 已通过。S2-S5 与 S6-S7
+两条独立只读审计均未找到满足“同 trigger、同 code path、至少三家公司且
+预期恢复至少三条”的合法实现簇，因此本轮不进入 Phase B。详见：
+
+- `docs/COORDINATOR_V276_EXISTING_EVIDENCE_COMPLETION_AUDIT_PHASE_A.md`
+- `docs/FRESH_100_CURRENT_CLOSURE_MATRIX.md`
+
 在 v273 停止新批次后，项目只复用了历史证据中已经满足三家公司门槛的
 GovernmentJobs 声明搜索失败簇。`.274` 的 static form ordinal 在浏览器初始化
 后失效，3/3 均在点击前失败，因此已按预设 acceptance contract 回滚并留档。

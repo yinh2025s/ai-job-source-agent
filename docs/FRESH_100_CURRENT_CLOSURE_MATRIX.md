@@ -1,6 +1,29 @@
 # Fresh100 Current Closure Matrix
 
-## Status
+## Current Status
+
+The current conservative development projection is based on the frozen
+Fresh100 `.270` cold trace plus an explicit allowlist of reviewed focused
+terminals. It is not an official code-frozen 100-record rerun.
+
+| State | `.270` raw | Reviewed replacements | Projected current |
+| --- | ---: | ---: | ---: |
+| S7 Exact | 32 | +6 | **38/100** |
+| Evidence-backed Verified No Match | 18 | -2 Exact upgrades, +2 `.275` terminals | **18/100** |
+| Evidence-backed External Blocked | 1 | 0 | **1/100** |
+| Unresolved / nonterminal | 49 | -4 Exact, -2 `.275` terminals | **43/100** |
+| Published wrong URL/company/tenant | 0 | 0 | **0** |
+
+The `.275` terminal additions are City of Lubbock and City of College Station.
+Both reached complete official GovernmentJobs title-filtered inventory and
+returned zero matching postings. They are Verified No Match, not Exact.
+
+The ledger correction is documented in
+`docs/COORDINATOR_V276_EXISTING_EVIDENCE_COMPLETION_AUDIT_PHASE_A.md`. It does
+not change the official `.270` result of 32 raw Exact or repair the incomplete
+same-version replay gate.
+
+## Historical `.244` Projection
 
 This is a conservative development-cohort projection after `.244`, not an
 official code-frozen 100-record rerun.

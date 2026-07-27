@@ -4,10 +4,10 @@
   "policy": "reviewed_durable_terminal_allowlist",
   "expected_record_count": 100,
   "expected_outcome_counts": {
-    "exact": 37,
+    "exact": 38,
     "external_blocked": 1,
-    "unresolved": 50,
-    "verified_no_match": 12
+    "unresolved": 43,
+    "verified_no_match": 18
   },
   "accepted_terminals": {
     "4193245312": {
@@ -50,6 +50,10 @@
       "durable_outcome": "exact",
       "evidence_ref": "docs/COORDINATOR_V228_PROVISIONAL_OFFICIAL_WEBSITE_PHASE_C.md"
     },
+    "4426127673": {
+      "durable_outcome": "verified_no_match",
+      "evidence_ref": "docs/COORDINATOR_V275_STABLE_INTERACTION_FORM_IDENTITY_PHASE_C.md"
+    },
     "4426438449": {
       "durable_outcome": "exact",
       "evidence_ref": "docs/COORDINATOR_V222_DETAIL_LOCATION_ENRICHMENT_PHASE_C.md"
@@ -61,6 +65,10 @@
     "4432015135": {
       "durable_outcome": "exact",
       "evidence_ref": "docs/COORDINATOR_V222_DETAIL_LOCATION_ENRICHMENT_PHASE_C.md"
+    },
+    "4432727055": {
+      "durable_outcome": "verified_no_match",
+      "evidence_ref": "docs/COORDINATOR_V275_STABLE_INTERACTION_FORM_IDENTITY_PHASE_C.md"
     },
     "4433489743": {
       "durable_outcome": "exact",

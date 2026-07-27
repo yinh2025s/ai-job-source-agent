@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-07-28 - Existing-evidence completion audit `.276`
+
+- Kept product behavior at `.275`; no new cohort, live benchmark, sealed
+  holdout, plugin or LLM work was started.
+- Rebuilt the Fresh100 causal ledger from the `.270` cold trace and found that
+  the projection manifest still asserted historical `.244` arithmetic.
+- Corrected the reviewed development projection to 38 Exact, 18 Verified No
+  Match, one External Blocked and 43 unresolved. This does not replace the
+  `.270` raw score of 32 Exact.
+- Added the `.275` complete-inventory no-match terminals for City of Lubbock
+  and City of College Station to the reviewed allowlist.
+- Audited S2-S5 and S6-S7 failures by shared trigger and code path. No cluster
+  meets both the three-company and three-expected-recovery implementation
+  thresholds, so no Phase B behavior change is selected.
+
 ## 2026-07-28 - GovernmentJobs declared search `.275`
 
 - Reused a frozen three-company GovernmentJobs cluster; no new cohort or
