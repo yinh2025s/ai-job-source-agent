@@ -147,9 +147,12 @@ class ProviderCandidate:
                 ProviderPublishedEmployerEvidence,
             ):
                 raise TypeError("Invalid provider employer evidence")
-            if self.source_kind != "verified_tenant_probe":
+            if self.source_kind not in {
+                "targeted_opening_search",
+                "verified_tenant_probe",
+            }:
                 raise ValueError(
-                    "Provider employer evidence requires a verified tenant probe"
+                    "Provider employer evidence requires a verified provider opening"
                 )
 
     @property

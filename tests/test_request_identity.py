@@ -11,6 +11,23 @@ from job_source_agent.web import normalize_url
 
 
 class RequestIdentityTests(unittest.TestCase):
+    def test_redacts_hmg_public_inventory_ticket_without_redacting_generic_h_t(self):
+        inventory = sanitize_url(
+            "https://jobs.example.test/json/index.smpl?"
+            "arg=list_posts&pid=gwt&h=abcdef&t=1700000000&keywords=Engineer"
+        )
+        generic = sanitize_url(
+            "https://example.test/chart?h=640&t=1700000000"
+        )
+
+        self.assertIn("h=%5BREDACTED%5D", inventory)
+        self.assertIn("t=%5BREDACTED%5D", inventory)
+        self.assertIn("keywords=Engineer", inventory)
+        self.assertEqual(
+            generic,
+            "https://example.test/chart?h=640&t=1700000000",
+        )
+
     def test_browser_interaction_has_distinct_redacted_request_identity(self):
         first = JobSearchInteraction(
             form_ordinal=0,
@@ -99,6 +116,11 @@ class RequestIdentityTests(unittest.TestCase):
         self.assertTrue(all("%5BREDACTED%5D" in value for value in sanitized))
         self.assertTrue(all(is_sensitive_key(key) for key in ("apikey", "api_key", "api-key")))
 
+    def test_prefixed_api_key_names_are_sensitive_but_flags_are_not(self):
+        self.assertTrue(is_sensitive_key("mapsApiKey"))
+        self.assertTrue(is_sensitive_key("google_maps_api_key"))
+        self.assertFalse(is_sensitive_key("apiKeyEnabled"))
+
     def test_json_body_fingerprint_is_stable_after_sensitive_redaction(self):
         first = build_request_identity(
             "https://example.test/api",
@@ -163,6 +185,74 @@ class RequestIdentityTests(unittest.TestCase):
 
         self.assertEqual(first.body_fingerprint, second.body_fingerprint)
         self.assertTrue(first.requires_fixture_suffix)
+
+    def test_hmg_search_entry_ticket_does_not_change_request_identity(self):
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        first = build_request_identity(
+            "https://jobs.example.test/index.smpl",
+            data=(
+                b"arg=jb_search_results&action=1&t=1700000000"
+                b"&proximity=&view=&keywords=Platform+Engineer"
+            ),
+            headers=headers,
+        )
+        refreshed = build_request_identity(
+            "https://jobs.example.test/index.smpl",
+            data=(
+                b"arg=jb_search_results&action=1&t=1700000001"
+                b"&proximity=&view=&keywords=Platform+Engineer"
+            ),
+            headers=headers,
+        )
+        other_title = build_request_identity(
+            "https://jobs.example.test/index.smpl",
+            data=(
+                b"arg=jb_search_results&action=1&t=1700000000"
+                b"&proximity=&view=&keywords=Data+Engineer"
+            ),
+            headers=headers,
+        )
+
+        self.assertEqual(first.body_fingerprint, refreshed.body_fingerprint)
+        self.assertNotEqual(first.body_fingerprint, other_title.body_fingerprint)
+
+    def test_hmg_ticket_rule_does_not_redact_generic_t_form_field(self):
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        generic_one = build_request_identity(
+            "https://example.test/index.smpl",
+            data=b"arg=report&action=1&t=1700000000&keywords=Engineer",
+            headers=headers,
+        )
+        generic_two = build_request_identity(
+            "https://example.test/index.smpl",
+            data=b"arg=report&action=1&t=1700000001&keywords=Engineer",
+            headers=headers,
+        )
+        wrong_path_one = build_request_identity(
+            "https://example.test/search",
+            data=(
+                b"arg=jb_search_results&action=1&t=1700000000"
+                b"&keywords=Engineer"
+            ),
+            headers=headers,
+        )
+        wrong_path_two = build_request_identity(
+            "https://example.test/search",
+            data=(
+                b"arg=jb_search_results&action=1&t=1700000001"
+                b"&keywords=Engineer"
+            ),
+            headers=headers,
+        )
+
+        self.assertNotEqual(
+            generic_one.body_fingerprint,
+            generic_two.body_fingerprint,
+        )
+        self.assertNotEqual(
+            wrong_path_one.body_fingerprint,
+            wrong_path_two.body_fingerprint,
+        )
 
     def test_meta_lsd_form_token_is_sensitive_and_does_not_change_identity(self):
         first = build_request_identity(

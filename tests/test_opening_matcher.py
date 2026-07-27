@@ -10,6 +10,7 @@ from job_source_agent.opening_matcher import (
     build_provider_search_urls,
     build_search_form_urls,
     detect_provider,
+    _fetch_error_record,
     _opening_candidates_from_links,
     _is_explicit_location_mismatch,
     _strict_location_identity_matches,
@@ -35,6 +36,43 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OpeningMatcherTests(unittest.TestCase):
+    def test_fetch_error_trace_preserves_typed_budget_metadata(self):
+        failure = FetchError(
+            "company time budget exhausted at caller deadline",
+            reason_code="COMPANY_TIME_BUDGET_EXHAUSTED",
+            retryable=True,
+            transport_phase="timeout",
+        )
+
+        record = _fetch_error_record(
+            "https://jobs.example.test/?query=Engineer",
+            failure,
+        )
+        diagnostic = diagnose_opening_availability(
+            {
+                "errors": [record],
+                "provider_api": {"provider": "generic"},
+            }
+        )
+
+        self.assertEqual(
+            record,
+            {
+                "url": "https://jobs.example.test/?query=Engineer",
+                "error": "company time budget exhausted at caller deadline",
+                "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                "retryable": True,
+                "transport_phase": "timeout",
+            },
+        )
+        self.assertEqual(
+            diagnostic.reason_code,
+            "COMPANY_TIME_BUDGET_EXHAUSTED",
+        )
+        self.assertTrue(
+            diagnostic.evidence["provider_errors"][0]["retryable"]
+        )
+
     def test_unlinked_third_party_instruction_requires_explicit_copy_and_no_link(self):
         html = (
             "<main>Current Opportunities. Please find these complete postings and "
@@ -822,6 +860,164 @@ class OpeningMatcherTests(unittest.TestCase):
         self.assertIn("verified same-site JobPosting detail", match.reasons)
         self.assertEqual(trace["detail_enrichment"]["verified_count"], 1)
         self.assertEqual(fetcher.requested[:2], [job_list_url, detail_url])
+
+    def test_generic_detail_enrichment_reads_encoded_jobposting_object(self):
+        job_list_url = "https://careers.example.com/jobs"
+        detail_url = "https://careers.example.com/jobs/devops-engineer"
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "DevOps Engineer",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "New York",
+                        "addressRegion": "NY",
+                    },
+                },
+                "hiringOrganization": {
+                    "@type": "Organization",
+                    "name": "Example",
+                    "sameAs": "https://careers.example.com",
+                },
+            }
+        ).replace('"', "&quot;")
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url == job_list_url:
+                    return Page(url, f'<a href="{detail_url}">DevOps Engineer</a>')
+                if url == detail_url:
+                    return Page(
+                        url,
+                        f'<div class="hidden" id="job-schema">{posting}</div>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            job_list_url,
+            "DevOps Engineer",
+            "New York, NY",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(match.location, "New York, NY")
+        self.assertEqual(trace["detail_enrichment"]["verified_count"], 1)
+
+    def test_native_provider_enriches_missing_location_from_same_tenant_detail(self):
+        board_url = "https://acme.applytojob.com/apply/"
+        detail_url = "https://acme.applytojob.com/apply/Abcd1234/UX-Designer"
+        board_html = (
+            '<body class="resumator-jobboard-home jobboard job- dept-">'
+            '<div class="job-board-list"><div class="jobs-list">'
+            '<li class="list-group-item"><h3 class="list-group-item-heading">'
+            f'<a href="{detail_url}">UX Designer</a></h3></li>'
+            '</div></div><footer><a id="resumator-logo" '
+            'href="https://info.jazzhr.com/job-seekers.html">'
+            "Powered by JazzHR</a></footer></body>"
+        )
+
+        def detail_html(location):
+            posting = json.dumps(
+                {
+                    "@context": "https://schema.org",
+                    "@type": "JobPosting",
+                    "title": "UX Designer",
+                    "url": detail_url,
+                    "jobLocation": {
+                        "@type": "Place",
+                        "address": {
+                            "addressLocality": location[0],
+                            "addressRegion": location[1],
+                        },
+                    },
+                    "hiringOrganization": {"name": "Acme"},
+                }
+            )
+            return f'<script type="application/ld+json">{posting}</script>'
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == board_url.rstrip("/"):
+                    return Page(board_url, board_html)
+                if url == detail_url:
+                    return Page(url, detail_html(("Indianapolis", "IN")))
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            board_url,
+            "UX Designer",
+            "Indianapolis, IN",
+        )
+
+        self.assertIsNotNone(match)
+        assert match is not None
+        self.assertEqual(match.url, detail_url)
+        self.assertEqual(match.location, "Indianapolis, IN")
+        self.assertEqual(trace["provider_api"]["provider"], "jazzhr")
+        self.assertEqual(
+            trace["provider_api"]["detail_enrichment"]["verified_count"],
+            1,
+        )
+
+    def test_native_provider_detail_enrichment_rejects_wrong_location(self):
+        board_url = "https://acme.applytojob.com/apply/"
+        detail_url = "https://acme.applytojob.com/apply/Abcd1234/UX-Designer"
+        board_html = (
+            '<body class="resumator-jobboard-home jobboard job- dept-">'
+            '<div class="job-board-list"><div class="jobs-list">'
+            '<li class="list-group-item"><h3 class="list-group-item-heading">'
+            f'<a href="{detail_url}">UX Designer</a></h3></li>'
+            '</div></div><footer><a id="resumator-logo" '
+            'href="https://info.jazzhr.com/job-seekers.html">'
+            "Powered by JazzHR</a></footer></body>"
+        )
+        posting = json.dumps(
+            {
+                "@context": "https://schema.org",
+                "@type": "JobPosting",
+                "title": "UX Designer",
+                "url": detail_url,
+                "jobLocation": {
+                    "@type": "Place",
+                    "address": {
+                        "addressLocality": "Chicago",
+                        "addressRegion": "IL",
+                    },
+                },
+            }
+        )
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == board_url.rstrip("/"):
+                    return Page(board_url, board_html)
+                if url == detail_url:
+                    return Page(
+                        url,
+                        f'<script type="application/ld+json">{posting}</script>',
+                    )
+                raise FetchError(f"unexpected URL: {url}")
+
+        match, trace = JobOpeningMatcher(DetailFetcher()).match(
+            board_url,
+            "UX Designer",
+            "Indianapolis, IN",
+        )
+
+        self.assertIsNone(match)
+        self.assertEqual(
+            trace["provider_api"]["detail_enrichment"]["verified_count"],
+            0,
+        )
+        self.assertEqual(
+            trace["provider_api"]["detail_enrichment"]["attempts"][0]["status"],
+            "jobposting_identity_not_verified",
+        )
 
     def test_generic_listing_continuity_accepts_jobposting_without_organization_url(self):
         job_list_url = "https://careers.example.com/jobs"

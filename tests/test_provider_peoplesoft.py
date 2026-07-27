@@ -218,6 +218,27 @@ class PeopleSoftAdapterTests(unittest.TestCase):
         self.assertTrue(failed.retryable)
         self.assertEqual(tampered.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
 
+    def test_preserves_typed_budget_reason_and_unknown_fetch_fallback(self):
+        board = self.adapter.identify_board(SEARCH)
+        cases = (
+            (
+                FetchError(
+                    "company deadline reached",
+                    reason_code="COMPANY_TIME_BUDGET_EXHAUSTED",
+                ),
+                "COMPANY_TIME_BUDGET_EXHAUSTED",
+            ),
+            (FetchError("unclassified provider transport failure"), "PROVIDER_FETCH_FAILED"),
+        )
+        for error, expected in cases:
+            with self.subTest(expected=expected):
+                result = self.adapter.list_jobs(
+                    StubFetcher(error=error), board, JobQuery()
+                )
+
+                self.assertEqual(result.reason_code, expected)
+                self.assertFalse(result.inventory_complete)
+
 
 def _public_component():
     return "HRS_HRAM_FL.HRS_CG_SEARCH_FL.GBL"

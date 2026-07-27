@@ -9,6 +9,7 @@ from xml.etree import ElementTree as ET
 
 from .acquired_brand_portal import parse_acquired_brand_portal_evidence
 from .career_search import CareerSearchResolver
+from .search_backend import SearchBackend
 from .checkpoint import execution_fingerprint
 from .career_candidate_scheduler import (
     candidate_concrete_host,
@@ -231,7 +232,10 @@ class JobSourceAgent:
         enable_career_search: bool = True,
         enable_parallel_candidate_discovery: bool = False,
         evaluate_all_candidate_routes: bool = False,
+        candidate_discovery_engine: str = "stage_v1",
+        provider_search_reserve_seconds: float = 10.0,
         career_search_timeout: float | None = None,
+        search_backend: SearchBackend | None = None,
         run_configuration: DeterministicRunConfig | None = None,
     ) -> None:
         self.fetcher = fetcher
@@ -249,7 +253,10 @@ class JobSourceAgent:
         self.enable_career_search = enable_career_search
         self.enable_parallel_candidate_discovery = enable_parallel_candidate_discovery
         self.evaluate_all_candidate_routes = evaluate_all_candidate_routes
+        self.candidate_discovery_engine = candidate_discovery_engine
+        self.provider_search_reserve_seconds = provider_search_reserve_seconds
         self.career_search_timeout = career_search_timeout
+        self.search_backend = search_backend
         self._career_transport_scope_active = False
         effective_agent_config = AgentConfig(
             max_candidates=max_candidates,
@@ -265,7 +272,28 @@ class JobSourceAgent:
             enable_career_search=enable_career_search,
             enable_parallel_candidate_discovery=enable_parallel_candidate_discovery,
             evaluate_all_candidate_routes=evaluate_all_candidate_routes,
+            candidate_discovery_engine=candidate_discovery_engine,
+            provider_search_reserve_seconds=provider_search_reserve_seconds,
             career_search_timeout=career_search_timeout,
+            search_backend_kind=(
+                "legacy"
+                if search_backend is None
+                else search_backend.public_configuration()["search_backend_kind"]
+            ),
+            search_backend_contract_version=(
+                "1"
+                if search_backend is None
+                else search_backend.public_configuration()[
+                    "search_backend_contract_version"
+                ]
+            ),
+            search_backend_profile_digest=(
+                None
+                if search_backend is None
+                else search_backend.public_configuration()[
+                    "search_backend_profile_digest"
+                ]
+            ),
         )
         if (
             run_configuration is not None
@@ -488,7 +516,14 @@ class JobSourceAgent:
             )
 
         cache_hits_before = int(getattr(self.fetcher, "cache_hits", 0) or 0)
-        with scope(self.max_career_discovery_transport_calls) as budget:
+        transport_limit = self.max_career_discovery_transport_calls
+        reserved_dispatches = self._career_transport_reserved_dispatches(
+            transport_limit,
+        )
+        with scope(
+            transport_limit,
+            reserved_dispatches=reserved_dispatches,
+        ) as budget:
             self._career_transport_scope_active = True
             try:
                 career_url, trace = self._find_career_page(
@@ -1746,6 +1781,7 @@ class JobSourceAgent:
             self.fetcher,
             self.provider_registry,
             max_generic_job_pages=self.max_job_pages,
+            search_backend=self.search_backend,
         ).match(
             job_list_url,
             target_title,
@@ -4332,6 +4368,7 @@ class JobSourceAgent:
             return CareerSearchResolver(
                 self.fetcher,
                 max_queries=self.max_career_search_queries,
+                search_backend=self.search_backend,
             ).search(company_name, homepage_url, ats_only=ats_only)
         finally:
             if original_timeout is not None:
@@ -4565,7 +4602,10 @@ class JobSourceAgent:
         homepage_url: str | None = None,
         attempted_candidate_urls: set[str] | None = None,
     ) -> str | None:
-        with self._career_transport_phase(f"{schedule_source}_candidates"):
+        with self._career_transport_phase(
+            f"{schedule_source}_candidates",
+            speculative=schedule_source == "blind_ats",
+        ):
             return self._select_verified_career_candidate_in_phase(
                 candidates,
                 trace,
@@ -4942,13 +4982,23 @@ class JobSourceAgent:
     def _career_candidate_key(self, url: str) -> str:
         return normalize_url(url).rstrip("/")
 
-    def _career_transport_phase(self, name: str):
+    def _career_transport_phase(
+        self,
+        name: str,
+        *,
+        speculative: bool = False,
+    ):
         phase = getattr(self.fetcher, "career_discovery_phase", None)
         return (
-            phase(name)
+            phase(name, speculative=speculative)
             if callable(phase) and self._career_transport_scope_active
             else nullcontext()
         )
+
+    def _career_transport_reserved_dispatches(self, limit: int | None) -> int:
+        if limit is None or limit < 8 or not self.enable_career_search:
+            return 0
+        return min(6, limit // 4)
 
     def _career_transport_budget_trace(
         self,
@@ -5548,6 +5598,30 @@ class JobSourceAgent:
     ) -> bool:
         if is_ats_url(candidate.url):
             return self._is_provider_job_board_url(candidate.url)
+        source_host = urlparse(candidate.source_url).hostname or ""
+        candidate_host = urlparse(candidate.url).hostname or ""
+        if (
+            source_host
+            and candidate_host
+            and self._same_site_host(source_host, candidate_host)
+        ):
+            provider_page = Page(
+                url=candidate.url,
+                final_url=candidate.url,
+                html=html,
+            )
+            page_board = self.provider_registry.board_for_page(provider_page)
+            if page_board is not None:
+                adapter, board = page_board
+                board_host = urlparse(board.url).hostname or ""
+                if (
+                    adapter.supports_listing
+                    and board.identifier
+                    and board_host
+                    and self._same_site_host(candidate_host, board_host)
+                    and self._provider_board_candidate_allowed(adapter, board)
+                ):
+                    return True
         text = html[:200000].lower()
         if self._has_ats_link(text):
             return True

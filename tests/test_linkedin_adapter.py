@@ -4,6 +4,7 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 from job_source_agent.linkedin import (
+    company_inputs_from_records,
     load_company_inputs,
     parse_linkedin_html,
     parse_visible_external_apply_url,
@@ -113,6 +114,86 @@ class LinkedInAdapterTests(unittest.TestCase):
         self.assertEqual(records[0].job_title, "AI Engineer")
         self.assertEqual(records[0].job_location, "New York, NY")
         self.assertEqual(records[0].career_root_url, "https://example-robotics.test/careers")
+
+    def test_direct_external_apply_url_is_safely_normalized(self):
+        records = company_inputs_from_records(
+            [
+                {
+                    "company_name": "Example Robotics",
+                    "external_apply_url": (
+                        " https://jobs.example.com/openings/123"
+                        "?utm_source=linkedin&amp;source=button "
+                    ),
+                }
+            ]
+        )
+
+        self.assertEqual(
+            records[0].external_apply_url,
+            "https://jobs.example.com/openings/123?source=button",
+        )
+
+    def test_unsafe_direct_external_apply_url_is_cleared_when_other_evidence_exists(self):
+        unsafe_urls = (
+            "not a url",
+            "https://jobs.example.com:bad/openings/123",
+            "http://jobs.example.com/openings/123",
+            "https://127.0.0.1/openings/123",
+            "https://www.linkedin.com/jobs/view/123",
+            "https://user:secret@jobs.example.com/openings/123",
+            "https://jobs.example.com/openings/123?access_token=secret",
+            "https://jobs.example.com/openings/123#private",
+        )
+        for url in unsafe_urls:
+            with self.subTest(url=url):
+                records = company_inputs_from_records(
+                    [
+                        {
+                            "company_name": "Example Robotics",
+                            "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
+                            "external_apply_url": url,
+                        }
+                    ]
+                )
+
+                self.assertEqual(records[0].external_apply_url, "")
+
+    def test_unsafe_direct_external_apply_url_only_evidence_is_rejected(self):
+        with self.assertRaisesRegex(
+            ValueError,
+            "Each record requires a website, LinkedIn URL, External Apply URL, or linkedin_html_path evidence",
+        ):
+            company_inputs_from_records(
+                [
+                    {
+                        "company_name": "Example Robotics",
+                        "external_apply_url": "https://jobs.internal/openings/123",
+                    }
+                ]
+            )
+
+    def test_safe_html_external_apply_url_replaces_unsafe_direct_value(self):
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "linkedin.html"
+            path.write_text(
+                '<a href="https://jobs.example.com/openings/123?source=linkedin">Apply now</a>',
+                encoding="utf-8",
+            )
+
+            records = company_inputs_from_records(
+                [
+                    {
+                        "company_name": "Example Robotics",
+                        "linkedin_html_path": str(path),
+                        "external_apply_url": "http://jobs.example.com/openings/unsafe",
+                    }
+                ]
+            )
+
+        self.assertEqual(
+            records[0].external_apply_url,
+            "https://jobs.example.com/openings/123?source=linkedin",
+        )
 
     def test_frozen_cohort_wrapper_can_be_reused_as_input(self):
         cohort = {

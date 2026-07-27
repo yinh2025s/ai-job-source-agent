@@ -17,10 +17,12 @@ _DETECTION_METHODS = {
     "linked_url_evidence",
     "page_evidence",
     "page_probe",
+    "provider_opening_bootstrap",
     "targeted_search",
     "url_evidence",
     "verified_declared_inventory",
     "verified_first_party_action",
+    "verified_tenant_probe",
 }
 _PROVIDER_NAME = re.compile(r"^[a-z][a-z0-9_]{0,63}$")
 _MAX_URL_CHARS = 8_192
@@ -54,6 +56,9 @@ _ADP_CC_ID = re.compile(r"[0-9]{8}_[0-9]{6}")
 _ADP_LOCALE = re.compile(r"[A-Za-z]{2}_[A-Za-z]{2}")
 _ADP_POSITIVE_ID = re.compile(r"[1-9][0-9]{0,19}")
 _ADP_SITE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,99}")
+_GOVERNMENTJOBS_TENANT = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$"
+)
 _ADP_PRC = re.compile(r"RMPOD[1-9][0-9]?", re.IGNORECASE)
 _SENSITIVE_QUERY_KEYS = {
     "csrf",
@@ -274,6 +279,39 @@ class JobBoardPortfolio:
                 for route in self.route_evidence
             ],
         }
+
+    def replay_safe_projection(self) -> JobBoardPortfolio | None:
+        """Keep the durable subset without overstating candidate completeness."""
+
+        replay_safe_boards = tuple(
+            discovered
+            for discovered in self.boards
+            if discovered.to_checkpoint_payload() is not None
+        )
+        if not replay_safe_boards or replay_safe_boards[0] != self.primary:
+            return None
+        replay_safe_routes = tuple(
+            route
+            for route in self.route_evidence
+            if any(
+                route.provider == discovered.board.provider
+                and _same_identity_url(
+                    route.canonical_board_url,
+                    discovered.board.url,
+                )
+                for discovered in replay_safe_boards
+            )
+        )
+        if (
+            len(replay_safe_boards) == len(self.boards)
+            and len(replay_safe_routes) == len(self.route_evidence)
+        ):
+            return self
+        return JobBoardPortfolio(
+            boards=replay_safe_boards,
+            eligible_set_complete=False,
+            route_evidence=replay_safe_routes,
+        )
 
     @classmethod
     def from_checkpoint_payload(cls, payload: Any) -> JobBoardPortfolio:
@@ -627,6 +665,15 @@ def _eightfold_policy(board: JobBoard) -> bool:
 
 def _greenhouse_policy(board: JobBoard) -> bool:
     identifier = board.identifier or ""
+    parts = [part for part in urlparse(board.url).path.split("/") if part]
+    if (
+        _SEGMENT.fullmatch(identifier)
+        and identifier == identifier.casefold()
+        and _host(board.url) in {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+        and parts == [identifier]
+        and _no_query(board.url)
+    ):
+        return True
     if identifier.startswith("custom:"):
         host = identifier.removeprefix("custom:").casefold()
         return _valid_hostname(host) and host == _host(board.url)
@@ -639,6 +686,18 @@ def _greenhouse_policy(board: JobBoard) -> bool:
         and host.casefold() == _host(board.url) == _host(payload_url)
         and _is_public_https_url(payload_url)
         and parsed_payload.path.endswith("/careers/payload.js")
+    )
+
+
+def _ashby_policy(board: JobBoard) -> bool:
+    identifier = board.identifier or ""
+    parts = [part for part in urlparse(board.url).path.split("/") if part]
+    return bool(
+        _SEGMENT.fullmatch(identifier)
+        and identifier == identifier.casefold()
+        and _host(board.url) == "jobs.ashbyhq.com"
+        and parts == [identifier]
+        and _no_query(board.url)
     )
 
 
@@ -656,6 +715,18 @@ def _healthcaresource_policy(board: JobBoard) -> bool:
         and tenant == board.identifier
         and (parsed.hostname or "").casefold() == f"{tenant}.hcshiring.com"
         and parsed.path == "/jobs"
+        and _no_query(board.url)
+    )
+
+
+def _governmentjobs_policy(board: JobBoard) -> bool:
+    tenant = board.identifier or ""
+    parsed = urlparse(board.url)
+    return bool(
+        _GOVERNMENTJOBS_TENANT.fullmatch(tenant)
+        and tenant == tenant.casefold()
+        and _host(board.url) == "www.governmentjobs.com"
+        and parsed.path == f"/careers/{tenant}"
         and _no_query(board.url)
     )
 
@@ -1082,6 +1153,33 @@ def _ripplehire_policy(board: JobBoard) -> bool:
     )
 
 
+def _hireology_policy(board: JobBoard) -> bool:
+    identifier = board.identifier or ""
+    parsed = urlparse(board.url)
+    parts = [part for part in parsed.path.split("/") if part]
+    return bool(
+        re.fullmatch(r"[a-z0-9](?:[a-z0-9-]{0,98}[a-z0-9])?", identifier)
+        and parsed.hostname == "careers.hireology.com"
+        and parts == [identifier]
+        and _no_query(board.url)
+    )
+
+
+def _haley_marketing_policy(board: JobBoard) -> bool:
+    identifier = board.identifier or ""
+    custom_prefix = "custom:"
+    if not identifier.startswith(custom_prefix):
+        return False
+    tenant_host = identifier.removeprefix(custom_prefix)
+    parsed = urlparse(board.url)
+    return bool(
+        _valid_hostname(tenant_host)
+        and tenant_host.casefold() == tenant_host == _host(board.url)
+        and parsed.path == "/"
+        and _no_query(board.url)
+    )
+
+
 def _workday_policy(board: JobBoard) -> bool:
     identifier = board.identifier or ""
     if identifier.count("/") != 1:
@@ -1112,13 +1210,17 @@ def _workday_policy(board: JobBoard) -> bool:
 
 _REPLAY_SAFE_POLICIES: dict[str, Callable[[JobBoard], bool]] = {
     "adp": _adp_policy,
+    "ashby": _ashby_policy,
     "avature": _avature_policy,
     "catsone": _catsone_policy,
     "cws": _cws_policy,
     "digitalrecruiters": _digitalrecruiters_policy,
     "eightfold": _eightfold_policy,
     "greenhouse": _greenhouse_policy,
+    "governmentjobs": _governmentjobs_policy,
+    "haley_marketing": _haley_marketing_policy,
     "healthcaresource": _healthcaresource_policy,
+    "hireology": _hireology_policy,
     "icims": _icims_policy,
     "loxo": _loxo_policy,
     "oracle_hcm": _oracle_hcm_policy,

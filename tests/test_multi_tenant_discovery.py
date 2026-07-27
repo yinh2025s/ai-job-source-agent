@@ -110,7 +110,7 @@ class _SonyPortfolioService:
 
 
 class MultiTenantDiscoveryTests(unittest.TestCase):
-    def test_sony_prefers_entity_alias_and_retains_first_party_brand_boards(self):
+    def test_sony_prefers_entity_alias_and_retains_complete_first_party_brand_boards(self):
         stage = JobBoardDiscoveryStage(
             _SonyPortfolioService(),
             DEFAULT_PROVIDER_REGISTRY,
@@ -160,7 +160,7 @@ class MultiTenantDiscoveryTests(unittest.TestCase):
         self.assertEqual(summary["primary_url"], expected_url)
         self.assertEqual(summary["primary_provider"], "healthcaresource")
         self.assertEqual(summary["eligible_count"], 4)
-        self.assertFalse(summary["eligible_set_complete"])
+        self.assertTrue(summary["eligible_set_complete"])
         payload = summary["checkpoint_payload"]
         self.assertEqual(payload["schema_version"], "2.0")
         first_party_routes = [

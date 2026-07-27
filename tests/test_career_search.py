@@ -3,12 +3,14 @@ import unittest
 
 from job_source_agent.career_search import (
     CareerSearchResolver,
+    build_ats_search_query_plan,
     build_ats_search_queries,
     build_search_queries,
     clean_search_result_url,
     search_site_openings,
 )
 from job_source_agent.career_transport_budget import CareerTransportBudgetFetcher
+from job_source_agent.searxng_search_backend import SearxngSearchBackend
 from job_source_agent.web import FetchError, Fetcher, Page
 
 
@@ -45,6 +47,119 @@ def fixture(name):
 
 
 class CareerSearchTests(unittest.TestCase):
+    def test_injected_search_backend_keeps_candidates_untrusted_and_trace_private(self):
+        endpoint = "https://private-search.example/internal"
+        backend = SearxngSearchBackend(endpoint)
+        body = """{"results": [
+          {
+            "url": "https://jobs.lever.co/acme/role-1",
+            "title": "Acme Engineer",
+            "content": "Acme engineering role"
+          },
+          {
+            "url": "https://evil.example/jobs/role-2",
+            "title": "Other Engineer",
+            "content": "Different company"
+          }
+        ]}"""
+        fetcher = MappingFetcher(lambda url: Page(url, body, final_url=url))
+
+        result = CareerSearchResolver(
+            fetcher,
+            max_queries=1,
+            max_source_fetches=1,
+            search_backend=backend,
+        ).search(
+            "Acme",
+            "https://acme.example",
+            target_title="Engineer",
+            ats_only=True,
+        )
+
+        self.assertEqual(
+            [candidate.url for candidate in result.candidates],
+            ["https://jobs.lever.co/acme/role-1"],
+        )
+        self.assertEqual(len(fetcher.calls), 1)
+        self.assertIn("format=json", fetcher.calls[0])
+        self.assertEqual(result.trace["queries"][0]["source"], "searxng")
+        self.assertNotIn(endpoint, repr(result.trace))
+        self.assertNotIn("Acme", result.trace["queries"][0]["query_url"])
+
+    def test_injected_search_backend_invalid_response_is_not_a_candidate(self):
+        backend = SearxngSearchBackend("https://search.example")
+        fetcher = MappingFetcher(
+            lambda url: Page(url, "<html>not json</html>", final_url=url)
+        )
+
+        result = CareerSearchResolver(
+            fetcher,
+            max_queries=1,
+            max_source_fetches=1,
+            search_backend=backend,
+        ).search("Acme", "https://acme.example", ats_only=True)
+
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(
+            result.trace["queries"][0]["response_disposition"],
+            "invalid_response",
+        )
+        self.assertEqual(result.trace["queries"][0]["error"], "malformed_json")
+
+    def test_injected_search_backend_redacts_fetch_error_url(self):
+        endpoint = "https://private-search.example/internal"
+        backend = SearxngSearchBackend(endpoint)
+
+        def fail(url):
+            raise FetchError(
+                f"request failed: {url}",
+                reason_code="NETWORK_TIMEOUT",
+                retryable=True,
+                transport_phase="timeout",
+            )
+
+        result = CareerSearchResolver(
+            MappingFetcher(fail),
+            max_queries=1,
+            max_source_fetches=1,
+            search_backend=backend,
+        ).search("Secret Company", "https://company.example", ats_only=True)
+
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(
+            result.trace["queries"][0]["error"],
+            {
+                "reason_code": "NETWORK_TIMEOUT",
+                "status": None,
+                "retryable": True,
+                "transport_phase": "timeout",
+            },
+        )
+        self.assertNotIn(endpoint, repr(result.trace))
+        self.assertNotIn("Secret Company", repr(result.trace["error"]))
+
+    def test_site_opening_search_accepts_injected_backend_only_on_same_site(self):
+        official = "https://careers.acme.example/"
+        valid = "https://www.acme.example/jobs/platform-engineer"
+        backend = SearxngSearchBackend("https://search.example")
+        body = (
+            '{"results": ['
+            f'{{"url": "{valid}"}},'
+            '{"url": "https://evil.example/jobs/platform-engineer"}'
+            "]}"
+        )
+        fetcher = MappingFetcher(lambda url: Page(url, body, final_url=url))
+
+        result = search_site_openings(
+            fetcher,
+            official,
+            "Platform Engineer",
+            search_backend=backend,
+        )
+
+        self.assertEqual([candidate.url for candidate in result.candidates], [valid])
+        self.assertNotIn("search.example", repr(result.trace))
+
     def test_unbound_career_lead_is_admitted_only_for_current_page_verification(self):
         rss = (
             "<rss><channel><item>"
@@ -145,15 +260,45 @@ class CareerSearchTests(unittest.TestCase):
         )
         self.assertTrue(all(" OR " not in query for query in queries))
 
-    def test_five_query_plan_covers_distinct_provider_families(self):
-        queries = build_ats_search_queries("Acme", "Data Analyst")[:5]
+    def test_fixed_budget_plan_rotates_provider_families_from_normalized_identity(self):
+        first = build_ats_search_query_plan(
+            "Acme, Inc.", "Data Analyst", max_queries=5
+        )
+        equivalent = build_ats_search_query_plan(
+            "Acme", "data analyst", max_queries=5
+        )
 
-        self.assertEqual(len(queries), 5)
-        self.assertIn("job-boards.greenhouse.io", queries[1])
-        self.assertIn("jobs.lever.co", queries[2])
-        self.assertIn("jobs.ashbyhq.com", queries[3])
-        self.assertIn("apply.workable.com", queries[4])
-        self.assertFalse(any("site:boards.greenhouse.io" in query for query in queries))
+        self.assertEqual(
+            [item.provider_family for item in first],
+            [item.provider_family for item in equivalent],
+        )
+        self.assertEqual(len(first), 5)
+        self.assertIsNone(first[0].provider_family)
+        self.assertEqual(len({item.provider_family for item in first[1:]}), 4)
+        self.assertFalse(any("site:boards.greenhouse.io" in item.query for item in first))
+
+    def test_rotation_covers_every_provider_family_across_a_deterministic_identity_cycle(self):
+        seen = set()
+        for index in range(100):
+            plan = build_ats_search_query_plan(
+                f"Example Company Provider{index}Alpha", "Data Analyst", max_queries=2
+            )
+            seen.add(plan[1].provider_family)
+
+        self.assertEqual(
+            seen,
+            {
+                "greenhouse",
+                "lever",
+                "ashby",
+                "workable",
+                "pinpoint",
+                "smartrecruiters",
+                "workday",
+                "oracle",
+                "eightfold",
+            },
+        )
 
     def test_title_targeted_search_keeps_opaque_ats_url_as_untrusted_lead(self):
         opaque = (
@@ -187,11 +332,188 @@ class CareerSearchTests(unittest.TestCase):
 
         self.assertEqual(len(fetcher.calls), 5)
         self.assertTrue(all("format=rss" in url for url in fetcher.calls))
-        self.assertIn("site%3Ajob-boards.greenhouse.io", fetcher.calls[1])
-        self.assertIn("site%3Ajobs.lever.co", fetcher.calls[2])
+        self.assertEqual(
+            [entry["provider_family"] for entry in result.trace["ats_query_plan"]],
+            [None, "eightfold", "greenhouse", "lever", "ashby"],
+        )
         self.assertNotIn("Inc", fetcher.calls[0])
         self.assertFalse(result.trace["fetch_budget_supported"])
         self.assertEqual(result.trace["fetch_budget_checks"], 0)
+
+    def test_ats_exhaustive_mode_runs_every_scheduled_query_after_an_early_lead(self):
+        lead = "https://jobs.lever.co/acme"
+
+        def handler(url):
+            body = (
+                f"<rss><channel><item><link>{lead}</link></item></channel></rss>"
+                if 'q=%22acme%22' in url
+                else "<rss><channel /></rss>"
+            )
+            return Page(url, body, final_url=url)
+
+        fetcher = MappingFetcher(handler)
+        result = CareerSearchResolver(
+            fetcher, max_queries=5, max_source_fetches=5
+        ).search(
+            "Acme",
+            "https://acme.example",
+            target_title="Engineer",
+            ats_only=True,
+            exhaustive=True,
+            query_diversity_first=True,
+        )
+
+        self.assertEqual(len(fetcher.calls), 5)
+        self.assertEqual(len(result.trace["ats_query_plan"]), 5)
+        self.assertEqual(result.trace["stopped_reason"], "query_plan_complete")
+        self.assertEqual([item.url for item in result.candidates], [lead])
+
+    def test_ats_bucket_selection_prevents_one_query_from_monopolizing_candidate_limit(self):
+        general_leads = (
+            "https://jobs.lever.co/acme/first",
+            "https://jobs.lever.co/acme/second",
+        )
+        provider_lead = "https://jobs.ashbyhq.com/acme/third"
+
+        def handler(url):
+            if 'q=%22acme%22+%22Engineer%22+jobs' in url:
+                links = general_leads
+            else:
+                links = (provider_lead,)
+            body = "<rss><channel>" + "".join(
+                f"<item><link>{link}</link></item>" for link in links
+            ) + "</channel></rss>"
+            return Page(url, body, final_url=url)
+
+        result = CareerSearchResolver(
+            MappingFetcher(handler), max_results=3, max_queries=3, max_source_fetches=3
+        ).search(
+            "Acme",
+            "https://acme.example",
+            target_title="Engineer",
+            ats_only=True,
+            exhaustive=True,
+            query_diversity_first=True,
+        )
+
+        self.assertEqual(len(result.candidates), 3)
+        self.assertEqual(result.trace["candidate_selection"], "bucket_round_robin")
+        self.assertEqual(result.trace["candidate_bucket_counts"], [2, 1, 0])
+        self.assertEqual(
+            [item.url for item in result.candidates],
+            [general_leads[0], provider_lead, general_leads[1]],
+        )
+
+    def test_ats_diversity_rescues_empty_rss_bucket_with_secondary_ats_lead(self):
+        irrelevant_rss = """<rss><channel>
+          <item><link>https://unrelated.example/careers</link></item>
+        </channel></rss>"""
+        secondary = """<html><body>
+          <a class="result__a" href="https://jobs.lever.co/acme">Acme jobs</a>
+        </body></html>"""
+
+        def handler(url):
+            body = irrelevant_rss if "format=rss" in url else secondary
+            return Page(url, body, final_url=url)
+
+        fetcher = MappingFetcher(handler)
+        result = CareerSearchResolver(
+            fetcher, max_queries=2, max_source_fetches=3
+        ).search(
+            "Acme",
+            "https://acme.example",
+            ats_only=True,
+            exhaustive=True,
+            query_diversity_first=True,
+        )
+
+        self.assertEqual([item.url for item in result.candidates], ["https://jobs.lever.co/acme"])
+        self.assertEqual(
+            [item["source"] for item in result.trace["queries"]],
+            ["bing_rss", "bing_rss", "duckduckgo_html"],
+        )
+        self.assertEqual(result.trace["candidate_bucket_counts"], [1, 0])
+        self.assertEqual(
+            result.trace["ats_secondary_rescue"],
+            {
+                "attempt_count": 1,
+                "rejection_count": 0,
+                "attempts": [
+                    {
+                        "bucket_index": 0,
+                        "source": "duckduckgo_html",
+                        "result_count": 1,
+                        "accepted_count": 1,
+                        "rejection_count": 0,
+                    }
+                ],
+            },
+        )
+
+    def test_ats_diversity_secondary_rescue_keeps_irrelevant_results_rejected(self):
+        irrelevant_rss = """<rss><channel>
+          <item><link>https://unrelated.example/careers</link></item>
+        </channel></rss>"""
+        secondary = """<html><body>
+          <a class="result__a" href="https://jobs.lever.co/other-company">Other jobs</a>
+        </body></html>"""
+
+        def handler(url):
+            body = irrelevant_rss if "format=rss" in url else secondary
+            return Page(url, body, final_url=url)
+
+        result = CareerSearchResolver(
+            MappingFetcher(handler), max_queries=1, max_source_fetches=2
+        ).search(
+            "Acme",
+            "https://acme.example",
+            ats_only=True,
+            query_diversity_first=True,
+        )
+
+        self.assertEqual(result.candidates, [])
+        self.assertEqual(result.trace["ats_secondary_rescue"]["attempt_count"], 1)
+        self.assertEqual(result.trace["ats_secondary_rescue"]["rejection_count"], 1)
+        self.assertEqual(result.trace["queries"][-1]["rejection_count"], 1)
+        self.assertNotIn("url", result.trace["ats_secondary_rescue"]["attempts"][0])
+
+    def test_ats_diversity_secondary_rescue_honors_source_cap_and_deadline(self):
+        empty_rss = "<rss><channel /></rss>"
+        irrelevant_secondary = """<html><body>
+          <a class="result__a" href="https://jobs.lever.co/other-company">Other jobs</a>
+        </body></html>"""
+
+        def handler(url):
+            body = empty_rss if "format=rss" in url else irrelevant_secondary
+            return Page(url, body, final_url=url)
+
+        capped = CareerSearchResolver(
+            MappingFetcher(handler), max_queries=2, max_source_fetches=3
+        ).search(
+            "Acme",
+            "https://acme.example",
+            ats_only=True,
+            exhaustive=True,
+            query_diversity_first=True,
+        )
+        self.assertEqual(len(capped.trace["queries"]), 3)
+        self.assertEqual(capped.trace["ats_secondary_rescue"]["attempt_count"], 1)
+        self.assertTrue(capped.trace["source_fetch_budget_exhausted"])
+
+        budget_fetcher = BudgetMappingFetcher(handler, [1.0, 1.0, 0.0])
+        deadline = CareerSearchResolver(
+            budget_fetcher, max_queries=2, max_source_fetches=4
+        ).search(
+            "Acme",
+            "https://acme.example",
+            ats_only=True,
+            exhaustive=True,
+            query_diversity_first=True,
+        )
+        self.assertEqual(len(budget_fetcher.calls), 2)
+        self.assertEqual(budget_fetcher.budget_checks, 3)
+        self.assertEqual(deadline.trace["ats_secondary_rescue"]["attempt_count"], 0)
+        self.assertEqual(deadline.trace["stopped_reason"], "deadline_exhausted")
 
     def test_ats_only_invalid_rss_uses_secondary_candidate(self):
         rss = """<rss><channel>

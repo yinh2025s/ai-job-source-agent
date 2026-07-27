@@ -41,6 +41,45 @@ def shell_html(positions, count=None, domain="example.com", fingerprint=True):
     return f'<code id="smartApplyData" style="display:none">{html.escape(body)}</code>'
 
 
+def pcsx_shell_html(domain="example.com", enabled=True, base_position_fq="is_externally_posted:true"):
+    body = {
+        "domain": domain,
+        "configs": {
+            "pcsxConfig": {
+                "enabled": enabled,
+                "searchConfig": {"basePositionFq": base_position_fq},
+            }
+        },
+    }
+    return f'<code id="pcsx-data" style="display:none">{html.escape(json.dumps(body))}</code>'
+
+
+def pcsx_position(job_id, title, *, operating_company=None, position_url=None):
+    value = {
+        "id": int(job_id),
+        "name": title,
+        "locations": ["New York, NY, United States"],
+        "atsJobId": f"ATS{job_id}",
+        "department": "Engineering",
+        "positionUrl": position_url or f"/careers/job/{job_id}",
+    }
+    if operating_company is not None:
+        value["efcustomTextOperatingcompany"] = [operating_company]
+    return value
+
+
+def pcsx_response(positions, count=None, status=200, error=None):
+    return {
+        "status": status,
+        "error": error,
+        "data": {
+            "positions": positions,
+            "count": len(positions) if count is None else count,
+        },
+        "metadata": {},
+    }
+
+
 class RecordingFetcher:
     def __init__(self, pages=None, error=None):
         self.pages = pages or {}
@@ -80,6 +119,17 @@ class EightfoldAdapterTests(unittest.TestCase):
         self.assertEqual(selected[1], self.board)
         self.assertIsNone(registry.board_for_page(Page(url=BOARD_URL, html=shell_html([], fingerprint=False))))
         self.assertIsNone(registry.board_for_page(Page(url="https://careers.example.com/about", html=shell_html([]))))
+
+    def test_identifies_customer_domain_from_strong_pcsx_state(self):
+        registry = ProviderRegistry((self.adapter,))
+        selected = registry.board_for_page(Page(url=BOARD_URL, html=pcsx_shell_html()))
+        self.assertEqual(selected[1], self.board)
+        self.assertIsNone(
+            registry.board_for_page(Page(url=BOARD_URL, html=pcsx_shell_html(enabled=False)))
+        )
+        self.assertIsNone(
+            registry.board_for_page(Page(url=BOARD_URL, html=pcsx_shell_html(base_position_fq="")))
+        )
 
     def test_lists_title_filtered_ssr_inventory(self):
         search_url = BOARD_URL + "?query=AI+Engineer&location=New+York"
@@ -292,6 +342,223 @@ class EightfoldAdapterTests(unittest.TestCase):
         )
         self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
         self.assertEqual(result.trace["total_found"], 0)
+
+    def test_lists_pcsx_inventory_with_operating_company_evidence(self):
+        search_url = BOARD_URL + "?query=AI+Engineer&location=New+York"
+        api_url = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=AI+Engineer&location=New+York&start=0"
+        )
+        fetcher = RecordingFetcher({
+            search_url: Page(url=search_url, html=pcsx_shell_html(), source="pcsx-shell"),
+            api_url: Page(
+                url=api_url,
+                html=json.dumps(
+                    pcsx_response(
+                        [pcsx_position("101", "AI Engineer", operating_company="Example")]
+                    )
+                ),
+                source="pcsx-api",
+            ),
+        })
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery("AI Engineer", "New York"),
+        )
+
+        self.assertIsNone(result.reason_code)
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.trace["variant"], "pcsx_public_search_v1")
+        self.assertEqual(result.trace["pages_fetched"], 1)
+        self.assertEqual(result.candidates[0].url, "https://careers.example.com/careers/job/101")
+        self.assertEqual(result.candidates[0].raw["ats_job_id"], "ATS101")
+        self.assertEqual(result.candidates[0].raw["hiring_organization_name"], "Example")
+        self.assertEqual(len(result.employer_evidence), 1)
+        self.assertEqual(result.employer_evidence[0].employer_name, "Example")
+        self.assertEqual(result.employer_evidence[0].opening_url, result.candidates[0].url)
+
+    def test_paginates_pcsx_and_stops_on_exact_title(self):
+        search_url = BOARD_URL + "?query=AI+Engineer"
+        first_api = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=AI+Engineer&start=0"
+        )
+        second_api = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=AI+Engineer&start=10"
+        )
+        first = [pcsx_position(str(index + 1), f"Engineer {index}") for index in range(10)]
+        fetcher = RecordingFetcher({
+            search_url: Page(url=search_url, html=pcsx_shell_html()),
+            first_api: Page(url=first_api, html=json.dumps(pcsx_response(first, count=25))),
+            second_api: Page(
+                url=second_api,
+                html=json.dumps(
+                    pcsx_response([pcsx_position("999", "AI Engineer")], count=25)
+                ),
+            ),
+        })
+
+        result = self.adapter.list_jobs(fetcher, self.board, JobQuery("AI Engineer"))
+
+        self.assertEqual(result.trace["pages_fetched"], 2)
+        self.assertEqual(result.candidates[-1].title, "AI Engineer")
+        self.assertFalse(result.inventory_complete)
+
+    def test_empty_pcsx_title_filter_is_verified_empty(self):
+        search_url = BOARD_URL + "?query=Missing+Role"
+        api_url = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=Missing+Role&start=0"
+        )
+        result = self.adapter.list_jobs(
+            RecordingFetcher({
+                search_url: Page(url=search_url, html=pcsx_shell_html()),
+                api_url: Page(url=api_url, html=json.dumps(pcsx_response([], count=0))),
+            }),
+            self.board,
+            JobQuery("Missing Role"),
+        )
+
+        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.trace["total_found"], 0)
+
+    def test_accepts_declared_empty_pcsx_error_object(self):
+        search_url = BOARD_URL + "?query=Missing+Role"
+        api_url = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=Missing+Role&start=0"
+        )
+        result = self.adapter.list_jobs(
+            RecordingFetcher({
+                search_url: Page(url=search_url, html=pcsx_shell_html()),
+                api_url: Page(
+                    url=api_url,
+                    html=json.dumps(
+                        pcsx_response(
+                            [],
+                            count=0,
+                            error={"message": "", "body": ""},
+                        )
+                    ),
+                ),
+            }),
+            self.board,
+            JobQuery("Missing Role"),
+        )
+
+        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertTrue(result.inventory_complete)
+
+    def test_rejects_invalid_or_cross_tenant_pcsx_responses(self):
+        search_url = BOARD_URL + "?query=AI+Engineer"
+        api_url = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=AI+Engineer&start=0"
+        )
+        invalid = self.adapter.list_jobs(
+            RecordingFetcher({
+                search_url: Page(url=search_url, html=pcsx_shell_html()),
+                api_url: Page(
+                    url=api_url,
+                    html=json.dumps(pcsx_response([], count=0, status=500)),
+                ),
+            }),
+            self.board,
+            JobQuery("AI Engineer"),
+        )
+        redirected = self.adapter.list_jobs(
+            RecordingFetcher({
+                search_url: Page(url=search_url, html=pcsx_shell_html()),
+                api_url: Page(
+                    url=api_url,
+                    final_url="https://other.example/api/pcsx/search",
+                    html=json.dumps(pcsx_response([], count=0)),
+                ),
+            }),
+            self.board,
+            JobQuery("AI Engineer"),
+        )
+        provider_error = self.adapter.list_jobs(
+            RecordingFetcher({
+                search_url: Page(url=search_url, html=pcsx_shell_html()),
+                api_url: Page(
+                    url=api_url,
+                    html=json.dumps(
+                        pcsx_response(
+                            [],
+                            count=0,
+                            error={"message": "tenant unavailable", "body": ""},
+                        )
+                    ),
+                ),
+            }),
+            self.board,
+            JobQuery("AI Engineer"),
+        )
+
+        self.assertEqual(invalid.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertFalse(invalid.inventory_complete)
+        self.assertEqual(provider_error.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertFalse(provider_error.inventory_complete)
+        self.assertEqual(redirected.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertFalse(redirected.inventory_complete)
+
+    def test_rejects_cross_tenant_or_nonnumeric_pcsx_openings(self):
+        search_url = BOARD_URL + "?query=AI+Engineer"
+        api_url = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=AI+Engineer&start=0"
+        )
+        records = [
+            pcsx_position("101", "AI Engineer", position_url="https://evil.example/careers/job/101"),
+            pcsx_position("102", "AI Engineer", position_url="/careers/job/not-numeric"),
+        ]
+        result = self.adapter.list_jobs(
+            RecordingFetcher({
+                search_url: Page(url=search_url, html=pcsx_shell_html()),
+                api_url: Page(url=api_url, html=json.dumps(pcsx_response(records))),
+            }),
+            self.board,
+            JobQuery("AI Engineer"),
+        )
+
+        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(len(result.trace["rejected_job_urls"]), 2)
+
+    def test_rejects_duplicate_pcsx_job_ids_across_pages(self):
+        search_url = BOARD_URL + "?query=AI+Engineer"
+        first_api = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=AI+Engineer&start=0"
+        )
+        second_api = (
+            "https://careers.example.com/api/pcsx/search"
+            "?domain=example.com&query=AI+Engineer&start=10"
+        )
+        first = [pcsx_position(str(index + 1), f"Engineer {index}") for index in range(10)]
+        result = self.adapter.list_jobs(
+            RecordingFetcher({
+                search_url: Page(url=search_url, html=pcsx_shell_html()),
+                first_api: Page(url=first_api, html=json.dumps(pcsx_response(first, count=11))),
+                second_api: Page(
+                    url=second_api,
+                    html=json.dumps(
+                        pcsx_response([pcsx_position("1", "AI Engineer")], count=11)
+                    ),
+                ),
+            }),
+            self.board,
+            JobQuery("AI Engineer"),
+        )
+
+        self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertFalse(result.inventory_complete)
+        self.assertIn("duplicate", result.trace["error"])
 
     def test_rejects_tenant_mismatch_and_unsafe_job_urls(self):
         search_url = BOARD_URL + "?query=AI+Engineer"

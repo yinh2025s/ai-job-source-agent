@@ -10,6 +10,7 @@ from job_source_agent.contracts import (
 )
 from job_source_agent.models import CompanyInput, StageResult
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
+from job_source_agent.provisional_evidence import ProvisionalWebsiteEvidence
 from job_source_agent.job_board import (
     DiscoveredJobBoard,
     JobBoard as DiscoveredBoardLocator,
@@ -163,6 +164,51 @@ class ContractTests(unittest.TestCase):
                     }
                 },
             ))
+
+        with self.assertRaises(ValueError):
+            context.apply(StageExecution(
+                result=StageResult(stage="website_resolution", status="failed"),
+                updates={
+                    "provisional_website_evidence": ProvisionalWebsiteEvidence(
+                        source_company_name="Other",
+                        url="https://group.example",
+                        evidence_source="linkedin_official_website",
+                        reason_code="downstream_hiring_relationship_required",
+                        homepage_verified=True,
+                    )
+                },
+            ))
+
+    def test_pipeline_context_requires_typed_provisional_website_evidence(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        evidence = ProvisionalWebsiteEvidence(
+            source_company_name="Acme",
+            url="https://group.example/",
+            evidence_source="linkedin_official_website",
+            reason_code="downstream_hiring_relationship_required",
+            homepage_verified=True,
+        )
+
+        context.apply(StageExecution(
+            result=StageResult(stage="website_resolution", status="failed"),
+            updates={"provisional_website_evidence": evidence},
+        ))
+
+        self.assertEqual(context.provisional_website_evidence, evidence)
+        with self.assertRaises(TypeError):
+            context.apply(StageExecution(
+                result=StageResult(stage="website_resolution", status="failed"),
+                updates={"provisional_website_evidence": {"url": evidence.url}},
+            ))
+
+        with self.assertRaises(ValueError):
+            ProvisionalWebsiteEvidence(
+                source_company_name="Acme",
+                url="http://group.example",
+                evidence_source="linkedin_official_website",
+                reason_code="downstream_hiring_relationship_required",
+                homepage_verified=True,
+            )
 
     def test_pipeline_context_accepts_typed_job_board_portfolio(self):
         context = PipelineContext.from_company(CompanyInput(company_name="Acme"))

@@ -11,6 +11,7 @@ from .linkedin import load_company_inputs
 from .linkedin_discovery import LinkedInJobsDiscoverer, linkedin_postings_to_company_inputs
 from .models import PIPELINE_STAGES, dataclass_to_dict
 from .run_configuration import AgentConfig
+from .searxng_search_backend import SearxngSearchBackend
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -58,6 +59,32 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_false",
         help="Use the legacy website-first S5 path for rollback or comparison.",
     )
+    parser.add_argument(
+        "--candidate-discovery-engine",
+        choices=("stage_v1", "coordinator_v2"),
+        default="stage_v1",
+        help="Select the versioned S5 scheduler (default: stage_v1).",
+    )
+    parser.add_argument(
+        "--provider-search-reserve-seconds",
+        type=float,
+        default=10.0,
+        help="Seconds coordinator_v2 reserves from S4 for provider search.",
+    )
+    parser.add_argument(
+        "--search-backend",
+        choices=("legacy", "searxng"),
+        default="legacy",
+        help="Search source used for career and provider candidate discovery.",
+    )
+    parser.add_argument(
+        "--search-backend-url",
+        help="SearXNG base URL; required only with --search-backend searxng.",
+    )
+    parser.add_argument(
+        "--search-backend-profile-digest",
+        help="SHA-256 of the configured SearXNG server image/settings profile.",
+    )
     parser.add_argument("--limit", type=int, help="Optional limit for quick demo runs.")
     parser.add_argument(
         "--checkpoint-dir",
@@ -94,6 +121,16 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     if (args.resume_from_stage or args.rerun_stage) and not args.checkpoint_dir:
         raise SystemExit("--resume-from-stage and --rerun-stage require --checkpoint-dir.")
+    search_backend = _search_backend_from_args(args)
+    search_backend_configuration = (
+        {
+            "search_backend_kind": "legacy",
+            "search_backend_contract_version": "1",
+            "search_backend_profile_digest": None,
+        }
+        if search_backend is None
+        else search_backend.public_configuration()
+    )
     application = build_application(
         FetcherConfig(
             fixtures_dir=args.fixtures_dir,
@@ -109,11 +146,15 @@ def main(argv: list[str] | None = None) -> None:
             enable_parallel_candidate_discovery=(
                 args.enable_parallel_candidate_discovery
             ),
+            candidate_discovery_engine=args.candidate_discovery_engine,
+            provider_search_reserve_seconds=args.provider_search_reserve_seconds,
+            **search_backend_configuration,
         ),
         checkpoint_dir=args.checkpoint_dir,
         website_overrides=args.website_overrides,
         linkedin_evidence_cache_path=args.linkedin_evidence_cache,
         company_discovery_evidence_path=args.company_discovery_evidence_store,
+        search_backend=search_backend,
     )
     fetcher = application.fetcher
     companies = _load_companies(args, fetcher)
@@ -162,6 +203,38 @@ def main(argv: list[str] | None = None) -> None:
         print(f"  opening: {result.open_position_url}")
         if result.error:
             print(f"  error: {result.error}")
+
+
+def _search_backend_from_args(args: argparse.Namespace):
+    backend_kind = getattr(args, "search_backend", "legacy")
+    endpoint = getattr(args, "search_backend_url", None)
+    server_profile_digest = getattr(
+        args,
+        "search_backend_profile_digest",
+        None,
+    )
+    if backend_kind == "legacy":
+        if endpoint or server_profile_digest:
+            raise SystemExit(
+                "Search backend URL/profile requires --search-backend searxng."
+            )
+        return None
+    if not endpoint:
+        raise SystemExit(
+            "--search-backend searxng requires --search-backend-url."
+        )
+    if not server_profile_digest:
+        raise SystemExit(
+            "--search-backend searxng requires "
+            "--search-backend-profile-digest."
+        )
+    try:
+        return SearxngSearchBackend(
+            endpoint,
+            server_profile_digest=server_profile_digest,
+        )
+    except ValueError as error:
+        raise SystemExit(f"Invalid search backend configuration: {error}") from None
 
 
 def _load_companies(args: argparse.Namespace, fetcher: FetchClient):

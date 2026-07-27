@@ -27,6 +27,74 @@ class StubFetcher:
         return Page(url=url, final_url=url, html=self.html, source="successfactors-fixture")
 
 
+def _custom_page(tenant, body):
+    return (
+        "<html><head></head><body><script>j2w.init({ssoCompanyId: '"
+        + tenant
+        + "', ssoUrl: 'https://career5.successfactors.eu'});</script>"
+        + body
+        + "</body></html>"
+    )
+
+
+def _detail_page(
+    url,
+    tenant,
+    title,
+    city,
+    region,
+    employer,
+    *,
+    microdata_title=True,
+    include_tenant_identity=True,
+):
+    title_markup = (
+        '<span itemprop="title">' + title + "</span>"
+        if microdata_title
+        else ""
+    )
+    tenant_markup = (
+        "<script>j2w.init({ssoCompanyId: '"
+        + tenant
+        + "', ssoUrl: 'https://career5.successfactors.eu'});</script>"
+        if include_tenant_identity
+        else ""
+    )
+    return (
+        '<html><head><link rel="canonical" href="'
+        + url
+        + '"><meta property="og:title" content="'
+        + title
+        + '"></head><body>'
+        + tenant_markup
+        + '<div itemscope itemtype="https://schema.org/JobPosting">'
+        '<span itemprop="jobLocation" itemscope itemtype="https://schema.org/Place">'
+        '<span itemprop="address" itemscope itemtype="https://schema.org/PostalAddress">'
+        '<meta itemprop="addressLocality" content="'
+        + city
+        + '"><meta itemprop="addressRegion" content="'
+        + region
+        + '"></span></span><meta itemprop="hiringOrganization" content="'
+        + employer
+        + '">'
+        + title_markup
+        + "</div></body></html>"
+    )
+
+
+class RouteFetcher:
+    def __init__(self, pages):
+        self.pages = pages
+        self.requested_urls = []
+
+    def fetch(self, url, data=None, headers=None):
+        self.requested_urls.append(url)
+        page = self.pages[url]
+        if isinstance(page, Page):
+            return page
+        return Page(url=url, final_url=url, html=page, source="successfactors-route-fixture")
+
+
 class SuccessFactorsAdapterTests(unittest.TestCase):
     def setUp(self):
         self.adapter = SuccessFactorsAdapter()
@@ -308,7 +376,8 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
         self.assertEqual(
             fetcher.requested_urls,
             [
-                "https://careers.example.com/search/?q=Software+Engineer"
+                "https://careers.example.com/search/?q=Software+Engineer",
+                "https://careers.example.com/job/Software-Engineer/123/",
             ],
         )
 
@@ -345,6 +414,9 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
                     "https://careers.example.com/search/?q=Data+Analyst&startrow=50": search_page(
                         "tenant_a", '<a href="/job/Data-Analyst/444/">Data Analyst</a>'
                     ),
+                    "https://careers.example.com/job/Data-Analyst/444/": search_page(
+                        "tenant_a", ""
+                    ),
                 }
                 return Page(url=url, final_url=url, html=pages[url], source="custom")
 
@@ -355,7 +427,7 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
             "https://careers.example.com/job/Data-Analyst/444/",
         ])
         self.assertTrue(result.inventory_complete)
-        self.assertEqual(len(fetcher.requested_urls), 3)
+        self.assertEqual(len(fetcher.requested_urls), 4)
 
     def test_custom_domain_rejects_fake_lookalike_and_cross_tenant_pagination(self):
         self.assertIsNone(self.adapter.identify_board_from_page(Page(
@@ -641,6 +713,237 @@ class SuccessFactorsAdapterTests(unittest.TestCase):
         self.assertEqual(invalid.reason_code, "INVALID_STRUCTURED_DATA")
         self.assertEqual(empty.reason_code, "EMPTY_PROVIDER_RESPONSE")
         self.assertEqual(empty.candidates, [])
+
+    def test_custom_detail_microdata_enriches_three_company_shapes_and_trace(self):
+        contracts = [
+            (
+                "ARKEMA",
+                "Human Resources Manager",
+                "Human Resources Manager Job",
+                "Beaumont",
+                "TX",
+                "Arkema",
+                "1401455133",
+            ),
+            (
+                "ARAMARKPROD",
+                "HR Manager",
+                "HR Manager",
+                "Indianapolis",
+                "IN",
+                "Aramark",
+                "1404601400",
+            ),
+            (
+                "CINTAS",
+                "Human Resources Manager II",
+                "Human Resources Manager II",
+                "Fort Myers",
+                "FL",
+                "Cintas",
+                "1373711200",
+            ),
+        ]
+        for tenant, query_title, display_title, city, region, employer, job_id in contracts:
+            with self.subTest(tenant=tenant):
+                board = JobBoard(
+                    url="https://careers.example.com/search/",
+                    provider="successfactors",
+                    identifier=f"custom:{tenant}",
+                )
+                detail_url = (
+                    "https://careers.example.com/job/"
+                    + display_title.replace(" ", "-")
+                    + f"/{job_id}/"
+                )
+                search_url = board.url + "?q=" + query_title.replace(" ", "+")
+                fetcher = RouteFetcher({
+                    search_url: _custom_page(
+                        tenant,
+                        f'<a href="{detail_url}">{display_title}</a>',
+                    ),
+                    detail_url: _detail_page(
+                        detail_url,
+                        tenant,
+                        display_title,
+                        city,
+                        region,
+                        employer,
+                        microdata_title=tenant != "CINTAS",
+                        include_tenant_identity=tenant != "CINTAS",
+                    ),
+                })
+
+                result = self.adapter.list_jobs(
+                    fetcher,
+                    board,
+                    JobQuery(title=query_title, location=f"{city}, {region}"),
+                )
+
+                self.assertEqual(result.candidates[0].location, f"{city}, {region}")
+                self.assertEqual(result.candidates[0].title, query_title)
+                self.assertEqual(
+                    result.candidates[0].raw["hiring_organization_name"],
+                    employer,
+                )
+                if display_title != query_title:
+                    self.assertEqual(
+                        result.candidates[0].raw["provider_published_title"],
+                        display_title,
+                    )
+                self.assertEqual(result.trace["detail_verified_opening_urls"], [detail_url])
+                self.assertEqual(result.trace["detail_fetch_count"], 1)
+                self.assertEqual(result.trace["board_identity"], {
+                    "provider": "successfactors",
+                    "url": board.url,
+                    "identifier": f"custom:{tenant}",
+                })
+
+    def test_detail_verification_fails_closed_on_tenant_title_canonical_and_microdata(self):
+        board = JobBoard(
+            url="https://careers.example.com/search/",
+            provider="successfactors",
+            identifier="custom:tenant_a",
+        )
+        detail_url = "https://careers.example.com/job/Data-Analyst/101/"
+        search_url = "https://careers.example.com/search/?q=Data+Analyst"
+        invalid_pages = {
+            "wrong_tenant": _detail_page(
+                detail_url, "tenant_b", "Data Analyst", "Austin", "TX", "Acme"
+            ),
+            "wrong_title": _detail_page(
+                detail_url, "tenant_a", "Senior Data Analyst", "Austin", "TX", "Acme"
+            ),
+            "cross_url": _detail_page(
+                "https://careers.example.com/job/Data-Analyst/999/",
+                "tenant_a",
+                "Data Analyst",
+                "Austin",
+                "TX",
+                "Acme",
+            ),
+            "missing_hiring_organization": _detail_page(
+                detail_url, "tenant_a", "Data Analyst", "Austin", "TX", ""
+            ),
+            "malformed_microdata": (
+                '<html><head><link rel="canonical" href="' + detail_url + '"></head>'
+                "<body><div itemscope itemtype=\"https://schema.org/JobPosting\">"
+                '<span itemprop="title">Data Analyst</div></body></html>'
+            ),
+        }
+        for label, detail_html in invalid_pages.items():
+            with self.subTest(label=label):
+                fetcher = RouteFetcher({
+                    search_url: _custom_page(
+                        "tenant_a",
+                        f'<a href="{detail_url}">Data Analyst</a>',
+                    ),
+                    detail_url: detail_html,
+                })
+                result = self.adapter.list_jobs(
+                    fetcher,
+                    board,
+                    JobQuery(title="Data Analyst", location="Austin, TX"),
+                )
+
+                self.assertIsNone(result.candidates[0].location)
+                self.assertNotIn("hiring_organization_name", result.candidates[0].raw)
+                self.assertEqual(result.trace["detail_verified_opening_urls"], [])
+
+    def test_detail_verification_tolerates_browser_recoverable_inner_tag_mismatch(self):
+        board = JobBoard(
+            url="https://careers.example.com/search/",
+            provider="successfactors",
+            identifier="custom:tenant_a",
+        )
+        detail_url = "https://careers.example.com/job/Data-Analyst/101/"
+        search_url = "https://careers.example.com/search/?q=Data+Analyst"
+        detail_html = _detail_page(
+            detail_url,
+            "tenant_a",
+            "Data Analyst",
+            "Austin",
+            "TX",
+            "Acme",
+        ).replace(
+            '<span itemprop="title">Data Analyst</span>',
+            '<button><span>Apply</button><span itemprop="title">Data Analyst</span>',
+        )
+        fetcher = RouteFetcher({
+            search_url: _custom_page(
+                "tenant_a",
+                f'<a href="{detail_url}">Data Analyst</a>',
+            ),
+            detail_url: detail_html,
+        })
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Data Analyst", location="Austin, TX"),
+        )
+
+        self.assertEqual(result.candidates[0].location, "Austin, TX")
+        self.assertEqual(result.trace["detail_verified_opening_urls"], [detail_url])
+
+    def test_detail_redirect_and_wrong_city_cannot_be_misrepresented(self):
+        board = JobBoard(
+            url="https://careers.example.com/search/",
+            provider="successfactors",
+            identifier="custom:tenant_a",
+        )
+        clear_lake_url = "https://careers.example.com/job/HR-Manager/201/"
+        beaumont_url = "https://careers.example.com/job/HR-Manager/202/"
+        search_url = "https://careers.example.com/search/?q=HR+Manager"
+        fetcher = RouteFetcher({
+            search_url: _custom_page(
+                "tenant_a",
+                f'<a href="{clear_lake_url}">HR Manager</a>'
+                f'<a href="{beaumont_url}">HR Manager</a>',
+            ),
+            clear_lake_url: _detail_page(
+                clear_lake_url, "tenant_a", "HR Manager", "Clear Lake", "TX", "Acme"
+            ),
+            beaumont_url: Page(
+                url=beaumont_url,
+                final_url="https://evil.example/job/HR-Manager/202/",
+                html=_detail_page(
+                    beaumont_url, "tenant_a", "HR Manager", "Beaumont", "TX", "Acme"
+                ),
+            ),
+        })
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="HR Manager", location="Beaumont, TX"),
+        )
+
+        self.assertEqual(result.candidates[0].location, "Clear Lake, TX")
+        self.assertIsNone(result.candidates[1].location)
+        self.assertEqual(result.trace["detail_verified_opening_urls"], [clear_lake_url])
+
+    def test_detail_fetch_is_limited_to_three_title_filtered_candidates(self):
+        board = JobBoard(
+            url="https://careers.example.com/search/",
+            provider="successfactors",
+            identifier="custom:tenant_a",
+        )
+        search_url = "https://careers.example.com/search/?q=Engineer"
+        detail_urls = [f"https://careers.example.com/job/Engineer/{value}/" for value in range(5)]
+        links = "".join(f'<a href="{url}">Engineer</a>' for url in detail_urls)
+        pages = {search_url: _custom_page("tenant_a", links)}
+        pages.update({
+            url: _detail_page(url, "tenant_a", "Engineer", "Austin", "TX", "Acme")
+            for url in detail_urls[:3]
+        })
+        fetcher = RouteFetcher(pages)
+
+        result = self.adapter.list_jobs(fetcher, board, JobQuery(title="Engineer"))
+
+        self.assertEqual(result.trace["detail_fetch_count"], 3)
+        self.assertEqual(result.trace["detail_verified_opening_urls"], detail_urls[:3])
+        self.assertEqual(fetcher.requested_urls, [search_url, *detail_urls[:3]])
 
 
 if __name__ == "__main__":

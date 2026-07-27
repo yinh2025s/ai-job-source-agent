@@ -91,7 +91,11 @@ def canonical_sensitive_key(key: str) -> str:
 
 def is_sensitive_key(key: str) -> bool:
     canonical = canonical_sensitive_key(key)
-    return canonical in _SENSITIVE_KEYS or any(marker in canonical for marker in _SENSITIVE_MARKERS)
+    return (
+        canonical in _SENSITIVE_KEYS
+        or canonical.endswith("apikey")
+        or any(marker in canonical for marker in _SENSITIVE_MARKERS)
+    )
 
 
 def sanitize_url(url: str) -> str:
@@ -107,10 +111,22 @@ def sanitize_url(url: str) -> str:
                 f"/{_REDACTED_PATH_SEGMENT}/{match.group(2)}"
                 + (match.group(3) or "")
             )
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    haley_inventory_ticket = bool(
+        parsed.path == "/json/index.smpl"
+        and ("arg", "list_posts") in query_pairs
+        and ("pid", "gwt") in query_pairs
+    )
     query = urlencode(
         [
-            (key, _redacted_value(value) if is_sensitive_key(key) else value)
-            for key, value in parse_qsl(parsed.query, keep_blank_values=True)
+            (
+                key,
+                _redacted_value(value)
+                if is_sensitive_key(key)
+                or (haley_inventory_ticket and key in {"h", "t"})
+                else value,
+            )
+            for key, value in query_pairs
         ],
         doseq=True,
     )
@@ -130,7 +146,11 @@ def build_request_identity(
         semantic_headers["x-job-source-agent-interaction"] = (
             interaction.fingerprint()
         )
-    body_fingerprint, replayable, reason = _body_identity(data, semantic_headers)
+    body_fingerprint, replayable, reason = _body_identity(
+        data,
+        semantic_headers,
+        request_url=url,
+    )
     return RequestIdentity(
         identity_version=IDENTITY_VERSION,
         method=method,
@@ -195,6 +215,8 @@ def request_identity_from_dict(payload: dict[str, Any]) -> RequestIdentity:
 def _body_identity(
     data: bytes | None,
     semantic_headers: dict[str, str],
+    *,
+    request_url: str,
 ) -> tuple[str | None, bool, str | None]:
     if data is None:
         return None, True, None
@@ -243,11 +265,14 @@ def _body_identity(
             fields = parse_qsl(text, keep_blank_values=True, strict_parsing=True)
         except ValueError:
             return None, False, "invalid_form_body"
+        hmg_search_ticket = _is_hmg_search_form_contract(request_url, fields)
         canonical = urlencode(
             sorted(
                 (
                     key,
-                    _sanitize_form_value(key, value),
+                    REDACTED_VALUE
+                    if hmg_search_ticket and key == "t" and value
+                    else _sanitize_form_value(key, value),
                 )
                 for key, value in fields
             ),
@@ -256,6 +281,47 @@ def _body_identity(
         return _digest_text(canonical), True, None
 
     return None, False, "opaque_body"
+
+
+def _is_hmg_search_form_contract(
+    request_url: str,
+    fields: list[tuple[str, str]],
+) -> bool:
+    try:
+        parsed = urlparse(request_url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return False
+    if (
+        parsed.scheme.casefold() != "https"
+        or not parsed.hostname
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 443}
+        or parsed.path != "/index.smpl"
+        or parsed.fragment
+    ):
+        return False
+    grouped: dict[str, list[str]] = {}
+    for key, value in fields:
+        grouped.setdefault(key, []).append(value)
+    allowed = {
+        "SAVED_SEARCH_ID",
+        "action",
+        "arg",
+        "keywords",
+        "proximity",
+        "t",
+        "view",
+    }
+    return (
+        set(grouped) <= allowed
+        and grouped.get("arg") == ["jb_search_results"]
+        and grouped.get("action") == ["1"]
+        and len(grouped.get("keywords", [])) == 1
+        and len(grouped.get("t", [])) == 1
+        and bool(grouped["t"][0])
+    )
 
 
 def _sanitize_form_value(key: str, value: str) -> str:

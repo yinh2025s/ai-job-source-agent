@@ -386,9 +386,26 @@ def _location(value: Any) -> str | None:
     for item in value:
         if not isinstance(item, dict):
             continue
-        name = item.get("LocalizedName") or item.get("LocalizedDescription")
         address = item.get("Address")
-        if not name and isinstance(address, dict):
+        name = None
+        if item.get("DisplayAddress") is True and isinstance(address, dict):
+            city = address.get("City")
+            state = address.get("State")
+            state_name = state.get("Name") if isinstance(state, dict) else None
+            if (
+                isinstance(city, str)
+                and city.strip()
+                and isinstance(state_name, str)
+                and state_name.strip()
+            ):
+                name = f"{city.strip()}, {state_name.strip()}"
+        if not name:
+            name = item.get("LocalizedName") or item.get("LocalizedDescription")
+        if (
+            not name
+            and item.get("DisplayAddress") is not True
+            and isinstance(address, dict)
+        ):
             city = address.get("City")
             state = address.get("State")
             state_name = state.get("Name") if isinstance(state, dict) else None

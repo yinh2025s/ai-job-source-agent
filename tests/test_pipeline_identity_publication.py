@@ -20,6 +20,84 @@ from job_source_agent.pipeline_application import discovery_result_from_context
 
 
 class PipelineIdentityPublicationTests(unittest.TestCase):
+    def test_ambiguous_provider_candidate_is_diagnostic_not_public(self):
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Fresh Ventures")
+        )
+        context.company_website_url = "https://fresh.example"
+        context.job_list_page_url = "https://jobs.ashbyhq.com/other-company"
+        context.provider_identity = ProviderIdentity(
+            hiring_entity_name="Other Company",
+            provider="ashby",
+            tenant="other-company",
+            canonical_board_url="https://jobs.ashbyhq.com/other-company",
+            evidence_url="https://jobs.ashbyhq.com/other-company",
+            verification_method="linked_url_only",
+            relationship_verified=False,
+        )
+        context.stage_results = [
+            StageResult(stage=STAGE_WEBSITE_RESOLUTION, status="success"),
+            StageResult(
+                stage=STAGE_JOB_BOARD_DISCOVERY,
+                status="partial",
+                reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+            ),
+        ]
+        context.trace["stages"] = {
+            STAGE_JOB_BOARD_DISCOVERY: {
+                "selected": {
+                    "url": "https://jobs.ashbyhq.com/other-company",
+                    "source_kind": "targeted_board_search",
+                },
+                "job_board_portfolio": {
+                    "primary_url": "https://jobs.ashbyhq.com/other-company",
+                },
+            }
+        }
+
+        result = discovery_result_from_context(context)
+
+        self.assertIsNone(result.job_list_page_url)
+        self.assertEqual(
+            context.job_list_page_url,
+            "https://jobs.ashbyhq.com/other-company",
+        )
+        self.assertEqual(
+            result.trace["stages"][STAGE_JOB_BOARD_DISCOVERY]["selected"]["url"],
+            "https://jobs.ashbyhq.com/other-company",
+        )
+        self.assertEqual(result.pipeline_status, "partial")
+        self.assertEqual(result.status, "partial")
+
+    def test_verified_provider_board_publishes_before_opening_match(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.hiring_identity_evidence = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="same_entity",
+            verified=True,
+            evidence_url="https://acme.example/careers",
+        )
+        context.provider_identity = ProviderIdentity(
+            hiring_entity_name="Acme",
+            provider="lever",
+            tenant="acme",
+            canonical_board_url="https://jobs.lever.co/acme",
+            evidence_url="https://acme.example/careers",
+            verification_method="verified_first_party_handoff",
+            relationship_verified=True,
+        )
+        context.job_list_page_url = "https://jobs.lever.co/acme"
+        context.stage_results = [
+            StageResult(stage=STAGE_JOB_BOARD_DISCOVERY, status="success"),
+        ]
+
+        result = discovery_result_from_context(context)
+
+        self.assertEqual(result.job_list_page_url, "https://jobs.lever.co/acme")
+        self.assertEqual(result.status, "success")
+
     def test_rejected_exact_candidate_is_not_published(self):
         context = PipelineContext.from_company(CompanyInput(company_name="Fresh Ventures"))
         context.company_website_url = "https://fresh.example"

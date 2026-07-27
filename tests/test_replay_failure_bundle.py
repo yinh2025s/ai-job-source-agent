@@ -46,6 +46,7 @@ from scripts.replay_failure_bundle import (
     _RedactionHydratingScopedFetcher,
     _build_outcome_gate,
     _build_record_integrity,
+    _canonical_public_url,
     _authoritative_stage_updates,
     _authoritative_upstream_executions,
     _effective_replay_resume_stage,
@@ -54,6 +55,7 @@ from scripts.replay_failure_bundle import (
     _hydrate_redacted_json_credentials,
     _normalize_identity_contract,
     _remove_derived_hiring_entity_inputs,
+    _replay_search_backend,
     _replay_resume_stage,
     _restore_stored_provider_inputs,
     _scoped_execution_boundary_errors,
@@ -68,6 +70,55 @@ from scripts.replay_failure_bundle import (
 
 
 class FailureReplayBundleTests(unittest.TestCase):
+    def test_replay_search_backend_requires_matching_runtime_profile(self):
+        endpoint = "https://search.example/internal"
+        from job_source_agent.searxng_search_backend import SearxngSearchBackend
+
+        server_profile_digest = "a" * 64
+        public_configuration = SearxngSearchBackend(
+            endpoint,
+            server_profile_digest=server_profile_digest,
+        ).public_configuration()
+        run_configuration = DeterministicRunConfig.from_agent_config(
+            AgentConfig(**public_configuration)
+        )
+
+        backend = _replay_search_backend(
+            SimpleNamespace(
+                search_backend_url=endpoint,
+                search_backend_profile_digest=server_profile_digest,
+            ),
+            run_configuration,
+        )
+
+        self.assertEqual(backend.public_configuration(), public_configuration)
+        with self.assertRaisesRegex(FailureReplayError, "does not match"):
+            _replay_search_backend(
+                SimpleNamespace(
+                    search_backend_url="https://other.example",
+                    search_backend_profile_digest=server_profile_digest,
+                ),
+                run_configuration,
+            )
+
+    def test_replay_search_backend_requires_runtime_url_only_for_searxng(self):
+        legacy = DeterministicRunConfig.from_agent_config(AgentConfig())
+        self.assertIsNone(_replay_search_backend(SimpleNamespace(), legacy))
+
+        with self.assertRaisesRegex(FailureReplayError, "incompatible"):
+            _replay_search_backend(
+                SimpleNamespace(search_backend_url="https://search.example"),
+                legacy,
+            )
+
+    def test_legacy_identity_url_projection_uses_identity_canonicalization(self):
+        self.assertEqual(
+            _canonical_public_url(
+                "https://careers.example.com/search/?utm_source=corp&q=Engineer"
+            ),
+            "https://careers.example.com/search?q=Engineer",
+        )
+
     def test_scoped_record_store_does_not_prefill_downstream_final_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -202,6 +253,128 @@ class FailureReplayBundleTests(unittest.TestCase):
         self.assertIsNotNone(evidence)
         self.assertEqual(evidence.website.url, website_url)
         self.assertEqual(evidence.career.url, career_url)
+
+    def test_scoped_record_store_restores_captured_s5_provider_prerequisites(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            company = CompanyInput(
+                company_name="Northstar Systems",
+                linkedin_company_url=(
+                    "https://www.linkedin.com/company/northstar-systems"
+                ),
+            )
+            website_url = "https://northstar.example"
+            career_url = "https://northstar.example/careers"
+            board_url = "https://job-boards.greenhouse.io/northstar"
+            observed_at = time.time()
+            source_path = root / "batch-final-evidence.json"
+            FilesystemCompanyDiscoveryEvidenceStore(source_path).save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=VerifiedWebsiteEvidence(
+                    url=website_url,
+                    source="linkedin_official_website",
+                    evidence_url=company.linkedin_company_url,
+                    observed_at=observed_at,
+                ),
+                career=VerifiedCareerEvidence(
+                    url=career_url,
+                    website_url=website_url,
+                    source="first_party_navigation",
+                    evidence_url=website_url,
+                    observed_at=observed_at,
+                ),
+                provider_board=VerifiedProviderBoardEvidence(
+                    provider="greenhouse",
+                    tenant="northstar",
+                    canonical_board_url=board_url,
+                    relationship_evidence_url=career_url,
+                    verification_method="verified_first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=observed_at,
+                ),
+            )
+            source_record = self._captured_s5_stored_provider_record(
+                website_url=website_url,
+                career_url=career_url,
+                board_url=board_url,
+            )
+
+            record_path = _scoped_record_company_discovery_evidence_path(
+                root / "record-focus-shaped",
+                company,
+                source_record,
+                source_evidence_path=source_path,
+            )
+            restored = FilesystemCompanyDiscoveryEvidenceStore(record_path).load(
+                company.company_name,
+                company.linkedin_company_url,
+            )
+
+        self.assertEqual(restored.website.observed_at, observed_at)
+        self.assertEqual(restored.website.url, website_url)
+        self.assertEqual(restored.career.url, career_url)
+        self.assertEqual(len(restored.provider_boards), 1)
+        self.assertEqual(
+            restored.provider_boards[0].canonical_board_url,
+            board_url,
+        )
+
+    def test_scoped_record_store_rejects_captured_s5_upstream_discontinuity(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            company = CompanyInput(
+                company_name="Northstar Systems",
+                linkedin_company_url=(
+                    "https://www.linkedin.com/company/northstar-systems"
+                ),
+            )
+            source_path = root / "batch-final-evidence.json"
+            observed_at = time.time()
+            FilesystemCompanyDiscoveryEvidenceStore(source_path).save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=VerifiedWebsiteEvidence(
+                    url="https://northstar.example",
+                    source="linkedin_official_website",
+                    evidence_url=company.linkedin_company_url,
+                    observed_at=observed_at,
+                ),
+                career=VerifiedCareerEvidence(
+                    url="https://other.example/careers",
+                    website_url="https://other.example",
+                    source="first_party_navigation",
+                    evidence_url="https://other.example",
+                    observed_at=observed_at,
+                ),
+                provider_board=VerifiedProviderBoardEvidence(
+                    provider="greenhouse",
+                    tenant="northstar",
+                    canonical_board_url=(
+                        "https://job-boards.greenhouse.io/northstar"
+                    ),
+                    relationship_evidence_url="https://other.example/careers",
+                    verification_method="verified_first_party_handoff",
+                    source="first_party_handoff",
+                    observed_at=observed_at,
+                ),
+            )
+            source_record = self._captured_s5_stored_provider_record(
+                website_url="https://northstar.example",
+                career_url="https://northstar.example/careers",
+                board_url="https://job-boards.greenhouse.io/northstar",
+            )
+
+            with self.assertRaisesRegex(
+                FailureReplayError,
+                "captured provider producer state",
+            ):
+                _scoped_record_company_discovery_evidence_path(
+                    root / "record-conflict",
+                    company,
+                    source_record,
+                    source_evidence_path=source_path,
+                )
 
     def test_freeze_omits_provider_board_written_downstream(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -437,7 +610,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                 provider="greenhouse",
                 tenant="spacex",
                 canonical_board_url="https://job-boards.greenhouse.io/spacex",
-                relationship_evidence_url=f"{career.url}/jobs",
+                relationship_evidence_url=career.url,
                 verification_method="verified_first_party_handoff",
                 source="first_party_handoff",
                 observed_at=observed_at,
@@ -478,6 +651,159 @@ class FailureReplayBundleTests(unittest.TestCase):
 
         self.assertEqual(restored, 1)
         self.assertEqual(evidence.provider_boards, (provider_board,))
+
+    def test_scoped_replay_restores_same_host_multihop_provider_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frozen_store = FilesystemCompanyDiscoveryEvidenceStore(
+                root / "frozen.json"
+            )
+            source_store = FilesystemCompanyDiscoveryEvidenceStore(
+                root / "source.json"
+            )
+            company = CompanyInput(
+                company_name="Jushi Holdings Inc.",
+                linkedin_company_url="https://www.linkedin.com/company/jushi-co",
+            )
+            observed_at = time.time()
+            website = VerifiedWebsiteEvidence(
+                url="https://jushico.com",
+                source="linkedin_official_website",
+                evidence_url=company.linkedin_company_url,
+                observed_at=observed_at,
+            )
+            career = VerifiedCareerEvidence(
+                url="https://jushico.com/careers/",
+                website_url=website.url,
+                source="first_party_navigation",
+                evidence_url=website.url,
+                observed_at=observed_at,
+            )
+            provider_board = VerifiedProviderBoardEvidence(
+                provider="lever",
+                tenant="jushico",
+                canonical_board_url="https://jobs.lever.co/jushico",
+                relationship_evidence_url="https://jushico.com/job-listings",
+                verification_method="verified_first_party_handoff",
+                source="first_party_handoff",
+                observed_at=observed_at,
+            )
+            frozen_store.save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=website,
+                career=career,
+            )
+            source_store.save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=website,
+                career=career,
+                provider_board=provider_board,
+            )
+            source = {
+                "trace": {
+                    "stages": {
+                        "job_board_discovery": {
+                            "selected": {
+                                "url": provider_board.canonical_board_url,
+                                "source_kind": "stored_verified_provider_board",
+                            },
+                        }
+                    }
+                },
+                "identity_assertion": {"verdict": "unavailable"},
+            }
+
+            restored = _restore_stored_provider_inputs(
+                frozen_store,
+                [company],
+                [source],
+                source_store=source_store,
+            )
+            evidence = frozen_store.load(
+                company.company_name,
+                company.linkedin_company_url,
+            )
+
+        self.assertEqual(restored, 1)
+        self.assertEqual(evidence.provider_boards, (provider_board,))
+
+    def test_scoped_replay_rejects_cross_host_multihop_provider_input(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            frozen_store = FilesystemCompanyDiscoveryEvidenceStore(
+                root / "frozen.json"
+            )
+            source_store = FilesystemCompanyDiscoveryEvidenceStore(
+                root / "source.json"
+            )
+            company = CompanyInput(
+                company_name="Jushi Holdings Inc.",
+                linkedin_company_url="https://www.linkedin.com/company/jushi-co",
+            )
+            observed_at = time.time()
+            website = VerifiedWebsiteEvidence(
+                url="https://jushico.com",
+                source="linkedin_official_website",
+                evidence_url=company.linkedin_company_url,
+                observed_at=observed_at,
+            )
+            career = VerifiedCareerEvidence(
+                url="https://jushico.com/careers/",
+                website_url=website.url,
+                source="first_party_navigation",
+                evidence_url=website.url,
+                observed_at=observed_at,
+            )
+            provider_board = VerifiedProviderBoardEvidence(
+                provider="lever",
+                tenant="jushico",
+                canonical_board_url="https://jobs.lever.co/jushico",
+                relationship_evidence_url="https://unrelated.example/jobs",
+                verification_method="verified_first_party_handoff",
+                source="first_party_handoff",
+                observed_at=observed_at,
+            )
+            frozen_store.save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=website,
+                career=career,
+            )
+            source_store.save(
+                company.company_name,
+                company.linkedin_company_url,
+                website=website,
+                career=career,
+                provider_board=provider_board,
+            )
+            source = {
+                "trace": {
+                    "stages": {
+                        "job_board_discovery": {
+                            "selected": {
+                                "url": provider_board.canonical_board_url,
+                                "source_kind": "stored_verified_provider_board",
+                            },
+                        }
+                    }
+                }
+            }
+
+            restored = _restore_stored_provider_inputs(
+                frozen_store,
+                [company],
+                [source],
+                source_store=source_store,
+            )
+            evidence = frozen_store.load(
+                company.company_name,
+                company.linkedin_company_url,
+            )
+
+        self.assertEqual(restored, 0)
+        self.assertEqual(evidence.provider_boards, ())
 
     def test_scoped_replay_rejects_nonstored_or_cross_tenant_provider_input(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -560,6 +886,45 @@ class FailureReplayBundleTests(unittest.TestCase):
                     "relationship_verified": True,
                 },
             },
+        }
+
+    @staticmethod
+    def _captured_s5_stored_provider_record(
+        *,
+        website_url: str,
+        career_url: str,
+        board_url: str,
+    ) -> dict:
+        return {
+            "company_name": "Northstar Systems",
+            "company_website_url": website_url,
+            "career_page_url": career_url,
+            "stages": [
+                {"stage": stage, "status": "success"}
+                for stage in PIPELINE_STAGES[:5]
+            ],
+            "trace": {
+                "checkpoint_events": [
+                    {
+                        "action": "invalidate_from",
+                        "stage": "job_board_discovery",
+                    },
+                    *[
+                        {"action": "restore", "stage": stage}
+                        for stage in PIPELINE_STAGES[:4]
+                    ],
+                    {"action": "save", "stage": "job_board_discovery"},
+                ],
+                "stages": {
+                    "job_board_discovery": {
+                        "selected": {
+                            "url": board_url,
+                            "source_kind": "stored_verified_provider_board",
+                        }
+                    }
+                },
+            },
+            "identity_assertion": {"verdict": "unverified"},
         }
 
     def test_identity_comparison_redacts_secret_inside_structured_tenant(self):
@@ -737,6 +1102,35 @@ class FailureReplayBundleTests(unittest.TestCase):
             "offline-replay-redacted-credential",
         )
         self.assertEqual(hydrated["label"], "[REDACTED]")
+
+    def test_scoped_replay_does_not_hydrate_public_location_state(self):
+        hydrated = json.loads(
+            _hydrate_redacted_json_credentials(
+                json.dumps(
+                    {
+                        "location": {
+                            "city": "Statesville",
+                            "state": "[REDACTED]",
+                            "country": "USA",
+                        },
+                        "oauth": {
+                            "state": "[REDACTED]",
+                            "token": "[REDACTED]",
+                        },
+                    }
+                )
+            )
+        )
+
+        self.assertEqual(hydrated["location"]["state"], "[REDACTED]")
+        self.assertEqual(
+            hydrated["oauth"]["state"],
+            "offline-replay-redacted-credential",
+        )
+        self.assertEqual(
+            hydrated["oauth"]["token"],
+            "offline-replay-redacted-credential",
+        )
 
     def test_scoped_replay_does_not_rewrite_non_json_redactions(self):
         body = '<meta name="token" content="[REDACTED]">'
@@ -2901,6 +3295,11 @@ class FailureReplayBundleTests(unittest.TestCase):
                         "max_job_board_attempts",
                         "enable_parallel_candidate_discovery",
                         "evaluate_all_candidate_routes",
+                        "candidate_discovery_engine",
+                        "provider_search_reserve_seconds",
+                        "search_backend_kind",
+                        "search_backend_contract_version",
+                        "search_backend_profile_digest",
                     }
                 },
             }
@@ -2967,6 +3366,11 @@ class FailureReplayBundleTests(unittest.TestCase):
                         "max_job_board_attempts",
                         "enable_parallel_candidate_discovery",
                         "evaluate_all_candidate_routes",
+                        "candidate_discovery_engine",
+                        "provider_search_reserve_seconds",
+                        "search_backend_kind",
+                        "search_backend_contract_version",
+                        "search_backend_profile_digest",
                     }
                 },
             }
@@ -3319,6 +3723,29 @@ class FailureReplayBundleTests(unittest.TestCase):
             "career_discovery",
         )
 
+    def test_provisional_identity_replays_the_complete_s2_to_s4_chain(self):
+        source_record = {
+            "identity_assertion": {
+                "hiring": {
+                    "verification_method": "provisional_same_host_career",
+                }
+            }
+        }
+        replay_record = {
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "opening_match",
+            }}},
+        }
+
+        self.assertEqual(
+            _effective_replay_resume_stage(
+                source_record,
+                replay_record,
+                SimpleNamespace(evidence_mode="scoped_outcome_tape"),
+            ),
+            "website_resolution",
+        )
+
     def test_scoped_page_derived_opening_keeps_captured_stage_boundary(self):
         source_record = {
             "job_list_page_url": "https://careers.example.com/search-jobs",
@@ -3381,6 +3808,72 @@ class FailureReplayBundleTests(unittest.TestCase):
                 source_record,
                 replay_record,
                 legacy_plan,
+            ),
+            "opening_match",
+        )
+
+    def test_scoped_runtime_only_provider_replays_its_producer_chain(self):
+        source_record = {
+            "job_list_page_url": "https://jobs.ashbyhq.com/Blossom-Health",
+            "trace": {
+                "checkpoint_events": [
+                    {"stage": "opening_match", "action": "invalidate_from"},
+                    *[
+                        {"stage": stage, "action": "restore"}
+                        for stage in PIPELINE_STAGES[:5]
+                    ],
+                    {"stage": "opening_match", "action": "save"},
+                ],
+                "stages": {
+                    "job_board_discovery": {
+                        "job_board_portfolio": {
+                            "eligible_count": 1,
+                            "eligible_set_complete": False,
+                            "primary_provider": "ashby",
+                            "primary_url": (
+                                "https://jobs.ashbyhq.com/Blossom-Health"
+                            ),
+                        },
+                    },
+                },
+            },
+        }
+        replay_record = {
+            "source_trace": {"replay": {"first_non_success_stage": None}},
+        }
+
+        self.assertEqual(
+            _effective_replay_resume_stage(
+                source_record,
+                replay_record,
+                SimpleNamespace(evidence_mode="scoped_outcome_tape"),
+            ),
+            "website_resolution",
+        )
+
+    def test_scoped_replay_safe_provider_keeps_opening_boundary(self):
+        source_record = {
+            "job_list_page_url": "https://jobs.ashbyhq.com/acorns",
+            "trace": {"stages": {"job_board_discovery": {
+                "job_board_portfolio": {
+                    "eligible_count": 1,
+                    "eligible_set_complete": False,
+                    "primary_provider": "ashby",
+                    "primary_url": "https://jobs.ashbyhq.com/acorns",
+                },
+            }}},
+        }
+        replay_record = {
+            "source_trace": {"replay": {"first_non_success_stage": {
+                "stage": "opening_match",
+            }}},
+        }
+
+        self.assertEqual(
+            _effective_replay_resume_stage(
+                source_record,
+                replay_record,
+                SimpleNamespace(evidence_mode="scoped_outcome_tape"),
             ),
             "opening_match",
         )

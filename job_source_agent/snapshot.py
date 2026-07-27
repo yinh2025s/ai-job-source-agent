@@ -53,6 +53,41 @@ SENSITIVE_BODY_FIELDS = SENSITIVE_QUERY_KEYS | {
     "sessionJWT",
 }
 
+_LOCATION_CONTEXT_KEYS = {
+    "address",
+    "city",
+    "country",
+    "countrycode",
+    "location",
+    "postalcode",
+    "province",
+    "region",
+    "street",
+    "zipcode",
+    "zip",
+}
+_AUTH_CONTEXT_KEYS = {
+    "accesstoken",
+    "authorization",
+    "clientid",
+    "code",
+    "csrf",
+    "idtoken",
+    "nonce",
+    "oauth",
+    "redirecturi",
+    "refreshtoken",
+    "session",
+    "token",
+}
+_MAX_EMBEDDED_JSON_OBJECT_CHARS = 16_384
+_HMG_REPLAY_HASH = "0" * 32
+_HMG_REPLAY_TIME = "1000000000"
+_HMG_TICKET_OBJECT = re.compile(
+    r'(?is)("ticket"\s*:\s*\{)([^{}]{0,1024})(\})'
+)
+_API_KEY_FIELD_PATTERN = r"[A-Za-z0-9_$-]*api[_-]?key"
+
 
 @dataclass
 class SnapshotRecord:
@@ -399,7 +434,39 @@ def snapshot_artifact_blob_path(root_dir: str | Path, digest: str, artifact_name
 
 
 def sanitize_snapshot_body(body: str) -> str:
+    try:
+        structured = json.loads(body)
+    except (json.JSONDecodeError, TypeError):
+        return _sanitize_snapshot_text(body)
+    return json.dumps(
+        _sanitize_snapshot_value(_sanitize_hmg_structured_ticket(structured)),
+        ensure_ascii=True,
+        separators=(",", ":"),
+    )
+
+
+def _sanitize_snapshot_value(value):
+    if isinstance(value, dict):
+        return {
+            str(key): (
+                "[REDACTED]"
+                if _is_sensitive_key(str(key))
+                and not is_public_location_state_field(value, str(key))
+                else _sanitize_snapshot_value(item)
+            )
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_sanitize_snapshot_value(item) for item in value]
+    if isinstance(value, str):
+        return _sanitize_snapshot_text(value)
+    return value
+
+
+def _sanitize_snapshot_text(body: str) -> str:
+    body = _sanitize_hmg_text_tickets(body)
     body = _redact_public_domain_registry_contacts(body)
+    body, protected_location_keys = _protect_embedded_public_location_states(body)
     redacted = re.sub(
         r"(?i)(Authorization\s*:\s*Bearer\s+)[A-Za-z0-9._~+/=-]{8,}",
         r"\1[REDACTED]",
@@ -412,42 +479,252 @@ def sanitize_snapshot_body(body: str) -> str:
         redacted,
     )
     for key in sorted(SENSITIVE_BODY_FIELDS):
-        redacted = re.sub(
-            rf"(?i)([\"']{re.escape(key)}[\"']\s*:\s*)([\"'])[^\"']*(\2)",
-            rf"\1\2[REDACTED]\3",
-            redacted,
-        )
-        redacted = re.sub(
-            rf"(?i)((?<![A-Za-z0-9_$]){re.escape(key)}\s*[=:]\s*)([\"']?)[^\"'&\s<>,;]+(\2)",
-            rf"\1\2[REDACTED]\3",
-            redacted,
-        )
-        redacted = re.sub(
-            rf"(?i)(<input\b[^>]*(?:id|name)\s*=\s*[\"']{re.escape(key)}[\"'][^>]*"
-            rf"\bvalue\s*=\s*[\"'])[^\"']*([\"'])",
-            rf"\1[REDACTED]\2",
-            redacted,
-        )
-        redacted = re.sub(
-            rf"(?i)(<input\b[^>]*\bvalue\s*=\s*[\"'])[^\"']*([\"'][^>]*"
-            rf"(?:id|name)\s*=\s*[\"']{re.escape(key)}[\"'])",
-            rf"\1[REDACTED]\2",
-            redacted,
-        )
-        redacted = re.sub(
-            rf"(?i)(<meta\b[^>]*(?:id|name|property)\s*=\s*[\"']{re.escape(key)}[\"'][^>]*"
-            rf"\bcontent\s*=\s*[\"'])[^\"']*([\"'])",
-            rf"\1[REDACTED]\2",
-            redacted,
-        )
-        redacted = re.sub(
-            rf"(?i)(<meta\b[^>]*\bcontent\s*=\s*[\"'])[^\"']*([\"'][^>]*"
-            rf"(?:id|name|property)\s*=\s*[\"']{re.escape(key)}[\"'])",
-            rf"\1[REDACTED]\2",
-            redacted,
-        )
+        redacted = _redact_snapshot_text_field(redacted, re.escape(key))
+    redacted = _redact_snapshot_text_field(redacted, _API_KEY_FIELD_PATTERN)
     redacted = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}", r"\1[REDACTED]", redacted)
+    for marker, original_key in protected_location_keys:
+        redacted = redacted.replace(json.dumps(marker), json.dumps(original_key))
     return redacted
+
+
+def _redact_snapshot_text_field(body: str, key_pattern: str) -> str:
+    body = re.sub(
+        rf"(?i)([\"']{key_pattern}[\"']\s*:\s*)([\"'])[^\"']*(\2)",
+        rf"\1\2[REDACTED]\3",
+        body,
+    )
+    body = re.sub(
+        rf"(?i)((?<![A-Za-z0-9_$-]){key_pattern}\s*[=:]\s*)"
+        rf"([\"']?)[^\"'&\s<>,;]+(\2)",
+        rf"\1\2[REDACTED]\3",
+        body,
+    )
+    body = re.sub(
+        rf"(?i)(<input\b[^>]*(?:id|name)\s*=\s*[\"']{key_pattern}[\"'][^>]*"
+        rf"\bvalue\s*=\s*[\"'])[^\"']*([\"'])",
+        rf"\1[REDACTED]\2",
+        body,
+    )
+    body = re.sub(
+        rf"(?i)(<input\b[^>]*\bvalue\s*=\s*[\"'])[^\"']*([\"'][^>]*"
+        rf"(?:id|name)\s*=\s*[\"']{key_pattern}[\"'])",
+        rf"\1[REDACTED]\2",
+        body,
+    )
+    body = re.sub(
+        rf"(?i)(<meta\b[^>]*(?:id|name|property)\s*=\s*[\"']{key_pattern}[\"'][^>]*"
+        rf"\bcontent\s*=\s*[\"'])[^\"']*([\"'])",
+        rf"\1[REDACTED]\2",
+        body,
+    )
+    return re.sub(
+        rf"(?i)(<meta\b[^>]*\bcontent\s*=\s*[\"'])[^\"']*([\"'][^>]*"
+        rf"(?:id|name|property)\s*=\s*[\"']{key_pattern}[\"'])",
+        rf"\1[REDACTED]\2",
+        body,
+    )
+
+
+def _sanitize_hmg_structured_ticket(value):
+    if not isinstance(value, dict):
+        return value
+    result_set = value.get("ResultSet")
+    if (
+        not isinstance(result_set, dict)
+        or not isinstance(result_set.get("list"), list)
+        or not isinstance(result_set.get("list_meta"), dict)
+    ):
+        return value
+    ticket = result_set.get("ticket")
+    if not isinstance(ticket, dict):
+        return value
+    sanitized = dict(value)
+    sanitized_result_set = dict(result_set)
+    sanitized_ticket = dict(ticket)
+    if sanitized_ticket.get("h"):
+        sanitized_ticket["h"] = _HMG_REPLAY_HASH
+    if sanitized_ticket.get("t"):
+        sanitized_ticket["t"] = _HMG_REPLAY_TIME
+    sanitized_result_set["ticket"] = sanitized_ticket
+    sanitized["ResultSet"] = sanitized_result_set
+    return sanitized
+
+
+def _sanitize_hmg_text_tickets(body: str) -> str:
+    if not isinstance(body, str):
+        return body
+    if _is_hmg_board_html(body):
+        body = _replace_hmg_input_value(body, "h", _HMG_REPLAY_HASH)
+        body = _replace_hmg_input_value(body, "t", _HMG_REPLAY_TIME)
+    if (
+        '"ResultSet"' in body
+        and '"list_meta"' in body
+        and '"list"' in body
+        and '"ticket"' in body
+    ):
+        body = _HMG_TICKET_OBJECT.sub(_sanitize_hmg_ticket_object, body)
+    return body
+
+
+def _is_hmg_board_html(body: str) -> bool:
+    lowered = body.casefold()
+    has_assets = "hmg-jb.css" in lowered and "combobo.js" in lowered
+    inventory_form = (
+        "jbsearchlist_form" in lowered
+        and "list_posts" in lowered
+        and "pid" in lowered
+        and "gwt" in lowered
+        and "/json/index.smpl" in lowered
+    )
+    search_entry = "jb_search" in lowered and "jb_search_results" in lowered
+    return has_assets and (inventory_form or search_entry)
+
+
+def _replace_hmg_input_value(body: str, key: str, replacement: str) -> str:
+    body = re.sub(
+        rf"(?is)(<input\b[^>]*\bname\s*=\s*[\"']{key}[\"'][^>]*"
+        rf"\bvalue\s*=\s*[\"'])[^\"']*([\"'])",
+        lambda match: f"{match.group(1)}{replacement}{match.group(2)}",
+        body,
+    )
+    return re.sub(
+        rf"(?is)(<input\b[^>]*\bvalue\s*=\s*[\"'])[^\"']*([\"'][^>]*"
+        rf"\bname\s*=\s*[\"']{key}[\"'])",
+        lambda match: f"{match.group(1)}{replacement}{match.group(2)}",
+        body,
+    )
+
+
+def _sanitize_hmg_ticket_object(match: re.Match[str]) -> str:
+    body = match.group(2)
+    body = re.sub(
+        r'(?is)("h"\s*:\s*")[^"]*(")',
+        lambda item: f"{item.group(1)}{_HMG_REPLAY_HASH}{item.group(2)}",
+        body,
+    )
+    body = re.sub(
+        r'(?is)("t"\s*:\s*")[^"]*(")',
+        lambda item: f"{item.group(1)}{_HMG_REPLAY_TIME}{item.group(2)}",
+        body,
+    )
+    return f"{match.group(1)}{body}{match.group(3)}"
+
+
+def is_public_location_state_field(
+    mapping: dict,
+    key: str,
+    *,
+    allow_redacted: bool = False,
+) -> bool:
+    """Distinguish public geographic state from OAuth/query state."""
+
+    if not isinstance(mapping, dict) or _normalized_field_name(key) != "state":
+        return False
+    normalized_keys = {
+        _normalized_field_name(str(item_key))
+        for item_key in mapping
+        if str(item_key) != key
+    }
+    if normalized_keys & _AUTH_CONTEXT_KEYS:
+        return False
+    if not normalized_keys & _LOCATION_CONTEXT_KEYS:
+        return False
+    value = mapping.get(key)
+    if allow_redacted and value == "[REDACTED]":
+        return True
+    return bool(
+        isinstance(value, str)
+        and 1 <= len(value.strip()) <= 100
+        and not any(character in value for character in "\r\n\t<>{}[]=&/?")
+    )
+
+
+def _normalized_field_name(value: str) -> str:
+    return re.sub(r"[^a-z0-9]", "", value.casefold())
+
+
+def _protect_embedded_public_location_states(
+    body: str,
+) -> tuple[str, list[tuple[str, str]]]:
+    if not isinstance(body, str) or '"state"' not in body.casefold():
+        return body, []
+
+    candidates: list[tuple[int, int, dict]] = []
+    for start, end in _json_object_spans(body):
+        if end - start > _MAX_EMBEDDED_JSON_OBJECT_CHARS:
+            continue
+        fragment = body[start:end]
+        lowered = fragment.casefold()
+        if '"state"' not in lowered:
+            continue
+        try:
+            value = json.loads(fragment)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            continue
+        if isinstance(value, dict) and _contains_public_location_state(value):
+            candidates.append((start, end, value))
+
+    selected: list[tuple[int, int, dict]] = []
+    for candidate in sorted(candidates, key=lambda item: item[1] - item[0], reverse=True):
+        start, end, _ = candidate
+        if any(start >= chosen_start and end <= chosen_end for chosen_start, chosen_end, _ in selected):
+            continue
+        selected.append(candidate)
+
+    protected: list[tuple[str, str]] = []
+    rendered = body
+    for start, end, value in sorted(selected, reverse=True):
+        marked = _mark_public_location_state_keys(value, protected)
+        replacement = json.dumps(marked, ensure_ascii=True, separators=(",", ":"))
+        rendered = rendered[:start] + replacement + rendered[end:]
+    return rendered, protected
+
+
+def _json_object_spans(body: str):
+    stack: list[int] = []
+    in_string = False
+    escaped = False
+    for index, character in enumerate(body):
+        if in_string:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == '"':
+                in_string = False
+            continue
+        if character == '"':
+            in_string = True
+        elif character == "{":
+            stack.append(index)
+        elif character == "}" and stack:
+            yield stack.pop(), index + 1
+
+
+def _contains_public_location_state(value) -> bool:
+    if isinstance(value, dict):
+        if any(is_public_location_state_field(value, str(key)) for key in value):
+            return True
+        return any(_contains_public_location_state(item) for item in value.values())
+    if isinstance(value, list):
+        return any(_contains_public_location_state(item) for item in value)
+    return False
+
+
+def _mark_public_location_state_keys(value, protected: list[tuple[str, str]]):
+    if isinstance(value, dict):
+        marked = {}
+        for key, item in value.items():
+            rendered_key = str(key)
+            if is_public_location_state_field(value, rendered_key):
+                marker = f"__JSA_PUBLIC_LOCATION_STATE_{len(protected)}__"
+                protected.append((marker, rendered_key))
+                rendered_key = marker
+            marked[rendered_key] = _mark_public_location_state_keys(item, protected)
+        return marked
+    if isinstance(value, list):
+        return [_mark_public_location_state_keys(item, protected) for item in value]
+    return value
 
 
 _PUBLIC_DOMAIN_REGISTRY_COLUMNS = (

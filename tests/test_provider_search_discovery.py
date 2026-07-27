@@ -415,9 +415,9 @@ class ProviderSearchCandidateDiscoveryTests(unittest.TestCase):
         self.assertEqual(probe["reason"], "provider_tenant_probe_limit_reached")
         self.assertEqual(len(probe["attempts"]), 4)
 
-    def test_stops_after_first_valid_ats_result_with_search_provenance(self):
+    def test_first_stale_search_lead_does_not_hide_later_provider_leads(self):
         rss = """<rss><channel>
-          <item><link>https://jobs.lever.co/acme</link></item>
+          <item><link>https://jobs.lever.co/stale-tenant</link></item>
           <item><link>https://job-boards.greenhouse.io/acme/jobs/123</link></item>
           <item><link>https://jobs.ashbyhq.com/acme</link></item>
         </channel></rss>"""
@@ -434,13 +434,22 @@ class ProviderSearchCandidateDiscoveryTests(unittest.TestCase):
             )
         )
 
-        self.assertEqual(len(result.candidates), 1)
-        self.assertEqual(result.candidates[0].provider_hint, "ashby")
-        self.assertEqual(result.candidates[0].result_rank, 1)
-        self.assertFalse(result.trace["search"]["exhaustive"])
+        self.assertEqual(len(result.candidates), 3)
+        self.assertEqual(
+            [candidate.provider_hint for candidate in result.candidates],
+            ["greenhouse", "ashby", "lever"],
+        )
+        self.assertIn(
+            "https://job-boards.greenhouse.io/acme/jobs/123",
+            [candidate.url for candidate in result.candidates],
+        )
+        self.assertEqual(
+            [candidate.result_rank for candidate in result.candidates], [3, 1, 2]
+        )
+        self.assertTrue(result.trace["search"]["exhaustive"])
         self.assertEqual(
             result.trace["search"]["stopped_reason"],
-            "search_candidate_found",
+            "query_plan_complete",
         )
         self.assertTrue(
             all(
@@ -448,7 +457,7 @@ class ProviderSearchCandidateDiscoveryTests(unittest.TestCase):
                 for candidate in result.candidates
             )
         )
-        self.assertEqual(result.candidates[0].source_kind, "targeted_board_search")
+        self.assertEqual(result.candidates[0].source_kind, "targeted_opening_search")
         self.assertTrue(all(candidate.source_url.startswith("https://www.bing.com/search?") for candidate in result.candidates))
         self.assertFalse(any(hasattr(candidate, "verified") for candidate in result.candidates))
 
@@ -479,7 +488,7 @@ class ProviderSearchCandidateDiscoveryTests(unittest.TestCase):
         self.assertEqual(result.trace["skipped_candidate_count"], 2)
         self.assertEqual(
             resolver.calls,
-            [("Acme", "", None, True, False, True)],
+            [("Acme", "", None, True, True, True)],
         )
 
     def test_no_search_results_produces_an_empty_candidate_set(self):
@@ -857,9 +866,9 @@ class ProviderSearchCandidateDiscoveryTests(unittest.TestCase):
         second = discovery.discover(CandidateDiscoveryRequest(company_name="Acme"))
 
         self.assertEqual(first, second)
-        self.assertEqual(len(first.candidates), 1)
-        self.assertFalse(first.trace["truncated"])
-        self.assertEqual([candidate.result_rank for candidate in first.candidates], [1])
+        self.assertEqual(len(first.candidates), 2)
+        self.assertTrue(first.trace["truncated"])
+        self.assertEqual([candidate.result_rank for candidate in first.candidates], [1, 2])
 
     def test_exact_provider_result_is_an_untrusted_opening_candidate(self):
         source_url = "https://www.bing.com/search?q=acme"

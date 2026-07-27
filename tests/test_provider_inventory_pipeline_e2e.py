@@ -319,6 +319,7 @@ class ProviderInventoryPipelineE2ETests(unittest.TestCase):
                     {
                         "id": "role-403",
                         "name": "Platform Engineer",
+                        "location": {"city": "Paris", "country": "FR"},
                         "company": {"identifier": SMART_TENANT, "name": COMPANY},
                     }
                 ],

@@ -7,6 +7,7 @@ from html import unescape
 from urllib.parse import parse_qs, parse_qsl, quote_plus, urlencode, urlparse, urlunparse
 
 from .career_search import search_site_openings
+from .search_backend import SearchBackend
 from .job_board import DiscoveredJobBoard
 from .content_probe import probe_first_party_provider_assets
 from .generic_opening_inventory import collect_generic_opening_inventory
@@ -22,6 +23,7 @@ from .job_search_actions import (
     verify_job_search_submission,
 )
 from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
+from .reasons import canonical_reason_code
 from .rendered_fetcher import FORCE_RENDER_HEADER
 from .listing_extraction import (
     extract_detail_page_candidates,
@@ -85,10 +87,12 @@ class JobOpeningMatcher:
         provider_registry: ProviderRegistry | None = None,
         *,
         max_generic_job_pages: int = 3,
+        search_backend: SearchBackend | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.provider_registry = provider_registry or DEFAULT_PROVIDER_REGISTRY
         self.max_generic_job_pages = max_generic_job_pages
+        self.search_backend = search_backend
 
     def match(
         self,
@@ -266,7 +270,7 @@ class JobOpeningMatcher:
                         )
                     else:
                         trace.setdefault("errors", []).append(
-                            {"url": search_url, "error": str(exc)}
+                            _fetch_error_record(search_url, exc)
                         )
                     continue
 
@@ -563,7 +567,7 @@ class JobOpeningMatcher:
         trace: dict,
     ) -> OpeningMatch | None:
         selected = candidates[0]
-        if provider != "generic" or not target_location:
+        if not target_location:
             return selected
 
         strict_location_candidates = [
@@ -602,6 +606,16 @@ class JobOpeningMatcher:
             }
             return None
 
+        if (
+            provider != "generic"
+            and selected.location
+            and not _is_explicit_location_mismatch(
+                selected.location,
+                target_location,
+            )
+        ):
+            return selected
+
         expected_domain = domain_of(job_list_url)
         expected_site = _registrable_site(expected_domain)
         attempts: list[dict] = []
@@ -613,12 +627,24 @@ class JobOpeningMatcher:
             ):
                 continue
             candidate_url = safe_normalize_url(candidate.url)
-            if (
-                not candidate_url
-                or not expected_site
+            if not candidate_url:
+                attempts.append({"url": candidate.url, "status": "unsafe_url_rejected"})
+                continue
+            if provider == "generic" and (
+                not expected_site
                 or _registrable_site(domain_of(candidate_url)) != expected_site
             ):
                 attempts.append({"url": candidate.url, "status": "cross_site_rejected"})
+                continue
+            if provider != "generic" and not _provider_detail_matches_board(
+                self.provider_registry,
+                provider,
+                job_list_url,
+                candidate_url,
+            ):
+                attempts.append(
+                    {"url": candidate.url, "status": "provider_tenant_rejected"}
+                )
                 continue
             try:
                 page = self.fetcher.fetch(candidate_url)
@@ -638,6 +664,9 @@ class JobOpeningMatcher:
             page_identity = page_url.rstrip("/").casefold()
             matched = None
             detail_postings = _strict_json_ld_job_postings(page.html, page_url)
+            detail_postings.extend(
+                _strict_encoded_json_ld_job_postings(page.html, page_url)
+            )
             detail_postings.extend(
                 _strict_embedded_job_detail_postings(page.html, page_url)
             )
@@ -669,9 +698,12 @@ class JobOpeningMatcher:
                         posting["location"],
                         target_location,
                     )
-                    or not _listing_detail_hiring_organization_matches(
-                        posting,
-                        expected_domain,
+                    or (
+                        provider == "generic"
+                        and not _listing_detail_hiring_organization_matches(
+                            posting,
+                            expected_domain,
+                        )
                     )
                 ):
                     continue
@@ -744,6 +776,7 @@ class JobOpeningMatcher:
             target_title,
             max_results=3,
             max_source_fetches=2,
+            search_backend=self.search_backend,
         )
         trace = {
             "search": result.trace,
@@ -904,7 +937,10 @@ class JobOpeningMatcher:
                     ),
                 )
             except FetchError as exc:
-                page_detection = {"method": "page_evidence", "error": str(exc)}
+                page_detection = {
+                    "method": "page_evidence",
+                    **_fetch_error_record(job_list_url, exc),
+                }
             else:
                 # A verified generic board may arrive without its runtime-only
                 # DiscoveredJobBoard after a stage/checkpoint boundary. Rebuild
@@ -955,7 +991,7 @@ class JobOpeningMatcher:
                             "adapter": adapter.name,
                             "api_urls": [],
                             "candidates": [],
-                            "errors": [{"url": job_list_url, "error": str(exc)}],
+                            "errors": [_fetch_error_record(job_list_url, exc)],
                         }
                         if page_detection is not None:
                             failure_trace["provider_detection"] = page_detection
@@ -1010,6 +1046,10 @@ class JobOpeningMatcher:
                             "api_urls": list(adapter_result.trace.get("api_urls", [])),
                             "candidates": [],
                             "adapter_trace": adapter_result.trace,
+                            "employer_evidence": [
+                                evidence.to_trace_payload()
+                                for evidence in adapter_result.employer_evidence
+                            ],
                             "inventory": {
                                 "source": "native_adapter",
                                 "status": (
@@ -1133,7 +1173,19 @@ class JobOpeningMatcher:
                             }
                             for candidate in scored[:8]
                         ]
-                        return (scored[0] if scored else None), trace, landing_page
+                        selected = (
+                            self._select_with_verified_detail(
+                                scored,
+                                job_list_url=job_list_url,
+                                target_title=target_title,
+                                target_location=target_location,
+                                provider=provider,
+                                trace=trace,
+                            )
+                            if scored
+                            else None
+                        )
+                        return selected, trace, landing_page
 
         api_requests = build_provider_api_requests(job_list_url, target_title)
         trace = {"provider": provider, "api_urls": [request.url for request in api_requests], "candidates": []}
@@ -1154,7 +1206,9 @@ class JobOpeningMatcher:
             try:
                 page = self.fetcher.fetch(api_request.url, data=api_request.data, headers=api_request.headers)
             except FetchError as exc:
-                trace.setdefault("errors", []).append({"url": api_request.url, "error": str(exc)})
+                trace.setdefault("errors", []).append(
+                    _fetch_error_record(api_request.url, exc)
+                )
                 continue
             successful_api_fetches += 1
             candidates = provider_api_candidates(provider, page.html, job_list_url)
@@ -1364,6 +1418,26 @@ def _record_interactive_failure(
             ),
         }
     )
+
+
+def _fetch_error_record(
+    url: str,
+    error: FetchError,
+    *,
+    phase: str | None = None,
+) -> dict:
+    record = {"url": url, "error": str(error)}
+    if error.reason_code:
+        record["reason_code"] = canonical_reason_code(error.reason_code)
+    if error.retryable is not None:
+        record["retryable"] = error.retryable
+    if type(error.status) is int:
+        record["status"] = error.status
+    if error.transport_phase:
+        record["transport_phase"] = error.transport_phase
+    if phase:
+        record["phase"] = phase
+    return record
 
 
 def detect_provider(url: str) -> str:
@@ -1888,41 +1962,74 @@ def _strict_json_ld_job_postings(html: str, source_url: str) -> list[dict[str, s
             payload = json.loads(unescape(script_body.strip()))
         except (json.JSONDecodeError, TypeError):
             continue
-        for job in _walk_json_ld_jobs(payload):
-            title = job.get("title") or job.get("name")
-            # Some first-party detail pages omit JobPosting.url. The current
-            # page remains a safe candidate because the caller later requires
-            # the normalized posting URL to equal this fetched page exactly.
-            url = safe_normalize_url(_json_ld_url(job) or source_url, source_url)
-            organization = job.get("hiringOrganization")
-            if not isinstance(title, str) or not title.strip() or not url:
-                continue
-            if not isinstance(organization, dict):
-                organization = {}
-            organization_name = organization.get("name")
-            organization_url = organization.get("url") or organization.get("sameAs")
-            if isinstance(organization_url, list):
-                organization_url = organization_url[0] if organization_url else None
-            if isinstance(organization_url, dict):
-                organization_url = organization_url.get("url") or organization_url.get("@id")
-            postings.append(
-                {
-                    "url": url,
-                    "title": title.strip(),
-                    "location": _json_ld_location(job),
-                    "hiring_organization_name": (
-                        organization_name.strip()
-                        if isinstance(organization_name, str) and organization_name.strip()
-                        else None
-                    ),
-                    "hiring_organization_url": (
-                        safe_normalize_url(organization_url, source_url)
-                        if isinstance(organization_url, str)
-                        else None
-                    ),
-                    "hiring_organization_url_present": bool(organization_url),
-                }
-            )
+        postings.extend(_job_postings_from_json_ld_payload(payload, source_url))
+    return postings
+
+
+def _strict_encoded_json_ld_job_postings(
+    html: str,
+    source_url: str,
+) -> list[dict[str, str | None]]:
+    if not isinstance(html, str) or len(html) > 2_000_000:
+        return []
+    postings: list[dict[str, str | None]] = []
+    pattern = re.compile(
+        r">(\s*\{&quot;@context&quot;.*?\}\s*)</(?:div|span)>",
+        re.IGNORECASE | re.DOTALL,
+    )
+    for match in pattern.finditer(html):
+        body = match.group(1)
+        if len(body) > 500_000 or "&quot;JobPosting&quot;" not in body:
+            continue
+        try:
+            payload = json.loads(unescape(body))
+        except (json.JSONDecodeError, TypeError):
+            continue
+        postings.extend(_job_postings_from_json_ld_payload(payload, source_url))
+        if len(postings) >= 25:
+            break
+    return postings[:25]
+
+
+def _job_postings_from_json_ld_payload(
+    payload,
+    source_url: str,
+) -> list[dict[str, str | None]]:
+    postings: list[dict[str, str | None]] = []
+    for job in _walk_json_ld_jobs(payload):
+        title = job.get("title") or job.get("name")
+        # Some first-party detail pages omit JobPosting.url. The current page
+        # remains safe because the caller requires exact fetched-page identity.
+        url = safe_normalize_url(_json_ld_url(job) or source_url, source_url)
+        organization = job.get("hiringOrganization")
+        if not isinstance(title, str) or not title.strip() or not url:
+            continue
+        if not isinstance(organization, dict):
+            organization = {}
+        organization_name = organization.get("name")
+        organization_url = organization.get("url") or organization.get("sameAs")
+        if isinstance(organization_url, list):
+            organization_url = organization_url[0] if organization_url else None
+        if isinstance(organization_url, dict):
+            organization_url = organization_url.get("url") or organization_url.get("@id")
+        postings.append(
+            {
+                "url": url,
+                "title": title.strip(),
+                "location": _json_ld_location(job),
+                "hiring_organization_name": (
+                    organization_name.strip()
+                    if isinstance(organization_name, str) and organization_name.strip()
+                    else None
+                ),
+                "hiring_organization_url": (
+                    safe_normalize_url(organization_url, source_url)
+                    if isinstance(organization_url, str)
+                    else None
+                ),
+                "hiring_organization_url_present": bool(organization_url),
+            }
+        )
     return postings
 
 
@@ -2031,6 +2138,26 @@ def _listing_detail_hiring_organization_matches(
     if organization_url:
         return _same_site_hiring_organization(str(organization_url), expected_domain)
     return not bool(posting.get("hiring_organization_url_present"))
+
+
+def _provider_detail_matches_board(
+    registry: ProviderRegistry,
+    provider: str,
+    board_url: str,
+    detail_url: str,
+) -> bool:
+    adapter = registry.adapter_named(provider)
+    if adapter is None:
+        return False
+    board = adapter.identify_board(board_url)
+    detail_board = adapter.identify_board(detail_url)
+    return bool(
+        board is not None
+        and detail_board is not None
+        and board.provider == detail_board.provider == provider
+        and board.identifier
+        and board.identifier == detail_board.identifier
+    )
 
 
 def _same_site_hiring_organization(

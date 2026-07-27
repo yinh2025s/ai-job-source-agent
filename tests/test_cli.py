@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from job_source_agent.cli import build_parser, main
+from job_source_agent.cli import _search_backend_from_args, build_parser, main
 from job_source_agent.composition import build_application
 
 
@@ -12,6 +12,54 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class CliTests(unittest.TestCase):
+    def test_search_backend_cli_defaults_to_legacy_and_validates_searxng(self):
+        parser = build_parser()
+
+        legacy_args = parser.parse_args([])
+        self.assertEqual(legacy_args.search_backend, "legacy")
+        self.assertIsNone(_search_backend_from_args(legacy_args))
+
+        configured_args = parser.parse_args(
+            [
+                "--search-backend",
+                "searxng",
+                "--search-backend-url",
+                "https://search.example",
+                "--search-backend-profile-digest",
+                "a" * 64,
+            ]
+        )
+        configured = _search_backend_from_args(configured_args)
+        self.assertEqual(
+            configured.public_configuration()["search_backend_kind"],
+            "searxng",
+        )
+
+        with self.assertRaisesRegex(SystemExit, "requires --search-backend-url"):
+            _search_backend_from_args(
+                parser.parse_args(["--search-backend", "searxng"])
+            )
+        with self.assertRaisesRegex(
+            SystemExit,
+            "requires --search-backend-profile-digest",
+        ):
+            _search_backend_from_args(
+                parser.parse_args(
+                    [
+                        "--search-backend",
+                        "searxng",
+                        "--search-backend-url",
+                        "https://search.example",
+                    ]
+                )
+            )
+        with self.assertRaisesRegex(SystemExit, "requires --search-backend searxng"):
+            _search_backend_from_args(
+                parser.parse_args(
+                    ["--search-backend-url", "https://search.example"]
+                )
+            )
+
     def test_parallel_candidate_discovery_requires_explicit_cli_flag(self):
         parser = build_parser()
 
@@ -25,6 +73,16 @@ class CliTests(unittest.TestCase):
             parser.parse_args(
                 ["--disable-parallel-candidate-discovery"]
             ).enable_parallel_candidate_discovery
+        )
+        self.assertEqual(
+            parser.parse_args([]).candidate_discovery_engine,
+            "stage_v1",
+        )
+        self.assertEqual(
+            parser.parse_args(
+                ["--candidate-discovery-engine", "coordinator_v2"]
+            ).candidate_discovery_engine,
+            "coordinator_v2",
         )
 
     def test_offline_cli_uses_pipeline_application_and_writes_checkpoints(self):

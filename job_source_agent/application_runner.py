@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from contextlib import nullcontext
 
 from .contracts import (
     CheckpointStore,
@@ -31,6 +32,7 @@ class ApplicationRunner:
         stages: Iterable[Stage],
         checkpoint_store: CheckpointStore | None = None,
         capture_coordinator: EvidenceCaptureCoordinator | None = None,
+        stage_budget_controller=None,
     ) -> None:
         by_name: dict[str, Stage] = {}
         for stage in stages:
@@ -45,6 +47,7 @@ class ApplicationRunner:
         self._stages_by_name = by_name
         self._checkpoint_store = checkpoint_store
         self._capture_coordinator = capture_coordinator
+        self._stage_budget_controller = stage_budget_controller
 
     @property
     def checkpointing_enabled(self) -> bool:
@@ -188,7 +191,17 @@ class ApplicationRunner:
                         execution_fingerprint,
                         stage_name,
                     )
-                execution = stage.run(context)
+                stage_budget_scope = getattr(
+                    self._stage_budget_controller,
+                    "stage_budget_scope",
+                    None,
+                )
+                with (
+                    stage_budget_scope(stage_name)
+                    if callable(stage_budget_scope)
+                    else nullcontext()
+                ):
+                    execution = stage.run(context)
                 _validate_execution(execution, stage_name, source="Stage")
                 if self._capture_coordinator is not None:
                     snapshot_scope = self._capture_coordinator.finalize()
@@ -297,6 +310,7 @@ def _reset_checkpoint_context(context: PipelineContext) -> None:
     context.hiring_identity_evidence = None
     context.career_root_url = baseline.career_root_url
     context.homepage_navigation_evidence = None
+    context.provisional_website_evidence = None
     context.career_page_url = None
     context.job_list_page_url = None
     context.discovered_job_board = None

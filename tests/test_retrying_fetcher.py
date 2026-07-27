@@ -185,7 +185,10 @@ class RetryFetcherTests(unittest.TestCase):
         with self.assertRaises(FetchError) as raised:
             fetcher.fetch("u")
 
-        self.assertIs(raised.exception, expected)
+        self.assertEqual(
+            raised.exception.reason_code,
+            "COMPANY_TIME_BUDGET_EXHAUSTED",
+        )
         self.assertEqual(base.calls, 1)
         self.assertEqual(sleeps, [])
         self.assertEqual(fetcher.retry_events[-1]["outcome"], "deadline_exhausted")
@@ -205,7 +208,10 @@ class RetryFetcherTests(unittest.TestCase):
         with self.assertRaises(FetchError) as raised:
             fetcher.fetch("u")
 
-        self.assertIs(raised.exception, errors[-1])
+        self.assertEqual(
+            raised.exception.reason_code,
+            "COMPANY_TIME_BUDGET_EXHAUSTED",
+        )
         self.assertEqual(base.calls, 2)
         self.assertEqual(fetcher.retry_events[-1]["outcome"], "deadline_exhausted")
 
@@ -238,10 +244,71 @@ class RetryFetcherTests(unittest.TestCase):
         base = SequenceFetcher([Page("u", "ok")])
         fetcher = RetryingFetcher(base, max_retries=0, clock=lambda: 10.0, deadline=10.0)
 
-        with self.assertRaisesRegex(FetchError, "caller deadline"):
+        with self.assertRaises(FetchError) as raised:
             fetcher.fetch("u")
 
+        self.assertEqual(
+            raised.exception.reason_code,
+            "COMPANY_TIME_BUDGET_EXHAUSTED",
+        )
         self.assertEqual(base.calls, 0)
+
+    def test_deadline_clamped_transport_timeout_is_typed_as_company_budget(self):
+        now = [10.0]
+
+        class DeadlineTimeoutFetcher(SequenceFetcher):
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                now[0] = 12.5
+                return super().fetch(
+                    url,
+                    data=data,
+                    headers=headers,
+                    interaction=interaction,
+                )
+
+        base = DeadlineTimeoutFetcher(
+            [FetchError("read timed out", reason_code="NETWORK_TIMEOUT", retryable=True)]
+        )
+        base.timeout = 8
+        fetcher = RetryingFetcher(
+            base,
+            max_retries=0,
+            clock=lambda: now[0],
+            deadline=12.5,
+        )
+
+        with self.assertRaises(FetchError) as raised:
+            fetcher.fetch("u")
+
+        self.assertEqual(
+            raised.exception.reason_code,
+            "COMPANY_TIME_BUDGET_EXHAUSTED",
+        )
+        self.assertEqual(fetcher.retry_events[-1]["outcome"], "retry_deferred")
+
+    def test_local_retry_deadline_does_not_claim_company_budget(self):
+        base = SequenceFetcher(
+            [
+                FetchError(
+                    "read timed out",
+                    reason_code="NETWORK_TIMEOUT",
+                    retryable=True,
+                )
+            ]
+        )
+        base.timeout = 8
+        fetcher = RetryingFetcher(
+            base,
+            max_retries=0,
+            clock=lambda: 10.0,
+            deadline=20.0,
+        )
+
+        with fetcher.retry_scope(max_elapsed_seconds=2.5):
+            with self.assertRaises(FetchError) as raised:
+                fetcher.fetch("u")
+
+        self.assertEqual(raised.exception.reason_code, "NETWORK_TIMEOUT")
 
     def test_remaining_fetch_seconds_is_bounded_and_hides_absolute_deadline(self):
         now = [10.0]
@@ -261,6 +328,29 @@ class RetryFetcherTests(unittest.TestCase):
         now[0] = 20.0
         self.assertEqual(bounded.remaining_fetch_seconds(), 0.0)
         self.assertIsNone(unbounded.remaining_fetch_seconds())
+
+    def test_stage_reservation_stops_s4_and_releases_budget_for_s5(self):
+        now = [10.0]
+        base = SequenceFetcher([Page("u", "ok")])
+        fetcher = RetryingFetcher(
+            base,
+            max_retries=0,
+            clock=lambda: now[0],
+            deadline=20.0,
+        )
+        fetcher.configure_stage_reservations({"career_discovery": 4.0})
+
+        with fetcher.stage_budget_scope("career_discovery"):
+            self.assertEqual(fetcher.remaining_fetch_seconds(), 6.0)
+            now[0] = 16.0
+            with self.assertRaises(FetchError) as raised:
+                fetcher.fetch("u")
+
+        self.assertEqual(raised.exception.reason_code, "FETCH_BUDGET_EXHAUSTED")
+        self.assertTrue(raised.exception.retryable)
+        self.assertEqual(base.calls, 0)
+        self.assertEqual(fetcher.remaining_fetch_seconds(), 4.0)
+        self.assertIs(fetcher.fetch("u"), base.responses[0])
 
 
 if __name__ == "__main__":

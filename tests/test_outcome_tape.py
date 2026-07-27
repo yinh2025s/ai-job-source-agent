@@ -50,7 +50,15 @@ class OutcomeTapeTests(unittest.TestCase):
             final_url=url,
         )
 
-    def failure(self, ordinal: int, *, url: str = URL):
+    def failure(
+        self,
+        ordinal: int,
+        *,
+        url: str = URL,
+        reason_code: str = "RATE_LIMITED",
+        status: int | None = 429,
+        message: str = "HTTP 429 RATE_LIMITED",
+    ):
         return FetchFailureOutcomeTapeEntry(
             snapshot_store_id=STORE,
             scope_id=SCOPE_ID,
@@ -59,10 +67,10 @@ class OutcomeTapeTests(unittest.TestCase):
             stage=STAGE,
             request_ordinal=ordinal,
             request=build_request_identity(url),
-            status=429,
-            reason_code="RATE_LIMITED",
+            status=status,
+            reason_code=reason_code,
             retryable=True,
-            message="HTTP 429 RATE_LIMITED",
+            message=message,
         )
 
     def tape(self, entries):
@@ -214,6 +222,28 @@ class OutcomeTapeTests(unittest.TestCase):
 
         self.assert_divergence(raised)
         self.assertEqual(fetcher.fetch(URL).url, URL)
+        fetcher.finish()
+
+    def test_budget_failure_marks_replay_fetch_budget_exhausted(self):
+        fetcher = OutcomeTapeFetcher(
+            self.tape(
+                [
+                    self.page(1),
+                    self.failure(
+                        2,
+                        reason_code="COMPANY_TIME_BUDGET_EXHAUSTED",
+                        status=None,
+                        message="company time budget exhausted at caller deadline",
+                    ),
+                ]
+            )
+        )
+
+        self.assertIsNone(fetcher.remaining_fetch_seconds())
+        fetcher.fetch(URL)
+        with self.assertRaises(FetchError):
+            fetcher.fetch(URL)
+        self.assertEqual(fetcher.remaining_fetch_seconds(), 0.0)
         fetcher.finish()
 
     def test_concurrent_distinct_requests_consume_each_entry_once(self):

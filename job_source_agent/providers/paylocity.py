@@ -3,11 +3,18 @@ from __future__ import annotations
 import json
 import re
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urljoin, urlparse
 
 from ..fetch_failure import project_fetch_error
+from ..provider_candidates import ProviderPublishedEmployerEvidence
 from ..web import FetchError
-from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
+from .base import (
+    AdapterResult,
+    JobBoard,
+    JobCandidate,
+    JobQuery,
+    ProviderCandidateBootstrap,
+)
 
 
 _HOST = "recruiting.paylocity.com"
@@ -18,6 +25,14 @@ _UUID = re.compile(
 _SLUG = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$")
 _POSITIVE_ID = re.compile(r"^[1-9][0-9]{0,19}$")
 _PAGE_DATA = re.compile(r"\bwindow\.pageData\s*=\s*")
+_DETAIL_PATH = re.compile(
+    r"^/Recruiting/Jobs/(?P<kind>Details|Apply)/(?P<job_id>[1-9][0-9]{0,19})/?$",
+    re.IGNORECASE,
+)
+_BOARD_PATH = re.compile(
+    r"/Recruiting/Jobs/All/(?P<tenant>[0-9a-f-]{36})(?:/(?P<slug>[A-Za-z0-9_-]{1,100}))?",
+    re.IGNORECASE,
+)
 _MAX_HTML_CHARS = 2_000_000
 _MAX_PAGE_DATA_CHARS = 1_000_000
 _MAX_INVENTORY_JOBS = 1_000
@@ -28,7 +43,7 @@ class PaylocityAdapter:
     supports_listing = True
 
     def recognizes(self, url: str) -> bool:
-        return _url_identity(url) is not None
+        return _url_identity(url) is not None or _detail_identity(url) is not None
 
     def identify_board(self, url: str) -> JobBoard | None:
         identity = _url_identity(url)
@@ -39,6 +54,55 @@ class PaylocityAdapter:
             url=_board_url(tenant, slug),
             provider=self.name,
             identifier=_identifier(tenant, slug),
+        )
+
+    def bootstrap_candidate(
+        self,
+        fetcher,
+        url: str,
+        query: JobQuery,
+    ) -> ProviderCandidateBootstrap | None:
+        input_detail = _detail_identity(url)
+        if input_detail is None or not query.title:
+            return None
+        try:
+            page = fetcher.fetch(url)
+        except (FetchError, OSError, TimeoutError):
+            return None
+        final_url = page.final_url or page.url
+        final_detail = _detail_identity(final_url)
+        if final_detail is None or final_detail[1] != input_detail[1]:
+            return None
+        page_data = _detail_page_data(page.html)
+        board_identity = _detail_board_identity(page.html, final_url)
+        if page_data is None or board_identity is None:
+            return None
+        title, employer_name = page_data
+        if _normalized(title) != _normalized(query.title):
+            return None
+        tenant, slug = board_identity
+        board = JobBoard(
+            url=_board_url(tenant, slug),
+            provider=self.name,
+            identifier=_identifier(tenant, slug),
+        )
+        opening_url = _detail_url(final_detail[1])
+        evidence = ProviderPublishedEmployerEvidence(
+            employer_name=employer_name,
+            descriptor_terms=(),
+            evidence_url=opening_url,
+            opening_url=opening_url,
+            extraction_method="paylocity_detail_page_data",
+        )
+        return ProviderCandidateBootstrap(
+            board=board,
+            opening_url=opening_url,
+            employer_evidence=evidence,
+            trace={
+                "adapter": self.name,
+                "variant": "provider_detail_bootstrap",
+                "opening_id": final_detail[1],
+            },
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
@@ -148,6 +212,67 @@ def _url_identity(url: str) -> tuple[str, str | None] | None:
         if tenant and (slug is None or _SLUG.fullmatch(slug))
         else None
     )
+
+
+def _detail_identity(url: str) -> tuple[str, str] | None:
+    parsed = _safe_url(url)
+    if parsed is None or parsed.query or parsed.fragment:
+        return None
+    match = _DETAIL_PATH.fullmatch(parsed.path)
+    return (match.group("kind").casefold(), match.group("job_id")) if match else None
+
+
+def _detail_url(job_id: str) -> str:
+    return f"https://{_HOST}/Recruiting/Jobs/Details/{job_id}"
+
+
+def _detail_page_data(html: str) -> tuple[str, str] | None:
+    if not isinstance(html, str) or len(html) > _MAX_HTML_CHARS:
+        return None
+    matches = list(_PAGE_DATA.finditer(html))
+    if len(matches) != 1:
+        return None
+    encoded = html[matches[0].end() :]
+    encoded = encoded[: _MAX_PAGE_DATA_CHARS + 1].lstrip()
+    try:
+        payload, end = json.JSONDecoder().raw_decode(encoded)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if end > _MAX_PAGE_DATA_CHARS or not encoded[end:].lstrip().startswith(";"):
+        return None
+    if not isinstance(payload, dict):
+        return None
+    title = payload.get("jobTitle")
+    employer = payload.get("moduleName")
+    if not isinstance(title, str) or not title.strip() or len(title) > 500:
+        return None
+    if not isinstance(employer, str) or not employer.strip() or len(employer) > 300:
+        return None
+    return title.strip(), employer.strip()
+
+
+def _detail_board_identity(html: str, base_url: str) -> tuple[str, str | None] | None:
+    if not isinstance(html, str) or len(html) > _MAX_HTML_CHARS:
+        return None
+    identities: set[tuple[str, str | None]] = set()
+    for match in _BOARD_PATH.finditer(html):
+        raw = match.group(0)
+        try:
+            resolved = urljoin(base_url, raw)
+        except (TypeError, ValueError):
+            return None
+        identity = _url_identity(resolved)
+        if identity is None:
+            return None
+        identities.add(identity)
+    if not identities:
+        return None
+    tenants = {tenant for tenant, _ in identities}
+    slugs = {slug.casefold(): slug for _, slug in identities if slug is not None}
+    if len(tenants) != 1 or len(slugs) > 1:
+        return None
+    tenant = next(iter(tenants))
+    return tenant, next(iter(slugs.values())) if slugs else None
 
 
 def _safe_url(url: str):
@@ -320,9 +445,17 @@ def _location(record: dict[str, Any], module_id: str) -> str | None:
             if isinstance(part, str) and part.strip()
         ]
         structured = ", ".join(values)
-        if structured and _normalized(structured) not in {
-            _normalized(option) for option in options
-        }:
+        normalized_structured = _normalized(structured)
+        normalized_options = {_normalized(option) for option in options}
+        if (
+            structured
+            and normalized_structured not in normalized_options
+            and not any(
+                normalized_structured.startswith(option + " ")
+                for option in normalized_options
+                if option
+            )
+        ):
             options.append(structured)
     return "; ".join(options) if options else None
 

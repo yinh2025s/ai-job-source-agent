@@ -17,6 +17,7 @@ _CUSTOM_IDENTIFIER_PREFIX = "custom:"
 _CLOUD_PAGE_SIZE = 10
 _CLOUD_MAX_PAGES = 5
 _LEGACY_MAX_PAGES = 5
+_MAX_DETAIL_FETCHES = 3
 _MAX_PAGE_EVIDENCE_CHARS = 2_000_000
 _SHARED_LEGACY_HOST = re.compile(
     r"^career\d+\.(?:successfactors|sapsf)\.(?:com|eu)$",
@@ -159,7 +160,12 @@ class SuccessFactorsAdapter:
                 provider=self.name,
                 board=board,
                 reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-                trace={"adapter": self.name, "error": "missing SuccessFactors board identifier"},
+                trace={
+                    "adapter": self.name,
+                    "error": "missing SuccessFactors board identifier",
+                    "board_identity": _board_identity(board),
+                    "detail_verified_opening_urls": [],
+                },
             )
         if board.identifier.startswith(_CLOUD_IDENTIFIER_PREFIX):
             return self._list_cloud_sap_jobs(fetcher, board, query)
@@ -177,7 +183,7 @@ class SuccessFactorsAdapter:
         expected_query = _pagination_query(search_url)
         current_url = search_url
         seen_urls = set()
-        exact_title = _normalized_title(query.title)
+        exact_title = _successfactors_title(query.title)
 
         for _ in range(_LEGACY_MAX_PAGES):
             if current_url in seen_urls:
@@ -194,7 +200,13 @@ class SuccessFactorsAdapter:
                         board=board,
                         reason_code="PROVIDER_FETCH_FAILED",
                         retryable=True,
-                        trace={"adapter": self.name, "search_urls": search_urls, "error": str(exc)},
+                        trace={
+                            "adapter": self.name,
+                            "search_urls": search_urls,
+                            "error": str(exc),
+                            "board_identity": _board_identity(board),
+                            "detail_verified_opening_urls": [],
+                        },
                     )
                 inventory_complete = False
                 stop_reason = "pagination_fetch_failed"
@@ -218,7 +230,10 @@ class SuccessFactorsAdapter:
             malformed_json = malformed_json or page_malformed
             pagination = _pagination_metadata(values) or pagination
             candidates = _dedupe_candidates(candidates)
-            if exact_title and any(_normalized_title(candidate.title) == exact_title for candidate in page_candidates):
+            if exact_title and any(
+                _successfactors_title(candidate.title) == exact_title
+                for candidate in page_candidates
+            ):
                 break
             if not query.title:
                 break
@@ -235,6 +250,12 @@ class SuccessFactorsAdapter:
             inventory_complete = False
             stop_reason = "pagination_limit"
 
+        candidates, detail_trace = _enrich_verified_candidate_details(
+            fetcher,
+            board,
+            query,
+            candidates,
+        )
         reason_code = None
         if not candidates and inventory_complete:
             reason_code = "INVALID_STRUCTURED_DATA" if malformed_json else "EMPTY_PROVIDER_RESPONSE"
@@ -253,6 +274,9 @@ class SuccessFactorsAdapter:
                 "pagination": pagination,
                 "inventory_complete": inventory_complete,
                 "stop_reason": stop_reason,
+                "board_identity": _board_identity(board),
+                "detail_verified_opening_urls": detail_trace["verified_urls"],
+                "detail_fetch_count": detail_trace["fetch_count"],
             },
         )
 
@@ -270,7 +294,14 @@ class SuccessFactorsAdapter:
                 board=board,
                 reason_code="PROVIDER_FETCH_FAILED",
                 retryable=True,
-                trace={"adapter": self.name, "variant": "cloud_sap", "search_urls": [search_url], "error": str(exc)},
+                trace={
+                    "adapter": self.name,
+                    "variant": "cloud_sap",
+                    "search_urls": [search_url],
+                    "error": str(exc),
+                    "board_identity": _board_identity(board),
+                    "detail_verified_opening_urls": [],
+                },
             )
         final_url = page.final_url or page.url
         if not _same_safe_host(final_url, expected_host):
@@ -286,7 +317,7 @@ class SuccessFactorsAdapter:
         api_urls: list[str] = []
         total_jobs: int | None = None
         response_source: str | None = None
-        normalized_target = _normalized_title(query.title)
+        normalized_target = _successfactors_title(query.title)
         exact_title_found = False
         inventory_scope = "title_filtered" if query.title else "full"
         inventory_complete = False
@@ -331,6 +362,8 @@ class SuccessFactorsAdapter:
                         "search_urls": [search_url],
                         "api_urls": api_urls,
                         "error": str(exc),
+                        "board_identity": _board_identity(board),
+                        "detail_verified_opening_urls": [],
                     },
                 )
             response_source = response_source or response.source
@@ -344,7 +377,13 @@ class SuccessFactorsAdapter:
                     provider=self.name,
                     board=board,
                     reason_code="INVALID_STRUCTURED_DATA",
-                    trace={"adapter": self.name, "variant": "cloud_sap", "api_urls": api_urls},
+                    trace={
+                        "adapter": self.name,
+                        "variant": "cloud_sap",
+                        "api_urls": api_urls,
+                        "board_identity": _board_identity(board),
+                        "detail_verified_opening_urls": [],
+                    },
                 )
             results = payload_data.get("jobSearchResult") if isinstance(payload_data, dict) else None
             if not isinstance(results, list):
@@ -352,12 +391,18 @@ class SuccessFactorsAdapter:
                     provider=self.name,
                     board=board,
                     reason_code="INVALID_STRUCTURED_DATA",
-                    trace={"adapter": self.name, "variant": "cloud_sap", "api_urls": api_urls},
+                    trace={
+                        "adapter": self.name,
+                        "variant": "cloud_sap",
+                        "api_urls": api_urls,
+                        "board_identity": _board_identity(board),
+                        "detail_verified_opening_urls": [],
+                    },
                 )
             page_candidates = _cloud_candidates(results, final_url, expected_host, locale)
             candidates.extend(page_candidates)
             if normalized_target and any(
-                _normalized_title(candidate.title) == normalized_target
+                _successfactors_title(candidate.title) == normalized_target
                 for candidate in page_candidates
             ):
                 exact_title_found = True
@@ -396,6 +441,8 @@ class SuccessFactorsAdapter:
                 "exact_title_found": exact_title_found,
                 "inventory_scope": inventory_scope,
                 "inventory_complete": inventory_complete,
+                "board_identity": _board_identity(board),
+                "detail_verified_opening_urls": [],
             },
         )
 
@@ -479,6 +526,109 @@ class _SuccessFactorsHTMLParser(HTMLParser):
             self._form_action = ""
             self._form_method = ""
             self._form_has_query = False
+
+
+class _JobPostingMicrodataParser(HTMLParser):
+    _VOID_TAGS = {
+        "area", "base", "br", "col", "embed", "hr", "img", "input",
+        "link", "meta", "param", "source", "track", "wbr",
+    }
+    _FIELDS = {"title", "addresslocality", "addressregion", "hiringorganization"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.canonical_urls: list[str] = []
+        self.open_graph_titles: list[str] = []
+        self.records: list[dict[str, list[str]]] = []
+        self.malformed = False
+        self._stack: list[str] = []
+        self._job_depth: int | None = None
+        self._record: dict[str, list[str]] | None = None
+        self._captures: list[tuple[int, str, list[str]]] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        folded_tag = tag.casefold()
+        attributes = {key.casefold(): value or "" for key, value in attrs}
+        rel = {value.casefold() for value in attributes.get("rel", "").split()}
+        if folded_tag == "link" and "canonical" in rel and attributes.get("href"):
+            self.canonical_urls.append(attributes["href"].strip())
+        if (
+            folded_tag == "meta"
+            and attributes.get("property", "").casefold() == "og:title"
+            and attributes.get("content")
+        ):
+            self.open_graph_titles.append(attributes["content"].strip())
+
+        itemtype = attributes.get("itemtype", "").rstrip("/").casefold()
+        is_job = "itemscope" in attributes and itemtype in {
+            "http://schema.org/jobposting",
+            "https://schema.org/jobposting",
+        }
+        if is_job:
+            if self._job_depth is not None:
+                self.malformed = True
+            else:
+                self._job_depth = len(self._stack)
+                self._record = {}
+
+        if self._job_depth is not None and self._record is not None:
+            properties = {
+                value.casefold()
+                for value in attributes.get("itemprop", "").split()
+            }
+            for property_name in properties & self._FIELDS:
+                content = (
+                    attributes.get("content")
+                    or attributes.get("datetime")
+                    or attributes.get("value")
+                    or ""
+                ).strip()
+                if content:
+                    self._record.setdefault(property_name, []).append(content)
+                elif folded_tag not in self._VOID_TAGS:
+                    self._captures.append((len(self._stack), property_name, []))
+
+        if folded_tag not in self._VOID_TAGS:
+            self._stack.append(folded_tag)
+
+    def handle_startendtag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        self.handle_starttag(tag, attrs)
+
+    def handle_data(self, data: str) -> None:
+        for _, _, parts in self._captures:
+            parts.append(data)
+
+    def handle_endtag(self, tag: str) -> None:
+        folded_tag = tag.casefold()
+        if folded_tag not in self._stack:
+            # SuccessFactors themes contain browser-recoverable end tags (for
+            # example a button closed while an inline span remains open).
+            # Ignore only unmatched closing tags; an unclosed JobPosting scope
+            # is still rejected by close().
+            return
+        while self._stack and self._stack[-1] != folded_tag:
+            self._stack.pop()
+        self._stack.pop()
+        depth = len(self._stack)
+        remaining = []
+        for start_depth, property_name, parts in self._captures:
+            if start_depth >= depth:
+                value = " ".join("".join(parts).split())
+                if value and self._record is not None:
+                    self._record.setdefault(property_name, []).append(value)
+            else:
+                remaining.append((start_depth, property_name, parts))
+        self._captures = remaining
+        if self._job_depth is not None and depth <= self._job_depth:
+            if self._record is not None:
+                self.records.append(self._record)
+            self._job_depth = None
+            self._record = None
+
+    def close(self) -> None:
+        super().close()
+        if self._job_depth is not None or self._captures:
+            self.malformed = True
 
 
 def _cloud_search_url(board_url: str, title: str | None) -> str:
@@ -638,12 +788,154 @@ def _normalized_title(value: str | None) -> str:
     return " ".join(unescape(value or "").casefold().split())
 
 
+def _successfactors_title(value: str | None) -> str:
+    tokens = _normalized_title(value).split()
+    if tokens and tokens[-1] == "job":
+        tokens.pop()
+    return " ".join(tokens)
+
+
+def _board_identity(board: JobBoard) -> dict[str, str]:
+    return {
+        "provider": "successfactors",
+        "url": board.url,
+        "identifier": board.identifier or "",
+    }
+
+
+def _enrich_verified_candidate_details(
+    fetcher,
+    board: JobBoard,
+    query: JobQuery,
+    candidates: list[JobCandidate],
+) -> tuple[list[JobCandidate], dict[str, object]]:
+    target_title = _successfactors_title(query.title)
+    if not target_title:
+        return candidates, {"fetch_count": 0, "verified_urls": []}
+
+    eligible_indexes = [
+        index
+        for index, candidate in enumerate(candidates)
+        if _successfactors_title(candidate.title) == target_title
+    ][:_MAX_DETAIL_FETCHES]
+    enriched = list(candidates)
+    verified_urls: list[str] = []
+    fetch_count = 0
+    for index in eligible_indexes:
+        candidate = candidates[index]
+        fetch_count += 1
+        try:
+            page = fetcher.fetch(candidate.url)
+        except FetchError:
+            continue
+        verified = _verified_detail_candidate(
+            page,
+            board,
+            candidate,
+            requested_title=query.title,
+        )
+        if verified is None:
+            continue
+        enriched[index] = verified
+        verified_urls.append(verified.url)
+    return enriched, {"fetch_count": fetch_count, "verified_urls": verified_urls}
+
+
+def _verified_detail_candidate(
+    page: Page,
+    board: JobBoard,
+    candidate: JobCandidate,
+    *,
+    requested_title: str | None,
+) -> JobCandidate | None:
+    candidate_url = safe_normalize_url(candidate.url)
+    final_url = safe_normalize_url(page.final_url or page.url)
+    if (
+        not candidate_url
+        or not final_url
+        or final_url != candidate_url
+        or not _same_board_tenant(candidate_url, board)
+    ):
+        return None
+    expected_host = (urlparse(candidate_url).hostname or "").casefold()
+    if not expected_host or not _same_safe_host(final_url, expected_host):
+        return None
+    custom_tenant = _custom_tenant(board)
+    if custom_tenant:
+        detail_identity = _j2w_tenant_identity(page.html or "")
+        if detail_identity is not None and detail_identity[0] != custom_tenant:
+            return None
+    html = page.html
+    if not isinstance(html, str) or not html or len(html) > _MAX_PAGE_EVIDENCE_CHARS:
+        return None
+
+    parser = _JobPostingMicrodataParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    canonical_urls = {
+        normalized
+        for raw_url in parser.canonical_urls
+        if (normalized := safe_normalize_url(raw_url, final_url))
+    }
+    if parser.malformed or canonical_urls != {candidate_url} or len(parser.records) != 1:
+        return None
+    record = parser.records[0]
+    title = _single_microdata_value(record, "title")
+    if not title:
+        title = _single_value(parser.open_graph_titles)
+    locality = _single_microdata_value(record, "addresslocality")
+    region = _single_microdata_value(record, "addressregion")
+    hiring_organization = _single_microdata_value(record, "hiringorganization")
+    if not all((title, locality, region, hiring_organization)):
+        return None
+    if _successfactors_title(title) != _successfactors_title(candidate.title):
+        return None
+
+    raw = dict(candidate.raw)
+    raw["hiring_organization_name"] = hiring_organization
+    selected_title = candidate.title
+    if (
+        requested_title
+        and _successfactors_title(requested_title)
+        == _successfactors_title(candidate.title)
+        and _normalized_title(requested_title) != _normalized_title(candidate.title)
+    ):
+        raw["provider_published_title"] = candidate.title
+        selected_title = requested_title.strip()
+    return JobCandidate(
+        title=selected_title,
+        url=candidate_url,
+        provider=candidate.provider,
+        location=f"{locality}, {region}",
+        raw=raw,
+    )
+
+
+def _single_microdata_value(record: dict[str, list[str]], key: str) -> str:
+    return _single_value(record.get(key, []))
+
+
+def _single_value(raw_values) -> str:
+    values = {" ".join(unescape(value).split()) for value in raw_values}
+    values.discard("")
+    return next(iter(values)) if len(values) == 1 else ""
+
+
 def _unsupported_cloud_result(board: JobBoard, error: str) -> AdapterResult:
     return AdapterResult(
         provider="successfactors",
         board=board,
         reason_code="PROVIDER_VARIANT_UNSUPPORTED",
-        trace={"adapter": "successfactors", "variant": "cloud_sap", "error": error},
+        trace={
+            "adapter": "successfactors",
+            "variant": "cloud_sap",
+            "error": error,
+            "board_identity": _board_identity(board),
+            "detail_verified_opening_urls": [],
+        },
     )
 
 

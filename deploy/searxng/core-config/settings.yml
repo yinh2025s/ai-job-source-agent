@@ -1,0 +1,23 @@
+use_default_settings: true
+
+general:
+  debug: false
+  instance_name: "Job Source Agent Search"
+  enable_metrics: false
+  open_metrics: ""
+
+search:
+  safe_search: 1
+  default_lang: "en-US"
+  autocomplete: ""
+  favicon_resolver: ""
+  formats:
+    - json
+
+server:
+  limiter: false
+  image_proxy: false
+  public_instance: false
+
+ui:
+  static_use_hash: true

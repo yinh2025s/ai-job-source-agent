@@ -117,6 +117,14 @@ def discovery_result_from_context(
         STAGE_JOB_BOARD_DISCOVERY,
         {},
     )
+    job_board_result = next(
+        (
+            item
+            for item in context.stage_results
+            if item.stage == STAGE_JOB_BOARD_DISCOVERY
+        ),
+        None,
+    )
     selected_job_board_candidate = (
         job_board_trace.get("selected")
         if isinstance(job_board_trace, dict)
@@ -144,10 +152,27 @@ def discovery_result_from_context(
             or not context.provider_identity.relationship_verified
         )
     )
+    explicit_job_list_relationship_rejection = bool(
+        context.job_list_page_url
+        and (
+            (
+                job_board_result is not None
+                and job_board_result.reason_code == "COMPANY_IDENTITY_AMBIGUOUS"
+            )
+            or (
+                context.provider_identity is not None
+                and not context.provider_identity.relationship_verified
+            )
+        )
+    )
     public_opening_url = None if identity_rejected else context.open_position_url
     public_job_list_url = (
         None
-        if job_list_identity_rejected or stored_job_list_identity_unverified
+        if (
+            job_list_identity_rejected
+            or stored_job_list_identity_unverified
+            or explicit_job_list_relationship_rejection
+        )
         else context.job_list_page_url
     )
     identity_assertion = _identity_assertion(context, identity_issues)

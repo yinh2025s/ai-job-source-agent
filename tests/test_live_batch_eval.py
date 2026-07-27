@@ -11,7 +11,7 @@ from unittest.mock import Mock, patch
 
 from job_source_agent.checkpoint import execution_fingerprint
 from job_source_agent.contracts import StageExecution
-from job_source_agent.job_board import DiscoveredJobBoard, JobBoard
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.identity_continuity import (
     HiringIdentityEvidence,
     OpeningIdentity,
@@ -19,6 +19,7 @@ from job_source_agent.identity_continuity import (
 )
 from job_source_agent.models import (
     PIPELINE_STAGES,
+    STAGE_JOB_BOARD_DISCOVERY,
     CompanyInput,
     DiscoveryResult,
     StageResult,
@@ -59,6 +60,7 @@ from scripts.live_batch_eval import (
     _prepare_automatic_replay_evidence_snapshot,
     _freeze_company_discovery_evidence_revisions,
     _split_opening_phase,
+    _can_continue_to_opening_validation,
     _load_completed_companies,
     _downstream_start_stage,
     _ordered_records,
@@ -67,6 +69,7 @@ from scripts.live_batch_eval import (
     _recapture_retryable_missing_boundaries,
     _remote_worker_failure_result,
     _run_configuration,
+    _search_backend,
     load_batch_companies,
     prepare_company,
     print_summary,
@@ -78,6 +81,43 @@ from scripts.live_batch_eval import (
 
 
 class LiveBatchEvalTests(unittest.TestCase):
+    def test_live_search_backend_configuration_is_fingerprinted_without_endpoint(self):
+        endpoint = "https://private-search.example/internal"
+        args = SimpleNamespace(
+            search_backend="searxng",
+            search_backend_url=endpoint,
+            search_backend_profile_digest="a" * 64,
+        )
+
+        backend = _search_backend(args)
+        configuration = _run_configuration(args)
+
+        self.assertEqual(backend.name, "searxng")
+        self.assertEqual(configuration.search_backend_kind, "searxng")
+        self.assertEqual(len(configuration.search_backend_profile_digest), 64)
+        self.assertNotIn(endpoint, repr(configuration.to_payload()))
+
+    def test_live_search_backend_configuration_rejects_invalid_combinations(self):
+        with self.assertRaisesRegex(SystemExit, "requires --search-backend-url"):
+            _search_backend(SimpleNamespace(search_backend="searxng"))
+        with self.assertRaisesRegex(
+            SystemExit,
+            "requires --search-backend-profile-digest",
+        ):
+            _search_backend(
+                SimpleNamespace(
+                    search_backend="searxng",
+                    search_backend_url="https://search.example",
+                )
+            )
+        with self.assertRaisesRegex(SystemExit, "requires --search-backend searxng"):
+            _search_backend(
+                SimpleNamespace(
+                    search_backend="legacy",
+                    search_backend_url="https://search.example",
+                )
+            )
+
     def test_batch_freezes_per_company_public_evidence_revision(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "evidence.json"
@@ -188,6 +228,125 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertTrue(_split_opening_phase("job_board_discovery", 45))
         self.assertFalse(_split_opening_phase("opening_match", 45))
         self.assertFalse(_split_opening_phase("career_discovery", 23.9))
+
+    def test_identity_pending_provider_portfolio_can_continue_to_s6(self):
+        company = CompanyInput(
+            company_name="Fabric",
+            linkedin_company_url="https://www.linkedin.com/company/fabric",
+            job_title="Product Designer",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            args = self.pipeline_args(directory)
+            store, _ = self.save_checkpoint_chain(
+                company,
+                args,
+                stages=PIPELINE_STAGES[:4],
+            )
+            board = DiscoveredJobBoard(
+                board=JobBoard(
+                    url="https://boards.greenhouse.io/fabric83",
+                    provider="greenhouse",
+                    identifier="custom:boards.greenhouse.io",
+                    replay_safe=True,
+                ),
+                detection_method="page_evidence",
+                evidence_url="https://boards.greenhouse.io/fabric83",
+            )
+            portfolio = JobBoardPortfolio(
+                boards=(board,),
+                eligible_set_complete=False,
+            )
+            provider_identity = ProviderIdentity(
+                hiring_entity_name="Fabric",
+                provider="greenhouse",
+                tenant="custom:boards.greenhouse.io",
+                canonical_board_url=board.board.url,
+                evidence_url=board.evidence_url,
+                verification_method="linked_url_only",
+                relationship_verified=False,
+            )
+            fingerprint = execution_fingerprint(
+                company.__dict__,
+                self.run_configuration(
+                    max_candidates=args.max_career_candidates,
+                    max_job_pages=args.max_job_pages,
+                    max_career_candidate_fetches=args.max_career_fetches,
+                    max_career_search_queries=args.max_career_search_queries,
+                    max_ats_board_fetches=args.max_ats_board_fetches,
+                    enable_sitemap_discovery=not args.skip_sitemap,
+                    career_search_timeout=args.career_search_timeout,
+                ).digest,
+            )
+            store.save(
+                fingerprint,
+                StageExecution(
+                    StageResult(
+                        stage=STAGE_JOB_BOARD_DISCOVERY,
+                        status="partial",
+                        reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+                        provider="greenhouse",
+                    ),
+                    updates={
+                        "job_list_page_url": board.board.url,
+                        "provider": "greenhouse",
+                        "discovered_job_board": board,
+                        "provider_identity": provider_identity,
+                        "job_board_portfolio": portfolio,
+                    },
+                ),
+            )
+            result = DiscoveryResult(
+                company_name=company.company_name,
+                company_website_url="https://fabric.inc",
+                job_list_page_url=None,
+                identity_assertion={
+                    "provider": {
+                        "provider": "greenhouse",
+                        "canonical_board_url": board.board.url,
+                        "relationship_verified": False,
+                    }
+                },
+                stage_results=[
+                    StageResult(
+                        stage=STAGE_JOB_BOARD_DISCOVERY,
+                        status="partial",
+                        reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+                    )
+                ],
+                trace={
+                    "stages": {
+                        STAGE_JOB_BOARD_DISCOVERY: {
+                            "job_board_portfolio": {
+                                "primary_provider": "greenhouse",
+                                "primary_url": board.board.url,
+                                "checkpoint_payload": portfolio.to_checkpoint_payload(),
+                            }
+                        }
+                    }
+                },
+            )
+
+            self.assertTrue(
+                _can_continue_to_opening_validation(result, company, args)
+            )
+
+            result.stage_results = [
+                StageResult(
+                    stage=STAGE_JOB_BOARD_DISCOVERY,
+                    status="success",
+                    provider="greenhouse",
+                )
+            ]
+            self.assertTrue(
+                _can_continue_to_opening_validation(result, company, args)
+            )
+
+            result.trace["stages"][STAGE_JOB_BOARD_DISCOVERY][
+                "job_board_portfolio"
+            ]["primary_provider"] = "ashby"
+            self.assertFalse(
+                _can_continue_to_opening_validation(result, company, args)
+            )
 
     def pipeline_args(self, directory):
         return SimpleNamespace(
@@ -1979,6 +2138,13 @@ class LiveBatchEvalTests(unittest.TestCase):
         self.assertEqual(summary["checkpoint_stage_counts"], {"opening_match": 1})
 
     def test_failure_bundle_configuration_requires_snapshots_and_positive_limit(self):
+        with self.assertRaisesRegex(SystemExit, "requires parallel"):
+            validate_artifact_args(
+                SimpleNamespace(
+                    candidate_discovery_engine="coordinator_v2",
+                    enable_parallel_candidate_discovery=False,
+                )
+            )
         with self.assertRaisesRegex(SystemExit, "requires --snapshot-dir"):
             validate_artifact_args(
                 SimpleNamespace(

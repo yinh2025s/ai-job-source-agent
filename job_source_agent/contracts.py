@@ -5,6 +5,7 @@ from typing import Any, Protocol, runtime_checkable
 
 from .job_board import DiscoveredJobBoard, JobBoardPortfolio
 from .homepage_navigation import HomepageNavigationEvidence
+from .provisional_evidence import ProvisionalWebsiteEvidence
 from .evidence_scope import EvidenceScopeRef, StageEvidenceLineage
 from .models import CompanyInput, StageResult
 from .identity_continuity import (
@@ -17,7 +18,7 @@ from .web import Page
 from .browser_interaction import BrowserInteraction
 
 
-CONTRACT_SCHEMA_VERSION = "1.7"
+CONTRACT_SCHEMA_VERSION = "1.8"
 
 
 @runtime_checkable
@@ -74,6 +75,7 @@ class PipelineContext:
     hiring_identity_evidence: HiringIdentityEvidence | None = None
     career_root_url: str | None = None
     homepage_navigation_evidence: HomepageNavigationEvidence | None = None
+    provisional_website_evidence: ProvisionalWebsiteEvidence | None = None
     career_page_url: str | None = None
     job_list_page_url: str | None = None
     discovered_job_board: DiscoveredJobBoard | None = None
@@ -120,6 +122,19 @@ class PipelineContext:
             ):
                 raise TypeError(
                     "homepage_navigation_evidence update must use HomepageNavigationEvidence"
+                )
+            if field_name == "provisional_website_evidence" and not isinstance(
+                value, ProvisionalWebsiteEvidence
+            ):
+                raise TypeError(
+                    "provisional_website_evidence update must use ProvisionalWebsiteEvidence"
+                )
+            if (
+                field_name == "provisional_website_evidence"
+                and value.source_company_name != self.company.company_name
+            ):
+                raise ValueError(
+                    "provisional_website_evidence must bind the current source company"
                 )
             if field_name == "hiring_identity_evidence" and not isinstance(
                 value, HiringIdentityEvidence
@@ -187,6 +202,7 @@ _CONTEXT_UPDATE_FIELDS = {
     "hiring_identity_evidence",
     "career_root_url",
     "homepage_navigation_evidence",
+    "provisional_website_evidence",
     "career_page_url",
     "job_list_page_url",
     "discovered_job_board",

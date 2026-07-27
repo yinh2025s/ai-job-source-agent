@@ -5,9 +5,9 @@ import json
 import re
 from urllib.parse import unquote, urlencode, urlparse
 
-from ..reasons import classify_fetch_error, reason_spec
+from ..reasons import reason_spec
 from ..web import FetchError
-from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
+from .base import AdapterResult, JobBoard, JobCandidate, JobQuery, provider_fetch_reason
 
 
 _HOST = "www.governmentjobs.com"
@@ -198,7 +198,12 @@ def _board_url(tenant: str) -> str:
 
 
 def _job_board(tenant: str) -> JobBoard:
-    return JobBoard(url=_board_url(tenant), provider="governmentjobs", identifier=tenant)
+    return JobBoard(
+        url=_board_url(tenant),
+        provider="governmentjobs",
+        identifier=tenant,
+        replay_safe=True,
+    )
 
 
 def _board_tenant(board: JobBoard) -> str | None:
@@ -421,9 +426,7 @@ def _failure(
 
 
 def _fetch_failure(board: JobBoard, error: Exception, url: str) -> AdapterResult:
-    reason = classify_fetch_error(str(error))
-    if reason == "FETCH_FAILED":
-        reason = "PROVIDER_FETCH_FAILED"
+    reason = provider_fetch_reason(error)
     return _failure(
         board,
         reason,

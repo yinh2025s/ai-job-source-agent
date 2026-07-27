@@ -97,8 +97,9 @@ class StageIdentityContinuityTests(unittest.TestCase):
     def test_s5_accepts_explicit_verified_parent_relationship(self):
         board = DiscoveredJobBoard(
             JobBoard("https://jobs.example/parentcorp", "example", "parentcorp"),
-            "url_evidence",
-            "https://careers.example/jobs",
+            "linked_url_evidence",
+            "https://jobs.example/parentcorp",
+            relationship_evidence_url="https://careers.example/jobs",
         )
         context = PipelineContext.from_company(CompanyInput(company_name="Child Brand"))
         context.career_page_url = "https://careers.example/jobs"
@@ -107,7 +108,10 @@ class StageIdentityContinuityTests(unittest.TestCase):
         execution = JobBoardDiscoveryStage(_Service(board), self.registry).run(context)
 
         self.assertTrue(execution.updates["provider_identity"].relationship_verified)
-        self.assertEqual(execution.updates["provider_identity"].verification_method, "tenant_name_match")
+        self.assertEqual(
+            execution.updates["provider_identity"].verification_method,
+            "verified_first_party_handoff",
+        )
 
     def test_s5_accepts_provider_board_that_is_the_verified_career_page(self):
         board = DiscoveredJobBoard(

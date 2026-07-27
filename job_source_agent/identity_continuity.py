@@ -218,6 +218,11 @@ def validate_opening_identity_chain(
         failures.append("PROVIDER_IDENTITY_MISSING")
     elif not provider.relationship_verified:
         failures.append("PROVIDER_RELATIONSHIP_UNVERIFIED")
+    elif provider.verification_method in {
+        "provider_tenant_match",
+        "tenant_name_match",
+    }:
+        failures.append("PROVIDER_RELATIONSHIP_PROVENANCE_MISSING")
     if open_position_url and opening is None:
         failures.append("OPENING_IDENTITY_MISSING")
     if hiring is None or provider is None:

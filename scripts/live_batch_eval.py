@@ -30,6 +30,7 @@ from job_source_agent.checkpoint_prefix import (
     CheckpointPrefixInspection,
     inspect_checkpoint_prefix,
     inspect_complete_checkpoint_prefix,
+    inspect_finalized_checkpoint_prefix,
 )
 from job_source_agent.completion_resume import (
     CompletionResumeDecision,
@@ -71,6 +72,7 @@ from job_source_agent.run_configuration import (
     DeterministicRunConfig,
     combined_configuration_digest,
 )
+from job_source_agent.searxng_search_backend import SearxngSearchBackend
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.web import domain_of, normalize_url
 from job_source_agent.website_resolver import CompanyWebsiteResolver
@@ -157,6 +159,32 @@ def build_parser() -> argparse.ArgumentParser:
         dest="enable_parallel_candidate_discovery",
         action="store_false",
         help="Use the legacy website-first S5 path for rollback or comparison.",
+    )
+    parser.add_argument(
+        "--candidate-discovery-engine",
+        choices=("stage_v1", "coordinator_v2"),
+        default="stage_v1",
+        help="Select the versioned S5 scheduler (default: stage_v1).",
+    )
+    parser.add_argument(
+        "--provider-search-reserve-seconds",
+        type=float,
+        default=10.0,
+        help="Seconds coordinator_v2 reserves from S4 for provider search.",
+    )
+    parser.add_argument(
+        "--search-backend",
+        choices=("legacy", "searxng"),
+        default="legacy",
+        help="Search source used by career and provider candidate discovery.",
+    )
+    parser.add_argument(
+        "--search-backend-url",
+        help="SearXNG base URL; required only with --search-backend searxng.",
+    )
+    parser.add_argument(
+        "--search-backend-profile-digest",
+        help="SHA-256 of the configured SearXNG server image/settings profile.",
     )
     parser.add_argument(
         "--evaluate-all-candidate-routes",
@@ -472,6 +500,14 @@ def enforce_bundle_gates(summary: dict) -> None:
 
 
 def validate_artifact_args(args: argparse.Namespace) -> None:
+    _search_backend(args)
+    if (
+        getattr(args, "candidate_discovery_engine", "stage_v1") == "coordinator_v2"
+        and not bool(getattr(args, "enable_parallel_candidate_discovery", False))
+    ):
+        raise SystemExit(
+            "--candidate-discovery-engine coordinator_v2 requires parallel candidate discovery."
+        )
     if bool(getattr(args, "evaluate_all_candidate_routes", False)) and not bool(
         getattr(args, "enable_parallel_candidate_discovery", False)
     ):
@@ -517,6 +553,12 @@ def build_automatic_failure_bundle(
         limit=int(args.failure_bundle_limit),
         include_missing_website=True,
         legacy_run_config=None,
+        search_backend_url=getattr(args, "search_backend_url", None),
+        search_backend_profile_digest=getattr(
+            args,
+            "search_backend_profile_digest",
+            None,
+        ),
         company_discovery_evidence_store=(
             company_discovery_evidence_store
             if company_discovery_evidence_store is not None
@@ -553,6 +595,12 @@ def build_automatic_replay_bundle(
         limit=int(args.replay_bundle_limit),
         include_missing_website=True,
         legacy_run_config=None,
+        search_backend_url=getattr(args, "search_backend_url", None),
+        search_backend_profile_digest=getattr(
+            args,
+            "search_backend_profile_digest",
+            None,
+        ),
         company_discovery_evidence_store=(
             company_discovery_evidence_store
             if company_discovery_evidence_store is not None
@@ -1350,9 +1398,10 @@ def run_company(company: CompanyInput, args: argparse.Namespace):
                     run_configuration=_run_configuration(args),
                 )
 
-        if (
-            discovery_result.stage_status(STAGE_JOB_BOARD_DISCOVERY) != "success"
-            or not discovery_result.job_list_page_url
+        if not _can_continue_to_opening_validation(
+            discovery_result,
+            company,
+            args,
         ):
             return discovery_result
         upstream_result = discovery_result
@@ -1709,6 +1758,7 @@ def run_pipeline_phase(
     capture_attempt_id: str | None = None,
     same_attempt_continuation: bool = False,
 ) -> DiscoveryResult:
+    search_backend = _search_backend(args)
     application = build_application(
         _company_fetcher_config(args, retry_deadline=retry_deadline),
         _agent_config(args),
@@ -1718,6 +1768,7 @@ def run_pipeline_phase(
             "company_discovery_evidence_store",
             None,
         ),
+        search_backend=search_backend,
     )
     result = application.pipeline.discover(
         company,
@@ -1739,6 +1790,16 @@ def run_pipeline_phase(
 
 def _agent_config(args: argparse.Namespace) -> AgentConfig:
     career_search_timeout = getattr(args, "career_search_timeout", 6)
+    search_backend = _search_backend(args)
+    search_backend_configuration = (
+        {
+            "search_backend_kind": "legacy",
+            "search_backend_contract_version": "1",
+            "search_backend_profile_digest": None,
+        }
+        if search_backend is None
+        else search_backend.public_configuration()
+    )
     return AgentConfig(
         max_candidates=int(getattr(args, "max_career_candidates", 6)),
         max_job_pages=int(getattr(args, "max_job_pages", 3)),
@@ -1759,10 +1820,51 @@ def _agent_config(args: argparse.Namespace) -> AgentConfig:
         evaluate_all_candidate_routes=bool(
             getattr(args, "evaluate_all_candidate_routes", False)
         ),
+        candidate_discovery_engine=str(
+            getattr(args, "candidate_discovery_engine", "stage_v1")
+        ),
+        provider_search_reserve_seconds=float(
+            getattr(args, "provider_search_reserve_seconds", 10.0)
+        ),
         career_search_timeout=(
             None if career_search_timeout is None else float(career_search_timeout)
         ),
+        **search_backend_configuration,
     )
+
+
+def _search_backend(args: argparse.Namespace):
+    backend_kind = str(getattr(args, "search_backend", "legacy"))
+    endpoint = getattr(args, "search_backend_url", None)
+    server_profile_digest = getattr(
+        args,
+        "search_backend_profile_digest",
+        None,
+    )
+    if backend_kind == "legacy":
+        if endpoint or server_profile_digest:
+            raise SystemExit(
+                "Search backend URL/profile requires --search-backend searxng."
+            )
+        return None
+    if backend_kind != "searxng":
+        raise SystemExit("Unsupported search backend.")
+    if not endpoint:
+        raise SystemExit(
+            "--search-backend searxng requires --search-backend-url."
+        )
+    if not server_profile_digest:
+        raise SystemExit(
+            "--search-backend searxng requires "
+            "--search-backend-profile-digest."
+        )
+    try:
+        return SearxngSearchBackend(
+            endpoint,
+            server_profile_digest=server_profile_digest,
+        )
+    except ValueError as error:
+        raise SystemExit(f"Invalid search backend configuration: {error}") from None
 
 
 def _run_configuration(args: argparse.Namespace) -> DeterministicRunConfig:
@@ -1834,6 +1936,87 @@ def _split_opening_phase(start_at: str, remaining_budget: float) -> bool:
     return PIPELINE_STAGES.index(start_at) <= PIPELINE_STAGES.index(
         STAGE_JOB_BOARD_DISCOVERY
     )
+
+
+def _can_continue_to_opening_validation(
+    result: DiscoveryResult,
+    company: CompanyInput,
+    args: argparse.Namespace,
+) -> bool:
+    stage = next(
+        (
+            item
+            for item in result.stage_results
+            if item.stage == STAGE_JOB_BOARD_DISCOVERY
+        ),
+        None,
+    )
+    if stage is None:
+        return False
+    if stage.status == "success" and bool(result.job_list_page_url):
+        return True
+    identity_pending = (
+        stage.status == "partial"
+        and stage.reason_code == "COMPANY_IDENTITY_AMBIGUOUS"
+    ) or (stage.status == "success" and stage.reason_code is None)
+    if not identity_pending or result.job_list_page_url is not None:
+        return False
+
+    identity = result.identity_assertion
+    provider_identity = (
+        identity.get("provider")
+        if isinstance(identity, dict)
+        else None
+    )
+    if (
+        not isinstance(provider_identity, dict)
+        or provider_identity.get("relationship_verified") is not False
+    ):
+        return False
+    provider = provider_identity.get("provider")
+    canonical_board_url = provider_identity.get("canonical_board_url")
+    if (
+        not isinstance(provider, str)
+        or not provider
+        or provider == "generic"
+        or not isinstance(canonical_board_url, str)
+        or not canonical_board_url
+    ):
+        return False
+
+    stages = result.trace.get("stages") if isinstance(result.trace, dict) else None
+    stage_trace = (
+        stages.get(STAGE_JOB_BOARD_DISCOVERY)
+        if isinstance(stages, dict)
+        else None
+    )
+    portfolio = (
+        stage_trace.get("job_board_portfolio")
+        if isinstance(stage_trace, dict)
+        else None
+    )
+    checkpoint_payload = (
+        portfolio.get("checkpoint_payload")
+        if isinstance(portfolio, dict)
+        else None
+    )
+    if (
+        not isinstance(portfolio, dict)
+        or portfolio.get("primary_provider") != provider
+        or portfolio.get("primary_url") != canonical_board_url
+        or not isinstance(checkpoint_payload, dict)
+    ):
+        return False
+
+    settings = _run_configuration(args)
+    fingerprint = execution_fingerprint(dataclass_to_dict(company), settings.digest)
+    inspection = inspect_finalized_checkpoint_prefix(
+        FilesystemCheckpointStore(_checkpoint_dir(args)),
+        fingerprint,
+        PipelineContext.from_company(company),
+        STAGE_OPENING_MATCH,
+    )
+    return not inspection.defects and inspection.effective_start == STAGE_OPENING_MATCH
 
 
 def _company_fetcher_config(

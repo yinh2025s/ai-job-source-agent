@@ -7,9 +7,9 @@ import json
 import re
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse
 
-from ..reasons import classify_fetch_error, reason_spec
+from ..reasons import reason_spec
 from ..web import FetchError, Page
-from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
+from .base import AdapterResult, JobBoard, JobCandidate, JobQuery, provider_fetch_reason
 
 
 _PUBLIC_COMPONENT = "HRS_HRAM_FL.HRS_CG_SEARCH_FL.GBL"
@@ -89,7 +89,7 @@ class PeopleSoftAdapter:
         try:
             page = fetcher.fetch(request_url)
         except (FetchError, OSError, TimeoutError) as error:
-            code = classify_fetch_error(str(error))
+            code = provider_fetch_reason(error)
             return _failure(
                 board,
                 scope,

@@ -8,6 +8,7 @@ from contextlib import contextmanager
 from dataclasses import asdict, fields
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import urlsplit
 
 import fcntl
 
@@ -15,6 +16,7 @@ from .checkpoint import ADAPTER_VERSION, CHECKPOINT_SCHEMA_VERSION
 from .contracts import CONTRACT_SCHEMA_VERSION, StageExecution
 from .evidence_scope import StageEvidenceLineage
 from .homepage_navigation import HomepageNavigationEvidence
+from .provisional_evidence import ProvisionalWebsiteEvidence
 from .job_board import DiscoveredJobBoard, JobBoardPortfolio
 from .identity_continuity import (
     HiringIdentityEvidence,
@@ -23,6 +25,7 @@ from .identity_continuity import (
     ProviderIdentity,
 )
 from .models import PIPELINE_STAGES, StageResult
+from .result_identity import canonicalize_identity_url
 
 
 class FilesystemCheckpointStore:
@@ -44,6 +47,7 @@ class FilesystemCheckpointStore:
     def save(self, execution_fingerprint: str, execution: StageExecution) -> None:
         stage = execution.result.stage
         _stage_index(stage)
+        _validate_provisional_identity_checkpoint(execution)
         with self._fingerprint_lock(execution_fingerprint):
             path = self._checkpoint_path(execution_fingerprint, stage)
             execution_payload = asdict(execution)
@@ -64,7 +68,12 @@ class FilesystemCheckpointStore:
             ):
                 raise TypeError("job_board_portfolio checkpoint update has an invalid type")
             if isinstance(job_board_portfolio, JobBoardPortfolio):
-                checkpoint_portfolio = job_board_portfolio.to_checkpoint_payload()
+                durable_portfolio = job_board_portfolio.replay_safe_projection()
+                checkpoint_portfolio = (
+                    durable_portfolio.to_checkpoint_payload()
+                    if durable_portfolio is not None
+                    else None
+                )
                 if checkpoint_portfolio is None:
                     self._cleanup_temporary_files(path.parent, stage)
                     path.unlink(missing_ok=True)
@@ -81,6 +90,20 @@ class FilesystemCheckpointStore:
             if isinstance(homepage_evidence, HomepageNavigationEvidence):
                 execution_payload["updates"]["homepage_navigation_evidence"] = (
                     homepage_evidence.to_checkpoint_payload()
+                )
+            provisional_website = execution.updates.get(
+                "provisional_website_evidence"
+            )
+            if (
+                "provisional_website_evidence" in execution.updates
+                and not isinstance(provisional_website, ProvisionalWebsiteEvidence)
+            ):
+                raise TypeError(
+                    "provisional_website_evidence checkpoint update has an invalid type"
+                )
+            if isinstance(provisional_website, ProvisionalWebsiteEvidence):
+                execution_payload["updates"]["provisional_website_evidence"] = (
+                    provisional_website.to_checkpoint_payload()
                 )
             for field_name, expected_type in (
                 ("hiring_identity_evidence", HiringIdentityEvidence),
@@ -271,6 +294,13 @@ def _deserialize_checkpoint(
                 updates["homepage_navigation_evidence"]
             )
         )
+    if "provisional_website_evidence" in updates:
+        updates = dict(updates)
+        updates["provisional_website_evidence"] = (
+            ProvisionalWebsiteEvidence.from_checkpoint_payload(
+                updates["provisional_website_evidence"]
+            )
+        )
     for field_name, identity_type in (
         ("hiring_identity_evidence", HiringIdentityEvidence),
         ("provider_identity", ProviderIdentity),
@@ -282,6 +312,15 @@ def _deserialize_checkpoint(
             updates[field_name] = identity_type.from_checkpoint_payload(
                 updates[field_name]
             )
+
+    provisional_execution = StageExecution(
+        result=StageResult(**result_payload),
+        updates=updates,
+        trace=trace,
+        evidence_lineage=None,
+        schema_version=execution["schema_version"],
+    )
+    _validate_provisional_identity_checkpoint(provisional_execution)
 
     lineage_payload = execution.get("evidence_lineage")
     lineage = (
@@ -302,3 +341,69 @@ def _deserialize_checkpoint(
         evidence_lineage=lineage,
         schema_version=execution["schema_version"],
     )
+
+
+def _validate_provisional_identity_checkpoint(execution: StageExecution) -> None:
+    hiring = execution.updates.get("hiring_identity_evidence")
+    if not isinstance(hiring, HiringIdentityEvidence) or not hiring.verification_method.startswith(
+        "provisional_"
+    ):
+        return
+    provisional = execution.updates.get("provisional_website_evidence")
+    if (
+        execution.result.stage != "career_discovery"
+        or not hiring.verified
+        or not isinstance(provisional, ProvisionalWebsiteEvidence)
+        or hiring.source_company_name != provisional.source_company_name
+        or hiring.evidence_url is None
+    ):
+        raise ValueError("Provisional hiring identity checkpoint is inconsistent")
+    if hiring.verification_method == "provisional_same_host_career":
+        if not _same_checkpoint_host(hiring.evidence_url, provisional.url):
+            raise ValueError("Provisional hiring identity checkpoint is inconsistent")
+    elif hiring.verification_method == "provisional_navigation_handoff":
+        navigation = execution.updates.get("homepage_navigation_evidence")
+        selected = execution.trace.get("selected")
+        selected_url = selected.get("url") if isinstance(selected, dict) else None
+        source_url = selected.get("source_url") if isinstance(selected, dict) else None
+        if (
+            not isinstance(navigation, HomepageNavigationEvidence)
+            or not navigation.matches(provisional.url)
+            or selected_url not in navigation.candidate_urls
+            or not _same_checkpoint_url(source_url, provisional.url)
+        ):
+            raise ValueError("Provisional navigation checkpoint is inconsistent")
+    else:
+        raise ValueError("Provisional hiring identity checkpoint is inconsistent")
+    provisional_trace = execution.trace.get("provisional_official_website")
+    identity_trace = execution.trace.get("provisional_career_identity")
+    if (
+        not isinstance(provisional_trace, dict)
+        or not isinstance(identity_trace, dict)
+        or provisional_trace.get("authority") != "exploration_only"
+        or provisional_trace.get("url") != provisional.url
+        or identity_trace.get("status") != "verified"
+        or identity_trace.get("verification_method") != hiring.verification_method
+        or identity_trace.get("evidence_url") != hiring.evidence_url
+    ):
+        raise ValueError("Provisional hiring identity checkpoint lacks bound trace")
+
+
+def _same_checkpoint_host(left: str, right: str) -> bool:
+    try:
+        left_host = (urlsplit(canonicalize_identity_url(left)).hostname or "").casefold()
+        right_host = (urlsplit(canonicalize_identity_url(right)).hostname or "").casefold()
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        left_host
+        and right_host
+        and left_host.removeprefix("www.") == right_host.removeprefix("www.")
+    )
+
+
+def _same_checkpoint_url(left: object, right: object) -> bool:
+    try:
+        return canonicalize_identity_url(left) == canonicalize_identity_url(right)
+    except (TypeError, ValueError):
+        return False

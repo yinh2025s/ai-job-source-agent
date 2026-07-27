@@ -2,7 +2,7 @@ import unittest
 import json
 from pathlib import Path
 
-from job_source_agent.providers.base import JobBoard, JobQuery
+from job_source_agent.providers.base import JobBoard, JobQuery, PageAwareProviderAdapter
 from job_source_agent.providers.workable import WorkableAdapter
 from job_source_agent.web import FetchError, Page
 
@@ -18,6 +18,63 @@ CUSTOM_DOMAIN_FIXTURES = (
     / "apply.workable.com"
     / "custom-domain"
 )
+WIDGET_API_URL = (
+    "https://apply.workable.com/api/v1/widget/accounts/149632"
+    "?origin=embed&callback=whrcallback"
+)
+
+
+def widget_page(
+    *,
+    page_url="https://www.example.com/careers",
+    account_id="149632",
+    asset_url="https://www.workable.com/assets/embed.js",
+):
+    return Page(
+        url=page_url,
+        final_url=page_url,
+        html=f"""
+            <script src="/assets/site.js"></script>
+            <script src="{asset_url}"></script>
+            <script>whr_embed({account_id}, {{detail: "titles"}});</script>
+            <div id="whr_embed_hook"></div>
+        """,
+        source="career-page-fixture",
+    )
+
+
+def widget_response(*, employer="Mention Me", jobs=None):
+    if jobs is None:
+        jobs = [
+            {
+                "title": "Product Growth Marketing Manager",
+                "shortcode": "EA1650B1D6",
+                "published_on": "2026-07-21",
+                "url": "https://apply.workable.com/j/EA1650B1D6",
+                "shortlink": "https://apply.workable.com/j/EA1650B1D6",
+                "application_url": "https://apply.workable.com/j/EA1650B1D6/apply",
+                "telecommuting": False,
+                "locations": [
+                    {
+                        "city": "London",
+                        "region": "England",
+                        "country": "United Kingdom",
+                        "hidden": False,
+                    }
+                ],
+            },
+            {
+                "title": "Remote Product Designer",
+                "shortcode": "REMOTE123",
+                "published_on": "2026-07-20",
+                "url": "https://apply.workable.com/j/REMOTE123",
+                "shortlink": "https://apply.workable.com/j/REMOTE123",
+                "application_url": "https://apply.workable.com/j/REMOTE123/apply",
+                "telecommuting": True,
+                "locations": [],
+            },
+        ]
+    return "/**/whrcallback(" + json.dumps({"name": employer, "jobs": jobs}) + ")"
 
 
 class StubFetcher:
@@ -85,8 +142,223 @@ class WorkableAdapterTests(unittest.TestCase):
             ),
         )
         self.assertIsNone(self.adapter.identify_board("https://apply.workable.com/"))
+        self.assertIsNone(
+            self.adapter.identify_board("https://apply.workable.com/j/EA1650B1D6")
+        )
+        self.assertIsNone(
+            self.adapter.identify_board(
+                "https://apply.workable.com/api/v1/widget/accounts/149632"
+            )
+        )
         self.assertIsNone(self.adapter.identify_board("https://apply.workable.com/bad.slug"))
         self.assertIsNone(self.adapter.identify_board("https://apply.workable.com:bad/acme"))
+
+    def test_identifies_runtime_only_numeric_widget_from_first_party_page(self):
+        board = self.adapter.identify_board_from_page(widget_page())
+
+        self.assertIsInstance(self.adapter, PageAwareProviderAdapter)
+        self.assertEqual(
+            board,
+            JobBoard(
+                url="https://www.example.com/careers",
+                provider="workable",
+                identifier="widget:149632",
+                replay_safe=False,
+            ),
+        )
+
+    def test_numeric_widget_page_requires_exact_unambiguous_evidence(self):
+        valid_protocol_relative = widget_page(
+            asset_url="//www.workable.com/assets/embed.js"
+        )
+        self.assertIsNotNone(
+            self.adapter.identify_board_from_page(valid_protocol_relative)
+        )
+
+        invalid_pages = [
+            widget_page(asset_url="https://www.workable.com.evil.test/assets/embed.js"),
+            widget_page(asset_url="https://www.workable.com/assets/embed.js?account=149632"),
+            Page(
+                url="https://www.example.com/careers",
+                html=(
+                    '<script src="https://www.workable.com/assets/embed.js"></script>'
+                    "<script>whr_embed(149632);whr_embed(149633);</script>"
+                    '<div id="whr_embed_hook"></div>'
+                ),
+            ),
+            Page(
+                url="https://www.example.com/careers",
+                html=(
+                    '<script src="https://www.workable.com/assets/embed.js"></script>'
+                    "<script>whr_embed(149632);</script>"
+                ),
+            ),
+            widget_page(page_url="http://www.example.com/careers"),
+            widget_page(page_url="https://user@www.example.com/careers"),
+            widget_page(page_url="https://127.0.0.1/careers"),
+        ]
+        for page in invalid_pages:
+            with self.subTest(page=page.url, html=page.html[:100]):
+                self.assertIsNone(self.adapter.identify_board_from_page(page))
+
+        non_executable_ids = Page(
+            url="https://www.example.com/careers",
+            html=(
+                '<script src="https://www.workable.com/assets/embed.js"></script>'
+                "<script>"
+                "// whr_embed(111111);\n"
+                "const old = 'whr_embed(222222)';"
+                "/* whr_embed(333333); */"
+                "whr_embed(149632, {detail: 'titles'});"
+                "</script>"
+                '<div id="whr_embed_hook"></div>'
+            ),
+        )
+        self.assertEqual(
+            self.adapter.identify_board_from_page(non_executable_ids).identifier,
+            "widget:149632",
+        )
+
+    def test_numeric_widget_lists_complete_official_inventory(self):
+        board = self.adapter.identify_board_from_page(widget_page())
+        fetcher = RoutingFetcher([widget_response()])
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title="Product Growth Marketing Manager", location="London"),
+        )
+
+        self.assertEqual(fetcher.requests[0]["url"], WIDGET_API_URL)
+        self.assertEqual(
+            fetcher.requests[0]["headers"],
+            {
+                "Accept": "application/javascript, application/json",
+                "Referer": "https://www.example.com/careers",
+            },
+        )
+        self.assertEqual(
+            [
+                (candidate.title, candidate.url, candidate.location)
+                for candidate in result.candidates
+            ],
+            [
+                (
+                    "Product Growth Marketing Manager",
+                    "https://apply.workable.com/j/EA1650B1D6",
+                    "London, England, United Kingdom",
+                ),
+                (
+                    "Remote Product Designer",
+                    "https://apply.workable.com/j/REMOTE123",
+                    "Remote",
+                ),
+            ],
+        )
+        self.assertEqual(result.reason_code, None)
+        self.assertEqual(result.inventory_scope, "full")
+        self.assertTrue(result.inventory_complete)
+        self.assertTrue(result.trace["exact_title_found"])
+        self.assertEqual(result.trace["employer_name"], "Mention Me")
+        self.assertEqual(len(result.employer_evidence), 2)
+        self.assertEqual(
+            result.employer_evidence[0].to_trace_payload(),
+            {
+                "employer_name": "Mention Me",
+                "descriptor_terms": [],
+                "evidence_url": WIDGET_API_URL,
+                "opening_url": "https://apply.workable.com/j/EA1650B1D6",
+                "extraction_method": "workable_widget_employer",
+            },
+        )
+
+    def test_numeric_widget_fetch_and_response_fail_closed(self):
+        board = self.adapter.identify_board_from_page(widget_page())
+        failed = self.adapter.list_jobs(
+            RoutingFetcher([FetchError("offline")]),
+            board,
+            JobQuery(),
+        )
+        redirected = self.adapter.list_jobs(
+            RoutingFetcher(
+                [
+                    Page(
+                        url=WIDGET_API_URL,
+                        final_url=(
+                            "https://apply.workable.com/api/v1/widget/accounts/149633"
+                            "?origin=embed&callback=whrcallback"
+                        ),
+                        html=widget_response(),
+                    )
+                ]
+            ),
+            board,
+            JobQuery(),
+        )
+        malformed = self.adapter.list_jobs(
+            RoutingFetcher(['whrcallback({"name":"Acme","name":"Other","jobs":[]})']),
+            board,
+            JobQuery(),
+        )
+        downgraded = self.adapter.list_jobs(
+            RoutingFetcher(
+                [
+                    Page(
+                        url=WIDGET_API_URL,
+                        final_url=WIDGET_API_URL.replace("https://", "http://"),
+                        html=widget_response(),
+                    )
+                ]
+            ),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(failed.reason_code, "PROVIDER_FETCH_FAILED")
+        self.assertTrue(failed.retryable)
+        self.assertEqual(redirected.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertEqual(malformed.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertEqual(downgraded.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertFalse(redirected.inventory_complete)
+        self.assertFalse(malformed.inventory_complete)
+
+    def test_numeric_widget_rejects_cross_url_and_duplicate_openings(self):
+        board = self.adapter.identify_board_from_page(widget_page())
+        valid_job = json.loads(
+            widget_response().removeprefix("/**/whrcallback(").removesuffix(")")
+        )["jobs"][0]
+        cross_url = dict(valid_job)
+        cross_url["url"] = "https://apply.workable.com/j/OTHER"
+        duplicate = [valid_job, dict(valid_job)]
+
+        cross_result = self.adapter.list_jobs(
+            RoutingFetcher([widget_response(jobs=[cross_url])]),
+            board,
+            JobQuery(),
+        )
+        duplicate_result = self.adapter.list_jobs(
+            RoutingFetcher([widget_response(jobs=duplicate)]),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(cross_result.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertEqual(duplicate_result.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertFalse(cross_result.inventory_complete)
+        self.assertFalse(duplicate_result.inventory_complete)
+
+    def test_numeric_widget_empty_inventory_is_verified_and_complete(self):
+        board = self.adapter.identify_board_from_page(widget_page())
+
+        result = self.adapter.list_jobs(
+            RoutingFetcher([widget_response(jobs=[])]),
+            board,
+            JobQuery(),
+        )
+
+        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertEqual(result.candidates, [])
+        self.assertTrue(result.inventory_complete)
 
     def test_lists_nested_embedded_json_jobs_and_normalizes_detail_urls(self):
         fetcher = StubFetcher(

@@ -70,7 +70,10 @@ from job_source_agent.replay_record_plan import (
 )
 from job_source_agent.reasons import REASON_SPECS, reason_spec
 from job_source_agent.scoped_replay import ScopedReplayController
-from job_source_agent.snapshot import SENSITIVE_BODY_FIELDS
+from job_source_agent.snapshot import (
+    SENSITIVE_BODY_FIELDS,
+    is_public_location_state_field,
+)
 from job_source_agent.snapshot_replay import (
     SnapshotReplayError,
     load_scoped_outcome_tapes,
@@ -78,6 +81,7 @@ from job_source_agent.snapshot_replay import (
 )
 from job_source_agent.stage_checkpoint import FilesystemCheckpointStore
 from job_source_agent.run_configuration import DeterministicRunConfig
+from job_source_agent.searxng_search_backend import SearxngSearchBackend
 from job_source_agent.web import FetchError, Page, normalize_url
 from job_source_agent.result_identity import canonicalize_identity_url, tenant_locator
 from job_source_agent.request_identity import is_sensitive_key
@@ -95,6 +99,7 @@ SCOPED_REPLAY_PRODUCER_DEPENDENCIES = {
     "career_discovery": "website_resolution",
     "job_board_discovery": "career_discovery",
 }
+_UNSPECIFIED_REPLAY_RESUME_STAGE = object()
 
 
 class _ScopedStageSeedAmbiguity(ValueError):
@@ -146,17 +151,31 @@ def _hydrate_redacted_json_credentials(body: str) -> str:
     sensitive_fields = {field.casefold() for field in SENSITIVE_BODY_FIELDS}
     replacement = "offline-replay-redacted-credential"
 
-    def hydrate(value, *, key: str | None = None):
+    def hydrate(
+        value,
+        *,
+        key: str | None = None,
+        public_location_state: bool = False,
+    ):
         if (
             isinstance(value, str)
             and value == "[REDACTED]"
             and isinstance(key, str)
             and key.casefold() in sensitive_fields
+            and not public_location_state
         ):
             return replacement
         if isinstance(value, dict):
             return {
-                item_key: hydrate(item_value, key=item_key)
+                item_key: hydrate(
+                    item_value,
+                    key=item_key,
+                    public_location_state=is_public_location_state_field(
+                        value,
+                        item_key,
+                        allow_redacted=True,
+                    ),
+                )
                 for item_key, item_value in value.items()
             }
         if isinstance(value, list):
@@ -192,6 +211,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--legacy-run-config",
         choices=("composition-defaults",),
         help="Explicitly replay legacy records that predate deterministic run metadata.",
+    )
+    parser.add_argument(
+        "--search-backend-url",
+        help=(
+            "Runtime SearXNG endpoint required when the recorded run "
+            "configuration used the searxng backend."
+        ),
+    )
+    parser.add_argument(
+        "--search-backend-profile-digest",
+        help="SHA-256 of the SearXNG server image/settings profile.",
     )
     return parser
 
@@ -284,6 +314,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         source_records,
         getattr(args, "legacy_run_config", None),
     )
+    search_backend = _replay_search_backend(args, run_configuration)
     try:
         record_plans = build_replay_record_plans(source_records, replay_records)
     except (TypeError, ValueError) as error:
@@ -344,6 +375,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             output_root / "checkpoints",
             run_configuration,
             company_discovery_evidence_path,
+            search_backend,
         )
         snapshot_summary = scoped_manifest["summary"]
         bundle_schema_version = SCOPED_BUNDLE_SCHEMA_VERSION
@@ -362,6 +394,7 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
             output_root / "offline" / "sites",
             run_configuration,
             company_discovery_evidence_path,
+            search_backend,
         )
         snapshot_summary = fixture_result.summary
         bundle_schema_version = BUNDLE_SCHEMA_VERSION
@@ -722,6 +755,14 @@ def _restore_stored_provider_inputs(
             if source_store is not None
             else None
         )
+        if record is None or record.career is None:
+            _restore_captured_s5_provider_prerequisites(
+                store,
+                company,
+                source_record,
+                source_evidence,
+            )
+            record = store.load(company.company_name, linkedin_url)
         selected_url = selected.get("url")
         stored_board = next(
             (
@@ -739,6 +780,16 @@ def _restore_stored_provider_inputs(
             stored_board is not None
             and record is not None
             and record.career is not None
+            and stored_board.source == "first_party_handoff"
+            and _same_https_host(
+                stored_board.relationship_evidence_url,
+                record.career.url,
+            )
+            and record.website is not None
+            and _same_identity_url(
+                record.career.website_url,
+                record.website.url,
+            )
         ):
             adapter = DEFAULT_PROVIDER_REGISTRY.adapter_for(
                 stored_board.canonical_board_url
@@ -808,9 +859,10 @@ def _restore_stored_provider_inputs(
             continue
         if record is None or record.career is None:
             continue
-        if not (
-            _same_identity_url(evidence_url, record.career.url)
-            or _same_identity_url(evidence_url, record.career.evidence_url)
+        if (
+            verification_method
+            != "stored_handoff_revalidated_provider_inventory"
+            or not _same_identity_url(evidence_url, record.career.url)
         ):
             continue
         adapter = DEFAULT_PROVIDER_REGISTRY.adapter_for(board_url)
@@ -847,6 +899,67 @@ def _restore_stored_provider_inputs(
     return restored
 
 
+def _restore_captured_s5_provider_prerequisites(
+    store: FilesystemCompanyDiscoveryEvidenceStore,
+    company,
+    source_record: dict,
+    source_evidence,
+) -> bool:
+    """Restore the exact upstream state read by a captured S5 continuation."""
+
+    if (
+        source_evidence is None
+        or _captured_scoped_resume_stage(source_record) != "job_board_discovery"
+    ):
+        return False
+    stages = {
+        item.get("stage"): item
+        for item in source_record.get("stages", [])
+        if isinstance(item, dict)
+    }
+    if any(
+        not isinstance(stages.get(stage), dict)
+        or stages[stage].get("status") != "success"
+        for stage in ("website_resolution", "career_discovery")
+    ):
+        return False
+    linkedin_url = getattr(company, "linkedin_company_url", None)
+    website_url = source_record.get("company_website_url")
+    career_url = source_record.get("career_page_url")
+    website = source_evidence.website
+    career = source_evidence.career
+    if (
+        not isinstance(linkedin_url, str)
+        or not linkedin_url
+        or source_evidence.company_name.casefold()
+        != company.company_name.casefold()
+        or not _same_identity_url(
+            source_evidence.linkedin_company_url,
+            linkedin_url,
+        )
+        or website is None
+        or career is None
+        or not _same_identity_url(website.url, website_url)
+        or not _same_identity_url(career.url, career_url)
+        or not _same_identity_url(career.website_url, website.url)
+    ):
+        return False
+    try:
+        store.save(
+            company.company_name,
+            linkedin_url,
+            website=website,
+        )
+        store.save(
+            company.company_name,
+            linkedin_url,
+            career=career,
+        )
+    except (OSError, TypeError, ValueError):
+        return False
+    return True
+
+
 def _source_stage_trace(source_record: dict, stage: str) -> dict | None:
     trace = source_record.get("trace")
     stages = trace.get("stages") if isinstance(trace, dict) else None
@@ -860,6 +973,22 @@ def _same_identity_url(left: object, right: object) -> bool:
     normalized_left = canonicalize_identity_url(left)
     normalized_right = canonicalize_identity_url(right)
     return bool(normalized_left and normalized_left == normalized_right)
+
+
+def _same_https_host(left: object, right: object) -> bool:
+    if not isinstance(left, str) or not isinstance(right, str):
+        return False
+    try:
+        normalized_left = urlparse(canonicalize_identity_url(left))
+        normalized_right = urlparse(canonicalize_identity_url(right))
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        normalized_left.scheme == "https"
+        and normalized_right.scheme == "https"
+        and normalized_left.hostname
+        and normalized_left.hostname == normalized_right.hostname
+    )
 
 
 def _empty_company_discovery_evidence_provenance(args: argparse.Namespace) -> dict:
@@ -955,6 +1084,7 @@ def _run_legacy_replay_records(
     fixtures_dir: Path,
     run_configuration: DeterministicRunConfig,
     company_discovery_evidence_path: Path | None,
+    search_backend,
 ) -> list:
     discoveries = []
     for company, replay_record, source_record, plan in zip(
@@ -977,6 +1107,7 @@ def _run_legacy_replay_records(
             checkpoint_dir=record_checkpoint_root,
             run_configuration=run_configuration,
             company_discovery_evidence_path=company_discovery_evidence_path,
+            search_backend=search_backend,
         )
         discoveries.append(
             application.pipeline.discover(company, start_at=resume_stage)
@@ -993,6 +1124,7 @@ def _run_scoped_replay_records(
     checkpoint_root: Path,
     run_configuration: DeterministicRunConfig,
     company_discovery_evidence_path: Path | None,
+    search_backend,
 ) -> list:
     discoveries = []
     for company, replay_record, source_record, plan in zip(
@@ -1024,6 +1156,7 @@ def _run_scoped_replay_records(
                 company,
                 source_record,
                 source_evidence_path=company_discovery_evidence_path,
+                replay_resume_stage=resume_stage,
             )
         )
         start_stage = resume_stage or PIPELINE_STAGES[0]
@@ -1066,6 +1199,7 @@ def _run_scoped_replay_records(
             company_discovery_evidence_path=(
                 record_company_discovery_evidence_path
             ),
+            search_backend=search_backend,
         )
         try:
             same_attempt_continuation = (
@@ -1109,6 +1243,7 @@ def _scoped_record_company_discovery_evidence_path(
     source_record: dict,
     *,
     source_evidence_path: Path | None,
+    replay_resume_stage: str | None | object = _UNSPECIFIED_REPLAY_RESUME_STAGE,
 ) -> Path | None:
     """Rebuild the mutable discovery-store view seen by one captured record.
 
@@ -1138,6 +1273,23 @@ def _scoped_record_company_discovery_evidence_path(
         [source_record],
         source_store=source_store,
     )
+    stage_trace = _source_stage_trace(source_record, "job_board_discovery")
+    selected = stage_trace.get("selected") if isinstance(stage_trace, dict) else None
+    effective_resume_stage = (
+        _captured_scoped_resume_stage(source_record)
+        if replay_resume_stage is _UNSPECIFIED_REPLAY_RESUME_STAGE
+        else replay_resume_stage
+    )
+    captured_stored_provider_read = bool(
+        isinstance(selected, dict)
+        and selected.get("source_kind") == "stored_verified_provider_board"
+        and _captured_scoped_resume_stage(source_record) == "job_board_discovery"
+        and effective_resume_stage == "job_board_discovery"
+    )
+    if captured_stored_provider_read and restored_provider == 0:
+        raise FailureReplayError(
+            "Scoped replay captured provider producer state is missing or ambiguous"
+        )
     if restored_discovery == 0 and restored_provider == 0:
         return None
     return path
@@ -1608,6 +1760,54 @@ def _resolve_run_configuration(
     return first, "source_record"
 
 
+def _replay_search_backend(
+    args: argparse.Namespace,
+    run_configuration: DeterministicRunConfig,
+):
+    endpoint = getattr(args, "search_backend_url", None)
+    server_profile_digest = getattr(
+        args,
+        "search_backend_profile_digest",
+        None,
+    )
+    if run_configuration.search_backend_kind == "legacy":
+        if endpoint or server_profile_digest:
+            raise FailureReplayError(
+                "Replay search backend URL is incompatible with a legacy run"
+            )
+        return None
+    if run_configuration.search_backend_kind != "searxng":
+        raise FailureReplayError("Replay search backend is unsupported")
+    if not endpoint:
+        raise FailureReplayError(
+            "SearXNG replay requires --search-backend-url"
+        )
+    if not server_profile_digest:
+        raise FailureReplayError(
+            "SearXNG replay requires --search-backend-profile-digest"
+        )
+    try:
+        backend = SearxngSearchBackend(
+            endpoint,
+            server_profile_digest=server_profile_digest,
+        )
+    except ValueError as error:
+        raise FailureReplayError(
+            f"Invalid replay search backend configuration: {error}"
+        ) from error
+    public_configuration = backend.public_configuration()
+    if (
+        public_configuration["search_backend_contract_version"]
+        != run_configuration.search_backend_contract_version
+        or public_configuration["search_backend_profile_digest"]
+        != run_configuration.search_backend_profile_digest
+    ):
+        raise FailureReplayError(
+            "Replay search backend does not match recorded run configuration"
+        )
+    return backend
+
+
 def _first_non_success_stage_name(replay_record: dict) -> str | None:
     source_trace = replay_record.get("source_trace")
     replay = source_trace.get("replay") if isinstance(source_trace, dict) else None
@@ -1665,6 +1865,11 @@ def _effective_replay_resume_stage(
     replay_record: dict,
     record_plan: ReplayRecordPlan | None,
 ) -> str | None:
+    if _source_uses_provisional_hiring_identity(source_record):
+        # The verified identity depends on the captured S2->S4 first-party
+        # chain. Recompute that chain from its scoped tape instead of seeding a
+        # detached identity assertion into an upstream checkpoint.
+        return "website_resolution"
     failure_stage = _first_non_success_stage_name(replay_record)
     resume_stage = _replay_resume_stage(
         source_record,
@@ -1682,9 +1887,58 @@ def _effective_replay_resume_stage(
     elif failure_stage == "opening_match":
         resume_stage = "opening_match"
 
+    if (
+        resume_stage == "opening_match"
+        and _scoped_runtime_only_provider_board(source_record)
+    ):
+        # A runtime-only locator cannot cross the S5 checkpoint boundary.
+        # Reproduce it from the captured producer stages instead of weakening
+        # the provider replay policy or fabricating a durable locator.
+        resume_stage = "job_board_discovery"
+
     while resume_stage in SCOPED_REPLAY_PRODUCER_DEPENDENCIES:
         resume_stage = SCOPED_REPLAY_PRODUCER_DEPENDENCIES[resume_stage]
     return resume_stage
+
+
+def _scoped_runtime_only_provider_board(source_record: dict) -> bool:
+    stage_trace = _source_stage_trace(source_record, "job_board_discovery")
+    summary = (
+        stage_trace.get("job_board_portfolio")
+        if isinstance(stage_trace, dict)
+        else None
+    )
+    if not isinstance(summary, dict):
+        return False
+    provider = summary.get("primary_provider")
+    board_url = summary.get("primary_url")
+    if (
+        not isinstance(provider, str)
+        or not provider
+        or provider == "generic"
+        or not isinstance(board_url, str)
+        or not board_url
+    ):
+        return False
+    adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(provider)
+    if adapter is None:
+        return False
+    try:
+        board = adapter.identify_board(board_url)
+    except (TypeError, ValueError):
+        return False
+    return bool(
+        board is not None
+        and board.provider == provider
+        and not board.replay_safe
+    )
+
+
+def _source_uses_provisional_hiring_identity(source_record: dict) -> bool:
+    assertion = source_record.get("identity_assertion")
+    hiring = assertion.get("hiring") if isinstance(assertion, dict) else None
+    method = hiring.get("verification_method") if isinstance(hiring, dict) else None
+    return isinstance(method, str) and method.startswith("provisional_")
 
 
 def _captured_scoped_resume_stage(source_record: dict) -> str | None:
@@ -1978,6 +2232,8 @@ def _verified_identity_job_board(
         return None
     if (
         not identity.relationship_verified
+        or identity.verification_method
+        in {"provider_tenant_match", "tenant_name_match"}
         or identity.provider != provider
         or canonicalize_identity_url(identity.canonical_board_url)
         != canonicalize_identity_url(board_url)
@@ -2425,14 +2681,31 @@ def _scoped_job_board_portfolio(source_record: dict) -> JobBoardPortfolio | None
         )
 
     if eligible_count == 1 and eligible_set_complete:
-        adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(primary_provider)
-        board = adapter.identify_board(primary_url) if adapter is not None else None
-        if board is None or not board.replay_safe:
-            board = _verified_identity_job_board(
+        assertion = source_record.get("identity_assertion")
+        asserted_provider = (
+            assertion.get("provider")
+            if isinstance(assertion, dict)
+            else None
+        )
+        identity_board = None
+        if asserted_provider is not None:
+            identity_board = _verified_identity_job_board(
                 source_record,
                 provider=primary_provider,
                 board_url=primary_url,
             )
+            if identity_board is None:
+                return None
+        adapter = DEFAULT_PROVIDER_REGISTRY.adapter_named(primary_provider)
+        board = adapter.identify_board(primary_url) if adapter is not None else None
+        if board is None or not board.replay_safe:
+            board = identity_board
+        elif identity_board is not None and (
+            board.provider != identity_board.provider
+            or board.identifier != identity_board.identifier
+            or not _canonical_urls_match(board.url, identity_board.url)
+        ):
+            return None
         if board is None or not board.replay_safe:
             return None
         if not is_replay_safe_job_board(board):
@@ -3335,10 +3608,9 @@ def _canonical_public_url(value: object) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return None
     try:
-        normalized = normalize_url(value)
-    except (TypeError, ValueError):
+        return canonicalize_identity_url(value.strip())
+    except ValueError:
         return None
-    return normalized[:-1] if normalized.endswith("/") and normalized.count("/") > 2 else normalized
 
 
 def _normalized_identity_text(value: object) -> str | None:

@@ -16,6 +16,8 @@ from job_source_agent.website_resolver import (
     _linkedin_json_ld_websites,
     _regional_root_candidates,
     _regional_sibling_root_candidates,
+    _strongest_retained_fetch_failure,
+    _withheld_official_candidate_sites,
     clean_search_url,
     is_blocked_domain,
     tokenize_company_name,
@@ -24,6 +26,80 @@ from job_source_agent.website_resolver import (
 
 
 class WebsiteResolverTests(unittest.TestCase):
+    def test_withheld_official_candidate_scopes_retained_failure_to_same_site(self):
+        official = WebsiteCandidate(
+            url="https://www.agency.example.gov",
+            score=90,
+            reasons=[
+                "LinkedIn company page identifies official website",
+                "homepage verified",
+                "parent/group website requires downstream hiring relationship evidence",
+            ],
+        )
+        sites = _withheld_official_candidate_sites([official])
+        failures = [
+            {
+                "url": "https://unrelated.example.com",
+                "evidence_tier": 1,
+                "reason_code": "HTTP_FORBIDDEN",
+            },
+            {
+                "url": "https://careers.example.gov",
+                "evidence_tier": 2,
+                "reason_code": "NETWORK_TIMEOUT",
+            },
+        ]
+
+        retained = _strongest_retained_fetch_failure(
+            failures,
+            relevant_sites=sites,
+        )
+
+        self.assertEqual(retained["url"], "https://careers.example.gov")
+
+    def test_unrelated_failure_is_not_retained_after_verified_official_identity(self):
+        official = WebsiteCandidate(
+            url="https://www.agency.example.gov",
+            score=90,
+            reasons=[
+                "LinkedIn company page identifies official website",
+                "homepage verified",
+                "parent/group website requires downstream hiring relationship evidence",
+            ],
+        )
+        failures = [
+            {
+                "url": "https://unrelated.example.com",
+                "evidence_tier": 1,
+                "reason_code": "HTTP_FORBIDDEN",
+            }
+        ]
+
+        retained = _strongest_retained_fetch_failure(
+            failures,
+            relevant_sites=_withheld_official_candidate_sites([official]),
+        )
+
+        self.assertIsNone(retained)
+
+    def test_default_retained_failure_priority_is_unchanged_without_scope(self):
+        failures = [
+            {
+                "url": "https://preferred.example",
+                "evidence_tier": 1,
+                "reason_code": "NETWORK_TIMEOUT",
+            },
+            {
+                "url": "https://alternate.example",
+                "evidence_tier": 1,
+                "reason_code": "HTTP_FORBIDDEN",
+            },
+        ]
+
+        retained = _strongest_retained_fetch_failure(failures)
+
+        self.assertEqual(retained["reason_code"], "HTTP_FORBIDDEN")
+
     def test_authoritative_public_domain_candidate_still_requires_homepage_identity(self):
         dataset = (
             "Domain name,Domain type,Organization name,Suborganization name,City,State,Security contact email\n"
@@ -703,6 +779,31 @@ class WebsiteResolverTests(unittest.TestCase):
             "LinkedIn official website accepted without homepage response",
             trace["selected"]["reasons"],
         )
+
+    def test_ambiguous_linkedin_official_extended_domain_needs_homepage_identity(self):
+        linkedin_url = "https://www.linkedin.com/company/focus"
+
+        class AmbiguousOfficialFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Focus",'
+                            '"sameAs":"https://www.cunseling-focus.com.ar"}'
+                            "</script>"
+                        ),
+                    )
+                raise FetchError("homepage unavailable")
+
+        website_url, trace = CompanyWebsiteResolver(
+            AmbiguousOfficialFetcher(offline=True),
+            verify_limit=3,
+        ).resolve("Focus", linkedin_url, "Anniston, AL")
+
+        self.assertIsNone(website_url)
+        self.assertNotIn("selected", trace)
 
     def test_cached_official_website_beats_stale_preferred_domain_during_throttle(self):
         linkedin_url = "https://www.linkedin.com/company/m-r-walls"
@@ -2770,6 +2871,129 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertNotIn("homepage title confirms company identity", candidate.reasons)
         self.assertIsNone(resolver._select_verified_candidate([candidate]))
 
+    def test_ambiguous_short_name_rejects_self_referential_organization_metadata(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+
+        for url in (
+            "https://focus.com/",
+            "https://focus.org/",
+            "https://focus.example.jobs/",
+        ):
+            with self.subTest(url=url):
+                candidate = WebsiteCandidate(
+                    url,
+                    145,
+                    [
+                        "ambiguous company name",
+                        "company token 'focus' in domain",
+                        "homepage verified",
+                        "homepage canonical confirms company identity",
+                        "homepage organization data confirms company identity",
+                        "candidate source: search_evidence",
+                        "candidate source: speculative_guess",
+                    ],
+                )
+
+                self.assertIsNone(
+                    resolver._select_verified_candidate([candidate])
+                )
+
+    def test_ambiguous_short_name_accepts_bounded_page_identity(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+        candidate = WebsiteCandidate(
+            "https://focus.example/",
+            145,
+            [
+                "ambiguous company name",
+                "homepage verified",
+                "homepage organization data confirms company identity",
+                "homepage body confirms company identity",
+                "candidate source: search_evidence",
+            ],
+        )
+
+        self.assertIs(
+            resolver._select_verified_candidate([candidate]),
+            candidate,
+        )
+
+    def test_ambiguous_short_name_accepts_linkedin_official_website(self):
+        resolver = CompanyWebsiteResolver(Fetcher(offline=True))
+        candidate = WebsiteCandidate(
+            "https://focus.example/",
+            145,
+            [
+                "ambiguous company name",
+                "homepage verified",
+                "homepage organization data confirms company identity",
+                "candidate source: linkedin_official_website",
+                "LinkedIn company page identifies official website",
+            ],
+        )
+
+        self.assertIs(
+            resolver._select_verified_candidate([candidate]),
+            candidate,
+        )
+
+    def test_ambiguous_search_collision_does_not_publish_website(self):
+        class AmbiguousCollisionFetcher(Fetcher):
+            def __init__(self):
+                super().__init__(offline=True)
+
+            def fetch(self, url, data=None, headers=None):
+                if "linkedin.com/company/focus" in url:
+                    raise FetchError(
+                        "LinkedIn unavailable",
+                        reason_code="NETWORK_TIMEOUT",
+                        retryable=True,
+                    )
+                if "format=rss" in url:
+                    return Page(
+                        url=url,
+                        final_url=url,
+                        html=(
+                            "<rss><channel><item><title>FOCUS official site</title>"
+                            "<description>FOCUS organization</description>"
+                            "<link>https://focus.org/</link></item></channel></rss>"
+                        ),
+                    )
+                if domain_of(url) == "focus.org":
+                    return Page(
+                        url=url,
+                        final_url="https://focus.org/",
+                        html=(
+                            '<html><head><link rel="canonical" '
+                            'href="https://focus.org/"></head>'
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"FOCUS"}'
+                            "</script><body>Programs and resources</body></html>"
+                        ),
+                    )
+                raise FetchError(
+                    "Candidate unavailable",
+                    reason_code="FETCH_FAILED",
+                    retryable=True,
+                )
+
+        website_url, trace = CompanyWebsiteResolver(
+            AmbiguousCollisionFetcher(),
+            verify_limit=3,
+        ).resolve(
+            "Focus",
+            linkedin_company_url="https://www.linkedin.com/company/focus",
+            job_location="Anniston, AL",
+        )
+
+        self.assertIsNone(website_url)
+        self.assertNotIn("selected", trace)
+        self.assertTrue(
+            any(
+                domain_of(candidate["url"]) == "focus.org"
+                for candidate in trace["candidates"]
+            )
+        )
+
     def test_search_snippet_cannot_replace_homepage_identity(self):
         class SearchEvidenceFetcher(Fetcher):
             def __init__(self):
@@ -3143,7 +3367,7 @@ class WebsiteResolverTests(unittest.TestCase):
         self.assertNotIn("company token missing from homepage", candidate.reasons)
         self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
 
-    def test_canonical_domain_confirms_short_company_identity(self):
+    def test_canonical_domain_alone_does_not_confirm_short_company_identity(self):
         class CanonicalFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):
                 return Page(
@@ -3158,7 +3382,7 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertEqual(candidate.url, "https://ada.com/")
         self.assertIn("homepage canonical confirms company identity", candidate.reasons)
-        self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+        self.assertIsNone(resolver._select_verified_candidate([candidate]))
 
     def test_single_character_brand_can_use_exact_linkedin_slug_domain(self):
         class XHomepageFetcher(Fetcher):
@@ -3205,6 +3429,58 @@ class WebsiteResolverTests(unittest.TestCase):
 
         self.assertIn("incomplete company identity", candidate.reasons)
         self.assertIsNone(resolver._select_verified_candidate([candidate]))
+
+    def test_linkedin_slug_can_bound_a_marketing_descriptor_suffix(self):
+        class AcmeHomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://www.acme.com/",
+                    html=(
+                        '<script type="application/ld+json">'
+                        '{"@type":"Organization","name":"Acme, Inc."}'
+                        "</script><title>Acme</title><body>Acme</body>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(AcmeHomepageFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://www.acme.com",
+            "Acme - Workflow Automation Software",
+            linkedin_company_url="https://www.linkedin.com/company/acme-inc",
+            verify=True,
+        )
+
+        self.assertNotIn(
+            "parent/group website requires downstream hiring relationship evidence",
+            candidate.reasons,
+        )
+
+    def test_linkedin_slug_does_not_drop_a_real_brand_qualifier(self):
+        class BoschHomepageFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://www.bosch.com/",
+                    html=(
+                        '<script type="application/ld+json">'
+                        '{"@type":"Organization","name":"Bosch"}'
+                        "</script><title>Bosch</title><body>Bosch</body>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(BoschHomepageFetcher(offline=True))
+        candidate = resolver._score_candidate(
+            "https://www.bosch.com",
+            "Bosch - Home",
+            linkedin_company_url="https://www.linkedin.com/company/bosch-home",
+            verify=True,
+        )
+
+        self.assertIn(
+            "parent/group website requires downstream hiring relationship evidence",
+            candidate.reasons,
+        )
 
     def test_parent_group_homepage_is_not_exact_subsidiary_identity(self):
         linkedin_url = "https://www.linkedin.com/company/tata-technologies"
@@ -3259,6 +3535,69 @@ class WebsiteResolverTests(unittest.TestCase):
             parent_candidate["reasons"],
         )
 
+    def test_unrelated_timeout_does_not_override_withheld_linkedin_official_site(self):
+        linkedin_url = "https://www.linkedin.com/company/example-technology"
+        official_url = "https://www.example.gov"
+
+        class WithheldOfficialFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                if url.rstrip("/") == linkedin_url:
+                    return Page(
+                        url=url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Example Technology",'
+                            f'"sameAs":"{official_url}"}}'
+                            "</script>"
+                        ),
+                    )
+                if domain_of(url) == "example.gov":
+                    return Page(
+                        url=url,
+                        final_url=official_url,
+                        html=(
+                            '<script type="application/ld+json">'
+                            '{"@type":"Organization","name":"Example"}'
+                            "</script><title>Example</title>"
+                            "<body>Example Technology services</body>"
+                        ),
+                    )
+                if domain_of(url) == "exampletechnology.com":
+                    raise FetchError(
+                        "homepage timed out",
+                        reason_code="NETWORK_TIMEOUT",
+                        retryable=True,
+                    )
+                if "bing.com" in url or "duckduckgo.com" in url:
+                    return Page(url=url, html="<html></html>")
+                raise FetchError("HTTP Error 404: Not Found", status=404)
+
+        website_url, trace = CompanyWebsiteResolver(
+            WithheldOfficialFetcher(offline=True),
+            verify_limit=3,
+        ).resolve(
+            "Example Technology",
+            linkedin_url,
+            preferred_url="https://exampletechnology.com",
+        )
+
+        self.assertIsNone(website_url)
+        self.assertNotIn("selected", trace)
+        self.assertNotIn("resolution_failure", trace)
+        self.assertGreaterEqual(
+            trace["resolution_failure_suppression"]["suppressed_failure_count"],
+            1,
+        )
+        official = next(
+            candidate
+            for candidate in trace["candidates"]
+            if domain_of(candidate["url"]) == "example.gov"
+        )
+        self.assertIn(
+            "parent/group website requires downstream hiring relationship evidence",
+            official["reasons"],
+        )
+
     def test_exact_multiword_brand_homepage_remains_selectable(self):
         class ExactBrandFetcher(Fetcher):
             def fetch(self, url, data=None, headers=None):
@@ -3287,6 +3626,161 @@ class WebsiteResolverTests(unittest.TestCase):
             candidate.reasons,
         )
         self.assertEqual(resolver._select_verified_candidate([candidate]), candidate)
+
+    def test_linkedin_official_alias_identity_is_not_treated_as_parent_group(self):
+        cases = (
+            (
+                "Rider Levett Bucknall RLB",
+                "https://www.linkedin.com/company/rider-levett-bucknall-3",
+                "https://www.rlb.com",
+                (
+                    '<script type="application/ld+json">'
+                    '{"@type":"Organization","name":"Rider Levett Bucknall"}'
+                    "</script><title>Construction Consulting | RLB</title>"
+                    "<body>Rider Levett Bucknall provides construction consulting.</body>"
+                ),
+            ),
+            (
+                "Jushi Holdings Inc.",
+                "https://www.linkedin.com/company/jushi-inc",
+                "https://www.jushico.com",
+                (
+                    '<script type="application/ld+json">'
+                    '{"@type":"Organization","name":"Jushi"}'
+                    "</script><title>Jushi</title>"
+                    "<body>Jushi Holdings Inc. is a national cannabis company."
+                    " © 2026 Jushi Holdings Inc.</body>"
+                ),
+            ),
+            (
+                "Heritage Companies",
+                "https://www.linkedin.com/company/heritage-hotels-and-resorts",
+                "https://www.hhandr.com",
+                (
+                    "<title>Historic Hotels | Heritage Hotels &amp; Resorts</title>"
+                    "<body>Heritage Hotels &amp; Resorts offers historic properties.</body>"
+                ),
+            ),
+            (
+                "Yum! Brands",
+                "https://www.linkedin.com/company/yum-brands",
+                "https://www.yum.com",
+                "<title>Yum.Com</title><body>Yum brands careers</body>",
+            ),
+            (
+                "County of Maui",
+                "https://www.linkedin.com/company/county-of-maui",
+                "https://www.mauicounty.gov",
+                (
+                    "<title>Maui County, HI - Official Website | Official Website</title>"
+                    "<body>Employment Opportunities for Maui County</body>"
+                ),
+            ),
+            (
+                "Duke University Health System",
+                (
+                    "https://www.linkedin.com/company/"
+                    "duke-university-health-system"
+                ),
+                "https://www.dukehealth.org",
+                (
+                    "<title>Duke Health | Connect with your health care</title>"
+                    "<body>Duke Health careers</body>"
+                ),
+            ),
+        )
+
+        for company_name, linkedin_url, website_url, html in cases:
+            with self.subTest(company=company_name):
+                class AliasFetcher(Fetcher):
+                    def fetch(self, url, data=None, headers=None):
+                        return Page(url=url, final_url=website_url, html=html)
+
+                resolver = CompanyWebsiteResolver(AliasFetcher(offline=True))
+                candidates = resolver._rank_and_verify_candidates(
+                    [website_url],
+                    company_name,
+                    linkedin_url,
+                    candidate_sources={
+                        domain_of(website_url): {"linkedin_official_website"}
+                    },
+                )
+
+                self.assertEqual(len(candidates), 1)
+                candidate = candidates[0]
+                self.assertNotIn(
+                    "parent/group website requires downstream hiring relationship evidence",
+                    candidate.reasons,
+                )
+                self.assertIn(
+                    "LinkedIn official company identity matches homepage alias",
+                    candidate.reasons,
+                )
+                self.assertEqual(
+                    resolver._select_verified_candidate(candidates),
+                    candidate,
+                )
+
+    def test_linkedin_official_alias_does_not_accept_parent_company_identity(self):
+        class ParentFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://www.tata.com/",
+                    html=(
+                        '<script type="application/ld+json">'
+                        '{"@type":"Organization","name":"Tata"}'
+                        "</script><title>Tata Group</title>"
+                        "<body>Tata Technologies careers</body>"
+                    ),
+                )
+
+        resolver = CompanyWebsiteResolver(ParentFetcher(offline=True))
+        candidates = resolver._rank_and_verify_candidates(
+            ["https://www.tata.com/"],
+            "Tata Technologies",
+            "https://www.linkedin.com/company/tata-technologies",
+            candidate_sources={
+                "tata.com": {"linkedin_official_website"}
+            },
+        )
+
+        self.assertEqual(len(candidates), 1)
+        self.assertIn(
+            "parent/group website requires downstream hiring relationship evidence",
+            candidates[0].reasons,
+        )
+        self.assertNotIn(
+            "LinkedIn official company identity matches homepage alias",
+            candidates[0].reasons,
+        )
+        self.assertIsNone(resolver._select_verified_candidate(candidates))
+
+    def test_linkedin_official_alias_keeps_single_token_institution_identity(self):
+        class ParentFetcher(Fetcher):
+            def fetch(self, url, data=None, headers=None):
+                return Page(
+                    url=url,
+                    final_url="https://www.rochester.example/",
+                    html="<title>Rochester</title><body>Rochester</body>",
+                )
+
+        resolver = CompanyWebsiteResolver(ParentFetcher(offline=True))
+        candidates = resolver._rank_and_verify_candidates(
+            ["https://www.rochester.example/"],
+            "University of Rochester",
+            "https://www.linkedin.com/company/university-of-rochester",
+            candidate_sources={
+                "rochester.example": {"linkedin_official_website"}
+            },
+        )
+
+        self.assertEqual(len(candidates), 1)
+        self.assertIn(
+            "parent/group website requires downstream hiring relationship evidence",
+            candidates[0].reasons,
+        )
+        self.assertIsNone(resolver._select_verified_candidate(candidates))
 
     def test_partial_name_canonical_is_not_trusted_for_multiword_brand(self):
         class ParentCanonicalFetcher(Fetcher):

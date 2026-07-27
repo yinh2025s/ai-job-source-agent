@@ -317,6 +317,26 @@ class ApplicantProAdapterTests(unittest.TestCase):
         self.assertTrue(timeout.retryable)
         self.assertNotIn("private", json.dumps(timeout.trace))
 
+    def test_preserves_typed_budget_reason_and_unknown_fetch_fallback(self):
+        cases = (
+            (
+                FetchError(
+                    "adapter deadline reached",
+                    reason_code="COMPANY_TIME_BUDGET_EXHAUSTED",
+                ),
+                "COMPANY_TIME_BUDGET_EXHAUSTED",
+            ),
+            (FetchError("unclassified provider transport failure"), "PROVIDER_FETCH_FAILED"),
+        )
+        for error, expected in cases:
+            with self.subTest(expected=expected):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(error=error), self.board, JobQuery()
+                )
+
+                self.assertEqual(result.reason_code, expected)
+                self.assertFalse(result.inventory_complete)
+
     def test_tampered_locator_and_malformed_inventory_fail_closed(self):
         tampered = self.adapter.list_jobs(
             RecordingFetcher(),

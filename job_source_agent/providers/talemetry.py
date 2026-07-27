@@ -5,9 +5,9 @@ import json
 import re
 from urllib.parse import urlencode, urlparse
 
-from ..reasons import classify_fetch_error, reason_spec
+from ..reasons import reason_spec
 from ..web import FetchError, Page
-from .base import AdapterResult, JobBoard, JobQuery
+from .base import AdapterResult, JobBoard, JobQuery, provider_fetch_reason
 
 
 _MAX_HTML_CHARS = 2_000_000
@@ -243,9 +243,7 @@ def _fetch_failure(
     request_url: str,
     error: Exception,
 ) -> AdapterResult:
-    reason_code = classify_fetch_error(str(error))
-    if reason_code == "FETCH_FAILED":
-        reason_code = "PROVIDER_FETCH_FAILED"
+    reason_code = provider_fetch_reason(error)
     return _incomplete(
         board,
         request_url,

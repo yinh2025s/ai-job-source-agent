@@ -19,7 +19,7 @@ class DeterministicRunConfigTests(unittest.TestCase):
 
         self.assertEqual(implicit.to_payload(), explicit.to_payload())
         self.assertEqual(implicit.digest, explicit.digest)
-        self.assertEqual(implicit.to_payload()["schema_version"], "1.5")
+        self.assertEqual(implicit.to_payload()["schema_version"], "1.8")
 
     def test_schema_1_4_route_evaluation_payload_is_preserved_exactly(self):
         payload = DeterministicRunConfig.from_agent_config(
@@ -28,12 +28,128 @@ class DeterministicRunConfigTests(unittest.TestCase):
                 evaluate_all_candidate_routes=True,
             )
         ).to_payload()
+        payload["agent"].pop("candidate_discovery_engine")
+        payload["agent"].pop("provider_search_reserve_seconds")
+        payload["agent"].pop("search_backend_kind")
+        payload["agent"].pop("search_backend_contract_version")
+        payload["agent"].pop("search_backend_profile_digest")
         payload["schema_version"] = "1.4"
 
         configuration = DeterministicRunConfig.from_payload(payload)
 
         self.assertEqual(configuration.to_payload(), payload)
         self.assertTrue(configuration.evaluate_all_candidate_routes)
+
+    def test_candidate_discovery_engine_is_versioned_and_requires_candidate_discovery(self):
+        staged = DeterministicRunConfig.from_agent_config(AgentConfig())
+        coordinated = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                enable_parallel_candidate_discovery=True,
+                candidate_discovery_engine="coordinator_v2",
+            )
+        )
+
+        self.assertEqual(staged.candidate_discovery_engine, "stage_v1")
+        self.assertEqual(coordinated.candidate_discovery_engine, "coordinator_v2")
+        self.assertNotEqual(staged.digest, coordinated.digest)
+        self.assertEqual(
+            coordinated.to_payload()["agent"]["candidate_discovery_engine"],
+            "coordinator_v2",
+        )
+
+        for invalid in ("", "coordinator", None, 2):
+            with self.subTest(value=invalid):
+                payload = coordinated.to_payload()
+                payload["agent"]["candidate_discovery_engine"] = invalid
+                with self.assertRaises(ValueError):
+                    DeterministicRunConfig.from_payload(payload)
+
+        with self.assertRaisesRegex(ValueError, "requires parallel"):
+            DeterministicRunConfig.from_agent_config(
+                AgentConfig(candidate_discovery_engine="coordinator_v2")
+            )
+
+    def test_schema_1_5_defaults_to_staged_engine_without_rewriting_payload(self):
+        payload = DeterministicRunConfig.from_agent_config(
+            AgentConfig(enable_parallel_candidate_discovery=True)
+        ).to_payload()
+        payload["agent"].pop("candidate_discovery_engine")
+        payload["agent"].pop("provider_search_reserve_seconds")
+        payload["agent"].pop("search_backend_kind")
+        payload["agent"].pop("search_backend_contract_version")
+        payload["agent"].pop("search_backend_profile_digest")
+        payload["schema_version"] = "1.5"
+
+        configuration = DeterministicRunConfig.from_payload(payload)
+
+        self.assertEqual(configuration.candidate_discovery_engine, "stage_v1")
+        self.assertEqual(configuration.to_payload(), payload)
+
+    def test_schema_1_6_defaults_reservation_without_rewriting_payload(self):
+        payload = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                enable_parallel_candidate_discovery=True,
+                candidate_discovery_engine="coordinator_v2",
+            )
+        ).to_payload()
+        payload["agent"].pop("provider_search_reserve_seconds")
+        payload["agent"].pop("search_backend_kind")
+        payload["agent"].pop("search_backend_contract_version")
+        payload["agent"].pop("search_backend_profile_digest")
+        payload["schema_version"] = "1.6"
+
+        configuration = DeterministicRunConfig.from_payload(payload)
+
+        self.assertEqual(configuration.provider_search_reserve_seconds, 10.0)
+        self.assertEqual(configuration.to_payload(), payload)
+
+    def test_schema_1_7_defaults_to_legacy_search_backend_without_rewriting_payload(self):
+        payload = DeterministicRunConfig.from_agent_config(AgentConfig()).to_payload()
+        payload["agent"].pop("search_backend_kind")
+        payload["agent"].pop("search_backend_contract_version")
+        payload["agent"].pop("search_backend_profile_digest")
+        payload["schema_version"] = "1.7"
+
+        configuration = DeterministicRunConfig.from_payload(payload)
+
+        self.assertEqual(configuration.search_backend_kind, "legacy")
+        self.assertEqual(configuration.search_backend_contract_version, "1")
+        self.assertIsNone(configuration.search_backend_profile_digest)
+        self.assertEqual(configuration.to_payload(), payload)
+
+    def test_search_backend_profile_is_versioned_without_storing_endpoint(self):
+        digest = "a" * 64
+        legacy = DeterministicRunConfig.from_agent_config(AgentConfig())
+        configured = DeterministicRunConfig.from_agent_config(
+            AgentConfig(
+                search_backend_kind="searxng",
+                search_backend_profile_digest=digest,
+            )
+        )
+
+        self.assertNotEqual(legacy.digest, configured.digest)
+        self.assertEqual(
+            configured.to_payload()["agent"]["search_backend_profile_digest"],
+            digest,
+        )
+        self.assertNotIn("url", repr(configured.to_payload()).casefold())
+
+    def test_search_backend_configuration_rejects_invalid_profiles(self):
+        for config in (
+            AgentConfig(search_backend_kind="unknown"),
+            AgentConfig(search_backend_kind="searxng"),
+            AgentConfig(
+                search_backend_kind="legacy",
+                search_backend_profile_digest="a" * 64,
+            ),
+            AgentConfig(
+                search_backend_kind="searxng",
+                search_backend_profile_digest="not-a-digest",
+            ),
+        ):
+            with self.subTest(config=config):
+                with self.assertRaises(ValueError):
+                    DeterministicRunConfig.from_agent_config(config)
 
     def test_parallel_candidate_discovery_is_explicit_and_deterministic(self):
         disabled = DeterministicRunConfig.from_agent_config(AgentConfig())

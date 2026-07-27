@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from job_source_agent.application_runner import ApplicationRunner
@@ -121,6 +122,39 @@ class MemoryCheckpointStore:
 
 
 class ApplicationRunnerTests(unittest.TestCase):
+    def test_stage_budget_scope_wraps_stage_execution(self):
+        events = []
+
+        class Controller:
+            @contextmanager
+            def stage_budget_scope(self, stage):
+                events.append(("enter", stage))
+                try:
+                    yield
+                finally:
+                    events.append(("exit", stage))
+
+        class Stage:
+            name = STAGE_LINKEDIN_DISCOVERY
+
+            def run(self, context):
+                events.append(("run", self.name))
+                return authoritative_execution(self.name)
+
+        ApplicationRunner(
+            [Stage()],
+            stage_budget_controller=Controller(),
+        ).run(PipelineContext.from_company(CompanyInput(company_name="Acme")))
+
+        self.assertEqual(
+            events,
+            [
+                ("enter", STAGE_LINKEDIN_DISCOVERY),
+                ("run", STAGE_LINKEDIN_DISCOVERY),
+                ("exit", STAGE_LINKEDIN_DISCOVERY),
+            ],
+        )
+
     def test_same_attempt_continuation_preserves_finalized_negative_prefix(self):
         fingerprint = "input-v1"
         store = MemoryCheckpointStore()

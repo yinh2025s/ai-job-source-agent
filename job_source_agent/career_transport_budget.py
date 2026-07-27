@@ -29,14 +29,17 @@ class _HostDenialState:
 @dataclass
 class _ScopeState:
     limit: int | None
+    reserved_dispatches: int = 0
     dispatched: int = 0
     rejected: int = 0
+    speculative_rejected: int = 0
     by_phase: dict[str, int] = field(default_factory=dict)
+    rejected_by_phase: dict[str, int] = field(default_factory=dict)
     host_denials: dict[str, _HostDenialState] = field(default_factory=dict)
     host_circuit_rejected: int = 0
 
 
-_PHASE_STACK: ContextVar[tuple[tuple[_ScopeState, str], ...]] = ContextVar(
+_PHASE_STACK: ContextVar[tuple[tuple[_ScopeState, str, bool], ...]] = ContextVar(
     "career_transport_budget_phase_stack",
     default=(),
 )
@@ -65,6 +68,15 @@ class CareerDiscoveryBudget:
                     for name in sorted(self._state.by_phase)
                 },
             }
+            if self._state.reserved_dispatches:
+                snapshot["reservation"] = {
+                    "dispatches": self._state.reserved_dispatches,
+                    "speculative_rejected": self._state.speculative_rejected,
+                    "rejected_by_phase": {
+                        name: self._state.rejected_by_phase[name]
+                        for name in sorted(self._state.rejected_by_phase)
+                    },
+                }
             open_circuits = {
                 host: denial
                 for host, denial in self._state.host_denials.items()
@@ -107,13 +119,26 @@ class CareerTransportBudgetFetcher:
     def career_discovery_scope(
         self,
         limit: int | None,
+        *,
+        reserved_dispatches: int = 0,
     ) -> Iterator[CareerDiscoveryBudget]:
         if limit is not None and (isinstance(limit, bool) or not isinstance(limit, int)):
             raise TypeError("career discovery fetch limit must be a nonnegative integer or None")
         if limit is not None and limit < 0:
             raise ValueError("career discovery fetch limit must be nonnegative")
+        if isinstance(reserved_dispatches, bool) or not isinstance(reserved_dispatches, int):
+            raise TypeError("reserved dispatches must be a nonnegative integer")
+        if reserved_dispatches < 0:
+            raise ValueError("reserved dispatches must be nonnegative")
+        if limit is None and reserved_dispatches:
+            raise ValueError("an unbounded scope cannot reserve dispatches")
+        if limit is not None and reserved_dispatches > limit:
+            raise ValueError("reserved dispatches cannot exceed the scope limit")
 
-        state = _ScopeState(limit=limit)
+        state = _ScopeState(
+            limit=limit,
+            reserved_dispatches=reserved_dispatches,
+        )
         with self._lock:
             if self._active_scope is not None:
                 raise RuntimeError("career discovery fetch scopes cannot be nested")
@@ -127,15 +152,22 @@ class CareerTransportBudgetFetcher:
                     self._active_scope = None
 
     @contextmanager
-    def career_discovery_phase(self, name: str) -> Iterator[None]:
+    def career_discovery_phase(
+        self,
+        name: str,
+        *,
+        speculative: bool = False,
+    ) -> Iterator[None]:
         if not isinstance(name, str) or not name.strip():
             raise ValueError("career discovery phase name must be a nonempty string")
+        if not isinstance(speculative, bool):
+            raise TypeError("speculative must be a boolean")
         with self._lock:
             state = self._active_scope
             if state is None:
                 raise RuntimeError("career discovery phases require an active scope")
 
-        token = _PHASE_STACK.set((*_PHASE_STACK.get(), (state, name)))
+        token = _PHASE_STACK.set((*_PHASE_STACK.get(), (state, name, speculative)))
         try:
             yield
         finally:
@@ -153,6 +185,16 @@ class CareerTransportBudgetFetcher:
         with self._lock:
             state = self._active_scope
             if state is not None:
+                active_phase = next(
+                    (
+                        (name, speculative)
+                        for scope, name, speculative in reversed(_PHASE_STACK.get())
+                        if scope is state
+                    ),
+                    None,
+                )
+                phase = active_phase[0] if active_phase is not None else None
+                speculative = active_phase[1] if active_phase is not None else False
                 denial = state.host_denials.get(host_key) if host_key else None
                 if denial is not None and denial.count >= _HOST_DENIAL_LIMIT:
                     state.rejected += 1
@@ -169,6 +211,27 @@ class CareerTransportBudgetFetcher:
                             interaction=interaction,
                         ).as_dict(),
                     )
+                remaining = (
+                    None
+                    if state.limit is None
+                    else max(0, state.limit - state.dispatched)
+                )
+                if (
+                    speculative
+                    and remaining is not None
+                    and remaining <= state.reserved_dispatches
+                ):
+                    state.rejected += 1
+                    state.speculative_rejected += 1
+                    if phase is not None:
+                        state.rejected_by_phase[phase] = (
+                            state.rejected_by_phase.get(phase, 0) + 1
+                        )
+                    raise FetchError(
+                        "career discovery fetch budget is reserved for evidence-backed phases",
+                        reason_code="SPECULATIVE_ROUTE_BUDGET_RESERVED",
+                        retryable=False,
+                    )
                 if state.limit is not None and state.dispatched >= state.limit:
                     state.rejected += 1
                     raise FetchError(
@@ -177,10 +240,6 @@ class CareerTransportBudgetFetcher:
                         retryable=True,
                     )
                 state.dispatched += 1
-                phase = next(
-                    (name for scope, name in reversed(_PHASE_STACK.get()) if scope is state),
-                    None,
-                )
                 if phase is not None:
                     state.by_phase[phase] = state.by_phase.get(phase, 0) + 1
 

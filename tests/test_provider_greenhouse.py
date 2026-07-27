@@ -75,6 +75,74 @@ class GreenhouseAdapterTests(unittest.TestCase):
         self.assertFalse(self.adapter.recognizes("https://evil@boards.greenhouse.io/acme"))
         self.assertFalse(self.adapter.recognizes("https://boards.greenhouse.io:8443/acme"))
 
+    def test_official_api_emits_opening_bound_employer_evidence(self):
+        board = self.adapter.identify_board(
+            "https://boards.greenhouse.io/fabric83"
+        )
+        api_url = self.adapter.api_url(board.identifier)
+        payload = json.dumps(
+            {
+                "jobs": [
+                    greenhouse_job(
+                        123,
+                        "Software Engineer",
+                        "https://job-boards.greenhouse.io/fabric83/jobs/123",
+                        company_name="Fabric",
+                        location={"name": "Remote"},
+                    )
+                ]
+            }
+        )
+
+        result = self.adapter.list_jobs(
+            MappingFetcher(api_url, payload),
+            board,
+            JobQuery(title="Product Designer"),
+        )
+
+        self.assertEqual(
+            result.candidates[0].raw["hiring_organization_name"],
+            "Fabric",
+        )
+        self.assertEqual(len(result.employer_evidence), 1)
+        evidence = result.employer_evidence[0]
+        self.assertEqual(evidence.employer_name, "Fabric")
+        self.assertEqual(evidence.opening_url, result.candidates[0].url)
+        self.assertEqual(evidence.evidence_url, api_url)
+        self.assertEqual(
+            evidence.extraction_method,
+            "greenhouse_company_name",
+        )
+
+    def test_official_api_never_uses_cross_tenant_employer_evidence(self):
+        board = self.adapter.identify_board(
+            "https://boards.greenhouse.io/fabric83"
+        )
+        api_url = self.adapter.api_url(board.identifier)
+        payload = json.dumps(
+            {
+                "jobs": [
+                    greenhouse_job(
+                        123,
+                        "Product Designer",
+                        "https://job-boards.greenhouse.io/shakepayfr/jobs/123",
+                        company_name="Fabric",
+                    )
+                ]
+            }
+        )
+
+        result = self.adapter.list_jobs(
+            MappingFetcher(api_url, payload),
+            board,
+            JobQuery(title="Product Designer"),
+        )
+
+        self.assertEqual(result.employer_evidence, ())
+        self.assertIsNone(
+            result.candidates[0].raw["hiring_organization_name"]
+        )
+
     def test_identifies_custom_frontend_only_from_complete_greenhouse_records(self):
         url = "https://careers.example.org/careers"
         page = Page(

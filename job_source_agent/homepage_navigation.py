@@ -5,7 +5,7 @@ import ipaddress
 import json
 import re
 from typing import Any
-from urllib.parse import unquote, urlparse
+from urllib.parse import unquote, urlparse, urlunparse
 
 from .scoring import score_career_link
 from .web import Page, RawLink, extract_links, safe_normalize_url
@@ -101,9 +101,15 @@ def evidence_from_verified_homepage(
     for link in extract_links(page):
         if link.origin != "page_link":
             continue
-        candidate_url = _public_queryless_https_url(link.url)
+        candidate_url = _public_queryless_navigation_candidate(link.url)
         if candidate_url is None or candidate_url in seen:
             continue
+        observed_link = RawLink(
+            url=candidate_url,
+            text=link.text,
+            source_url=normalized_homepage,
+            origin=link.origin,
+        )
         url_only_link = RawLink(
             url=candidate_url,
             text="",
@@ -112,7 +118,7 @@ def evidence_from_verified_homepage(
         )
         score = score_career_link(url_only_link).score
         if score < 50 and not _explicit_external_career_navigation(
-            link,
+            observed_link,
             normalized_homepage,
         ):
             continue
@@ -128,6 +134,42 @@ def evidence_from_verified_homepage(
         homepage_url=normalized_homepage,
         candidate_urls=candidate_urls,
     )
+
+
+def _public_queryless_navigation_candidate(value: Any) -> str | None:
+    """Keep verified-page links HTTPS-only, upgrading an observed public HTTP link."""
+
+    https_url = _public_queryless_https_url(value)
+    if https_url is not None:
+        return https_url
+    if not isinstance(value, str) or not value:
+        return None
+    if len(value.encode("utf-8")) > _MAX_URL_BYTES or _contains_unsafe_content(value):
+        return None
+    normalized = safe_normalize_url(value)
+    if normalized is None or normalized != value:
+        return None
+    try:
+        parsed = urlparse(normalized)
+        port = parsed.port
+        decoded_path = unquote(parsed.path)
+    except (TypeError, ValueError, UnicodeError):
+        return None
+    if (
+        parsed.scheme.casefold() != "http"
+        or not _is_public_host(parsed.hostname)
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in {None, 80}
+        or parsed.query
+        or parsed.fragment
+        or _has_controls(decoded_path)
+    ):
+        return None
+    host = parsed.hostname or ""
+    if ":" in host:
+        host = f"[{host}]"
+    return urlunparse(parsed._replace(scheme="https", netloc=host))
 
 
 def _explicit_external_career_navigation(

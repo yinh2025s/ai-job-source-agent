@@ -194,6 +194,28 @@ class TalemetryAdapterTests(unittest.TestCase):
                 self.assertFalse(result.trace["inventory_complete"])
                 self.assertEqual(result.candidates, [])
 
+    def test_preserves_typed_budget_reason_and_unknown_fetch_fallback(self):
+        cases = (
+            (
+                FetchError(
+                    "fetch allowance consumed",
+                    reason_code="FETCH_BUDGET_EXHAUSTED",
+                ),
+                "FETCH_BUDGET_EXHAUSTED",
+            ),
+            (FetchError("unclassified provider transport failure"), "PROVIDER_FETCH_FAILED"),
+        )
+        for error, expected in cases:
+            with self.subTest(expected=expected):
+                result = self.adapter.list_jobs(
+                    RecordingFetcher(error=error),
+                    self.board,
+                    JobQuery(title="AI Engineer II"),
+                )
+
+                self.assertEqual(result.reason_code, expected)
+                self.assertFalse(result.inventory_complete)
+
     def test_classifies_cloudflare_challenge_html_as_bot_protection(self):
         challenge = """
             <!doctype html><title>Just a moment...</title>

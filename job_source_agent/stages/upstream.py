@@ -12,6 +12,7 @@ from ..company_discovery_evidence_store import (
     stored_website_deterministically_rejected,
 )
 from ..identity_continuity import HiringIdentityEvidence
+from ..provisional_evidence import ProvisionalWebsiteEvidence
 from ..result_identity import canonicalize_identity_url
 from ..errors import DiscoveryError
 from ..homepage_navigation import HomepageNavigationEvidence
@@ -236,12 +237,22 @@ class WebsiteResolutionStage:
                 and isinstance(resolution_failure.get("error"), str)
                 else "No official company website could be resolved."
             )
+            provisional_evidence = _provisional_website_evidence(
+                context.company.company_name,
+                trace,
+            )
             execution = _failed_execution(
                 retained_reason,
                 started,
                 retained_detail,
                 trace=trace,
                 clear_unverified_website=clear_unverified_website,
+                provisional_website_evidence=provisional_evidence,
+                homepage_navigation_evidence=(
+                    navigation_evidence
+                    if isinstance(navigation_evidence, HomepageNavigationEvidence)
+                    else None
+                ),
             )
             self._invalidate_rejected_stored_website(
                 context,
@@ -562,7 +573,16 @@ def _failed_execution(
     trace: dict | None = None,
     *,
     clear_unverified_website: bool = False,
+    provisional_website_evidence: ProvisionalWebsiteEvidence | None = None,
+    homepage_navigation_evidence: HomepageNavigationEvidence | None = None,
 ) -> StageExecution:
+    updates: dict[str, object] = {}
+    if clear_unverified_website:
+        updates["company_website_url"] = ""
+    if provisional_website_evidence is not None:
+        updates["provisional_website_evidence"] = provisional_website_evidence
+    if homepage_navigation_evidence is not None:
+        updates["homepage_navigation_evidence"] = homepage_navigation_evidence
     return StageExecution(
         result=make_stage_result(
             STAGE_WEBSITE_RESOLUTION,
@@ -572,13 +592,32 @@ def _failed_execution(
             input_count=1,
             detail=detail,
         ),
-        updates=(
-            {"company_website_url": ""}
-            if clear_unverified_website
-            else {}
-        ),
+        updates=updates,
         trace=trace or {"error": detail},
     )
+
+
+def _provisional_website_evidence(
+    company_name: str,
+    trace: object,
+) -> ProvisionalWebsiteEvidence | None:
+    payload = (
+        trace.get("provisional_official_website")
+        if isinstance(trace, dict)
+        else None
+    )
+    if not isinstance(payload, dict):
+        return None
+    try:
+        return ProvisionalWebsiteEvidence(
+            source_company_name=company_name,
+            url=payload.get("url"),
+            evidence_source=payload.get("evidence_source"),
+            reason_code=payload.get("reason_code"),
+            homepage_verified=payload.get("homepage_verified"),
+        )
+    except (TypeError, ValueError):
+        return None
 
 
 def _identity_failed_execution(

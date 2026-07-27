@@ -224,6 +224,38 @@ class OpeningAvailabilityTests(unittest.TestCase):
         self.assertEqual(diagnostic.disposition, "discovery_incomplete")
         self.assertEqual(diagnostic.reason_code, "HTTP_FORBIDDEN")
 
+    def test_singular_page_detection_preserves_typed_budget_metadata(self):
+        diagnostic = diagnose_opening_availability(
+            {
+                "provider_api": {
+                    "provider_detection": {
+                        "method": "page_evidence",
+                        "error": "company time budget exhausted at caller deadline",
+                        "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                        "retryable": True,
+                        "transport_phase": "timeout",
+                    }
+                }
+            }
+        )
+
+        self.assertEqual(
+            diagnostic.reason_code,
+            "COMPANY_TIME_BUDGET_EXHAUSTED",
+        )
+        self.assertEqual(
+            diagnostic.evidence["provider_errors"],
+            [
+                {
+                    "error": "company time budget exhausted at caller deadline",
+                    "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                    "retryable": True,
+                    "transport_phase": "timeout",
+                    "provenance": ["provider_detection"],
+                }
+            ],
+        )
+
     def test_verified_official_empty_inventory_beats_blocked_generic_fallback(self):
         diagnostic = diagnose_opening_availability(
             {

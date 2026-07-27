@@ -108,6 +108,39 @@ class HomepageNavigationEvidenceTests(unittest.TestCase):
         )
         self.assertNotIn("COMPANY", str(evidence.to_checkpoint_payload()))
 
+    def test_upgrades_visible_public_http_career_link_to_https_candidate(self):
+        evidence = evidence_from_verified_homepage(
+            Page(
+                url="https://city.example/",
+                html=(
+                    '<a href="http://jobs.public-example.com/careers/city">'
+                    "Career Opportunities</a>"
+                ),
+            ),
+            homepage_url="https://city.example/",
+        )
+
+        self.assertEqual(
+            evidence.candidate_urls,
+            ("https://jobs.public-example.com/careers/city",),
+        )
+
+    def test_rejects_unsafe_http_navigation_candidates(self):
+        links = (
+            '<a href="http://localhost/careers">Careers</a>'
+            '<a href="http://127.0.0.1/careers">Careers</a>'
+            '<a href="http://user@example.net/careers">Careers</a>'
+            '<a href="http://example.net:8080/careers">Careers</a>'
+            '<a href="http://example.net/careers?token=secret">Careers</a>'
+        )
+
+        evidence = evidence_from_verified_homepage(
+            Page(url="https://company.example/", html=links),
+            homepage_url="https://company.example/",
+        )
+
+        self.assertIsNone(evidence)
+
     def test_does_not_match_navigation_evidence_for_a_different_homepage_path(self):
         evidence = HomepageNavigationEvidence(
             homepage_url="https://retailer.example/",

@@ -12,6 +12,7 @@ OTHER_TENANT = "11111111-1111-4111-8111-111111111111"
 SLUG = "Actabl"
 BOARD_URL = f"https://recruiting.paylocity.com/recruiting/jobs/All/{TENANT}/{SLUG}"
 SLUGLESS_URL = f"https://recruiting.paylocity.com/recruiting/jobs/All/{TENANT}"
+DETAIL_URL = "https://recruiting.paylocity.com/Recruiting/Jobs/Details/4284086"
 
 
 def job(job_id=4284086, title="Financial Analyst", location="Actabl Denver"):
@@ -49,6 +50,23 @@ def board_html(
             }
         )
         + ";</script></html>"
+    )
+
+
+def detail_html(
+    *,
+    title="Financial Analyst",
+    employer="Actabl, LLC",
+    tenant=TENANT,
+    slug=SLUG,
+    extra_board="",
+):
+    board = f"/Recruiting/Jobs/All/{tenant}/{slug}" if slug else f"/Recruiting/Jobs/All/{tenant}"
+    return (
+        f'<a href="{board}">All jobs</a>{extra_board}'
+        "<script>window.pageData = "
+        + json.dumps({"jobTitle": title, "moduleName": employer})
+        + ";</script>"
     )
 
 
@@ -96,6 +114,27 @@ class PaylocityAdapterTests(unittest.TestCase):
         self.assertEqual(len(result.candidates), 1)
         self.assertEqual(result.trace["records_seen"], 1)
 
+    def test_inventory_deduplicates_country_extended_location(self):
+        result = self.adapter.list_jobs(
+            RecordingFetcher(Page(BOARD_URL, board_html())),
+            self.board,
+            JobQuery(title="Financial Analyst", location="Denver, CO"),
+        )
+
+        self.assertEqual(
+            result.candidates[0].location,
+            "Remote; Actabl Denver; Denver, CO, USA",
+        )
+
+        same_location = job(location="Denver, CO")
+        same_location["IsRemote"] = False
+        result = self.adapter.list_jobs(
+            RecordingFetcher(Page(BOARD_URL, board_html([same_location]))),
+            self.board,
+            JobQuery(title="Financial Analyst", location="Denver, CO"),
+        )
+        self.assertEqual(result.candidates[0].location, "Denver, CO")
+
     def test_slugless_board_allows_same_tenant_canonical_slug_redirect(self):
         board = JobBoard(SLUGLESS_URL, "paylocity", TENANT)
         result = self.adapter.list_jobs(
@@ -127,12 +166,67 @@ class PaylocityAdapterTests(unittest.TestCase):
             SLUGLESS_URL.replace(f"/{TENANT}", f"//{TENANT}"),
             BOARD_URL.replace(SLUG, "bad slug"),
             BOARD_URL + "?token=secret",
-            f"https://recruiting.paylocity.com/Recruiting/Jobs/Details/4284086",
         )
         for url in rejected:
             with self.subTest(url=url):
                 self.assertFalse(self.adapter.recognizes(url))
                 self.assertIsNone(self.adapter.identify_board(url))
+
+    def test_detail_is_provider_recognized_but_not_a_board_without_page_evidence(self):
+        self.assertTrue(self.adapter.recognizes(DETAIL_URL))
+        self.assertIsNone(self.adapter.identify_board(DETAIL_URL))
+
+    def test_bootstraps_exact_detail_to_provider_board_and_employer_evidence(self):
+        result = self.adapter.bootstrap_candidate(
+            RecordingFetcher(Page(DETAIL_URL, detail_html(), final_url=DETAIL_URL)),
+            DETAIL_URL,
+            JobQuery(title="Financial Analyst", location="Denver, CO"),
+        )
+
+        self.assertIsNotNone(result)
+        self.assertEqual(result.board, self.board)
+        self.assertEqual(result.opening_url, DETAIL_URL)
+        self.assertEqual(result.employer_evidence.employer_name, "Actabl, LLC")
+        self.assertEqual(
+            result.employer_evidence.extraction_method,
+            "paylocity_detail_page_data",
+        )
+
+    def test_detail_bootstrap_rejects_conflicting_identity_and_title_evidence(self):
+        cases = (
+            detail_html(title="Other Role"),
+            detail_html(
+                extra_board=(
+                    f'<a href="/Recruiting/Jobs/All/{OTHER_TENANT}/Other">Other</a>'
+                )
+            ),
+            detail_html(
+                extra_board=(
+                    f'<a href="/Recruiting/Jobs/All/{TENANT}/Other">Other</a>'
+                )
+            ),
+        )
+        for html in cases:
+            with self.subTest(html=html[:80]):
+                result = self.adapter.bootstrap_candidate(
+                    RecordingFetcher(Page(DETAIL_URL, html, final_url=DETAIL_URL)),
+                    DETAIL_URL,
+                    JobQuery(title="Financial Analyst"),
+                )
+                self.assertIsNone(result)
+
+        redirected = self.adapter.bootstrap_candidate(
+            RecordingFetcher(
+                Page(
+                    DETAIL_URL,
+                    detail_html(),
+                    final_url=DETAIL_URL.replace("4284086", "4284087"),
+                )
+            ),
+            DETAIL_URL,
+            JobQuery(title="Financial Analyst"),
+        )
+        self.assertIsNone(redirected)
 
     def test_slugless_board_rejects_unsafe_or_cross_tenant_evidence(self):
         board = JobBoard(SLUGLESS_URL, "paylocity", TENANT)

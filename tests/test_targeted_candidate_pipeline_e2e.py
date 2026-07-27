@@ -25,6 +25,44 @@ WORKDAY_DETAIL = (
     "https://acme.wd5.myworkdayjobs.com/en-US/acme/"
     "job/Remote/AI-Engineer_R123"
 )
+PAYLOCITY_CASES = (
+    {
+        "company": "Loveland Innovations",
+        "title": "DevOps Engineer",
+        "location": "Pleasant Grove, UT",
+        "tenant": "1842d214-71f6-424b-92ed-555e85a52c30",
+        "slug": "Loveland-Innovations-LLC",
+        "job_id": 4232544,
+        "module_id": "31001",
+        "employer": "Loveland Innovations, LLC",
+        "city": "Pleasant Grove",
+        "state": "UT",
+    },
+    {
+        "company": "iClassPro",
+        "title": "DevOps Engineer",
+        "location": "Longview, TX",
+        "tenant": "7c2a1868-9c37-49da-820c-1c193bcd1fa6",
+        "slug": "iClassPro-Inc",
+        "job_id": 4331044,
+        "module_id": "31002",
+        "employer": "iClassPro, Inc.",
+        "city": "Longview",
+        "state": "TX",
+    },
+    {
+        "company": "Resolute Road Hospitality",
+        "title": "Human Resources Manager",
+        "location": "Spokane, WA",
+        "tenant": "e4cace93-beb5-455c-b64f-f694bee78b1d",
+        "slug": "Resolute-Road-Hospitality",
+        "job_id": 4327097,
+        "module_id": "31003",
+        "employer": "Resolute Road Hospitality",
+        "city": "Spokane",
+        "state": "WA",
+    },
+)
 
 
 class FrozenSearchBackend:
@@ -116,8 +154,66 @@ def workday_inventory(*, tenant="acme", total=1, count=1, include_target=True):
     )
 
 
+def paylocity_routes(case):
+    detail = (
+        "https://recruiting.paylocity.com/Recruiting/Jobs/Details/"
+        f"{case['job_id']}"
+    )
+    board = (
+        "https://recruiting.paylocity.com/recruiting/jobs/All/"
+        f"{case['tenant']}/{case['slug']}"
+    )
+    detail_html = (
+        f'<a href="/Recruiting/Jobs/All/{case["tenant"]}/{case["slug"]}">'
+        "All jobs</a><script>window.pageData = "
+        + json.dumps(
+            {"jobTitle": case["title"], "moduleName": case["employer"]}
+        )
+        + ";</script>"
+    )
+    board_html = (
+        "<script>window.pageData = "
+        + json.dumps(
+            {
+                "ModuleId": case["module_id"],
+                "ModuleTitle": case["employer"],
+                "LeadJoinUrl": (
+                    "/Recruiting/PublicLeads/New/" + case["tenant"]
+                ),
+                "Jobs": [
+                    {
+                        "JobId": case["job_id"],
+                        "JobTitle": case["title"],
+                        "LocationName": (
+                            f"{case['city']}, {case['state']}"
+                        ),
+                        "IsInternal": False,
+                        "IsRemote": False,
+                        "JobLocation": {
+                            "ModuleId": int(case["module_id"]),
+                            "City": case["city"],
+                            "State": case["state"],
+                            "Country": "USA",
+                        },
+                    }
+                ],
+            }
+        )
+        + ";</script>"
+    )
+    return detail, board, {detail: detail_html, board: board_html}
+
+
 class TargetedCandidatePipelineE2ETests(unittest.TestCase):
-    def run_pipeline(self, fetcher, *, company_name="Acme", website=""):
+    def run_pipeline(
+        self,
+        fetcher,
+        *,
+        company_name="Acme",
+        website="",
+        title="AI Engineer",
+        location="Remote",
+    ):
         application = build_application_from_fetcher(
             fetcher,
             AgentConfig(
@@ -136,8 +232,8 @@ class TargetedCandidatePipelineE2ETests(unittest.TestCase):
             CompanyInput(
                 company_name=company_name,
                 company_website_url=website,
-                job_title="AI Engineer",
-                job_location="Remote",
+                job_title=title,
+                job_location=location,
                 source="frozen_contract_fixture",
             )
         )
@@ -298,6 +394,53 @@ class TargetedCandidatePipelineE2ETests(unittest.TestCase):
             "provider_inventory",
         )
         self.assert_bounded_targeted_search(result, backend)
+
+    def test_paylocity_detail_bootstrap_matrix_reaches_s7_exact(self):
+        for case in PAYLOCITY_CASES:
+            with self.subTest(company=case["company"]):
+                detail, board, routes = paylocity_routes(case)
+                backend = FrozenSearchBackend(
+                    [detail],
+                    target_title=case["title"],
+                )
+                result = self.run_pipeline(
+                    FrozenFetcher(backend, routes),
+                    company_name=case["company"],
+                    title=case["title"],
+                    location=case["location"],
+                )
+
+                statuses = self.statuses(result)
+                self.assertEqual(statuses[STAGE_WEBSITE_RESOLUTION], "failed")
+                self.assertEqual(statuses[STAGE_OPENING_MATCH], "success")
+                self.assertEqual(statuses[STAGE_RESULT_VALIDATION], "success")
+                self.assertEqual(result.open_position_url, detail)
+                self.assertEqual(result.identity_assertion["verdict"], "verified")
+                self.assertEqual(
+                    result.identity_assertion["provider"]["provider"],
+                    "paylocity",
+                )
+                self.assertEqual(
+                    result.identity_assertion["provider"]["tenant"],
+                    f"{case['tenant']}|{case['slug'].casefold()}",
+                )
+                self.assertEqual(
+                    result.identity_assertion["provider"]["canonical_board_url"],
+                    board,
+                )
+                self.assertEqual(
+                    result.identity_assertion["selection"]["location"],
+                    case["location"],
+                )
+                s5_trace = self.s5_trace(result)
+                self.assertEqual(
+                    s5_trace["provider_detection"]["method"],
+                    "provider_opening_bootstrap",
+                )
+                self.assertEqual(
+                    s5_trace["relationship_evidence"]["evidence_type"],
+                    "provider_published_employer",
+                )
 
     def test_wrong_oracle_hiring_organization_is_rejected_by_s7(self):
         backend = FrozenSearchBackend([ORACLE_DETAIL])

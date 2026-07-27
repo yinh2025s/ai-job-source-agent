@@ -50,7 +50,7 @@ class PipelineApplicationTests(unittest.TestCase):
         self.assertIn("d9d64766", result.open_position_url)
         self.assertEqual(result.result_record()["output_validation_status"], "success")
         self.assertEqual(result.result_schema_version, "2.2")
-        self.assertEqual(result.run_configuration["schema_version"], "1.5")
+        self.assertEqual(result.run_configuration["schema_version"], "1.8")
         self.assertEqual(
             result.run_configuration["agent"]["max_job_board_attempts"],
             3,

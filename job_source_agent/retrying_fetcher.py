@@ -55,6 +55,35 @@ class RetryingFetcher:
         self.timeout = getattr(fetcher, "timeout", None)
         self.retry_events: list[dict[str, Any]] = []
         self._policy_state = threading.local()
+        self._stage_budget_state = threading.local()
+        self._stage_reservations: dict[str, float] = {}
+
+    def configure_stage_reservations(self, reservations: dict[str, float]) -> None:
+        normalized: dict[str, float] = {}
+        for stage, seconds in reservations.items():
+            if not isinstance(stage, str) or not stage:
+                raise ValueError("Stage reservation name is invalid")
+            if isinstance(seconds, bool) or not isinstance(seconds, (int, float)):
+                raise ValueError("Stage reservation must be numeric")
+            value = float(seconds)
+            if value < 0 or value > 300:
+                raise ValueError("Stage reservation is outside the supported range")
+            normalized[stage] = value
+        self._stage_reservations = normalized
+
+    @contextmanager
+    def stage_budget_scope(self, stage: str):
+        if not isinstance(stage, str) or not stage:
+            raise ValueError("Stage budget scope requires a stage name")
+        stack = getattr(self._stage_budget_state, "stack", None)
+        if stack is None:
+            stack = []
+            self._stage_budget_state.stack = stack
+        stack.append(stage)
+        try:
+            yield
+        finally:
+            stack.pop()
 
     @contextmanager
     def retry_scope(
@@ -95,7 +124,7 @@ class RetryingFetcher:
             if remaining_before_fetch <= 0:
                 if last_event is not None:
                     last_event["outcome"] = "deadline_exhausted"
-                raise last_error or FetchError("operation timed out at caller deadline")
+                raise self._deadline_error(last_error)
             original_timeout = getattr(self.fetcher, "timeout", None)
             bounded_timeout = (
                 min(float(original_timeout), remaining_before_fetch)
@@ -129,6 +158,18 @@ class RetryingFetcher:
                 )
                 if exc is None:
                     raise
+                inferred_reason_code = (
+                    exc.reason_code or classify_fetch_error(str(exc))
+                )
+                if (
+                    inferred_reason_code == "NETWORK_TIMEOUT"
+                    and bounded_timeout is not None
+                    and original_timeout is not None
+                    and bounded_timeout < float(original_timeout)
+                    and self._remaining_time() <= 0
+                    and self._active_global_deadline_reason() is not None
+                ):
+                    exc = self._deadline_error(exc)
                 reason_code = exc.reason_code or classify_fetch_error(str(exc))
                 spec = reason_spec(reason_code)
                 retryable = (
@@ -176,9 +217,10 @@ class RetryingFetcher:
                 remaining = self._remaining_time()
                 if remaining <= delay:
                     event_record["outcome"] = "deadline_exhausted"
-                    if exc is raw_error:
+                    deadline_error = self._deadline_error(exc)
+                    if deadline_error is raw_error:
                         raise
-                    raise exc from raw_error
+                    raise deadline_error from raw_error
 
                 event_record["delay"] = delay
                 event_record["outcome"] = "retry_scheduled"
@@ -218,13 +260,56 @@ class RetryingFetcher:
     def _remaining_time(self) -> float:
         deadline = self._deadline() if callable(self._deadline) else self._deadline
         local_deadline = self._current_policy()[1]
-        if deadline is None:
-            deadline = local_deadline
-        elif local_deadline is not None:
-            deadline = min(deadline, local_deadline)
-        if deadline is None:
+        reserve = self._current_stage_reserve()
+        now = self._clock()
+        global_remaining = (
+            float("inf") if deadline is None else deadline - now - reserve
+        )
+        local_remaining = (
+            float("inf") if local_deadline is None else local_deadline - now
+        )
+        remaining = min(global_remaining, local_remaining)
+        if remaining == float("inf"):
             return float("inf")
-        return deadline - self._clock()
+        return remaining
+
+    def _current_stage_reserve(self) -> float:
+        stack = getattr(self._stage_budget_state, "stack", None)
+        if not stack:
+            return 0.0
+        return self._stage_reservations.get(stack[-1], 0.0)
+
+    def _active_global_deadline_reason(self) -> str | None:
+        deadline = self._deadline() if callable(self._deadline) else self._deadline
+        if deadline is None:
+            return None
+        reserve = self._current_stage_reserve()
+        global_deadline = deadline - reserve
+        local_deadline = self._current_policy()[1]
+        if local_deadline is not None and local_deadline < global_deadline:
+            return None
+        return (
+            "FETCH_BUDGET_EXHAUSTED"
+            if reserve > 0
+            else "COMPANY_TIME_BUDGET_EXHAUSTED"
+        )
+
+    def _deadline_error(self, cause: FetchError | None = None) -> FetchError:
+        reason_code = self._active_global_deadline_reason()
+        if reason_code is None:
+            return cause or FetchError("operation timed out at retry deadline")
+        message = (
+            "stage fetch budget reserved for downstream candidate discovery"
+            if reason_code == "FETCH_BUDGET_EXHAUSTED"
+            else "company time budget exhausted at caller deadline"
+        )
+        return FetchError(
+            message,
+            reason_code=reason_code,
+            retryable=True,
+            request_identity=(cause.request_identity if cause is not None else None),
+            transport_phase=(cause.transport_phase if cause is not None else None),
+        )
 
     def _current_policy(self) -> tuple[int | None, float | None, str | None]:
         stack = getattr(self._policy_state, "stack", None)

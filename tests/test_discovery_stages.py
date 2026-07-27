@@ -10,6 +10,7 @@ from job_source_agent.company_discovery_evidence import (
 from job_source_agent.candidate_portfolio import CompositeCandidateDiscovery
 from job_source_agent.errors import DiscoveryError
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
+from job_source_agent.provisional_evidence import ProvisionalWebsiteEvidence
 from job_source_agent.identity_continuity import HiringIdentityEvidence, ProviderIdentity
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.models import (
@@ -683,7 +684,7 @@ class DiscoveryStageTests(unittest.TestCase):
         self.assertEqual(saved.tenant, "acme")
         self.assertEqual(saved.source, "first_party_handoff")
 
-    def test_tenant_name_match_alone_is_not_persisted(self):
+    def test_tenant_name_match_alone_is_not_authorized_or_persisted(self):
         class BoardService:
             def find_job_board_with_evidence(
                 self, career_page_url, company_name=None, target_location=None
@@ -725,7 +726,10 @@ class DiscoveryStageTests(unittest.TestCase):
 
         self.assertEqual(
             execution.updates["provider_identity"].verification_method,
-            "tenant_name_match",
+            "linked_url_only",
+        )
+        self.assertFalse(
+            execution.updates["provider_identity"].relationship_verified
         )
         self.assertEqual(store.saved, [])
 
@@ -1049,12 +1053,22 @@ class DiscoveryStageTests(unittest.TestCase):
             detection_method="linked_url_evidence",
             evidence_url=board.url,
         )
-        base = self._stored_career_record()
         record = VerifiedCompanyDiscoveryEvidence(
             company_name="linkedin",
             linkedin_company_url="https://www.linkedin.com/company/linkedin",
-            website=base.website,
-            career=base.career,
+            website=VerifiedWebsiteEvidence(
+                url="https://careers.linkedin.com",
+                source="verified_resolver",
+                evidence_url="https://www.linkedin.com/company/linkedin",
+                observed_at=1.0,
+            ),
+            career=VerifiedCareerEvidence(
+                url="https://careers.linkedin.com",
+                website_url="https://careers.linkedin.com",
+                source="first_party_navigation",
+                evidence_url="https://careers.linkedin.com",
+                observed_at=1.0,
+            ),
             provider_boards=(
                 VerifiedProviderBoardEvidence(
                     provider="smartrecruiters",
@@ -1338,6 +1352,22 @@ class DiscoveryStageTests(unittest.TestCase):
             _stored_provider_relationship(record, unbound, "Acme", "parentco")
         )
 
+    def test_stored_tenant_name_match_cannot_repair_missing_provenance(self):
+        record = self._stored_career_record()
+        stored = VerifiedProviderBoardEvidence(
+            provider="ashby",
+            tenant="acme",
+            canonical_board_url="https://jobs.ashbyhq.com/acme",
+            relationship_evidence_url="https://jobs.ashbyhq.com/acme",
+            verification_method="tenant_name_match",
+            source="provider_page_identity",
+            observed_at=1.0,
+        )
+
+        self.assertIsNone(
+            _stored_provider_relationship(record, stored, "Acme", "acme")
+        )
+
     def test_career_stage_passes_saved_homepage_navigation_evidence(self):
         class CapturingCareer(FakeDiscoveryService):
             def __init__(self):
@@ -1361,6 +1391,124 @@ class DiscoveryStageTests(unittest.TestCase):
 
         self.assertEqual(execution.result.status, "success")
         self.assertIs(service.evidence, evidence)
+
+    def test_career_stage_closes_same_site_provisional_relationship(self):
+        class ProvisionalCareer(FakeDiscoveryService):
+            def find_career_page(self, company_website_url, **kwargs):
+                self.website_url = company_website_url
+                return "https://group.example/acme-careers", {
+                    "selected": {
+                        "url": "https://group.example/acme-careers",
+                        "origin": "common_path",
+                    }
+                }
+
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.provisional_website_evidence = ProvisionalWebsiteEvidence(
+            source_company_name="Acme",
+            url="https://group.example",
+            evidence_source="linkedin_official_website",
+            reason_code="downstream_hiring_relationship_required",
+            homepage_verified=True,
+        )
+        service = ProvisionalCareer()
+
+        execution = CareerDiscoveryStage(service).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertEqual(service.website_url, "https://group.example")
+        self.assertNotIn("company_website_url", execution.updates)
+        identity = execution.updates["hiring_identity_evidence"]
+        self.assertTrue(identity.verified)
+        self.assertEqual(identity.verification_method, "provisional_same_host_career")
+
+    def test_cross_site_provisional_search_result_does_not_verify_relationship(self):
+        class SearchOnlyCareer(FakeDiscoveryService):
+            def find_career_page(self, company_website_url, **kwargs):
+                return "https://jobs.example.net/acme", {
+                    "selected": {
+                        "url": "https://jobs.example.net/acme",
+                        "origin": "search",
+                        "source_url": "https://search.example/result",
+                    }
+                }
+
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.provisional_website_evidence = ProvisionalWebsiteEvidence(
+            source_company_name="Acme",
+            url="https://group.example",
+            evidence_source="linkedin_official_website",
+            reason_code="downstream_hiring_relationship_required",
+            homepage_verified=True,
+        )
+
+        execution = CareerDiscoveryStage(SearchOnlyCareer()).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertNotIn("hiring_identity_evidence", execution.updates)
+
+    def test_observed_navigation_can_close_cross_host_provisional_relationship(self):
+        class NavigationCareer(FakeDiscoveryService):
+            def find_career_page(self, company_website_url, **kwargs):
+                self.navigation = kwargs.get("homepage_navigation_evidence")
+                return "https://agency.example.gov/careers", {
+                    "selected": {
+                        "url": "https://careers.example.gov",
+                        "origin": "verified_homepage_navigation",
+                        "source_url": company_website_url,
+                    }
+                }
+
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.provisional_website_evidence = ProvisionalWebsiteEvidence(
+            source_company_name="Acme",
+            url="https://www.example.gov",
+            evidence_source="linkedin_official_website",
+            reason_code="downstream_hiring_relationship_required",
+            homepage_verified=True,
+        )
+        context.homepage_navigation_evidence = HomepageNavigationEvidence(
+            homepage_url="https://www.example.gov",
+            candidate_urls=("https://careers.example.gov",),
+        )
+        service = NavigationCareer()
+
+        execution = CareerDiscoveryStage(service).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertIs(service.navigation, context.homepage_navigation_evidence)
+        identity = execution.updates["hiring_identity_evidence"]
+        self.assertTrue(identity.verified)
+        self.assertEqual(identity.verification_method, "provisional_navigation_handoff")
+        self.assertIs(
+            execution.updates["homepage_navigation_evidence"],
+            context.homepage_navigation_evidence,
+        )
+
+    def test_shared_suffix_tenant_does_not_verify_provisional_relationship(self):
+        class SharedSuffixCareer(FakeDiscoveryService):
+            def find_career_page(self, company_website_url, **kwargs):
+                return "https://other.github.io/careers", {
+                    "selected": {
+                        "url": "https://other.github.io/careers",
+                        "origin": "page_link",
+                        "source_url": company_website_url,
+                    }
+                }
+
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+        context.provisional_website_evidence = ProvisionalWebsiteEvidence(
+            source_company_name="Acme",
+            url="https://source.github.io",
+            evidence_source="linkedin_official_website",
+            reason_code="downstream_hiring_relationship_required",
+            homepage_verified=True,
+        )
+
+        execution = CareerDiscoveryStage(SharedSuffixCareer()).run(context)
+
+        self.assertEqual(execution.result.status, "success")
+        self.assertNotIn("hiring_identity_evidence", execution.updates)
 
     def test_career_stage_does_not_search_publisher_after_identity_failure(self):
         class MustNotSearch(FakeDiscoveryService):

@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import unittest
 
+from job_source_agent.job_board import DiscoveredJobBoard, JobBoardPortfolio
 from job_source_agent.providers.ashby import AshbyAdapter
 from job_source_agent.providers.base import JobBoard, JobQuery
 from job_source_agent.web import FetchError, Page
@@ -79,12 +80,46 @@ class AshbyAdapterTests(unittest.TestCase):
             url="https://jobs.ashbyhq.com/acme",
             provider="ashby",
             identifier="acme",
+            replay_safe=True,
         )
         self.assertEqual(jobs_board, expected)
         self.assertEqual(api_board, expected)
         self.assertIsNone(self.adapter.identify_board("https://jobs.ashbyhq.com/"))
         self.assertIsNone(self.adapter.identify_board("https://jobs.ashbyhq.com/acme%2Fevil"))
         self.assertIsNone(self.adapter.identify_board("https://api.ashbyhq.com/acme"))
+
+    def test_mixed_case_tenants_remain_case_sensitive_runtime_locators(self):
+        for identifier in (
+            "Oso",
+            "Blossom-Health",
+            "Fuse",
+            "Acorns",
+            "Distyl",
+            "Zello",
+        ):
+            with self.subTest(identifier=identifier):
+                board = self.adapter.identify_board(
+                    f"https://jobs.ashbyhq.com/{identifier}"
+                )
+
+                self.assertEqual(board.identifier, identifier)
+                self.assertEqual(
+                    board.url,
+                    f"https://jobs.ashbyhq.com/{identifier}",
+                )
+                self.assertFalse(board.replay_safe)
+                portfolio = JobBoardPortfolio(
+                    boards=(
+                        DiscoveredJobBoard(
+                            board=board,
+                            detection_method="url_evidence",
+                            evidence_url=board.url,
+                        ),
+                    ),
+                    eligible_set_complete=True,
+                )
+                self.assertIsNone(portfolio.to_checkpoint_payload())
+                self.assertIsNone(portfolio.replay_safe_projection())
 
     def test_lists_normalized_candidates_from_posting_api_without_fallback(self):
         fetcher = StubFetcher({

@@ -64,6 +64,8 @@ def company_inputs_from_records(records: list[dict]) -> list[CompanyInput]:
 def _normalize_input_record(record: dict) -> dict:
     """Accept either source records or a prior results/trace output for reruns."""
     normalized = dict(record)
+    if "external_apply_url" in normalized:
+        normalized["external_apply_url"] = _safe_external_apply_url(normalized["external_apply_url"])
     normalized.setdefault("job_title", normalized.get("linkedin_job_title"))
     normalized.setdefault("job_location", normalized.get("linkedin_job_location"))
     if not normalized.get("career_root_url") and normalized.get("career_page_url"):

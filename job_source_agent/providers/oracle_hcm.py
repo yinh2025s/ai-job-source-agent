@@ -8,6 +8,7 @@ from typing import Any
 import unicodedata
 from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
+from ..provider_candidates import ProviderPublishedEmployerEvidence
 from ..web import FetchError
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
@@ -190,10 +191,20 @@ class OracleHCMAdapter:
             if key in posting
         }
         hiring_organization = posting.get("hiringOrganization")
+        employer_evidence: tuple[ProviderPublishedEmployerEvidence, ...] = ()
         if isinstance(hiring_organization, dict):
             organization_name = _text(hiring_organization.get("name"))
             if organization_name:
                 raw["hiring_organization_name"] = organization_name
+                employer_evidence = (
+                    ProviderPublishedEmployerEvidence(
+                        employer_name=organization_name,
+                        descriptor_terms=(),
+                        evidence_url=detail_url,
+                        opening_url=detail_url,
+                        extraction_method="oracle_jobposting_organization",
+                    ),
+                )
         candidate = JobCandidate(
             title=title,
             url=detail_url,
@@ -208,6 +219,7 @@ class OracleHCMAdapter:
             provider=self.name,
             board=board,
             candidates=[candidate],
+            employer_evidence=employer_evidence,
             inventory_scope="title_filtered",
             inventory_complete=True,
             trace={

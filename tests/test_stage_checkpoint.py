@@ -16,6 +16,7 @@ from job_source_agent.contracts import CheckpointStore, StageExecution
 from job_source_agent.evidence_scope import StageEvidenceLineage
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.homepage_navigation import HomepageNavigationEvidence
+from job_source_agent.provisional_evidence import ProvisionalWebsiteEvidence
 from job_source_agent.identity_continuity import (
     HiringIdentityEvidence,
     OpeningIdentity,
@@ -128,6 +129,141 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.assertIsNotNone(restored)
         self.assertEqual(restored.updates["homepage_navigation_evidence"], evidence)
 
+    def test_provisional_website_round_trips_as_typed_context_update(self):
+        evidence = ProvisionalWebsiteEvidence(
+            source_company_name="Acme",
+            url="https://group.example",
+            evidence_source="linkedin_official_website",
+            reason_code="downstream_hiring_relationship_required",
+            homepage_verified=True,
+        )
+        execution = StageExecution(
+            result=StageResult(stage="website_resolution", status="failed"),
+            updates={"provisional_website_evidence": evidence},
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = FilesystemCheckpointStore(directory)
+            store.save("fingerprint", execution)
+            restored = store.load("fingerprint", "website_resolution")
+
+        self.assertIsNotNone(restored)
+        self.assertEqual(restored.updates["provisional_website_evidence"], evidence)
+
+    def test_provisional_hiring_identity_checkpoint_requires_bound_trace(self):
+        provisional = ProvisionalWebsiteEvidence(
+            source_company_name="Acme",
+            url="https://group.example",
+            evidence_source="linkedin_official_website",
+            reason_code="downstream_hiring_relationship_required",
+            homepage_verified=True,
+        )
+        hiring = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="provisional_same_host_career",
+            verified=True,
+            evidence_url="https://group.example/acme-careers",
+        )
+        valid = StageExecution(
+            result=StageResult(stage="career_discovery", status="success"),
+            updates={
+                "provisional_website_evidence": provisional,
+                "hiring_identity_evidence": hiring,
+            },
+            trace={
+                "provisional_official_website": {
+                    "url": provisional.url,
+                    "authority": "exploration_only",
+                },
+                "provisional_career_identity": {
+                    "status": "verified",
+                    "verification_method": hiring.verification_method,
+                    "evidence_url": hiring.evidence_url,
+                },
+            },
+        )
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = FilesystemCheckpointStore(directory)
+            store.save("fingerprint", valid)
+            restored = store.load("fingerprint", "career_discovery")
+            self.assertEqual(restored, valid)
+
+            forged = StageExecution(
+                result=valid.result,
+                updates=valid.updates,
+                trace={"provisional_official_website": valid.trace["provisional_official_website"]},
+            )
+            with self.assertRaisesRegex(ValueError, "lacks bound trace"):
+                store.save("forged", forged)
+
+    def test_cross_host_provisional_checkpoint_requires_observed_navigation(self):
+        provisional = ProvisionalWebsiteEvidence(
+            source_company_name="Acme",
+            url="https://www.example.gov",
+            evidence_source="linkedin_official_website",
+            reason_code="downstream_hiring_relationship_required",
+            homepage_verified=True,
+        )
+        navigation = HomepageNavigationEvidence(
+            homepage_url=provisional.url,
+            candidate_urls=("https://careers.example.gov",),
+        )
+        hiring = HiringIdentityEvidence(
+            source_company_name="Acme",
+            hiring_entity_name="Acme",
+            relationship_type="same_entity",
+            verification_method="provisional_navigation_handoff",
+            verified=True,
+            evidence_url="https://agency.example.gov/careers",
+        )
+        trace = {
+            "selected": {
+                "url": navigation.candidate_urls[0],
+                "source_url": provisional.url,
+            },
+            "provisional_official_website": {
+                "url": provisional.url,
+                "authority": "exploration_only",
+            },
+            "provisional_career_identity": {
+                "status": "verified",
+                "verification_method": hiring.verification_method,
+                "evidence_url": hiring.evidence_url,
+            },
+        }
+        updates = {
+            "provisional_website_evidence": provisional,
+            "homepage_navigation_evidence": navigation,
+            "hiring_identity_evidence": hiring,
+        }
+
+        with tempfile.TemporaryDirectory() as directory:
+            store = FilesystemCheckpointStore(directory)
+            valid = StageExecution(
+                result=StageResult(stage="career_discovery", status="success"),
+                updates=updates,
+                trace=trace,
+            )
+            store.save("valid", valid)
+            self.assertEqual(store.load("valid", "career_discovery"), valid)
+
+            with self.assertRaisesRegex(ValueError, "navigation checkpoint"):
+                store.save(
+                    "missing-navigation",
+                    StageExecution(
+                        result=valid.result,
+                        updates={
+                            key: value
+                            for key, value in updates.items()
+                            if key != "homepage_navigation_evidence"
+                        },
+                        trace=trace,
+                    ),
+                )
+
     def setUp(self):
         self.temporary_directory = tempfile.TemporaryDirectory()
         self.root = Path(self.temporary_directory.name)
@@ -234,6 +370,38 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.assertEqual(restored, execution)
         self.assertIsInstance(restored.updates["discovered_job_board"], DiscoveredJobBoard)
 
+    def test_governmentjobs_board_and_portfolio_survive_s5_s6_checkpoint_handoff(self):
+        url = "https://www.governmentjobs.com/careers/lubbock"
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url=url,
+                provider="governmentjobs",
+                identifier="lubbock",
+                replay_safe=True,
+            ),
+            detection_method="linked_url_evidence",
+            evidence_url=url,
+        )
+        portfolio = JobBoardPortfolio(
+            boards=(discovered,),
+            eligible_set_complete=True,
+        )
+        execution = StageExecution(
+            StageResult(stage="job_board_discovery", status="success"),
+            updates={
+                "job_list_page_url": url,
+                "provider": "governmentjobs",
+                "discovered_job_board": discovered,
+                "job_board_portfolio": portfolio,
+            },
+        )
+
+        self.store.save(self.fingerprint, execution)
+
+        restored = self.store.load(self.fingerprint, "job_board_discovery")
+        self.assertEqual(restored, execution)
+        self.assertEqual(restored.updates["job_board_portfolio"].primary, discovered)
+
     def test_runtime_only_job_board_identifier_is_omitted_from_checkpoint(self):
         discovered = DiscoveredJobBoard(
             board=JobBoard(
@@ -297,7 +465,7 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.assertEqual(restored, execution)
         self.assertIsInstance(restored.updates["job_board_portfolio"], JobBoardPortfolio)
 
-    def test_runtime_only_suffix_invalidates_the_entire_stage_checkpoint(self):
+    def test_runtime_only_suffix_is_removed_from_durable_portfolio(self):
         portfolio = JobBoardPortfolio(
             boards=(
                 DiscoveredJobBoard(
@@ -330,12 +498,16 @@ class FilesystemCheckpointStoreTests(unittest.TestCase):
         self.store.save(self.fingerprint, execution)
 
         restored = self.store.load(self.fingerprint, "job_board_discovery")
-        self.assertIsNone(restored)
-        for checkpoint in self.root.rglob("job_board_discovery.json"):
-            self.assertNotIn(
-                "portfolio-do-not-persist",
-                checkpoint.read_text(encoding="utf-8"),
-            )
+        self.assertIsNotNone(restored)
+        durable = restored.updates["job_board_portfolio"]
+        self.assertEqual(len(durable.boards), 1)
+        self.assertEqual(durable.primary, portfolio.primary)
+        self.assertFalse(durable.eligible_set_complete)
+        checkpoint = next(self.root.rglob("job_board_discovery.json"))
+        self.assertNotIn(
+            "portfolio-do-not-persist",
+            checkpoint.read_text(encoding="utf-8"),
+        )
 
     def test_invalid_job_board_portfolio_update_type_is_rejected(self):
         execution = StageExecution(

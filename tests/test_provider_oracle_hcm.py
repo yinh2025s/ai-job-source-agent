@@ -135,6 +135,11 @@ class OracleHCMAdapterTests(unittest.TestCase):
         self.assertEqual(candidate.raw["datePosted"], "2026-06-01")
         self.assertEqual(result.inventory_scope, "title_filtered")
         self.assertTrue(result.inventory_complete)
+        self.assertEqual(len(result.employer_evidence), 1)
+        self.assertEqual(
+            result.employer_evidence[0].extraction_method,
+            "oracle_jobposting_organization",
+        )
 
     def test_telecommute_type_supplies_remote_location_when_place_is_absent(self):
         board = self.adapter.identify_board(DETAIL_URL)

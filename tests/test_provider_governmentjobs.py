@@ -1,7 +1,7 @@
 import json
 import unittest
 
-from job_source_agent.job_board import JobBoard
+from job_source_agent.job_board import JobBoard, is_replay_safe_job_board
 from job_source_agent.providers.base import JobQuery, ProviderAdapter
 from job_source_agent.providers.governmentjobs import ADAPTER, GovernmentJobsAdapter
 from job_source_agent.providers.registry import discover_native_adapters
@@ -10,6 +10,7 @@ from job_source_agent.web import FetchError, Page
 
 LUBBOCK = "https://www.governmentjobs.com/careers/lubbock"
 CSTX = "https://www.governmentjobs.com/careers/cstx"
+SEATTLE = "https://www.governmentjobs.com/careers/seattle"
 
 
 class RecordingFetcher:
@@ -46,7 +47,7 @@ def job(tenant="lubbock", job_id=5342417, title="Information Security and Compli
 class GovernmentJobsAdapterTests(unittest.TestCase):
     def setUp(self):
         self.adapter = GovernmentJobsAdapter()
-        self.board = JobBoard(LUBBOCK, "governmentjobs", "lubbock")
+        self.board = JobBoard(LUBBOCK, "governmentjobs", "lubbock", replay_safe=True)
 
     def test_auto_discovered_and_canonicalizes_listing_and_detail_urls(self):
         self.assertIsInstance(ADAPTER, ProviderAdapter)
@@ -62,6 +63,41 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertTrue(self.adapter.recognizes(url))
                 self.assertEqual(self.adapter.identify_board(url), self.board)
+
+    def test_canonical_boards_are_replay_safe_for_multiple_tenants(self):
+        for tenant, url in (
+            ("lubbock", LUBBOCK),
+            ("cstx", CSTX),
+            ("seattle", SEATTLE),
+        ):
+            with self.subTest(tenant=tenant):
+                board = self.adapter.identify_board(url)
+                self.assertEqual(
+                    board,
+                    JobBoard(url, "governmentjobs", tenant, replay_safe=True),
+                )
+                self.assertTrue(is_replay_safe_job_board(board))
+
+    def test_tampered_board_locators_are_not_replay_safe(self):
+        tampered = (
+            JobBoard(
+                "https://governmentjobs.com/careers/lubbock",
+                "governmentjobs",
+                "lubbock",
+                replay_safe=True,
+            ),
+            JobBoard(
+                LUBBOCK + "/promotionaljobs",
+                "governmentjobs",
+                "lubbock",
+                replay_safe=True,
+            ),
+            JobBoard(LUBBOCK, "governmentjobs", "cstx", replay_safe=True),
+            JobBoard(LUBBOCK, "governmentjobs", "LUBBOCK", replay_safe=True),
+        )
+        for board in tampered:
+            with self.subTest(board=board):
+                self.assertFalse(is_replay_safe_job_board(board))
 
     def test_rejects_unsafe_ambiguous_and_non_public_routes(self):
         rejected = (
@@ -110,7 +146,7 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
           </a>
         </article>
         """
-        board = JobBoard(CSTX, "governmentjobs", "cstx")
+        board = JobBoard(CSTX, "governmentjobs", "cstx", replay_safe=True)
         result = self.adapter.list_jobs(
             RecordingFetcher(responses=[board_html("cstx"), html]), board, JobQuery()
         )
@@ -189,6 +225,27 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
         self.assertTrue(timeout.retryable)
         self.assertEqual(capped.reason_code, "FETCH_BUDGET_EXHAUSTED")
         self.assertEqual(tampered.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+
+    def test_preserves_typed_budget_failure_reasons(self):
+        for reason in (
+            "COMPANY_TIME_BUDGET_EXHAUSTED",
+            "FETCH_BUDGET_EXHAUSTED",
+        ):
+            for message in (
+                "human-readable live failure",
+                "replay-normalized failure text",
+            ):
+                with self.subTest(reason=reason, message=message):
+                    result = self.adapter.list_jobs(
+                        RecordingFetcher(
+                            error=FetchError(message, reason_code=reason)
+                        ),
+                        self.board,
+                        JobQuery(),
+                    )
+                    self.assertEqual(result.reason_code, reason)
+                    self.assertTrue(result.retryable)
+                    self.assertEqual(result.trace["stop_reason"], "inventory_fetch_failed")
 
 
 if __name__ == "__main__":

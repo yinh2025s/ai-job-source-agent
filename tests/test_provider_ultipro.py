@@ -32,12 +32,19 @@ def board_html(*, board_id=BOARD_ID, load_board_id=None, page_size=50):
     """
 
 
-def opportunity(opportunity_id=OPPORTUNITY_ID, title="Registered Nurse - Clinical"):
+def opportunity(
+    opportunity_id=OPPORTUNITY_ID,
+    title="Registered Nurse - Clinical",
+    *,
+    locations=None,
+):
     return {
         "Id": opportunity_id,
         "Title": title,
         "RequisitionNumber": "REGIS001936",
-        "Locations": [
+        "Locations": locations
+        if locations is not None
+        else [
             {
                 "LocalizedName": None,
                 "LocalizedDescription": "Everett-Central Clinic",
@@ -156,6 +163,175 @@ class UltiProAdapterTests(unittest.TestCase):
         self.assertEqual(search["Skip"], 0)
         self.assertEqual(search["QueryString"], "Registered Nurse - Clinical")
         self.assertEqual(fetcher.requests[1]["headers"]["Referer"], BOARD_URL)
+
+    def test_prefers_displayed_structured_address_over_target_site_label(self):
+        record = opportunity(
+            title="Security Analyst",
+            locations=[
+                {
+                    "LocalizedDescription": "Corporate",
+                    "DisplayAddress": True,
+                    "Address": {
+                        "City": "The Woodlands",
+                        "State": {"Name": "Texas"},
+                    },
+                }
+            ],
+        )
+
+        result = self.adapter.list_jobs(
+            RecordingFetcher([board_html(), inventory([record])]),
+            self.board,
+            JobQuery(title="Security Analyst"),
+        )
+
+        self.assertEqual(result.candidates[0].location, "The Woodlands, Texas")
+
+    def test_prefers_displayed_structured_address_over_arup_building_label(self):
+        record = opportunity(
+            title="UX Designer II",
+            locations=[
+                {
+                    "LocalizedName": "ARUP Main",
+                    "LocalizedDescription": "Building 560",
+                    "DisplayAddress": True,
+                    "Address": {
+                        "City": " Salt Lake City ",
+                        "State": {"Name": " Utah "},
+                    },
+                }
+            ],
+        )
+
+        result = self.adapter.list_jobs(
+            RecordingFetcher([board_html(), inventory([record])]),
+            self.board,
+            JobQuery(title="UX Designer II"),
+        )
+
+        self.assertEqual(result.candidates[0].location, "Salt Lake City, Utah")
+
+    def test_does_not_activate_structured_address_for_false_or_string_flag(self):
+        for display_address in (False, "true"):
+            with self.subTest(display_address=display_address):
+                record = opportunity(
+                    locations=[
+                        {
+                            "LocalizedName": "Public Site Label",
+                            "DisplayAddress": display_address,
+                            "Address": {
+                                "City": "The Woodlands",
+                                "State": {"Name": "Texas"},
+                            },
+                        }
+                    ],
+                )
+                result = self.adapter.list_jobs(
+                    RecordingFetcher([board_html(), inventory([record])]),
+                    self.board,
+                    JobQuery(),
+                )
+
+                self.assertEqual(result.candidates[0].location, "Public Site Label")
+
+    def test_malformed_or_partial_displayed_address_falls_back_to_public_label(self):
+        addresses = (
+            {"City": "The Woodlands"},
+            {"State": {"Name": "Texas"}},
+            {"City": "The Woodlands", "State": "Texas"},
+            {"City": 42, "State": {"Name": "Texas"}},
+            {"City": "The Woodlands", "State": {"Name": ["Texas"]}},
+            {"City": " ", "State": {"Name": "Texas"}},
+        )
+        for address in addresses:
+            with self.subTest(address=address):
+                record = opportunity(
+                    locations=[
+                        {
+                            "LocalizedDescription": "Corporate",
+                            "DisplayAddress": True,
+                            "Address": address,
+                        }
+                    ],
+                )
+                result = self.adapter.list_jobs(
+                    RecordingFetcher([board_html(), inventory([record])]),
+                    self.board,
+                    JobQuery(),
+                )
+
+                self.assertEqual(result.candidates[0].location, "Corporate")
+
+    def test_partial_displayed_address_without_label_does_not_emit_geography(self):
+        for address in (
+            {"City": "The Woodlands"},
+            {"State": {"Name": "Texas"}},
+        ):
+            with self.subTest(address=address):
+                record = opportunity(
+                    locations=[
+                        {
+                            "DisplayAddress": True,
+                            "Address": address,
+                        }
+                    ],
+                )
+                result = self.adapter.list_jobs(
+                    RecordingFetcher([board_html(), inventory([record])]),
+                    self.board,
+                    JobQuery(),
+                )
+
+                self.assertIsNone(result.candidates[0].location)
+
+    def test_multiple_locations_are_deduplicated_in_provider_order(self):
+        record = opportunity(
+            locations=[
+                {
+                    "LocalizedDescription": "Corporate",
+                    "DisplayAddress": True,
+                    "Address": {
+                        "City": "The Woodlands",
+                        "State": {"Name": "Texas"},
+                    },
+                },
+                {
+                    "LocalizedName": "ARUP Main",
+                    "DisplayAddress": True,
+                    "Address": {
+                        "City": "Salt Lake City",
+                        "State": {"Name": "Utah"},
+                    },
+                },
+                {
+                    "LocalizedName": "Duplicate geography",
+                    "DisplayAddress": True,
+                    "Address": {
+                        "City": "The Woodlands",
+                        "State": {"Name": "Texas"},
+                    },
+                },
+                {
+                    "LocalizedDescription": "Remote",
+                    "DisplayAddress": False,
+                    "Address": {
+                        "City": "Ignored",
+                        "State": {"Name": "Ignored"},
+                    },
+                },
+            ],
+        )
+
+        result = self.adapter.list_jobs(
+            RecordingFetcher([board_html(), inventory([record])]),
+            self.board,
+            JobQuery(),
+        )
+
+        self.assertEqual(
+            result.candidates[0].location,
+            "The Woodlands, Texas; Salt Lake City, Utah; Remote",
+        )
 
     def test_paginates_until_total_count_is_complete(self):
         first = [

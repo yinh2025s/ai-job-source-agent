@@ -58,7 +58,10 @@ class ProviderSearchCandidateDiscovery(CandidateDiscovery):
             # provider, tenant, inventory, and S7 identity validation.
             target_title=request.target_title,
             ats_only=True,
-            exhaustive=False,
+            # Search results are still untrusted leads, but a fixed budget must
+            # inspect every scheduled provider query. S5/S6/S7 retain all
+            # provider, tenant, inventory, and identity gates.
+            exhaustive=True,
             query_diversity_first=True,
         )
         query_by_url = _query_by_url(search_result.trace)
@@ -91,7 +94,6 @@ class ProviderSearchCandidateDiscovery(CandidateDiscovery):
                         result_rank=result_rank,
                     )
                 )
-                break
             except (TypeError, ValueError):
                 # Search results are leads only; malformed or non-public URLs
                 # cannot enter the candidate contract.

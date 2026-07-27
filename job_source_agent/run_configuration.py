@@ -7,13 +7,18 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RUN_CONFIGURATION_SCHEMA_VERSION = "1.5"
+RUN_CONFIGURATION_SCHEMA_VERSION = "1.8"
 BATCH_EXECUTION_SCHEMA_VERSION = "1.1"
 _LEGACY_RUN_CONFIGURATION_SCHEMA_VERSION = "1.0"
 _TRANSPORT_LIMIT_RUN_CONFIGURATION_SCHEMA_VERSION = "1.1"
 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION = "1.2"
 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION = "1.3"
 _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION = "1.4"
+_STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION = "1.5"
+_CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION = "1.6"
+_PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION = "1.7"
+_CANDIDATE_DISCOVERY_ENGINES = {"stage_v1", "coordinator_v2"}
+_SEARCH_BACKEND_KINDS = {"legacy", "searxng"}
 _MAX_BUDGET = 1_000
 _MAX_TIMEOUT_SECONDS = 300.0
 
@@ -32,6 +37,11 @@ class AgentConfig:
     max_career_discovery_transport_calls: int | None = None
     enable_parallel_candidate_discovery: bool = False
     evaluate_all_candidate_routes: bool = False
+    candidate_discovery_engine: str = "stage_v1"
+    provider_search_reserve_seconds: float = 10.0
+    search_backend_kind: str = "legacy"
+    search_backend_contract_version: str = "1"
+    search_backend_profile_digest: str | None = None
 
 
 @dataclass(frozen=True)
@@ -50,6 +60,11 @@ class DeterministicRunConfig:
     max_career_discovery_transport_calls: int | None = None
     enable_parallel_candidate_discovery: bool = False
     evaluate_all_candidate_routes: bool = False
+    candidate_discovery_engine: str = "stage_v1"
+    provider_search_reserve_seconds: float = 10.0
+    search_backend_kind: str = "legacy"
+    search_backend_contract_version: str = "1"
+    search_backend_profile_digest: str | None = None
     _schema_version: str = field(
         default=RUN_CONFIGURATION_SCHEMA_VERSION,
         repr=False,
@@ -82,6 +97,9 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             raise ValueError("Run configuration schema version is incompatible")
@@ -101,6 +119,9 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_career_discovery_transport_calls")
@@ -108,20 +129,48 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("max_job_board_attempts")
         if schema_version in {
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("enable_parallel_candidate_discovery")
         if schema_version in {
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             expected_fields.add("evaluate_all_candidate_routes")
+        if schema_version in {
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
+            expected_fields.add("candidate_discovery_engine")
+        if schema_version in {
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
+            expected_fields.add("provider_search_reserve_seconds")
+        if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            expected_fields.update(
+                {
+                    "search_backend_kind",
+                    "search_backend_contract_version",
+                    "search_backend_profile_digest",
+                }
+            )
         if not isinstance(agent, dict) or set(agent) != expected_fields:
             raise ValueError("Run configuration agent fields are incomplete or unsupported")
 
@@ -139,6 +188,9 @@ class DeterministicRunConfig:
                 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else 1
@@ -160,6 +212,9 @@ class DeterministicRunConfig:
                 _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else None
@@ -186,6 +241,9 @@ class DeterministicRunConfig:
             if schema_version in {
                 _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
                 _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else False
@@ -198,6 +256,9 @@ class DeterministicRunConfig:
             if schema_version
             in {
                 _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
                 RUN_CONFIGURATION_SCHEMA_VERSION,
             }
             else False
@@ -206,7 +267,72 @@ class DeterministicRunConfig:
             raise ValueError(
                 "Candidate route evaluation requires parallel candidate discovery"
             )
+        candidate_discovery_engine = (
+            agent["candidate_discovery_engine"]
+            if schema_version in {
+                _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+                _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+                RUN_CONFIGURATION_SCHEMA_VERSION,
+            }
+            else "stage_v1"
+        )
+        if candidate_discovery_engine not in _CANDIDATE_DISCOVERY_ENGINES:
+            raise ValueError("Run configuration candidate discovery engine is unsupported")
+        if (
+            candidate_discovery_engine == "coordinator_v2"
+            and not enable_parallel_candidate_discovery
+        ):
+            raise ValueError(
+                "Coordinator candidate discovery requires parallel candidate discovery"
+            )
         career_search_timeout = _optional_timeout(agent["career_search_timeout"])
+        provider_search_reserve_seconds = (
+            _bounded_number(
+                agent["provider_search_reserve_seconds"],
+                "provider_search_reserve_seconds",
+                minimum=0,
+                maximum=60,
+                inclusive_minimum=True,
+            )
+            if schema_version
+            in {
+                _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+                RUN_CONFIGURATION_SCHEMA_VERSION,
+            }
+            else 10.0
+        )
+        search_backend_kind = (
+            agent["search_backend_kind"]
+            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            else "legacy"
+        )
+        if search_backend_kind not in _SEARCH_BACKEND_KINDS:
+            raise ValueError("Run configuration search backend is unsupported")
+        search_backend_contract_version = (
+            agent["search_backend_contract_version"]
+            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            else "1"
+        )
+        if search_backend_contract_version != "1":
+            raise ValueError("Run configuration search backend contract is unsupported")
+        search_backend_profile_digest = (
+            agent["search_backend_profile_digest"]
+            if schema_version == RUN_CONFIGURATION_SCHEMA_VERSION
+            else None
+        )
+        if search_backend_profile_digest is not None and (
+            not isinstance(search_backend_profile_digest, str)
+            or len(search_backend_profile_digest) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in search_backend_profile_digest
+            )
+        ):
+            raise ValueError("Run configuration search backend profile digest is invalid")
+        if search_backend_kind == "legacy" and search_backend_profile_digest is not None:
+            raise ValueError("Legacy search backend cannot have a profile digest")
+        if search_backend_kind != "legacy" and search_backend_profile_digest is None:
+            raise ValueError("Configured search backend requires a profile digest")
         return cls(
             max_candidates=max_candidates,
             max_job_pages=max_job_pages,
@@ -220,6 +346,11 @@ class DeterministicRunConfig:
             career_search_timeout=career_search_timeout,
             enable_parallel_candidate_discovery=enable_parallel_candidate_discovery,
             evaluate_all_candidate_routes=evaluate_all_candidate_routes,
+            candidate_discovery_engine=candidate_discovery_engine,
+            provider_search_reserve_seconds=provider_search_reserve_seconds,
+            search_backend_kind=search_backend_kind,
+            search_backend_contract_version=search_backend_contract_version,
+            search_backend_profile_digest=search_backend_profile_digest,
             _schema_version=schema_version,
         )
 
@@ -239,6 +370,9 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_career_discovery_transport_calls"] = (
@@ -248,12 +382,18 @@ class DeterministicRunConfig:
             _JOB_BOARD_PORTFOLIO_RUN_CONFIGURATION_SCHEMA_VERSION,
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["max_job_board_attempts"] = self.max_job_board_attempts
         if self._schema_version in {
             _PARALLEL_CANDIDATE_RUN_CONFIGURATION_SCHEMA_VERSION,
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["enable_parallel_candidate_discovery"] = (
@@ -261,9 +401,33 @@ class DeterministicRunConfig:
             )
         if self._schema_version in {
             _ROUTE_EVALUATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _STORED_PROVIDER_IDENTITY_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
             RUN_CONFIGURATION_SCHEMA_VERSION,
         }:
             agent["evaluate_all_candidate_routes"] = self.evaluate_all_candidate_routes
+        if self._schema_version in {
+            _CANDIDATE_COORDINATOR_RUN_CONFIGURATION_SCHEMA_VERSION,
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
+            agent["candidate_discovery_engine"] = self.candidate_discovery_engine
+        if self._schema_version in {
+            _PROVIDER_RESERVATION_RUN_CONFIGURATION_SCHEMA_VERSION,
+            RUN_CONFIGURATION_SCHEMA_VERSION,
+        }:
+            agent["provider_search_reserve_seconds"] = (
+                self.provider_search_reserve_seconds
+            )
+        if self._schema_version == RUN_CONFIGURATION_SCHEMA_VERSION:
+            agent["search_backend_kind"] = self.search_backend_kind
+            agent["search_backend_contract_version"] = (
+                self.search_backend_contract_version
+            )
+            agent["search_backend_profile_digest"] = (
+                self.search_backend_profile_digest
+            )
         return {"schema_version": self._schema_version, "agent": agent}
 
     def to_agent_config(self) -> AgentConfig:
@@ -280,6 +444,11 @@ class DeterministicRunConfig:
             career_search_timeout=self.career_search_timeout,
             enable_parallel_candidate_discovery=self.enable_parallel_candidate_discovery,
             evaluate_all_candidate_routes=self.evaluate_all_candidate_routes,
+            candidate_discovery_engine=self.candidate_discovery_engine,
+            provider_search_reserve_seconds=self.provider_search_reserve_seconds,
+            search_backend_kind=self.search_backend_kind,
+            search_backend_contract_version=self.search_backend_contract_version,
+            search_backend_profile_digest=self.search_backend_profile_digest,
         )
 
     @property

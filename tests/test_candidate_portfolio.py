@@ -10,6 +10,7 @@ from job_source_agent.provider_candidates import (
     ProviderCandidate,
 )
 from job_source_agent.providers import DEFAULT_PROVIDER_REGISTRY
+from job_source_agent.web import Page
 
 
 class _Discovery:
@@ -37,6 +38,57 @@ def _candidate(url, source_kind, **kwargs):
 
 
 class CandidatePortfolioTests(unittest.TestCase):
+    def test_provider_detail_bootstrap_builds_verified_canonical_board(self):
+        detail_url = (
+            "https://recruiting.paylocity.com/Recruiting/Jobs/Details/4284086"
+        )
+        tenant = "df0b4c2b-4424-4d43-97ac-9cf7f31153d5"
+        candidate = _candidate(
+            detail_url,
+            "targeted_opening_search",
+            source_url="https://www.bing.com/search?q=actabl",
+            company_name="Actabl",
+            target_title="Financial Analyst",
+            query='"Actabl" "Financial Analyst"',
+            result_rank=1,
+            provider_hint="paylocity",
+        )
+
+        class DetailFetcher:
+            def fetch(self, url, data=None, headers=None):
+                self.assert_url = url
+                return Page(
+                    url,
+                    (
+                        f'<a href="/Recruiting/Jobs/All/{tenant}/Actabl">All jobs</a>'
+                        '<script>window.pageData = {"jobTitle":"Financial Analyst",'
+                        '"moduleName":"Actabl, LLC"};</script>'
+                    ),
+                    final_url=detail_url,
+                )
+
+        result = ProviderCandidatePortfolioBuilder(
+            DEFAULT_PROVIDER_REGISTRY,
+            DetailFetcher(),
+        ).build(CompositeCandidateDiscovery((_Discovery(candidate),), limit=12).discover(
+            CandidateDiscoveryRequest(company_name="Actabl")
+        )[0])
+
+        self.assertEqual(len(result.verified), 1)
+        verified = result.verified[0]
+        self.assertEqual(
+            verified.discovered_board.board.url,
+            f"https://recruiting.paylocity.com/recruiting/jobs/All/{tenant}/Actabl",
+        )
+        self.assertEqual(
+            verified.discovered_board.detection_method,
+            "provider_opening_bootstrap",
+        )
+        self.assertEqual(
+            verified.candidate.provider_employer_evidence.employer_name,
+            "Actabl, LLC",
+        )
+
     def test_wave_discovery_defers_search_without_spending_its_budget(self):
         direct = _Discovery(
             _candidate(
@@ -129,6 +181,25 @@ class CandidatePortfolioTests(unittest.TestCase):
         self.assertEqual(result.portfolio.primary.detection_method, "external_apply_url")
         self.assertEqual(result.verified[1].discovered_board.detection_method, "targeted_search")
         self.assertEqual(result.verified[1].candidate.source_url, "https://www.bing.com/search?q=acme")
+
+    def test_verified_tenant_probe_retains_existence_only_provenance(self):
+        candidate = _candidate(
+            "https://jobs.ashbyhq.com/acme",
+            "verified_tenant_probe",
+            source_url="https://acme.example/",
+            provider_hint="ashby",
+        )
+        pool, _trace = CompositeCandidateDiscovery(
+            (_Discovery(candidate),), limit=12
+        ).discover(CandidateDiscoveryRequest(company_name="Acme"))
+
+        result = ProviderCandidatePortfolioBuilder(DEFAULT_PROVIDER_REGISTRY).build(pool)
+
+        self.assertEqual(
+            result.portfolio.primary.detection_method,
+            "verified_tenant_probe",
+        )
+        self.assertIsNone(result.portfolio.primary.relationship_evidence_url)
 
     def test_detection_only_provider_is_rejected(self):
         candidate = _candidate(

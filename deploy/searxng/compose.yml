@@ -1,0 +1,32 @@
+name: job-source-searxng
+
+services:
+  searxng:
+    image: "ghcr.io/searxng/searxng@sha256:d0aaeb14880e6e92bde1518fcc7261e995783367d63d95203383607bef9c6516"
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8888:8080"
+    environment:
+      SEARXNG_BASE_URL: "http://127.0.0.1:8888/"
+      SEARXNG_SECRET: "${SEARXNG_SECRET:?set SEARXNG_SECRET to a random value}"
+      FORCE_OWNERSHIP: "true"
+    volumes:
+      - "./core-config:/etc/searxng"
+      - "searxng-cache:/var/cache/searxng"
+    healthcheck:
+      test:
+        - CMD
+        - wget
+        - --quiet
+        - --tries=1
+        - --spider
+        - "http://127.0.0.1:8080/healthz"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    logging:
+      driver: none
+
+volumes:
+  searxng-cache:

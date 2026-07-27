@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any, Iterable
 from urllib.parse import urlsplit
 
@@ -13,7 +13,13 @@ from .provider_candidates import (
     STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
     VerifiedProviderCandidate,
 )
-from .providers import ProviderRegistry
+from .contracts import FetchClient
+from .providers import (
+    CandidateBootstrapProviderAdapter,
+    JobQuery,
+    ProviderRegistry,
+)
+from .web import FetchError
 
 
 DIRECT_CANDIDATE_WAVE = "direct"
@@ -120,8 +126,13 @@ class CompositeCandidateDiscovery:
 class ProviderCandidatePortfolioBuilder:
     """Identify provider boards; this does not authorize a hiring relationship."""
 
-    def __init__(self, registry: ProviderRegistry) -> None:
+    def __init__(
+        self,
+        registry: ProviderRegistry,
+        fetcher: FetchClient | None = None,
+    ) -> None:
         self._registry = registry
+        self._fetcher = fetcher
 
     def build(
         self,
@@ -131,10 +142,62 @@ class ProviderCandidatePortfolioBuilder:
     ) -> CandidatePortfolioResult:
         verified: list[VerifiedProviderCandidate] = []
         rejected: list[dict[str, Any]] = []
+        bootstrap_attempts: list[dict[str, Any]] = []
         seen_boards: set[tuple[str, str]] = set()
         for candidate in pool.candidates:
             adapter = self._registry.adapter_for(candidate.url)
             board = adapter.identify_board(candidate.url) if adapter is not None else None
+            bootstrapped = False
+            if (
+                adapter is not None
+                and board is None
+                and self._fetcher is not None
+                and isinstance(adapter, CandidateBootstrapProviderAdapter)
+                and candidate.source_kind == "targeted_opening_search"
+            ):
+                try:
+                    bootstrap = adapter.bootstrap_candidate(
+                        self._fetcher,
+                        candidate.url,
+                        JobQuery(
+                            title=candidate.target_title,
+                            location=candidate.target_location,
+                        ),
+                    )
+                except (FetchError, OSError, TimeoutError, TypeError, ValueError) as exc:
+                    bootstrap_attempts.append(
+                        {
+                            "url": candidate.url,
+                            "provider": adapter.name,
+                            "status": "failed",
+                            "error_type": type(exc).__name__,
+                        }
+                    )
+                    bootstrap = None
+                if bootstrap is not None and bootstrap.board.provider == adapter.name:
+                    board = bootstrap.board
+                    candidate = replace(
+                        candidate,
+                        provider_hint=adapter.name,
+                        provider_employer_evidence=bootstrap.employer_evidence,
+                    )
+                    bootstrapped = True
+                    bootstrap_attempts.append(
+                        {
+                            "url": candidate.url,
+                            "provider": adapter.name,
+                            "status": "verified",
+                            "board_url": board.url,
+                        }
+                    )
+                elif not bootstrap_attempts or bootstrap_attempts[-1].get("url") != candidate.url:
+                    bootstrap_attempts.append(
+                        {
+                            "url": candidate.url,
+                            "provider": adapter.name,
+                            "status": "rejected",
+                        }
+                    )
             if adapter is None or board is None or not adapter.supports_listing:
                 rejected.append(
                     {
@@ -152,20 +215,34 @@ class ProviderCandidatePortfolioBuilder:
                 continue
             seen_boards.add(identity)
             detection_method = (
-                "external_apply_url"
-                if candidate.source_kind == "external_apply"
-                else "targeted_search"
-                if candidate.source_kind.startswith("targeted_")
-                else "linked_url_evidence"
+                "provider_opening_bootstrap"
+                if bootstrapped
+                else (
+                    "external_apply_url"
+                    if candidate.source_kind == "external_apply"
+                    else (
+                        "verified_tenant_probe"
+                        if candidate.source_kind == "verified_tenant_probe"
+                        else (
+                            "targeted_search"
+                            if candidate.source_kind.startswith("targeted_")
+                            else "linked_url_evidence"
+                        )
+                    )
+                )
             )
             candidate_origin = urlsplit(candidate.url).netloc.casefold()
             board_origin = urlsplit(board.url).netloc.casefold()
             relationship_evidence_url = (
-                candidate.source_url
-                if candidate.source_url != candidate.url
-                else candidate.url
-                if candidate_origin != board_origin
-                else None
+                None
+                if candidate.source_kind == "verified_tenant_probe"
+                else (
+                    candidate.source_url
+                    if candidate.source_url != candidate.url
+                    else candidate.url
+                    if candidate_origin != board_origin
+                    else None
+                )
             )
             discovered = DiscoveredJobBoard(
                 board=board,
@@ -211,5 +288,6 @@ class ProviderCandidatePortfolioBuilder:
                 "verified_candidate_count": len(selected),
                 "rejected_candidates": rejected,
                 "portfolio_truncated": truncated,
+                "bootstrap_attempts": bootstrap_attempts,
             },
         )

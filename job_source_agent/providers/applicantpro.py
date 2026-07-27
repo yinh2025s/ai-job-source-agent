@@ -5,9 +5,9 @@ import json
 import re
 from urllib.parse import unquote, urlencode, urlparse
 
-from ..reasons import classify_fetch_error, reason_spec
+from ..reasons import reason_spec
 from ..web import FetchError
-from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
+from .base import AdapterResult, JobBoard, JobCandidate, JobQuery, provider_fetch_reason
 
 
 _LEGACY_SUFFIX = ".applicantpro.com"
@@ -484,9 +484,7 @@ def _fetch_failure(
     error: Exception,
     **trace_fields,
 ) -> AdapterResult:
-    reason_code = classify_fetch_error(str(error))
-    if reason_code == "FETCH_FAILED":
-        reason_code = "PROVIDER_FETCH_FAILED"
+    reason_code = provider_fetch_reason(error)
     return _incomplete(
         board,
         reason_code,

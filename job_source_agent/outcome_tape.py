@@ -205,6 +205,7 @@ class OutcomeTapeFetcher:
         self._tape = tape
         self._consumed = [False] * len(tape.entries)
         self._last_consumed_index: int | None = None
+        self._budget_exhausted = False
         self._lock = threading.Lock()
 
     @property
@@ -259,6 +260,11 @@ class OutcomeTapeFetcher:
             self._consumed[entry_index] = True
             self._last_consumed_index = entry_index
             entry = self._tape.entries[entry_index]
+            if (
+                isinstance(entry, FetchFailureOutcomeTapeEntry)
+                and reason_spec(entry.reason_code).owner == "budget"
+            ):
+                self._budget_exhausted = True
         if isinstance(entry, PageOutcomeTapeEntry):
             return entry.to_page()
         raise entry.to_error()
@@ -279,7 +285,8 @@ class OutcomeTapeFetcher:
                 )
 
     def remaining_fetch_seconds(self) -> float | None:
-        return None
+        with self._lock:
+            return 0.0 if self._budget_exhausted else None
 
 
 def outcome_records_sha256(entries: Iterable[OutcomeTapeEntry]) -> str:

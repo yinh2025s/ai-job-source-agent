@@ -94,6 +94,42 @@ class CheckpointTests(unittest.TestCase):
         }
         self.assertNotEqual(input_fingerprint(base), input_fingerprint(changed))
 
+    def test_navigation_capture_provenance_is_stable_but_capture_id_is_not_identity(self):
+        base = {
+            "company_name": "Acme",
+            "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
+            "external_apply_url": "https://jobs.example.com/opening/123",
+            "source_trace": {
+                "linkedin_posting": {
+                    "availability": "active",
+                    "apply_mode": "external",
+                    "evidence_source": "authenticated_user_apply_navigation",
+                    "job_url": "https://www.linkedin.com/jobs/view/123",
+                },
+                "navigation_capture": {"capture_contract": "1", "capture_id": "capture-one"},
+            },
+        }
+        changed_capture = {
+            **base,
+            "source_trace": {
+                **base["source_trace"],
+                "navigation_capture": {"capture_contract": "1", "capture_id": "capture-two"},
+            },
+        }
+        changed_source = {
+            **base,
+            "source_trace": {
+                **base["source_trace"],
+                "linkedin_posting": {
+                    **base["source_trace"]["linkedin_posting"],
+                    "evidence_source": "authenticated_detail_dom",
+                },
+            },
+        }
+
+        self.assertEqual(input_fingerprint(base), input_fingerprint(changed_capture))
+        self.assertNotEqual(input_fingerprint(base), input_fingerprint(changed_source))
+
     def test_volatile_or_unrelated_source_trace_does_not_affect_fingerprint(self):
         base = {
             "company_name": "Example Robotics",

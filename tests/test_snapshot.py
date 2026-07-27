@@ -56,6 +56,69 @@ class SnapshotTests(unittest.TestCase):
                 self.assertNotIn("abc123", sanitized)
                 self.assertIn("%5BREDACTED%5D", sanitized)
 
+    def test_sanitize_url_redacts_hmg_inventory_validation_ticket(self):
+        sanitized = sanitize_url(
+            "https://jobs.example.test/json/index.smpl?"
+            "arg=list_posts&pid=gwt&h=temporary-hash&t=1700000000"
+        )
+
+        self.assertNotIn("temporary-hash", sanitized)
+        self.assertNotIn("1700000000", sanitized)
+        self.assertEqual(sanitized.count("%5BREDACTED%5D"), 2)
+
+    def test_sanitize_snapshot_body_replaces_hmg_form_tickets_with_replay_values(self):
+        raw = """
+            <link rel="stylesheet" href="/css/hmg-jb.css">
+            <form id="JBSearchList_form">
+              <input name="arg" value="list_posts">
+              <input name="pid" value="gwt">
+              <input name="h" value="0123456789abcdef0123456789abcdef">
+              <input value="1700000000" name="t">
+            </form>
+            <script>var jsonp_url = "/json/index.smpl";</script>
+            <script src="/js/combobo.js"></script>
+        """
+
+        sanitized = sanitize_snapshot_body(raw)
+
+        self.assertNotIn("0123456789abcdef0123456789abcdef", sanitized)
+        self.assertNotIn('value="1700000000" name="t"', sanitized)
+        self.assertIn('name="h" value="00000000000000000000000000000000"', sanitized)
+        self.assertIn('value="1000000000" name="t"', sanitized)
+        self.assertEqual(sanitize_snapshot_body(sanitized), sanitized)
+
+    def test_sanitize_snapshot_body_replaces_hmg_response_ticket(self):
+        raw = json.dumps(
+            {
+                "ResultSet": {
+                    "list": [],
+                    "list_meta": {"total": 0, "first": -1, "pp": 5},
+                    "ticket": {
+                        "h": "fedcba9876543210fedcba9876543210",
+                        "t": "1700000001",
+                    },
+                }
+            }
+        )
+
+        parsed = json.loads(sanitize_snapshot_body(raw))
+
+        self.assertEqual(
+            parsed["ResultSet"]["ticket"],
+            {
+                "h": "00000000000000000000000000000000",
+                "t": "1000000000",
+            },
+        )
+
+    def test_sanitize_snapshot_body_preserves_generic_h_and_t_fields(self):
+        raw = (
+            '<form><input name="h" value="640">'
+            '<input name="t" value="1700000000"></form>'
+        )
+
+        self.assertEqual(sanitize_snapshot_body(raw), raw)
+
     def test_sanitize_snapshot_body_redacts_tokens(self):
         body = (
             'window.cfg = {"api_key": "secret-value", "sessionJWT": "public-session-token", '
@@ -84,6 +147,124 @@ class SnapshotTests(unittest.TestCase):
         self.assertNotIn("csrf-secret", sanitized)
         self.assertNotIn("abcdefghijklmnop", sanitized)
         self.assertIn("[REDACTED]", sanitized)
+
+    def test_sanitize_snapshot_body_redacts_prefixed_api_key_fields(self):
+        raw = (
+            'window.cfg = {"mapsApiKey":"maps-secret",'
+            '"google_maps_api_key":"other-secret","apiKeyEnabled":true};'
+            '<input name="rapidApiKey" value="input-secret">'
+        )
+
+        sanitized = sanitize_snapshot_body(raw)
+
+        self.assertNotIn("maps-secret", sanitized)
+        self.assertNotIn("other-secret", sanitized)
+        self.assertNotIn("input-secret", sanitized)
+        self.assertIn('"apiKeyEnabled":true', sanitized)
+        self.assertEqual(sanitized.count("[REDACTED]"), 3)
+
+    def test_sanitize_snapshot_body_preserves_public_location_state(self):
+        raw = json.dumps(
+            {
+                "locations": [
+                    {"city": "Bonita Springs", "state": "Florida", "country": "US"},
+                    {"City": "Statesville", "State": "NC", "Country": "USA"},
+                ],
+                "oauth": {"state": "private-oauth-state", "code": "private-code"},
+            }
+        )
+
+        parsed = json.loads(sanitize_snapshot_body(raw))
+
+        self.assertEqual(parsed["locations"][0]["state"], "Florida")
+        self.assertEqual(parsed["locations"][1]["State"], "NC")
+        self.assertEqual(parsed["oauth"]["state"], "[REDACTED]")
+        self.assertEqual(parsed["oauth"]["code"], "[REDACTED]")
+
+    def test_sanitize_snapshot_body_keeps_state_sensitive_without_location_context(self):
+        raw = json.dumps(
+            {
+                "state": "private-oauth-state",
+                "redirect_uri": "https://example.com/callback",
+            }
+        )
+
+        parsed = json.loads(sanitize_snapshot_body(raw))
+
+        self.assertEqual(parsed["state"], "[REDACTED]")
+        self.assertEqual(parsed["redirect_uri"], "https://example.com/callback")
+
+    def test_sanitize_snapshot_body_does_not_exempt_auth_context_state(self):
+        raw = json.dumps(
+            {
+                "city": "Austin",
+                "state": "private-oauth-state",
+                "client_id": "public-client",
+            }
+        )
+
+        parsed = json.loads(sanitize_snapshot_body(raw))
+
+        self.assertEqual(parsed["state"], "[REDACTED]")
+
+    def test_sanitize_snapshot_body_redacts_unquoted_and_input_oauth_state(self):
+        body = (
+            'window.oauth = {state: "private-oauth-state"};'
+            '<input type="hidden" name="state" value="second-private-state">'
+        )
+
+        sanitized = sanitize_snapshot_body(body)
+
+        self.assertNotIn("private-oauth-state", sanitized)
+        self.assertNotIn("second-private-state", sanitized)
+        self.assertEqual(sanitized.count("[REDACTED]"), 2)
+
+    def test_sanitize_embedded_json_preserves_only_location_state(self):
+        body = (
+            '<script>window.pageData = {"job":{"address":{"city":"Statesville",'
+            '"state":"NC","country":"USA"}},"oauth":{"state":"private-state",'
+            '"token":"private-token"}};</script>'
+        )
+
+        sanitized = sanitize_snapshot_body(body)
+
+        self.assertIn('"state":"NC"', sanitized)
+        self.assertNotIn("private-state", sanitized)
+        self.assertNotIn("private-token", sanitized)
+        self.assertEqual(sanitized.count("[REDACTED]"), 2)
+
+    def test_sanitize_snapshot_body_preserves_valid_json_with_html_token_attribute(self):
+        raw = json.dumps(
+            {
+                "data": [
+                    {
+                        "description": (
+                            '<span data-placeholder-token="true">'
+                            "Henderson, NC</span>"
+                        ),
+                        "third_party_service_data": {
+                            "indeed-apply-apitoken": "private-token",
+                        },
+                    }
+                ],
+                "count": 1,
+            }
+        )
+
+        sanitized = sanitize_snapshot_body(raw)
+        parsed = json.loads(sanitized)
+
+        self.assertIn(
+            'data-placeholder-token="true"',
+            parsed["data"][0]["description"],
+        )
+        self.assertEqual(
+            parsed["data"][0]["third_party_service_data"][
+                "indeed-apply-apitoken"
+            ],
+            "[REDACTED]",
+        )
+        self.assertNotIn("private-token", sanitized)
 
     def test_sanitize_snapshot_body_redacts_standalone_unquoted_code(self):
         for body in ("code=secret-one", "code: secret-two", "/code=secret-three"):

@@ -50,6 +50,7 @@ REASON_SPECS: dict[str, ReasonSpec] = {
     "LINKEDIN_NATIVE_ONLY": ReasonSpec(False, "external"),
     "COMPANY_TIME_BUDGET_EXHAUSTED": ReasonSpec(True, "budget"),
     "FETCH_BUDGET_EXHAUSTED": ReasonSpec(True, "budget"),
+    "SPECULATIVE_ROUTE_BUDGET_RESERVED": ReasonSpec(False, "budget"),
     "RESULT_VALIDATION_FAILED": ReasonSpec(False, "parser"),
     "RESULT_IDENTITY_MISMATCH": ReasonSpec(False, "identity"),
 }
@@ -62,6 +63,7 @@ LEGACY_REASON_CODES = {
     "open_position_not_found": "OPENING_NOT_FOUND",
     "specific_opening_not_found": "OPENING_NOT_FOUND",
     "fetch_failed": "FETCH_FAILED",
+    "fetch_budget_exhausted": "FETCH_BUDGET_EXHAUSTED",
     "company_time_budget_exhausted": "COMPANY_TIME_BUDGET_EXHAUSTED",
 }
 

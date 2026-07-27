@@ -44,7 +44,7 @@ class ProviderCandidateTests(unittest.TestCase):
             ["crm"],
         )
 
-    def test_provider_employer_evidence_is_probe_only_and_fail_closed(self):
+    def test_provider_employer_evidence_is_verified_opening_only_and_fail_closed(self):
         evidence = ProviderPublishedEmployerEvidence(
             employer_name="Other",
             descriptor_terms=(),
@@ -52,7 +52,7 @@ class ProviderCandidateTests(unittest.TestCase):
             opening_url="https://jobs.ashbyhq.com/other/role-123",
             extraction_method="about_heading_self_description",
         )
-        with self.assertRaisesRegex(ValueError, "verified tenant probe"):
+        with self.assertRaisesRegex(ValueError, "verified provider opening"):
             candidate(
                 "https://jobs.ashbyhq.com/other",
                 "targeted_board_search",
@@ -61,6 +61,22 @@ class ProviderCandidateTests(unittest.TestCase):
                 result_rank=1,
                 provider_employer_evidence=evidence,
             )
+
+        targeted = candidate(
+            "https://recruiting.paylocity.com/Recruiting/Jobs/Details/123",
+            "targeted_opening_search",
+            source_url="https://www.bing.com/search?q=other",
+            query="Other role",
+            result_rank=1,
+            provider_employer_evidence=ProviderPublishedEmployerEvidence(
+                employer_name="Other",
+                descriptor_terms=(),
+                evidence_url="https://recruiting.paylocity.com/Recruiting/Jobs/Details/123",
+                opening_url="https://recruiting.paylocity.com/Recruiting/Jobs/Details/123",
+                extraction_method="paylocity_detail_page_data",
+            ),
+        )
+        self.assertEqual(targeted.provider_employer_evidence.employer_name, "Other")
 
     def test_provider_employer_binding_requires_every_missing_identity_token(self):
         evidence = ProviderPublishedEmployerEvidence(

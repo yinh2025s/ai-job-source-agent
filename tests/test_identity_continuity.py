@@ -28,8 +28,8 @@ class OpeningIdentityContinuityTests(unittest.TestCase):
             provider="ashby",
             tenant="acme",
             canonical_board_url="https://jobs.ashbyhq.com/acme",
-            evidence_url="https://jobs.ashbyhq.com/acme",
-            verification_method="tenant_name_match",
+            evidence_url="https://acme.example/careers",
+            verification_method="verified_first_party_handoff",
             relationship_verified=True,
         )
         self.opening = OpeningIdentity(
@@ -40,15 +40,24 @@ class OpeningIdentityContinuityTests(unittest.TestCase):
             canonical_opening_url="https://jobs.ashbyhq.com/acme/role-123",
         )
 
-    def test_complete_same_tenant_chain_passes(self):
+    def test_tenant_name_only_chain_fails_closed(self):
+        provider = ProviderIdentity(
+            hiring_entity_name="Acme",
+            provider="ashby",
+            tenant="acme",
+            canonical_board_url="https://jobs.ashbyhq.com/acme",
+            evidence_url="https://jobs.ashbyhq.com/acme",
+            verification_method="tenant_name_match",
+            relationship_verified=True,
+        )
         self.assertEqual(
             validate_opening_identity_chain(
                 hiring=self.hiring,
-                provider=self.provider,
+                provider=provider,
                 opening=self.opening,
                 open_position_url="https://jobs.ashbyhq.com/acme/role-123",
             ),
-            [],
+            ["PROVIDER_RELATIONSHIP_PROVENANCE_MISSING"],
         )
 
     def test_relationship_contract_rejects_strength_verification_conflict(self):

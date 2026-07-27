@@ -100,6 +100,69 @@ class CareerTransportBudgetFetcherTests(unittest.TestCase):
             {"adapter": 1, "provider": 1, "search": 2},
         )
 
+    def test_speculative_phase_cannot_consume_reserved_dispatches(self):
+        base = RecordingFetcher()
+        fetcher = CareerTransportBudgetFetcher(base)
+
+        with fetcher.career_discovery_scope(
+            6,
+            reserved_dispatches=2,
+        ) as budget:
+            with fetcher.career_discovery_phase("blind", speculative=True):
+                for index in range(4):
+                    fetcher.fetch(f"blind-{index}")
+                with self.assertRaises(FetchError) as raised:
+                    fetcher.fetch("blind-reserved")
+            with fetcher.career_discovery_phase("search"):
+                fetcher.fetch("search-one")
+                fetcher.fetch("search-two")
+
+        self.assertEqual(
+            raised.exception.reason_code,
+            "SPECULATIVE_ROUTE_BUDGET_RESERVED",
+        )
+        self.assertFalse(raised.exception.retryable)
+        self.assertEqual(
+            [call[0] for call in base.calls],
+            ["blind-0", "blind-1", "blind-2", "blind-3", "search-one", "search-two"],
+        )
+        self.assertEqual(
+            budget.snapshot(),
+            {
+                "limit": 6,
+                "dispatched": 6,
+                "remaining": 0,
+                "exhausted": True,
+                "rejected": 1,
+                "by_phase": {"blind": 4, "search": 2},
+                "reservation": {
+                    "dispatches": 2,
+                    "speculative_rejected": 1,
+                    "rejected_by_phase": {"blind": 1},
+                },
+            },
+        )
+
+    def test_reserved_dispatches_are_available_to_any_non_speculative_phase(self):
+        base = RecordingFetcher()
+        fetcher = CareerTransportBudgetFetcher(base)
+
+        with fetcher.career_discovery_scope(
+            5,
+            reserved_dispatches=2,
+        ) as budget:
+            with fetcher.career_discovery_phase("blind", speculative=True):
+                for index in range(3):
+                    fetcher.fetch(f"blind-{index}")
+            with fetcher.career_discovery_phase("official"):
+                fetcher.fetch("official")
+            with fetcher.career_discovery_phase("provider"):
+                fetcher.fetch("provider")
+
+        self.assertEqual(len(base.calls), 5)
+        self.assertEqual(budget.snapshot()["dispatched"], 5)
+        self.assertEqual(budget.snapshot()["reservation"]["speculative_rejected"], 0)
+
     def test_exceptional_scope_and_phase_cleanup_allow_a_fresh_unattributed_scope(self):
         base = RecordingFetcher()
         fetcher = CareerTransportBudgetFetcher(base)
@@ -124,14 +187,30 @@ class CareerTransportBudgetFetcherTests(unittest.TestCase):
             with self.subTest(limit=invalid), self.assertRaises(ValueError):
                 with fetcher.career_discovery_scope(invalid):
                     pass
+            with self.subTest(reserved=invalid), self.assertRaises(ValueError):
+                with fetcher.career_discovery_scope(1, reserved_dispatches=invalid):
+                    pass
         for invalid in (True, 1.5, "2"):
             with self.subTest(limit=invalid), self.assertRaises(TypeError):
                 with fetcher.career_discovery_scope(invalid):
                     pass
+            with self.subTest(reserved=invalid), self.assertRaises(TypeError):
+                with fetcher.career_discovery_scope(1, reserved_dispatches=invalid):
+                    pass
+
+        with self.assertRaises(ValueError):
+            with fetcher.career_discovery_scope(None, reserved_dispatches=1):
+                pass
+        with self.assertRaises(ValueError):
+            with fetcher.career_discovery_scope(1, reserved_dispatches=2):
+                pass
 
         with fetcher.career_discovery_scope(1):
             with self.assertRaises(RuntimeError):
                 with fetcher.career_discovery_scope(1):
+                    pass
+            with self.assertRaises(TypeError):
+                with fetcher.career_discovery_phase("search", speculative=1):
                     pass
         with self.assertRaises(RuntimeError):
             with fetcher.career_discovery_phase("search"):

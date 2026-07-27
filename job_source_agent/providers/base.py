@@ -7,6 +7,7 @@ from typing import Any, Protocol, runtime_checkable
 from ..contracts import FetchBudget, FetchClient
 from ..job_board import JobBoard
 from ..provider_candidates import ProviderPublishedEmployerEvidence
+from ..reasons import canonical_reason_code, classify_fetch_error
 from ..web import FetchError, Page
 
 
@@ -45,6 +46,26 @@ class AdapterResult:
             raise TypeError("Provider employer evidence must be an immutable tuple")
 
 
+@dataclass(frozen=True)
+class ProviderCandidateBootstrap:
+    """Provider-owned evidence that binds one opening URL to a canonical board."""
+
+    board: JobBoard
+    opening_url: str
+    employer_evidence: ProviderPublishedEmployerEvidence
+    trace: dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.board, JobBoard):
+            raise TypeError("Provider bootstrap board is invalid")
+        if not isinstance(self.employer_evidence, ProviderPublishedEmployerEvidence):
+            raise TypeError("Provider bootstrap employer evidence is invalid")
+        if self.opening_url != self.employer_evidence.opening_url:
+            raise ValueError("Provider bootstrap opening evidence is discontinuous")
+        if not isinstance(self.trace, dict):
+            raise TypeError("Provider bootstrap trace must be an object")
+
+
 @runtime_checkable
 class ProviderAdapter(Protocol):
     name: str
@@ -62,6 +83,29 @@ class ProviderAdapter(Protocol):
         board: JobBoard,
         query: JobQuery,
     ) -> AdapterResult:
+        ...
+
+
+def provider_fetch_reason(error: Exception) -> str:
+    """Preserve typed transport taxonomy before falling back to display text."""
+
+    if isinstance(error, FetchError) and error.reason_code:
+        reason = canonical_reason_code(error.reason_code)
+    else:
+        reason = classify_fetch_error(str(error))
+    return "PROVIDER_FETCH_FAILED" if reason == "FETCH_FAILED" else reason
+
+
+@runtime_checkable
+class CandidateBootstrapProviderAdapter(Protocol):
+    """Optional extension for provider-owned detail URLs that expose their board."""
+
+    def bootstrap_candidate(
+        self,
+        fetcher: FetchClient,
+        url: str,
+        query: JobQuery,
+    ) -> ProviderCandidateBootstrap | None:
         ...
 
 

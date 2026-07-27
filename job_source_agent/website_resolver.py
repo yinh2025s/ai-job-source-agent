@@ -19,6 +19,7 @@ from .public_domain_registry import (
     CISA_PUBLIC_DOMAIN_CSV_URL,
     CisaPublicDomainCandidateSource,
 )
+from .reasons import classify_fetch_error
 from .web import FetchError, Page, domain_of, extract_links, normalize_url
 
 
@@ -181,6 +182,7 @@ class CompanyWebsiteResolver:
             "target_region": location_region(job_location),
             "candidates": [],
             "fetch_errors": [],
+            "search_queries": [],
             "verification_allocations": [],
         }
         fetch_errors = trace["fetch_errors"]
@@ -603,14 +605,18 @@ class CompanyWebsiteResolver:
                     prior.url if "homepage verified" in prior.reasons else normalize_url(official_url)
                 )
                 recovered.append(
-                    _append_candidate_sources(
-                        WebsiteCandidate(
-                            recovered_url,
-                            prior.score,
-                            list(prior.reasons),
-                            prior.verified_page,
+                    _apply_linkedin_official_alias_identity(
+                        _append_candidate_sources(
+                            WebsiteCandidate(
+                                recovered_url,
+                                prior.score,
+                                list(prior.reasons),
+                                prior.verified_page,
+                            ),
+                            official_sources.get(official_domain, set()),
                         ),
-                        official_sources.get(official_domain, set()),
+                        company_name,
+                        linkedin_company_url,
                     )
                 )
             if missing_verification:
@@ -767,6 +773,7 @@ class CompanyWebsiteResolver:
                 company_name,
                 job_location,
                 fetch_errors=fetch_errors,
+                query_trace=trace["search_queries"],
             )
         search_candidates = [result.url for result in search_evidence]
         evidence_by_domain = {domain_of(result.url): result for result in search_evidence}
@@ -835,6 +842,19 @@ class CompanyWebsiteResolver:
             }
             return selected.url, trace, self._navigation_evidence_for_selected(selected)
 
+        provisional_navigation_evidence = None
+        provisional_official = _provisional_official_candidate(scored)
+        if provisional_official is not None:
+            provisional_navigation_evidence = self._navigation_evidence_for_selected(
+                provisional_official
+            )
+            trace["provisional_official_website"] = {
+                "url": provisional_official.url,
+                "evidence_source": "linkedin_official_website",
+                "reason_code": "downstream_hiring_relationship_required",
+                "homepage_verified": True,
+            }
+
         dot_com_failures = (
             [
                 failure
@@ -845,15 +865,32 @@ class CompanyWebsiteResolver:
             if same_brand_dot_com_blocked and dot_com_competitor is not None
             else []
         )
+        failure_pool = dot_com_failures or fetch_errors
+        withheld_official_sites = _withheld_official_candidate_sites(scored)
         retained_failure = _strongest_retained_fetch_failure(
-            dot_com_failures or fetch_errors
+            failure_pool,
+            relevant_sites=(withheld_official_sites or None),
         )
+        if withheld_official_sites:
+            suppressed_count = sum(
+                1
+                for failure in failure_pool
+                if _is_retained_resolution_failure(failure)
+                and _failure_registrable_site(failure)
+                not in withheld_official_sites
+            )
+            if suppressed_count:
+                trace["resolution_failure_suppression"] = {
+                    "reason": "unrelated_failure_after_verified_official_identity",
+                    "official_sites": sorted(withheld_official_sites),
+                    "suppressed_failure_count": suppressed_count,
+                }
         if retained_failure is not None:
             trace["resolution_failure"] = {
                 "kind": "verification_blocked",
                 **retained_failure,
             }
-        return None, trace, None
+        return None, trace, provisional_navigation_evidence
 
     def _prefer_verified_dot_com_fallback(
         self,
@@ -1053,14 +1090,18 @@ class CompanyWebsiteResolver:
                     and not evidence_upgrade
                 ):
                     return (
-                        _append_candidate_sources(
-                            WebsiteCandidate(
-                                previous.url,
-                                previous.score,
-                                list(previous.reasons),
-                                previous.verified_page,
+                        _apply_linkedin_official_alias_identity(
+                            _append_candidate_sources(
+                                WebsiteCandidate(
+                                    previous.url,
+                                    previous.score,
+                                    list(previous.reasons),
+                                    previous.verified_page,
+                                ),
+                                source_set,
                             ),
-                            source_set,
+                            company_name,
+                            linkedin_company_url,
                         ),
                         [],
                     )
@@ -1081,6 +1122,11 @@ class CompanyWebsiteResolver:
                 verified_candidate = _append_candidate_sources(
                     scored_candidate,
                     source_set,
+                )
+                verified_candidate = _apply_linkedin_official_alias_identity(
+                    verified_candidate,
+                    company_name,
+                    linkedin_company_url,
                 )
                 if "regional_recovery" in source_set:
                     requested_site = _registrable_site_from_url(candidate.url)
@@ -1245,6 +1291,7 @@ class CompanyWebsiteResolver:
         company_name: str,
         job_location: str | None = None,
         fetch_errors: list[dict] | None = None,
+        query_trace: list[dict] | None = None,
     ) -> list[SearchEvidence]:
         region = location_region(job_location)
         region_query = " United States" if region == "us" else ""
@@ -1256,14 +1303,30 @@ class CompanyWebsiteResolver:
         results: list[SearchEvidence] = []
         seen: set[str] = set()
         searches = (
-            (f"{SEARCH_ENDPOINT}?{rss_query}", _bing_rss_results),
-            (f"{SEARCH_ENDPOINT}?{query}", _bing_html_results),
-            (f"{DUCKDUCKGO_SEARCH_ENDPOINT}?{query}", _duckduckgo_html_results),
+            ("bing_rss", f"{SEARCH_ENDPOINT}?{rss_query}", _bing_rss_results),
+            ("bing_html", f"{SEARCH_ENDPOINT}?{query}", _bing_html_results),
+            (
+                "duckduckgo_html",
+                f"{DUCKDUCKGO_SEARCH_ENDPOINT}?{query}",
+                _duckduckgo_html_results,
+            ),
         )
-        for search_url, extract_urls in searches:
+        for source, search_url, extract_urls in searches:
+            attempt_trace = {
+                "source": source,
+                "status": "started",
+                "raw_result_count": 0,
+                "accepted_result_count": 0,
+            }
+            if query_trace is not None:
+                query_trace.append(attempt_trace)
             try:
                 page = self.fetcher.fetch(search_url)
             except FetchError as exc:
+                attempt_trace["status"] = "fetch_failed"
+                attempt_trace["reason_code"] = (
+                    exc.reason_code or classify_fetch_error(str(exc))
+                )
                 _retain_fetch_error(
                     fetch_errors,
                     exc,
@@ -1273,6 +1336,7 @@ class CompanyWebsiteResolver:
                 )
                 continue
             raw_results = extract_urls(page.html)
+            attempt_trace["raw_result_count"] = len(raw_results)
             for result in raw_results:
                 cleaned = clean_search_url(result.url, preserve_region=region)
                 if not cleaned or is_blocked_domain(cleaned):
@@ -1284,6 +1348,8 @@ class CompanyWebsiteResolver:
                     continue
                 seen.add(domain)
                 results.append(SearchEvidence(cleaned, result.title, result.snippet))
+            attempt_trace["accepted_result_count"] = len(results)
+            attempt_trace["status"] = "accepted" if results else "no_match"
             if results:
                 break
         return results
@@ -1501,6 +1567,31 @@ class CompanyWebsiteResolver:
                 and _has_positive_core_page_identity(candidate)
             )
             if (
+                "ambiguous company name" in candidate.reasons
+                and not linkedin_official
+                and not preferred_core_identity
+                and not any(
+                    reason in candidate.reasons
+                    for reason in (
+                        "homepage title confirms company identity",
+                        "homepage title confirms company abbreviation",
+                        "homepage body confirms company identity",
+                    )
+                )
+            ):
+                continue
+            if (
+                "ambiguous company name" in candidate.reasons
+                and linkedin_official
+                and "homepage verified" not in candidate.reasons
+                and "ambiguous company exact domain identity"
+                not in candidate.reasons
+                and not access_controlled_institution
+                and not declared_access_controlled_locale
+                and not access_controlled_sibling_root
+            ):
+                continue
+            if (
                 not linkedin_official
                 and not access_controlled_institution
                 and not declared_access_controlled_locale
@@ -1603,6 +1694,8 @@ class CompanyWebsiteResolver:
         ambiguous_name = _is_ambiguous_company_name(company_tokens)
         if ambiguous_name:
             reasons.append("ambiguous company name")
+            if _domain_confirms_company_identity(domain, company_tokens):
+                reasons.append("ambiguous company exact domain identity")
         if _is_single_token_brand_extension_domain(domain, company_tokens):
             score -= 25
             reasons.append("single-token brand extension domain")
@@ -1803,6 +1896,7 @@ class CompanyWebsiteResolver:
             page.html,
             resolved_url,
             company_name,
+            linkedin_company_url=linkedin_company_url,
         ):
             reasons.append(
                 "parent/group website requires downstream hiring relationship evidence"
@@ -2478,10 +2572,13 @@ def _homepage_has_parent_group_identity(
     html: str,
     resolved_url: str,
     company_name: str,
+    *,
+    linkedin_company_url: str | None = None,
 ) -> bool:
-    requested_tokens = [
-        token for token in _exact_identity_tokens(company_name) if token != "group"
-    ]
+    requested_tokens = _parent_identity_tokens(
+        company_name,
+        linkedin_company_url=linkedin_company_url,
+    )
     if len(requested_tokens) < 2:
         return False
 
@@ -2509,6 +2606,26 @@ def _homepage_has_parent_group_identity(
         tokens.intersection(requested) and not requested.issubset(tokens)
         for tokens in identity_token_sets
     )
+
+
+def _parent_identity_tokens(
+    company_name: str,
+    *,
+    linkedin_company_url: str | None,
+) -> list[str]:
+    requested_tokens = [
+        token for token in _exact_identity_tokens(company_name) if token != "group"
+    ]
+    prefix = re.split(r"\s+(?:-|[|])\s+", company_name, maxsplit=1)[0]
+    if prefix == company_name:
+        return requested_tokens
+    prefix_tokens = [
+        token for token in _exact_identity_tokens(prefix) if token != "group"
+    ]
+    linkedin_tokens = _linkedin_company_identity_tokens(linkedin_company_url)
+    if prefix_tokens and prefix_tokens == linkedin_tokens:
+        return prefix_tokens
+    return requested_tokens
 
 
 def _exact_identity_tokens(company_name: str) -> list[str]:
@@ -2840,12 +2957,72 @@ _RETAINED_RESOLUTION_FAILURE_PRIORITY = {
 }
 
 
-def _strongest_retained_fetch_failure(fetch_errors: list[dict]) -> dict | None:
+def _withheld_official_candidate_sites(
+    scored: list[WebsiteCandidate],
+) -> set[str]:
+    required_reasons = {
+        "LinkedIn company page identifies official website",
+        "homepage verified",
+        "parent/group website requires downstream hiring relationship evidence",
+    }
+    return {
+        _registrable_site(domain_of(candidate.url))
+        for candidate in scored
+        if required_reasons.issubset(candidate.reasons)
+        and _registrable_site(domain_of(candidate.url))
+    }
+
+
+def _provisional_official_candidate(
+    scored: list[WebsiteCandidate],
+) -> WebsiteCandidate | None:
+    required_reasons = {
+        "LinkedIn company page identifies official website",
+        "homepage verified",
+        "parent/group website requires downstream hiring relationship evidence",
+    }
+    disqualifying_reasons = {
+        "hosted non-company destination rejected",
+        "parked domain rejected",
+        "regional locale identity continuity rejected",
+        "deployment hostname",
+        "same-brand .com verification blocked",
+    }
+    for candidate in scored:
+        if (
+            candidate.score >= 25
+            and required_reasons.issubset(candidate.reasons)
+            and not disqualifying_reasons.intersection(candidate.reasons)
+            and _has_positive_page_identity(candidate)
+        ):
+            return candidate
+    return None
+
+
+def _is_retained_resolution_failure(failure: dict) -> bool:
+    return bool(
+        failure.get("evidence_tier") in {1, 2}
+        and failure.get("reason_code") in _RETAINED_RESOLUTION_FAILURE_PRIORITY
+    )
+
+
+def _failure_registrable_site(failure: dict) -> str:
+    return _registrable_site(domain_of(str(failure.get("url") or "")))
+
+
+def _strongest_retained_fetch_failure(
+    fetch_errors: list[dict],
+    *,
+    relevant_sites: set[str] | None = None,
+) -> dict | None:
     retained = [
         failure
         for failure in fetch_errors
-        if failure.get("evidence_tier") in {1, 2}
-        and failure.get("reason_code") in _RETAINED_RESOLUTION_FAILURE_PRIORITY
+        if _is_retained_resolution_failure(failure)
+        and (
+            relevant_sites is None
+            or _failure_registrable_site(failure) in relevant_sites
+        )
     ]
     if not retained:
         return None
@@ -2944,6 +3121,145 @@ def _append_candidate_sources(
         candidate.score += 100
         candidate.reasons.append("LinkedIn company page identifies official website")
     return candidate
+
+
+def _apply_linkedin_official_alias_identity(
+    candidate: WebsiteCandidate,
+    company_name: str,
+    linkedin_company_url: str | None,
+) -> WebsiteCandidate:
+    """Replace a false parent/group rejection only with first-party alias proof."""
+
+    parent_reason = (
+        "parent/group website requires downstream hiring relationship evidence"
+    )
+    if (
+        parent_reason not in candidate.reasons
+        or "LinkedIn company page identifies official website"
+        not in candidate.reasons
+        or candidate.verified_page is None
+        or not _linkedin_official_homepage_alias_confirms_identity(
+            candidate.verified_page.html,
+            company_name,
+            linkedin_company_url,
+        )
+    ):
+        return candidate
+    candidate.reasons.remove(parent_reason)
+    candidate.reasons.append(
+        "LinkedIn official company identity matches homepage alias"
+    )
+    candidate.score += 25
+    return candidate
+
+
+def _linkedin_official_homepage_alias_confirms_identity(
+    html: str,
+    company_name: str,
+    linkedin_company_url: str | None,
+) -> bool:
+    slug_tokens = _linkedin_company_identity_tokens(linkedin_company_url)
+    if not slug_tokens:
+        return False
+
+    identities = _structured_organization_identities(html)
+    title = _html_title(_bounded_html_head(html))
+    if title:
+        identities.append(title)
+    requested_alias = _linkedin_official_alias_tokens(company_name)
+    slug_alias = _linkedin_official_alias_tokens(" ".join(slug_tokens))
+    if (
+        requested_alias
+        and requested_alias == slug_alias
+        and any(
+            _linkedin_official_alias_tokens(
+                re.split(r"\s+[|]\s+|,\s+|\s+[-:]\s+", identity, maxsplit=1)[0]
+            )
+            == requested_alias
+            for identity in identities
+        )
+    ):
+        return True
+    if len(slug_tokens) >= 2:
+        return any(
+            _text_confirms_company_identity(identity, slug_tokens)
+            for identity in identities
+        )
+
+    requested_tokens = _exact_identity_tokens(company_name)
+    if len(requested_tokens) < 2 or slug_tokens[0] not in requested_tokens:
+        return False
+    visible = _visible_body_text(html[:300000])
+    if not visible:
+        return False
+    phrase = r"\W+".join(re.escape(token) for token in requested_tokens)
+    legal_suffix = (
+        r"(?:\s+(?:co|company|corp(?:oration)?|inc(?:orporated)?|"
+        r"limited|llc|llp|ltd|plc))?"
+    )
+    return bool(
+        re.search(
+            rf"\b{phrase}\b{legal_suffix}\s+"
+            rf"(?:is|operates|provides|offers|develops)\b",
+            visible,
+            flags=re.I,
+        )
+        or re.search(
+            rf"(?:\bcopyright\b|©)\s*(?:\d{{4}}\s*)?\b{phrase}\b{legal_suffix}",
+            visible,
+            flags=re.I,
+        )
+    )
+
+
+def _linkedin_official_alias_tokens(value: str) -> frozenset[str]:
+    connectors = {
+        "and",
+        "com",
+        "of",
+        "the",
+    }
+    tokens = {
+        token
+        for token in _exact_identity_tokens(value)
+        if token not in connectors
+    }
+    descriptors = tokens.intersection({"brands", "system", "university"})
+    reduced = tokens - descriptors
+    if len(reduced) >= 2 or (descriptors == {"brands"} and len(reduced) == 1):
+        tokens = reduced
+    return frozenset(tokens)
+
+
+def _linkedin_company_identity_tokens(
+    linkedin_company_url: str | None,
+) -> list[str]:
+    if not linkedin_company_url:
+        return []
+    parts = [part for part in urlparse(linkedin_company_url).path.split("/") if part]
+    if len(parts) < 2 or parts[0].casefold() != "company":
+        return []
+    slug = re.sub(r"-\d+$", "", parts[1].casefold())
+    ignored = {
+        "and",
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "inc",
+        "incorporated",
+        "limited",
+        "llc",
+        "llp",
+        "ltd",
+        "plc",
+        "the",
+    }
+    return [
+        token
+        for token in re.findall(r"[a-z0-9]+", slug)
+        if token not in ignored
+    ]
 
 
 def _linkedin_json_ld_websites(html: str, company_name: str) -> list[str]:

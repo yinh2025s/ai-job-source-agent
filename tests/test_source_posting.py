@@ -8,6 +8,21 @@ from job_source_agent.source_posting import (
 
 
 class SourcePostingTests(unittest.TestCase):
+    def test_navigation_external_evidence_cannot_authorize_native_terminal(self):
+        evidence = trusted_linkedin_native_posting(
+            {
+                "linkedin_posting": {
+                    "availability": "active",
+                    "apply_mode": "external",
+                    "evidence_source": "authenticated_user_apply_navigation",
+                    "job_url": "https://www.linkedin.com/jobs/view/123",
+                }
+            },
+            expected_job_url="https://www.linkedin.com/jobs/view/123",
+        )
+
+        self.assertIsNone(evidence)
+
     def test_authenticated_active_native_evidence_is_trusted(self):
         evidence = trusted_linkedin_native_posting(
             {

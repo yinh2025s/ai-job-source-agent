@@ -204,6 +204,7 @@ class IdentityPipelineIntegrationTests(unittest.TestCase):
                     "url": opening_url,
                     "title": "Software Engineer",
                     "location": "Remote",
+                    "hiring_organization_name": "Parent",
                 },
             },
         )

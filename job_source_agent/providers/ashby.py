@@ -63,6 +63,7 @@ class AshbyAdapter:
             url=_board_url(identifier),
             provider=self.name,
             identifier=identifier,
+            replay_safe=identifier == identifier.casefold(),
         )
 
     def list_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:

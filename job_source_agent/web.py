@@ -19,7 +19,7 @@ from contextlib import contextmanager
 from http.cookiejar import CookieJar
 from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, parse_qsl, urlencode, urljoin, urlparse, urlunparse
-from urllib.request import HTTPCookieProcessor, Request, build_opener
+from urllib.request import HTTPCookieProcessor, ProxyHandler, Request, build_opener
 
 from .reasons import REASON_SPECS, classify_fetch_error, reason_spec
 from .job_actions import is_explicit_career_action
@@ -685,6 +685,24 @@ def _is_non_public_host(host: str) -> bool:
     )
 
 
+def _is_loopback_http_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+        host = parsed.hostname
+        parsed.port
+    except ValueError:
+        return False
+    if parsed.scheme.casefold() not in {"http", "https"} or not host:
+        return False
+    normalized_host = host.casefold()
+    if normalized_host == "localhost":
+        return True
+    try:
+        return ipaddress.ip_address(normalized_host).is_loopback
+    except ValueError:
+        return False
+
+
 def _is_provider_lookalike_host(host: str) -> bool:
     return any(
         domain in host and host != domain and not host.endswith("." + domain)
@@ -905,7 +923,7 @@ class Fetcher:
             request.add_unredirected_header(name, value)
         try:
             with hard_timeout(self.timeout + 1):
-                with self._thread_opener().open(request, timeout=self.timeout) as response:
+                with self._thread_opener(url).open(request, timeout=self.timeout) as response:
                     charset = response.headers.get_content_charset() or "utf-8"
                     raw = response.read()
                     if response.headers.get("Content-Encoding") == "gzip":
@@ -924,11 +942,17 @@ class Fetcher:
             raise normalized_error from exc
         return Page(url=url, html=html, final_url=final_url, source="live")
 
-    def _thread_opener(self):
-        opener = getattr(self._http_sessions, "opener", None)
+    def _thread_opener(self, url: str):
+        direct = _is_loopback_http_url(url)
+        attribute = "loopback_opener" if direct else "opener"
+        opener = getattr(self._http_sessions, attribute, None)
         if opener is None:
-            opener = build_opener(HTTPCookieProcessor(CookieJar()))
-            self._http_sessions.opener = opener
+            handlers = [HTTPCookieProcessor(CookieJar())]
+            if direct:
+                # macOS system proxies can otherwise intercept local services.
+                handlers.insert(0, ProxyHandler({}))
+            opener = build_opener(*handlers)
+            setattr(self._http_sessions, attribute, opener)
         return opener
 
     def _fixture_path_for(

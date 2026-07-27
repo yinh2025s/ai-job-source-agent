@@ -203,10 +203,21 @@ def _provider_errors(trace: dict[str, Any]) -> list[dict[str, Any]]:
                 if isinstance(record, dict) and _is_failure_record(record):
                     _add_provider_error(aggregated, positions, record, provenance)
         if include_singular and container.get("error"):
+            singular = {
+                key: container[key]
+                for key in (
+                    "error",
+                    "reason_code",
+                    "retryable",
+                    "status",
+                    "transport_phase",
+                )
+                if key in container
+            }
             _add_provider_error(
                 aggregated,
                 positions,
-                {"error": container["error"]},
+                singular,
                 provenance,
             )
     return aggregated

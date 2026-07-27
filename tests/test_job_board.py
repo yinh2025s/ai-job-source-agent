@@ -372,6 +372,39 @@ class JobBoardPortfolioTests(unittest.TestCase):
         self.assertEqual(JobBoardPortfolio.from_checkpoint_payload(payload), portfolio)
         self.assertIs(portfolio.primary, first)
 
+    def test_replay_safe_projection_drops_runtime_suffix_and_marks_incomplete(self):
+        primary = self._board()
+        runtime_only = self._board(
+            url="https://jobs.example.test/runtime",
+            identifier=None,
+            replay_safe=False,
+        )
+        portfolio = JobBoardPortfolio(
+            boards=(primary, runtime_only),
+            eligible_set_complete=True,
+        )
+
+        projected = portfolio.replay_safe_projection()
+
+        self.assertIsNotNone(projected)
+        assert projected is not None
+        self.assertEqual(projected.boards, (primary,))
+        self.assertFalse(projected.eligible_set_complete)
+
+    def test_replay_safe_projection_rejects_runtime_only_primary(self):
+        runtime_only = self._board(
+            url="https://jobs.example.test/runtime",
+            identifier=None,
+            replay_safe=False,
+        )
+        durable = self._board()
+        portfolio = JobBoardPortfolio(
+            boards=(runtime_only, durable),
+            eligible_set_complete=False,
+        )
+
+        self.assertIsNone(portfolio.replay_safe_projection())
+
     def test_peoplesoft_replay_locator_round_trips_and_rejects_tampering(self):
         url = (
             "https://www.cnd.nd.gov/psc/recruit/EMPLOYEE/HRMS/c/"
@@ -441,6 +474,44 @@ class JobBoardPortfolioTests(unittest.TestCase):
                     board=JobBoard(
                         url=url,
                         provider="healthcaresource",
+                        identifier=identifier,
+                        replay_safe=True,
+                    ),
+                    detection_method="url_evidence",
+                    evidence_url=url,
+                ).to_checkpoint_payload()
+
+    def test_hireology_replay_locator_is_tenant_bound(self):
+        board_url = "https://careers.hireology.com/mag"
+        discovered = DiscoveredJobBoard(
+            board=JobBoard(
+                url=board_url,
+                provider="hireology",
+                identifier="mag",
+                replay_safe=True,
+            ),
+            detection_method="url_evidence",
+            evidence_url=board_url,
+        )
+
+        payload = discovered.to_checkpoint_payload()
+
+        self.assertIsNotNone(payload)
+        self.assertEqual(DiscoveredJobBoard.from_checkpoint_payload(payload), discovered)
+        for url, identifier in (
+            ("https://careers.hireology.com/other", "mag"),
+            (board_url + "/123/description", "mag"),
+            (board_url + "?token=secret", "mag"),
+            (board_url, "other"),
+            ("https://careers.hireology.com.evil.test/mag", "mag"),
+        ):
+            with self.subTest(url=url, identifier=identifier), self.assertRaises(
+                ValueError
+            ):
+                DiscoveredJobBoard(
+                    board=JobBoard(
+                        url=url,
+                        provider="hireology",
                         identifier=identifier,
                         replay_safe=True,
                     ),

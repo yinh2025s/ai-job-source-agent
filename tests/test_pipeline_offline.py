@@ -20,6 +20,77 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfflinePipelineTests(unittest.TestCase):
+    def test_same_site_page_evidenced_provider_is_a_career_surface(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+        candidate = LinkCandidate(
+            url="https://careers.example.com/",
+            text="",
+            source_url="https://www.example.com/",
+            score=195,
+            reasons=["career subdomain probe"],
+            origin="subdomain_probe",
+        )
+        html = """
+        <form method="get" action="/search/"><input name="q"></form>
+        <script>
+          j2w.init({
+            "ssoCompanyId": "exampletenant",
+            "ssoUrl": "https://career41.sapsf.com"
+          });
+        </script>
+        """
+
+        self.assertTrue(
+            agent._looks_like_career_page(
+                candidate,
+                html,
+                company_name="Example",
+            )
+        )
+
+    def test_page_evidenced_provider_career_requires_same_site_and_tenant(self):
+        agent = JobSourceAgent(Fetcher(offline=True))
+        html = """
+        <form method="get" action="/search/"><input name="q"></form>
+        <script>
+          j2w.init({
+            "ssoCompanyId": "exampletenant",
+            "ssoUrl": "https://career41.sapsf.com"
+          });
+        </script>
+        """
+        cross_site = LinkCandidate(
+            url="https://careers.other.example/",
+            text="",
+            source_url="https://www.example.com/",
+            score=195,
+            reasons=["career subdomain probe"],
+            origin="subdomain_probe",
+        )
+        missing_tenant = LinkCandidate(
+            url="https://careers.example.com/",
+            text="",
+            source_url="https://www.example.com/",
+            score=195,
+            reasons=["career subdomain probe"],
+            origin="subdomain_probe",
+        )
+
+        self.assertFalse(
+            agent._looks_like_career_page(
+                cross_site,
+                html,
+                company_name="Example",
+            )
+        )
+        self.assertFalse(
+            agent._looks_like_career_page(
+                missing_tenant,
+                '<form method="get" action="/search/"><input name="q"></form>',
+                company_name="Example",
+            )
+        )
+
     def test_non_production_eightfold_tenant_is_not_promoted_from_embedded_url(self):
         class Adapter:
             name = "eightfold"

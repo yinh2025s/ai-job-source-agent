@@ -6,6 +6,7 @@ import re
 from typing import Any, Iterator
 from urllib.parse import parse_qs, urlparse
 
+from ..provider_candidates import ProviderPublishedEmployerEvidence
 from ..web import FetchError, Page, safe_normalize_url
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
@@ -54,10 +55,18 @@ class GreenhouseAdapter:
         if not parts:
             return None
         parsed = urlparse(url)
+        host = (parsed.hostname or "").casefold()
+        replay_safe = bool(
+            host in {"boards.greenhouse.io", "job-boards.greenhouse.io"}
+            and len(parts) == 1
+            and not parsed.query
+            and not parsed.fragment
+        )
         return JobBoard(
             url=f"https://{parsed.hostname}/{parts[0]}",
             provider=self.name,
             identifier=parts[0],
+            replay_safe=replay_safe,
         )
 
     def canonicalize_board(self, board: JobBoard) -> JobBoard:
@@ -133,27 +142,67 @@ class GreenhouseAdapter:
                 trace={"adapter": self.name, "api_urls": [api_url]},
             )
 
-        candidates = [
-            JobCandidate(
-                title=str(job.get("title") or ""),
-                url=str(job.get("absolute_url") or ""),
-                provider=self.name,
-                location=_location_name(job),
-                raw={"id": job.get("id")},
+        jobs = data.get("jobs", [])
+        candidates = []
+        employer_evidence = []
+        for job in jobs if isinstance(jobs, list) else []:
+            if (
+                not isinstance(job, dict)
+                or not job.get("title")
+                or not job.get("absolute_url")
+            ):
+                continue
+            opening_url = str(job["absolute_url"])
+            company_name = job.get("company_name")
+            opening_board = self.identify_board(opening_url)
+            employer_is_board_bound = bool(
+                opening_board is not None
+                and opening_board.identifier == board.identifier
             )
-            for job in data.get("jobs", [])
-            if job.get("title") and job.get("absolute_url")
-        ]
+            candidates.append(
+                JobCandidate(
+                    title=str(job["title"]),
+                    url=opening_url,
+                    provider=self.name,
+                    location=_location_name(job),
+                    raw={
+                        "id": job.get("id"),
+                        "hiring_organization_name": (
+                            company_name
+                            if isinstance(company_name, str)
+                            and company_name.strip()
+                            and employer_is_board_bound
+                            else None
+                        ),
+                    },
+                )
+            )
+            if (
+                isinstance(company_name, str)
+                and company_name.strip()
+                and employer_is_board_bound
+            ):
+                employer_evidence.append(
+                    ProviderPublishedEmployerEvidence(
+                        employer_name=company_name.strip(),
+                        descriptor_terms=(),
+                        evidence_url=api_url,
+                        opening_url=opening_url,
+                        extraction_method="greenhouse_company_name",
+                    )
+                )
         return AdapterResult(
             provider=self.name,
             board=board,
             candidates=candidates,
             reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            employer_evidence=tuple(employer_evidence),
             trace={
                 "adapter": self.name,
                 "api_urls": [api_url],
                 "response_source": page.source,
                 "candidate_count": len(candidates),
+                "employer_evidence_count": len(employer_evidence),
             },
         )
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import math
 import re
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from xml.etree import ElementTree as ET
 from .contracts import FetchBudget
 from .models import LinkCandidate
 from .scoring import is_ats_url, is_resource_url, score_career_link
+from .search_backend import SearchBackend, SearchQuery
 from .web import FetchError, Fetcher, RawLink, domain_of, safe_normalize_url
 
 
@@ -58,6 +60,34 @@ class _SearchResult:
     snippet: str = ""
 
 
+@dataclass(frozen=True)
+class _SearchExecution:
+    request_url: str
+    final_url: str
+    results: tuple[_SearchResult, ...]
+    disposition: str = "ok"
+    reason: str | None = None
+
+
+@dataclass(frozen=True)
+class _AtsSearchQuery:
+    query: str
+    provider_family: str | None
+
+
+_ATS_PROVIDER_FAMILIES: tuple[tuple[str, str], ...] = (
+    ("greenhouse", "job-boards.greenhouse.io"),
+    ("lever", "jobs.lever.co"),
+    ("ashby", "jobs.ashbyhq.com"),
+    ("workable", "apply.workable.com"),
+    ("pinpoint", "pinpointhq.com"),
+    ("smartrecruiters", "jobs.smartrecruiters.com"),
+    ("workday", "myworkdayjobs.com"),
+    ("oracle", "oraclecloud.com"),
+    ("eightfold", "eightfold.ai"),
+)
+
+
 class CareerSearchResolver:
     def __init__(
         self,
@@ -65,11 +95,13 @@ class CareerSearchResolver:
         max_results: int = 8,
         max_queries: int = 5,
         max_source_fetches: int = 6,
+        search_backend: SearchBackend | None = None,
     ) -> None:
         self.fetcher = fetcher
         self.max_results = max(0, max_results)
         self.max_queries = max(0, max_queries)
         self.max_source_fetches = max(0, max_source_fetches)
+        self.search_backend = search_backend
 
     def search(
         self,
@@ -104,31 +136,62 @@ class CareerSearchResolver:
             "exhaustive": exhaustive,
             "allow_unbound_career": allow_unbound_career,
             "query_diversity_first": query_diversity_first,
+            "ats_secondary_rescue": {
+                "attempt_count": 0,
+                "rejection_count": 0,
+                "attempts": [],
+            },
         }
+        if self.search_backend is not None:
+            trace["search_backend"] = self.search_backend.public_configuration()
 
-        configured_queries = (
-            build_ats_search_queries(company_name, target_title)
-            if ats_only
-            else build_search_queries(company_name, official_domain)
-        )
         effective_query_limit = self.max_queries if ats_only else min(self.max_queries, 3)
-        queries = configured_queries[:effective_query_limit]
+        ats_query_plan = (
+            build_ats_search_query_plan(
+                company_name,
+                target_title,
+                max_queries=effective_query_limit,
+            )
+            if ats_only
+            else ()
+        )
+        queries = (
+            [item.query for item in ats_query_plan]
+            if ats_only
+            else build_search_queries(company_name, official_domain)[:effective_query_limit]
+        )
         trace["configured_query_limit"] = self.max_queries
         trace["effective_query_limit"] = effective_query_limit
+        if ats_only:
+            trace["ats_query_plan"] = [
+                {
+                    "query": item.query,
+                    "provider_family": item.provider_family,
+                    "bucket_index": index,
+                }
+                for index, item in enumerate(ats_query_plan)
+            ]
+            trace["ats_provider_rotation_start"] = _ats_rotation_start(
+                company_name,
+                target_title,
+            )
         source_fetches = 0
         disabled_sources: set[str] = set()
-        for query_text in queries:
+        candidate_buckets: list[list[LinkCandidate]] = [[] for _ in queries]
+        completed_query_count = 0
+        for query_index, query_text in enumerate(queries):
+            completed_query_count += 1
             query_candidate_count = len(candidates)
-            sources = _search_sources(query_text)
+            sources = _search_sources_for_backend(query_text, self.search_backend)
             diversity_mode = query_diversity_first and (
                 ats_only or allow_unbound_career
             )
-            if diversity_mode:
+            if diversity_mode and self.search_backend is None:
                 # Spend a small budget across distinct queries. Repeating one
                 # SERP via HTML or a challenge-prone secondary source provides
                 # less recall than reaching the next provider/site query.
                 sources = [source for source in sources if source.name == "bing_rss"]
-            elif ats_only:
+            elif ats_only and self.search_backend is None:
                 sources = [
                     source
                     for source in sources
@@ -175,10 +238,19 @@ class CareerSearchResolver:
                 if trace["query_url"] is None:
                     trace["query_url"] = source.url
                 try:
-                    page = self.fetcher.fetch(source.url)
+                    execution = _execute_search(
+                        self.fetcher,
+                        query_text,
+                        source,
+                        self.search_backend,
+                    )
                 except FetchError as exc:
-                    query_trace["error"] = str(exc)
-                    trace["error"] = trace["error"] or str(exc)
+                    error_trace = _search_fetch_error_trace(
+                        exc,
+                        self.search_backend,
+                    )
+                    query_trace["error"] = error_trace
+                    trace["error"] = trace["error"] or error_trace
                     if exc.retryable is False:
                         disabled_sources.add(source.name)
                         trace["source_circuit_breaks"].append(
@@ -189,22 +261,28 @@ class CareerSearchResolver:
                         )
                     continue
 
-                query_trace["final_url"] = page.final_url or page.url
-                challenge_reason = _search_challenge_reason(source.name, page.html)
-                if challenge_reason is not None:
-                    query_trace["error"] = challenge_reason
-                    query_trace["response_disposition"] = "search_challenge"
+                query_trace["query_url"] = execution.request_url
+                query_trace["final_url"] = execution.final_url
+                if trace["query_url"] is None:
+                    trace["query_url"] = execution.request_url
+                if execution.disposition != "ok":
+                    query_trace["error"] = execution.reason or execution.disposition
+                    query_trace["response_disposition"] = execution.disposition
                     disabled_sources.add(source.name)
                     trace["source_circuit_breaks"].append(
-                        {"source": source.name, "reason": "search_challenge"}
+                        {
+                            "source": source.name,
+                            "reason": execution.disposition,
+                        }
                     )
                     continue
 
-                raw_urls = _parse_search_results(source.name, page.html)
+                raw_urls = execution.results
                 query_trace["result_count"] = len(raw_urls)
+                before_collect = len(candidates)
                 self._collect_search_candidates(
                     raw_urls,
-                    source.url,
+                    execution.request_url,
                     query_text,
                     company_name,
                     official_domain,
@@ -215,6 +293,7 @@ class CareerSearchResolver:
                     allow_unbound_ats=bool(ats_only and target_title),
                     allow_unbound_career=allow_unbound_career,
                 )
+                candidate_buckets[query_index].extend(candidates[before_collect:])
                 if len(candidates) > query_candidate_count:
                     if not exhaustive:
                         trace["stopped_reason"] = "search_candidate_found"
@@ -222,6 +301,7 @@ class CareerSearchResolver:
                 if (
                     ats_only
                     and not diversity_mode
+                    and self.search_backend is None
                     and source.name == "bing_rss"
                     and raw_urls
                 ):
@@ -239,8 +319,144 @@ class CareerSearchResolver:
             if trace["stopped_reason"] == "deadline_exhausted":
                 break
 
-        candidates.sort(key=lambda candidate: (-candidate.score, candidate.url))
-        selected = candidates[: self.max_results]
+        diversity_sweep_complete = completed_query_count == len(queries)
+        if (
+            ats_only
+            and query_diversity_first
+            and self.search_backend is None
+            and diversity_sweep_complete
+            and trace["stopped_reason"] != "deadline_exhausted"
+            and source_fetches < self.max_source_fetches
+        ):
+            rescue_trace = trace["ats_secondary_rescue"]
+            for query_index, query_text in enumerate(queries):
+                if candidate_buckets[query_index]:
+                    continue
+                if "duckduckgo_html" in disabled_sources:
+                    trace["source_circuit_skips"].append(
+                        {
+                            "source": "duckduckgo_html",
+                            "reason": SOURCE_CIRCUIT_REASON,
+                        }
+                    )
+                    continue
+                if source_fetches >= self.max_source_fetches:
+                    trace["source_fetch_budget_exhausted"] = True
+                    break
+                if fetch_budget is not None:
+                    trace["fetch_budget_checks"] += 1
+                    available, invalid = _fetch_budget_available(fetch_budget)
+                    if not available:
+                        trace["fetch_budget_unavailable"] = True
+                        trace["fetch_budget_invalid"] = invalid
+                        trace["stopped_reason"] = "deadline_exhausted"
+                        break
+
+                source = next(
+                    source
+                    for source in _search_sources(query_text)
+                    if source.name == "duckduckgo_html"
+                )
+                source_fetches += 1
+                query_trace = {
+                    "source": source.name,
+                    "query_url": source.url,
+                    "query": query_text,
+                    "candidates": [],
+                    "error": None,
+                    "result_count": 0,
+                    "rescue_attempt": True,
+                    "bucket_index": query_index,
+                    "rejection_count": 0,
+                }
+                trace["queries"].append(query_trace)
+                attempt_trace = {
+                    "bucket_index": query_index,
+                    "source": source.name,
+                    "result_count": 0,
+                    "accepted_count": 0,
+                    "rejection_count": 0,
+                }
+                rescue_trace["attempt_count"] += 1
+                rescue_trace["attempts"].append(attempt_trace)
+                try:
+                    execution = _execute_search(
+                        self.fetcher,
+                        query_text,
+                        source,
+                        self.search_backend,
+                    )
+                except FetchError as exc:
+                    error_trace = _search_fetch_error_trace(
+                        exc,
+                        self.search_backend,
+                    )
+                    query_trace["error"] = error_trace
+                    trace["error"] = trace["error"] or error_trace
+                    if exc.retryable is False:
+                        disabled_sources.add(source.name)
+                        trace["source_circuit_breaks"].append(
+                            {
+                                "source": source.name,
+                                "reason": SOURCE_CIRCUIT_REASON,
+                            }
+                        )
+                    continue
+
+                query_trace["query_url"] = execution.request_url
+                query_trace["final_url"] = execution.final_url
+                if execution.disposition != "ok":
+                    query_trace["error"] = execution.reason or execution.disposition
+                    query_trace["response_disposition"] = execution.disposition
+                    disabled_sources.add(source.name)
+                    trace["source_circuit_breaks"].append(
+                        {
+                            "source": source.name,
+                            "reason": execution.disposition,
+                        }
+                    )
+                    continue
+
+                raw_urls = execution.results
+                query_trace["result_count"] = len(raw_urls)
+                before_collect = len(candidates)
+                self._collect_search_candidates(
+                    raw_urls,
+                    execution.request_url,
+                    query_text,
+                    company_name,
+                    official_domain,
+                    candidates,
+                    seen,
+                    query_trace,
+                    ats_only=True,
+                    allow_unbound_ats=bool(target_title),
+                    allow_unbound_career=allow_unbound_career,
+                )
+                accepted_count = len(candidates) - before_collect
+                rejection_count = len(raw_urls) - accepted_count
+                candidate_buckets[query_index].extend(candidates[before_collect:])
+                query_trace["rejection_count"] = rejection_count
+                attempt_trace.update(
+                    {
+                        "result_count": len(raw_urls),
+                        "accepted_count": accepted_count,
+                        "rejection_count": rejection_count,
+                    }
+                )
+                rescue_trace["rejection_count"] += rejection_count
+                if accepted_count and not exhaustive:
+                    trace["stopped_reason"] = "search_candidate_found"
+                    break
+
+        selected = (
+            _select_bucket_fair_candidates(candidate_buckets, self.max_results)
+            if ats_only
+            else _select_ranked_candidates(candidates, self.max_results)
+        )
+        if ats_only:
+            trace["candidate_bucket_counts"] = [len(bucket) for bucket in candidate_buckets]
+            trace["candidate_selection"] = "bucket_round_robin"
         trace["candidates"] = [_candidate_trace(candidate) for candidate in selected]
         if trace["stopped_reason"] is None:
             trace["stopped_reason"] = (
@@ -304,6 +520,7 @@ def search_site_openings(
     *,
     max_results: int = 3,
     max_source_fetches: int = 2,
+    search_backend: SearchBackend | None = None,
 ) -> CareerSearchResult:
     """Return bounded same-site opening leads; callers must verify every page."""
 
@@ -318,6 +535,8 @@ def search_site_openings(
         "source_fetch_budget_exhausted": False,
         "stopped_reason": None,
     }
+    if search_backend is not None:
+        trace["search_backend"] = search_backend.public_configuration()
     if (
         not official_domain
         or not official_site
@@ -333,8 +552,8 @@ def search_site_openings(
     candidates: list[LinkCandidate] = []
     seen: set[str] = set()
     source_fetches = 0
-    for source in _search_sources(query_text):
-        if source.name == "bing_html":
+    for source in _search_sources_for_backend(query_text, search_backend):
+        if search_backend is None and source.name == "bing_html":
             continue
         if source_fetches >= max_source_fetches:
             trace["source_fetch_budget_exhausted"] = True
@@ -349,11 +568,25 @@ def search_site_openings(
         }
         trace["queries"].append(query_trace)
         try:
-            page = fetcher.fetch(source.url)
+            execution = _execute_search(
+                fetcher,
+                query_text,
+                source,
+                search_backend,
+            )
         except FetchError as error:
-            query_trace["error"] = str(error)
+            query_trace["error"] = _search_fetch_error_trace(
+                error,
+                search_backend,
+            )
             continue
-        raw_results = _parse_search_results(source.name, page.html)
+        query_trace["query_url"] = execution.request_url
+        query_trace["final_url"] = execution.final_url
+        if execution.disposition != "ok":
+            query_trace["error"] = execution.reason or execution.disposition
+            query_trace["response_disposition"] = execution.disposition
+            continue
+        raw_results = execution.results
         query_trace["result_count"] = len(raw_results)
         for result in raw_results:
             cleaned = clean_search_result_url(result.url)
@@ -370,7 +603,7 @@ def search_site_openings(
             candidate = LinkCandidate(
                 url=cleaned,
                 text=cleaned,
-                source_url=source.url,
+                source_url=execution.request_url,
                 score=100,
                 reasons=["same-site title-targeted opening lead"],
             )
@@ -536,6 +769,66 @@ def _search_sources(query_text: str) -> list[_SearchSource]:
         _SearchSource("bing_html", f"{BING_SEARCH_ENDPOINT}?{query}"),
         _SearchSource("duckduckgo_html", f"{DUCKDUCKGO_SEARCH_ENDPOINT}?{query}"),
     ]
+
+
+def _search_sources_for_backend(
+    query_text: str,
+    search_backend: SearchBackend | None,
+) -> list[_SearchSource]:
+    if search_backend is None:
+        return _search_sources(query_text)
+    public_configuration = search_backend.public_configuration()
+    profile_digest = public_configuration.get(
+        "search_backend_profile_digest",
+        "unconfigured",
+    )
+    provenance_url = (
+        f"https://search-backend.invalid/{search_backend.name}/{profile_digest}"
+    )
+    return [_SearchSource(search_backend.name, provenance_url)]
+
+
+def _execute_search(
+    fetcher: Fetcher,
+    query_text: str,
+    source: _SearchSource,
+    search_backend: SearchBackend | None,
+) -> _SearchExecution:
+    if search_backend is not None:
+        response = search_backend.search(SearchQuery(query_text), fetcher=fetcher)
+        return _SearchExecution(
+            request_url=response.request_url,
+            final_url=response.final_url,
+            results=tuple(
+                _SearchResult(hit.url, hit.title, hit.snippet)
+                for hit in response.hits
+            ),
+            disposition=response.disposition,
+            reason=response.reason,
+        )
+    page = fetcher.fetch(source.url)
+    challenge_reason = _search_challenge_reason(source.name, page.html)
+    return _SearchExecution(
+        request_url=source.url,
+        final_url=page.final_url or page.url,
+        results=tuple(_parse_search_results(source.name, page.html)),
+        disposition="challenge" if challenge_reason is not None else "ok",
+        reason=challenge_reason,
+    )
+
+
+def _search_fetch_error_trace(
+    error: FetchError,
+    search_backend: SearchBackend | None,
+):
+    if search_backend is None:
+        return str(error)
+    return {
+        "reason_code": error.reason_code or "FETCH_FAILED",
+        "status": error.status,
+        "retryable": error.retryable,
+        "transport_phase": error.transport_phase,
+    }
 
 
 def _search_challenge_reason(source: str, body: str) -> str | None:
@@ -756,6 +1049,90 @@ def build_ats_search_queries(
         f'site:eightfold.ai "{normalized_company}" jobs',
         f'site:oraclecloud.com "{normalized_company}" jobs',
     ]
+
+
+def build_ats_search_query_plan(
+    company_name: str,
+    target_title: str | None = None,
+    *,
+    max_queries: int,
+) -> tuple[_AtsSearchQuery, ...]:
+    """Plan a fixed ATS search budget without permanently starving providers.
+
+    The plan always spends its first slot on a general role query. Remaining
+    slots rotate through provider families from a stable identity-derived
+    offset. The resulting schedule is deterministic and can be replayed from
+    the normalized S1 identity alone.
+    """
+
+    if isinstance(max_queries, bool) or not isinstance(max_queries, int):
+        raise TypeError("ATS query limit must be an integer")
+    if max_queries <= 0:
+        return ()
+
+    normalized_company = " ".join(_identity_tokens(company_name)) or company_name
+    normalized_title = " ".join((target_title or "").replace('"', " ").split())
+    general_query = (
+        f'"{normalized_company}" "{normalized_title}" jobs'
+        if normalized_title
+        else f'"{normalized_company}" careers jobs'
+    )
+    provider_count = min(max_queries - 1, len(_ATS_PROVIDER_FAMILIES))
+    rotation_start = _ats_rotation_start(company_name, target_title)
+    plan = [_AtsSearchQuery(general_query, None)]
+    for offset in range(provider_count):
+        family_index = (rotation_start + offset) % len(_ATS_PROVIDER_FAMILIES)
+        provider_family, domain = _ATS_PROVIDER_FAMILIES[family_index]
+        provider_query = (
+            f'site:{domain} "{normalized_company}" "{normalized_title}"'
+            if normalized_title
+            else f'site:{domain} "{normalized_company}" jobs'
+        )
+        plan.append(_AtsSearchQuery(provider_query, provider_family))
+    return tuple(plan)
+
+
+def _ats_rotation_start(company_name: str, target_title: str | None) -> int:
+    normalized_company = " ".join(_identity_tokens(company_name)) or company_name.casefold().strip()
+    normalized_title = " ".join((target_title or "").replace('"', " ").casefold().split())
+    identity = f"{normalized_company}\x00{normalized_title}".encode("utf-8")
+    digest = hashlib.sha256(identity).digest()
+    return int.from_bytes(digest[:8], "big") % len(_ATS_PROVIDER_FAMILIES)
+
+
+def _select_ranked_candidates(
+    candidates: list[LinkCandidate],
+    limit: int,
+) -> list[LinkCandidate]:
+    return sorted(candidates, key=lambda candidate: (-candidate.score, candidate.url))[:limit]
+
+
+def _select_bucket_fair_candidates(
+    buckets: list[list[LinkCandidate]],
+    limit: int,
+) -> list[LinkCandidate]:
+    """Use deterministic round-robin selection so one SERP cannot monopolize C."""
+
+    if limit <= 0:
+        return []
+    ranked_buckets = [
+        sorted(bucket, key=lambda candidate: (-candidate.score, candidate.url))
+        for bucket in buckets
+    ]
+    selected: list[LinkCandidate] = []
+    rank = 0
+    while len(selected) < limit:
+        added = False
+        for bucket in ranked_buckets:
+            if rank < len(bucket):
+                selected.append(bucket[rank])
+                added = True
+                if len(selected) >= limit:
+                    break
+        if not added:
+            break
+        rank += 1
+    return selected
 
 
 def _identity_tokens(company_name: str, official_domain: str = "") -> list[str]:

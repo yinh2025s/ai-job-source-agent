@@ -60,6 +60,21 @@ class BlockedWebsiteResolver(FakeWebsiteResolver):
         }
 
 
+class ProvisionalWebsiteResolver(FakeWebsiteResolver):
+    def resolve_with_navigation_evidence(self, *args, **kwargs):
+        return None, {
+            "provisional_official_website": {
+                "url": "https://group.example",
+                "evidence_source": "linkedin_official_website",
+                "reason_code": "downstream_hiring_relationship_required",
+                "homepage_verified": True,
+            }
+        }, HomepageNavigationEvidence(
+            homepage_url="https://group.example",
+            candidate_urls=("https://group.example/careers",),
+        )
+
+
 class StoredEvidenceResolver(FakeWebsiteResolver):
     def resolve_with_navigation_evidence(
         self,
@@ -570,6 +585,22 @@ class UpstreamStageTests(unittest.TestCase):
         self.assertEqual(execution.result.reason_code, "WEBSITE_NOT_RESOLVED")
         self.assertEqual(execution.result.output_count, 0)
         self.assertEqual(execution.updates["company_website_url"], "")
+
+    def test_s2_retains_provisional_official_site_without_publishing_website(self):
+        context = PipelineContext.from_company(CompanyInput(company_name="Acme"))
+
+        execution = WebsiteResolutionStage(ProvisionalWebsiteResolver(None)).run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(execution.result.reason_code, "WEBSITE_NOT_RESOLVED")
+        self.assertEqual(execution.updates["company_website_url"], "")
+        evidence = execution.updates["provisional_website_evidence"]
+        self.assertEqual(evidence.url, "https://group.example")
+        self.assertEqual(evidence.source_company_name, "Acme")
+        self.assertEqual(
+            execution.updates["homepage_navigation_evidence"].candidate_urls,
+            ("https://group.example/careers",),
+        )
 
     def test_s2_projects_retained_typed_resolution_failure(self):
         context = PipelineContext.from_company(

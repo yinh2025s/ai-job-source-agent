@@ -5,6 +5,7 @@ import json
 import re
 from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
 
+from ..provider_candidates import ProviderPublishedEmployerEvidence
 from ..web import FetchError, Page
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
@@ -48,9 +49,13 @@ class EightfoldAdapter:
         if parsed is None or not _CAREERS_PATH.fullmatch(parsed.path):
             return None
         state = _smart_apply_state(page.html)
-        if not _is_eightfold_state(state):
+        pcsx_state = _pcsx_state(page.html)
+        if _is_eightfold_state(state):
+            domain = str(state.get("domain") or "").strip().casefold()
+        elif _is_pcsx_state(pcsx_state):
+            domain = str(pcsx_state.get("domain") or "").strip().casefold()
+        else:
             return None
-        domain = str(state.get("domain") or "").strip().casefold()
         return JobBoard(
             url=f"https://{(parsed.hostname or '').casefold()}/careers",
             provider=self.name,
@@ -74,6 +79,7 @@ class EightfoldAdapter:
             return _unsupported(board, "Eightfold board redirected outside the tenant", shell.final_url or shell.url)
 
         state = _smart_apply_state(shell.html)
+        pcsx_state = _pcsx_state(shell.html)
         state_domain = str(state.get("domain") or "").strip().casefold()
         if not state:
             shell_evidence = _non_production_shell_evidence(shell.html, host, domain)
@@ -88,6 +94,19 @@ class EightfoldAdapter:
                     inventory_evidence="missing_smart_apply_data",
                     production_tenant_verified=False,
                     canonical_detail_verified=False,
+                )
+            if _is_pcsx_state(pcsx_state):
+                return self._list_pcsx_jobs(
+                    fetcher,
+                    board,
+                    query,
+                    shell,
+                    search_url,
+                    board_urls,
+                    api_urls,
+                    host,
+                    domain,
+                    pcsx_state,
                 )
             return _unsupported(
                 board,
@@ -191,6 +210,120 @@ class EightfoldAdapter:
             },
         )
 
+    def _list_pcsx_jobs(
+        self,
+        fetcher,
+        board: JobBoard,
+        query: JobQuery,
+        shell: Page,
+        search_url: str,
+        board_urls: list[str],
+        api_urls: list[str],
+        host: str,
+        identifier: str,
+        state: dict,
+    ) -> AdapterResult:
+        state_domain = str(state.get("domain") or "").strip().casefold()
+        active_domain = _resolved_state_domain(host, identifier, state_domain)
+        state_identity_evidence = "board_identifier"
+        if active_domain is None:
+            if host.endswith(".eightfold.ai"):
+                return _unsupported(
+                    board,
+                    "Eightfold PCS X shell does not verify the hosted tenant",
+                    variant="pcsx_public_search_v1",
+                    board_urls=board_urls,
+                    response_source=shell.source,
+                )
+            active_domain = state_domain
+            state_identity_evidence = "same_origin_pcsx_shell"
+
+        candidates: list[JobCandidate] = []
+        employer_evidence: list[ProviderPublishedEmployerEvidence] = []
+        seen: set[str] = set()
+        rejected_urls: list[str] = []
+        seen_record_ids: set[str] = set()
+        total_found: int | None = None
+        pages_fetched = 0
+        inventory_complete = False
+        target = _normalized_title(query.title)
+
+        for page_index in range(_MAX_PAGES):
+            start = page_index * _PAGE_SIZE
+            api_url = _pcsx_api_url(board.url, active_domain, query, start)
+            api_urls.append(api_url)
+            try:
+                response = fetcher.fetch(
+                    api_url,
+                    headers={"Accept": "application/json", "Referer": search_url},
+                )
+            except (FetchError, OSError, TimeoutError) as error:
+                if candidates:
+                    break
+                return _fetch_failure(board, board_urls, api_urls, error)
+            if not _same_pcsx_api(response.final_url or response.url, host):
+                return _unsupported(
+                    board,
+                    "Eightfold PCS X API redirected outside the tenant",
+                    response.final_url or response.url,
+                )
+            try:
+                payload = json.loads(response.html)
+            except (json.JSONDecodeError, TypeError):
+                return _invalid(board, board_urls, api_urls, "invalid Eightfold PCS X response")
+            inventory = _pcsx_inventory(payload)
+            if inventory is None:
+                return _invalid(board, board_urls, api_urls, "missing Eightfold PCS X inventory")
+
+            records, response_count = inventory
+            if not _pcsx_record_ids_are_unique(records, seen_record_ids):
+                return _invalid(board, board_urls, api_urls, "duplicate Eightfold PCS X job ID")
+            pages_fetched += 1
+            total_found = response_count if total_found is None else total_found
+            if response_count != total_found:
+                return _invalid(board, board_urls, api_urls, "unstable Eightfold PCS X inventory count")
+            _append_pcsx_candidates(
+                records,
+                board,
+                api_url,
+                candidates,
+                employer_evidence,
+                seen,
+                rejected_urls,
+            )
+            if start + len(records) >= total_found:
+                inventory_complete = True
+                break
+            if target and any(_normalized_title(item.title) == target for item in candidates):
+                break
+            if not records:
+                return _invalid(board, board_urls, api_urls, "truncated Eightfold PCS X inventory")
+
+        return AdapterResult(
+            provider=self.name,
+            board=board,
+            candidates=candidates,
+            reason_code=None if candidates else "EMPTY_PROVIDER_RESPONSE",
+            inventory_scope="title_filtered" if query.title else "full",
+            inventory_complete=inventory_complete,
+            employer_evidence=tuple(employer_evidence),
+            trace={
+                "adapter": self.name,
+                "variant": "pcsx_public_search_v1",
+                "board_urls": board_urls,
+                "api_urls": api_urls,
+                "response_source": shell.source,
+                "state_identity_evidence": state_identity_evidence,
+                "candidate_count": len(candidates),
+                "employer_evidence_count": len(employer_evidence),
+                "pages_fetched": pages_fetched,
+                "total_found": total_found,
+                "inventory_scope": "title_filtered" if query.title else "full",
+                "inventory_complete": inventory_complete,
+                "rejected_job_urls": list(dict.fromkeys(rejected_urls)),
+            },
+        )
+
 
 class _SmartApplyParser(HTMLParser):
     def __init__(self) -> None:
@@ -255,6 +388,17 @@ def _smart_apply_state(html: str) -> dict:
     return value if isinstance(value, dict) else {}
 
 
+def _pcsx_state(html: str) -> dict:
+    parser = _ShellEvidenceParser()
+    try:
+        parser.feed((html or "")[: _MAX_STATE_CHARS * 2])
+        body = "".join(parser.code_parts.get("pcsx-data", []))
+        value = json.loads(body) if body else None
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
 def _non_production_shell_evidence(html: str, host: str, identifier: str) -> list[str]:
     parser = _ShellEvidenceParser()
     try:
@@ -306,6 +450,64 @@ def _is_inventory(state) -> bool:
     )
 
 
+def _is_pcsx_state(state: dict) -> bool:
+    if not isinstance(state, dict) or not _DOMAIN.fullmatch(str(state.get("domain") or "")):
+        return False
+    configs = state.get("configs")
+    pcsx_config = configs.get("pcsxConfig") if isinstance(configs, dict) else None
+    search_config = pcsx_config.get("searchConfig") if isinstance(pcsx_config, dict) else None
+    return bool(
+        isinstance(pcsx_config, dict)
+        and pcsx_config.get("enabled") is True
+        and isinstance(search_config, dict)
+        and isinstance(search_config.get("basePositionFq"), str)
+        and search_config.get("basePositionFq", "").strip()
+    )
+
+
+def _pcsx_inventory(payload) -> tuple[list, int] | None:
+    if (
+        not isinstance(payload, dict)
+        or _nonnegative_int(payload.get("status")) != 200
+        or not _pcsx_error_is_empty(payload.get("error"))
+    ):
+        return None
+    data = payload.get("data")
+    if not isinstance(data, dict):
+        return None
+    records = data.get("positions")
+    count = _nonnegative_int(data.get("count"))
+    if not isinstance(records, list) or count is None or len(records) > _PAGE_SIZE:
+        return None
+    return records, count
+
+
+def _pcsx_error_is_empty(value) -> bool:
+    if value in (None, ""):
+        return True
+    return bool(
+        isinstance(value, dict)
+        and set(value) == {"message", "body"}
+        and value.get("message") == ""
+        and value.get("body") == ""
+    )
+
+
+def _pcsx_record_ids_are_unique(records: list, seen: set[str]) -> bool:
+    page_ids: set[str] = set()
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        job_id = str(record.get("id") or "").strip()
+        if not job_id:
+            continue
+        if job_id in seen or job_id in page_ids:
+            return False
+        page_ids.add(job_id)
+    seen.update(page_ids)
+    return True
+
+
 def _append_candidates(records, board, candidates, seen, rejected_urls) -> None:
     if not isinstance(records, list):
         return
@@ -321,12 +523,64 @@ def _append_candidates(records, board, candidates, seen, rejected_urls) -> None:
         candidates.append(candidate)
 
 
+def _append_pcsx_candidates(
+    records,
+    board,
+    api_url,
+    candidates,
+    employer_evidence,
+    seen,
+    rejected_urls,
+) -> None:
+    if not isinstance(records, list):
+        return
+    for record in records:
+        candidate = _candidate(record, board)
+        if candidate is None:
+            if isinstance(record, dict):
+                rejected_urls.append(str(record.get("positionUrl") or record.get("id") or ""))
+            continue
+        if candidate.url in seen:
+            continue
+        seen.add(candidate.url)
+        candidates.append(candidate)
+        names = record.get("efcustomTextOperatingcompany") if isinstance(record, dict) else None
+        if not isinstance(names, list):
+            continue
+        normalized_names = tuple(
+            dict.fromkeys(
+                str(name).strip()
+                for name in names
+                if isinstance(name, str) and str(name).strip()
+            )
+        )
+        if len(normalized_names) != 1:
+            continue
+        try:
+            employer_evidence.append(
+                ProviderPublishedEmployerEvidence(
+                    employer_name=normalized_names[0],
+                    descriptor_terms=(),
+                    evidence_url=api_url,
+                    opening_url=candidate.url,
+                    extraction_method="eightfold_operating_company",
+                )
+            )
+        except (TypeError, ValueError):
+            continue
+
+
 def _candidate(record, board: JobBoard) -> JobCandidate | None:
     if not isinstance(record, dict):
         return None
     title = str(record.get("posting_name") or record.get("name") or "").strip()
     job_id = str(record.get("id") or "").strip()
-    detail_url = str(record.get("canonicalPositionUrl") or "").strip()
+    detail_url = str(record.get("canonicalPositionUrl") or record.get("positionUrl") or "").strip()
+    if detail_url.startswith("/"):
+        board_url = _safe_url(board.url)
+        if board_url is None:
+            return None
+        detail_url = urlunparse(board_url._replace(path=detail_url, query="", fragment=""))
     parsed = _safe_url(detail_url)
     match = _DETAIL_PATH.fullmatch(parsed.path) if parsed else None
     if (
@@ -346,8 +600,14 @@ def _candidate(record, board: JobBoard) -> JobCandidate | None:
         location=location or None,
         raw={
             "job_id": job_id,
-            "ats_job_id": record.get("ats_job_id"),
+            "ats_job_id": record.get("ats_job_id") or record.get("atsJobId"),
             "department": record.get("department"),
+            "hiring_organization_name": (
+                record.get("efcustomTextOperatingcompany", [None])[0]
+                if isinstance(record.get("efcustomTextOperatingcompany"), list)
+                and len(record.get("efcustomTextOperatingcompany")) == 1
+                else None
+            ),
         },
     )
 
@@ -370,6 +630,17 @@ def _api_url(board_url: str, domain: str, query: JobQuery, start: int) -> str:
     if query.location:
         params.append(("location", query.location.strip()))
     return urlunparse(parsed._replace(path="/api/apply/v2/jobs", query=urlencode(params), fragment=""))
+
+
+def _pcsx_api_url(board_url: str, domain: str, query: JobQuery, start: int) -> str:
+    parsed = urlparse(board_url)
+    params = [("domain", domain)]
+    if query.title:
+        params.append(("query", query.title.strip()))
+    if query.location:
+        params.append(("location", query.location.strip()))
+    params.append(("start", str(start)))
+    return urlunparse(parsed._replace(path="/api/pcsx/search", query=urlencode(params), fragment=""))
 
 
 def _board_identity(board: JobBoard) -> tuple[str, str] | None:
@@ -430,6 +701,11 @@ def _same_api(url: str, host: str) -> bool:
     return bool(parsed and parsed.hostname.casefold() == host and parsed.path == "/api/apply/v2/jobs")
 
 
+def _same_pcsx_api(url: str, host: str) -> bool:
+    parsed = _safe_url(url)
+    return bool(parsed and parsed.hostname.casefold() == host and parsed.path == "/api/pcsx/search")
+
+
 def _normalized_title(value: str | None) -> str:
     return " ".join((value or "").casefold().split())
 
@@ -473,6 +749,7 @@ def _invalid(board, board_urls, api_urls, error):
         provider="eightfold",
         board=board,
         reason_code="INVALID_STRUCTURED_DATA",
+        inventory_complete=False,
         trace={"adapter": "eightfold", "board_urls": board_urls, "api_urls": api_urls, "error": error},
     )
 
