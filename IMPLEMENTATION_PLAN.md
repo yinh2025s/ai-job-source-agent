@@ -23,7 +23,1335 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构复盘（2026-07-21，`.212`）
+## 当前架构进度（2026-07-27，`.273` backend release closure）
+
+### v273 current public backend diagnostic cohort
+
+Two new public S1-only pools were mechanically filtered to 30 companies with
+zero company/job-ID overlap against prior candidate pools and diagnostic
+cohorts. Frozen `.270` completed 30/30 live and 30/30 replay with 26 Websites,
+22 Careers, 18 verified Job Lists and 13 S7 Exact openings.
+
+All 13 published openings pass company, provider, tenant, title, location and
+canonical-URL audit. One additional Tessera Labs Ashby candidate was correctly
+rejected because the provider relationship was unverified. Wrong URL, wrong
+location, cross-company and cross-tenant publication are zero.
+
+The 17 non-Exact records split into thirteen causal paths. No path covers at
+least three independent companies with expected recovery of three, so `.273`
+selects no implementation. Full release gates pass 2834 tests (4 skipped),
+25/25 provider, 6/6 resolver and 48-adapter architecture validation. This is
+the final new cohort in the release cycle; the next action is grouped commit
+and push, not another live batch.
+
+阶段 A：
+
+- `docs/COORDINATOR_V273_DIAGNOSTIC_COHORT_PHASE_A.md`
+
+阶段 C：
+
+- `docs/COORDINATOR_V273_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+### v271 residual backend diagnostic cohort
+
+All 18 remaining unused companies from the frozen v252/v254/v256/v257/v260
+S1-only public pools are frozen as a new development diagnostic cohort. They
+have zero company and LinkedIn job-ID overlap with v245-v265 diagnostics, and
+selection did not inspect S2-S7 output. Frozen `.270` runs serially with fresh
+checkpoint, snapshot, evidence, completion and replay roots.
+
+阶段 A：
+
+- `docs/COORDINATOR_V271_RESIDUAL_DIAGNOSTIC_COHORT_PHASE_A.md`
+
+`.271` completed 18/18 live records and 18/18 same-version replay with zero
+mismatch, fixture gap or tape divergence. Results are 15 Website, 9 Career, 7
+verified Job Lists and 5 S7 Exact openings; all Exact URLs pass company,
+provider, tenant, title and location audit.
+
+No implementation cluster qualifies. The five Career failures split across
+regional navigation, identity rejection, 403, TLS, unknown topology and one
+static Angular portal. The three opening-incomplete records are separate
+Kering, Orion bespoke-search and Jobvite contracts. Next work is read-only
+historical development-artifact mining for additional Jobvite, static-shell or
+verified regional-handoff examples.
+
+阶段 C：
+
+- `docs/COORDINATOR_V271_RESIDUAL_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+### v272 Jobvite qualification
+
+Historical LHH evidence was combined with The IMA Group and Samtec for a
+three-record focused baseline. The IMA Group retained a verified Jobvite board,
+Samtec's handoff did not reproduce in this run, and LHH produced an unrelated
+SmartRecruiters tenant that S7 correctly rejected. Replay reproduced 3/3.
+
+Only two credible Jobvite company relationships remain, so the three-company
+implementation threshold is not met and no adapter is selected.
+
+阶段 C：
+
+- `docs/COORDINATOR_V272_JOBVITE_QUALIFICATION_PHASE_C.md`
+
+### v270 prefixed API-key redaction
+
+`.269` passed all HMG-specific behavior, identity, replay and ticket audits,
+but final artifact review found a `mapsApiKey` value in a homepage snapshot and
+scoped tape. `.270` adds generic canonical `*apiKey` sensitivity and bounded
+HTML/JavaScript field redaction while preserving `apiKeyEnabled`.
+
+Final isolated `.270` live produced 3/3 verified Job Lists, one safe S7 Exact
+and two evidence-backed no-match outcomes. Scoped replay reproduced 3/3 with
+zero mismatch, fixture gap or tape divergence. Combined snapshot/replay audits
+found zero raw HMG URL/body tickets and zero raw prefixed API keys.
+
+The focused 124 tests, provider benchmark 25/25, resolver benchmark 6/6 and
+48-adapter architecture gate pass. The HMG provider cluster is closed at
+`.270`; full-suite testing remains a release integration gate.
+
+阶段 A / C：
+
+- `docs/COORDINATOR_V270_PREFIXED_API_KEY_REDACTION_PHASE_A.md`
+- `docs/COORDINATOR_V270_PREFIXED_API_KEY_REDACTION_PHASE_C.md`
+
+### v269 HMG search-entry request identity
+
+`.268` live recovered the expected three business outcomes, but automatic
+replay diverged at Kavaliro's search-entry POST because its rotating `t` value
+remained semantic in the request-body fingerprint. `.269` extends redaction
+only to the exact HTTPS `/index.smpl`, `arg=jb_search_results`, `action=1`
+form contract. Generic `t` forms remain unchanged.
+
+Final isolated `.269` live produced 3/3 verified Job Lists, one safe S7 Exact
+and two evidence-backed no-match outcomes. Scoped replay reproduced 3/3 with
+zero mismatch, fixture gap or tape divergence. URL, HTML form and inventory
+refresh ticket audits found zero raw HMG tickets.
+
+The focused 122 tests, provider benchmark 25/25, resolver benchmark 6/6 and
+48-adapter architecture gate pass. Follow-up review found the unrelated
+prefixed API-key artifact leak, so `.269` remains HMG-specific evidence and
+`.270` owns final privacy closure. Full-suite testing remains a release
+integration gate.
+
+阶段 A / C：
+
+- `docs/COORDINATOR_V269_HMG_SEARCH_ENTRY_IDENTITY_PHASE_A.md`
+- `docs/COORDINATOR_V269_HMG_SEARCH_ENTRY_IDENTITY_PHASE_C.md`
+
+### v268 HMG tape body redaction
+
+`.267` passed behavior, identity and URL-metadata privacy gates, but read-only
+review found raw HMG validation tickets inside scoped replay `page.html`
+bodies. `.268` adds provider-contract-aware body sanitation with deterministic
+shape-preserving placeholders so sanitized multi-page HMG replay remains
+functional. Generic `h/t` fields are unchanged.
+
+阶段 A：
+
+- `docs/COORDINATOR_V268_HALEY_TAPE_BODY_REDACTION_PHASE_A.md`
+- `docs/COORDINATOR_V268_HALEY_TAPE_BODY_REDACTION_PHASE_C.md`
+
+### v267 review hardening
+
+`.266` focused live established the provider cluster, but post-implementation
+review found that exact-title early stop did not include location. `.267`
+closes that defect: HMG pagination continues when the same title is first
+observed in the wrong city, canonical openings require provider-published
+`POST_SEO_URL` continuity, explicitly archived records are excluded and HMG
+validation tickets are redacted from sanitized request identity.
+
+Final isolated live `/private/tmp/v267-haley-focused-run2` produced 3/3 verified
+Job Lists, one S7 Exact and two evidence-backed `OPENING_NOT_FOUND` outcomes.
+All three scoped replays reproduced with zero mismatch or fixture gap. The
+Kavaliro Exact passed company, title, location, provider, tenant and canonical
+URL audit. Across 54 HMG URL fields in snapshots, trace and replay artifacts,
+raw ticket leakage was zero.
+
+The related 103 tests, provider benchmark 25/25, resolver benchmark 6/6 and
+48-adapter architecture gate passed. Follow-up review then found raw tickets in
+replay page bodies; `.267` remains behavior evidence while `.268` owns final
+privacy closure. This focused round intentionally did not rerun the full test
+suite; that remains a release integration gate.
+
+阶段 A / C：
+
+- `docs/COORDINATOR_V267_HALEY_REVIEW_HARDENING_PHASE_A.md`
+- `docs/COORDINATOR_V267_HALEY_REVIEW_HARDENING_PHASE_C.md`
+
+### v266 Haley Marketing provider cluster
+
+`.265` 在冻结 `.261` 上完成 30/30 live 与 30/30 replay：26 Website、24 Career、
+20 verified Job List、5 S7 Exact，五条 Exact 的 URL 与身份链均进入独立审计。
+
+跨 `.263` 与 `.265` 出现首个满足实现门槛的新 provider family：
+Madison-Davis、Top Prospect Group、Kavaliro 的官方 board 都由 Haley Marketing
+HMG Job Board 提供，并共享 `hmg-jb.css`、`combobo.js`、
+`JBSearchList_form`、`/json/index.smpl` 和 `/jb/{slug}/{POST_ID}` contract。
+generic S6 只能看到页面壳，无法读取动态库存。
+
+2026-07-27 focused anonymous probe 已确认 Kavaliro 的 Jacksonville
+`Quality Engineer` 仍在官方库存；Top Prospect Group 的 `Business Analyst` 和
+Madison-Davis 的 `Recruiter` 当前 title-filtered inventory 均为完整 0。`.266`
+因此只实现一个 page-aware `haley_marketing` adapter，预期恢复 1 Exact 和 2
+evidence-backed no-match，绝不为已消失岗位猜 URL。S5 relationship 与 S7
+company/provider/tenant/title/location gate 不变。
+
+阶段 A：
+
+- `docs/COORDINATOR_V266_HALEY_MARKETING_PHASE_A.md`
+
+`.266` 已完成 focused evidence gate。最终隔离 run3 为 3/3 Website、3/3 Career、
+3/3 verified Job List：Kavaliro exact 命中官方 Jacksonville `Quality Engineer`
+opening `14172225`；Madison-Davis 与 Top Prospect Group 的官方 title-filtered
+inventory 均为完整 0，因此诚实返回 `OPENING_NOT_FOUND`。三条 scoped replay
+全部 reproduced，0 mismatch、0 fixture gap；Exact 安全错误为 0。
+
+`.266` 后续 review 发现 exact-title early stop 未包含 location，因此它只保留为
+因果证据，最终 provider closure 由 `.267` Phase C 取代。
+
+本轮通过 49 个 focused provider/job-board/registry/checkpoint tests、25/25
+provider benchmark、6/6 resolver benchmark 和 48-adapter architecture gate。
+未运行全量测试；它保留为 release integration gate。
+
+阶段 C：
+
+- `docs/COORDINATOR_V266_HALEY_MARKETING_PHASE_C.md`
+
+### v261 Career transport reservation closure
+
+`.261` 在不增加 24 次总 dispatch 上限的前提下，为 evidence-backed 后续阶段保留
+最多 6 次请求。`blind_ats` 被明确标记为 speculative；它触及保留边界时产生
+非 retryable 的 `SPECULATIVE_ROUTE_BUDGET_RESERVED` trace，不再伪装成全局
+`FETCH_BUDGET_EXHAUSTED`。保留额度不是独占池，普通官网、搜索和 provider 阶段
+都可以使用，因此不会浪费未使用容量。
+
+The Naked Market、Motorola Solutions、Daedalus、DataAnnotation 的 focused live
+中，blind ATS 从 11–14 次降到 5–8 次，四条的 Career search 都实际获得 6 次
+dispatch，并且 4/4 automatic replay 通过。四条最终均从错误预算终态变为
+`CAREER_PAGE_NOT_FOUND`，但仍然是 0 Career / 0 Job List / 0 Exact。
+
+因此预算饥饿簇已经关闭，召回问题没有关闭。下一轮必须按新的共同触发条件调查：
+verified Website 后，legacy Career search 完成 6 条 query 但产生 0 个 valid
+candidate。不得靠扩大总预算、恢复 blind ATS 消耗或再次修改终态标签来包装进展。
+
+Phase C 后的三线只读审计进一步证明这四条已经分裂：The Naked Market 的 capture
+没有公开入口；Motorola 是 queryful homepage + `en_xp` locale 单例；Daedalus 是
+`/employment/<numeric-id>` 第一方库存单例；DataAnnotation 是 singular Career +
+通用 Apply handoff 单例且不能证明 opening-specific URL。Bing RSS 的 120 条结果
+没有正确 Career URL，Bing HTML challenge 漏分类和 S5 attempted-but-not-run
+投影都只改善 observability，预计 Exact/Career 恢复为 0，不进入 recall 主线。
+
+下一步冻结新的 backend diagnostic cohort，优先寻找上述 locale、employment
+numeric detail、generic Apply 等路径的第三个独立例子，或新的三公司 provider /
+inventory contract。继续禁止按当前三家公司加特例。
+
+`.262` 已从 `.260` 的 S1-only public pool 机械冻结 30 条从未执行 S2-S7 的记录：
+30 家独立公司、六个岗位族各 5 条、与 589 个已知 development job ID 零重叠。
+选择只按原始顺序、known-ID、重复公司和 role quota，不读取 Website/ATS/终态。
+下一步在冻结 `.261` 上串行运行独立 live/snapshot/replay roots，期间不修改代码。
+
+阶段 A：
+
+- `docs/COORDINATOR_V262_DIAGNOSTIC_COHORT_PHASE_A.md`
+
+`.262` frozen live 已完成：27 Website / 23 Career / 18 verified Job List /
+4 S7 Exact。MrBeast、Meta、Helion、Yamaha 四条 Exact 全部通过 company、
+hiring entity、provider/tenant、title、location、current inventory 和 canonical
+URL 审计，安全错误为 0。
+
+自动 replay 未通过：Vertisystem live 在 S6 执行 Career GET、三个 JS asset 和
+WP Job Manager POST；replay 却预先 hydrate `replay_safe=False` runtime board，
+跳过前四次请求，导致 tape 剩余 4 条并 fail closed。历史审计确认只有 Cass
+County Government 与 Vertisystem 两家公司实际出现同一 producer-request 跳过
+和 unconsumed tape。NevadaNano、D&B Engineers and Architects 以及三个
+Workable numeric controls 都能完整 replay。当前预期恢复不足三条，因此保持
+open risk，不进入实现；禁止忽略 unconsumed tape 或强行把 runtime board 改为
+replay-safe。
+
+本批其他失败仍未形成三公司 recall 簇：Bullhorn 2 家、visible-card parser 2 家、
+fetch-failure projection 2 家；Airbnb、UNIQLO、HP 的 portfolio incomplete 分别
+属于库存分页、多官方 board completeness 和未授权候选污染。
+
+阶段 C：
+
+- `docs/COORDINATOR_V262_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+`.263` 已从剩余未执行的 v260 S1-only public pool 冻结 30 条：30 家独立公司、
+30 个唯一 LinkedIn job ID，并与所有先前 diagnostic input job ID 零重叠。选择
+只按 prior-ID exclusion、每公司首条和确定性公司顺序，不读取 S2-S7 结果。
+冻结 `.261` 将在 `/private/tmp/v263-diagnostic-run1` 串行运行，继续寻找满足
+三家公司、同触发、同代码路径且预期至少恢复三条的后端通用簇。
+
+阶段 A：
+
+- `docs/COORDINATOR_V263_DIAGNOSTIC_COHORT_PHASE_A.md`
+
+`.263` 已在冻结 `.261` 上完成：30 Website / 25 Career / 18 verified Job List /
+10 S7 Exact，完整 replay 30/30 reproduced，0 mismatch、0 fixture gap、0 extra
+request、0 unconsumed tape。十条 Exact 的公司、招聘主体、provider/tenant、
+title、location 和 canonical URL 全部正确，安全错误为 0。
+
+失败必须继续拆因果：LinkedIn 与 Tremendous 的 relationship proof 只有两家；
+Teak Isle 的 metro/city ontology 是单例；CELSIUS 的 Workable completeness 是
+单例；四条 Job Board 和五条 Opening incomplete 分属不同协议。Peachtree 的
+第 3 页 snapshot 明确含目标 Warner Robins opening，但 generic parser 输出 0，
+与历史 ProKids 同类，严格独立公司数仍为 2。没有任何簇同时满足三家公司和
+expected recovery >=3，因此 `.263` 不修改产品代码。
+
+阶段 C：
+
+- `docs/COORDINATOR_V263_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+`.264` 已从 v252/v254/v256/v257/v260 未使用 S1-only public records 中冻结新的
+30 家公司，排除所有先前 diagnostic company name 和 LinkedIn job ID。六个
+岗位族各 5 条，不读取 S2-S7 输出；冻结 `.261` 将在独立目录串行运行。
+
+阶段 A：
+
+- `docs/COORDINATOR_V264_DIAGNOSTIC_COHORT_PHASE_A.md`
+
+`.264` 已完成：27 Website / 20 Career / 18 verified Job List / 7 S7 Exact，
+完整 replay 30/30。七条 Exact 安全审计全部正确；Arkema 是 Beaumont, TX 的
+正确岗位，错误 URL、错误地点、跨公司和跨 tenant 均为 0。
+
+跨批次只有两个表面簇达到三家公司：Cantor、HELMUT LANG、Garage Beer 的
+official-host 403 预期恢复 0；Arta、LinkedIn、Tremendous 的 relationship proof
+缺失最多恢复 2，且不能放宽 S7。其他 transport/provider/parser 原因仍为 1–2
+家公司，因此 `.264` 不进入实现。
+
+阶段 C：
+
+- `docs/COORDINATOR_V264_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+`.265` 已冻结新的 30 家、30 个 job ID，和所有先前 diagnostic input 在公司名
+与 job ID 上均零重叠。输入来自未使用 S1-only public records，覆盖 13 个岗位
+族，选择不读取 S2-S7 输出。
+
+阶段 A：
+
+- `docs/COORDINATOR_V265_DIAGNOSTIC_COHORT_PHASE_A.md`
+
+阶段 C：
+
+- `docs/COORDINATOR_V265_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+完整报告：
+
+- `docs/COORDINATOR_V261_CAREER_TRANSPORT_RESERVATION_PHASE_A.md`
+- `docs/COORDINATOR_V261_CAREER_TRANSPORT_RESERVATION_PHASE_C.md`
+
+### v260 diagnostic closure and v261 candidate
+
+冻结 `.259` 的第十一批 backend cohort 得到 29 Website / 21 Career /
+15 verified Job List / 5 S7 Exact。五条 Exact 均通过完整安全审计；MrBeast URL
+正确但顶层 `status/job_list` 投影不自洽，作为 singleton 保留。全量 replay
+30/30 reproduced，0 mismatch、0 fixture gap、0 budget recovery。
+
+唯一通过实现门槛的簇是 The Naked Market、Motorola Solutions、Daedalus、
+DataAnnotation 四家公司 Career transport starvation：`blind_ats_candidates`
+消耗 11–14 个 dispatch，使后续 Career search 无法执行。该调度簇已由 `.261`
+关闭；四条都获得 6 次 search dispatch，但零有效候选，因此转入新的
+candidate-production 因果簇，不能宣称 Exact 或召回提升。
+
+完整报告：
+
+- `docs/COORDINATOR_V260_DIAGNOSTIC_COHORT_PHASE_A.md`
+- `docs/COORDINATOR_V260_DIAGNOSTIC_COHORT_PHASE_C.md`
+- `docs/COORDINATOR_V261_CAREER_TRANSPORT_RESERVATION_PHASE_A.md`
+- `docs/COORDINATOR_V261_CAREER_TRANSPORT_RESERVATION_PHASE_C.md`
+
+### v260 development diagnostic cohort
+
+下一批 backend-only development input 已冻结：30 条、30 家独立公司、六个新 role
+family，与 581 个公开 development job ID 零重叠。运行固定使用 `.259`、
+`stage_v1`、串行 live、独立 checkpoint/snapshot/replay roots，期间不修改代码。
+
+本批主要寻找三个仍开放方向的第三方证据：authorized complete no-match portfolio
+污染、opening-level intermediary 假阳性，以及新的三公司 provider/inventory
+contract。任何恢复不足三条的表面簇继续拒绝实现。
+
+阶段 A：
+
+- `docs/COORDINATOR_V260_DIAGNOSTIC_COHORT_PHASE_A.md`
+
+### v259 location-aware snapshot redaction
+
+ReachMobi、Team Royal、ADDMAN、iClassPro、San Diego Padres、Mills Automotive
+Group、Tim Moran Hyundai 共七家公司、BambooHR/Paylocity/Hireology 三个 provider
+满足同一 replay defect：response body 的地理 `state` 被共享 query credential
+policy 当成 OAuth state，live/replay location 因此变化。
+
+`.259` 保持 query `state` 与未知 body `state` 默认敏感，只在结构化
+location/address object 同时存在地理 sibling 且没有 auth context 时保留公开州名。
+严格 embedded JSON 走同一 classifier；replay hydration 不再把旧的地理 placeholder
+改成 credential shape。没有修改 provider、candidate、tenant、title/location match
+或 S7。
+
+新 snapshot focused live 7/7 Exact、replay 7/7 Exact。逐条 URL、title、location、
+location classification 全部一致。相关 tests 276、provider 25/25、resolver 6/6、
+architecture 47/0。
+
+完整报告：
+
+- `docs/COORDINATOR_V259_LOCATION_REDACTION_PHASE_A.md`
+- `docs/COORDINATOR_V259_LOCATION_REDACTION_PHASE_C.md`
+
+### v258 Eightfold PCS X public inventory
+
+HP、Mayo Clinic 与 Gordian 的 Career shell 共享同一 PCS X contract：
+`code#pcsx-data`、启用的 `pcsxConfig.searchConfig`、同源
+`/api/pcsx/search` 和数字 `/careers/job/<id>`。`.258` 在原 Eightfold adapter
+内增加该 variant，没有增加公司、域名、岗位或 title 特例。
+
+Adapter 对 shell domain、同源 redirect、JSON success envelope、稳定 count、
+有界分页、重复 ID、detail path 和 operating-company evidence 全部 fail closed。
+Gordian 恢复 S7 Exact；Mayo 由完整 title-filtered inventory 得到
+`OPENING_NOT_FOUND`。HP 在最终代码的 live trace 中也完整读取三条不匹配库存，
+但搜索波动引入的未授权 Oracle 候选使 aggregate portfolio 保持
+`JOB_BOARD_PORTFOLIO_INCOMPLETE`；这是独立 scheduler completeness 问题，不能
+包装成 `.258` provider closure。
+
+最终代码通过 22 个 Eightfold tests、211 个相关 integration tests、provider
+25/25、resolver 6/6、architecture 47/0；focused runs 的自动 replay 均通过。
+下一优先级是 HP 暴露的 authorized complete no-match 被无关未授权 provider-search
+candidate 污染为 portfolio incomplete 的 scheduler cluster gate audit，随后继续
+收集第三个 opening-level intermediary 假阳性；CRG 与 Symmetrio 当前只有 2 个
+严格确认样本，尚不可实现公司/行业特例。
+
+完整报告：
+
+- `docs/COORDINATOR_V258_EIGHTFOLD_PCSX_PHASE_A.md`
+- `docs/COORDINATOR_V258_EIGHTFOLD_PCSX_PHASE_C.md`
+
+### v257 development diagnostic cohort and v258 candidate
+
+第十批 backend-only development cohort 在冻结 `.255` 上完成：30 条、30 家独立
+公司、与 529 个已公开开发 job ID 零重叠，得到 27 Website / 20 Career /
+15 verified Job List / 10 raw S7 Exact。安全审计只接受 9/10：CRG 的 staffing
+opening 明确表示实际雇主是未披露 client，不能把 CRG 作为 hiring entity 发布。
+该 false positive 保持最高优先级 open，必须先形成三公司通用 intermediary cluster，
+不能增加 CRG 特例。
+
+完整 replay 为 25 reproduced、5 budget recovery、0 comparator mismatch、
+0 fixture gap；ReachMobi 与 ADDMAN 仍暴露 snapshot redaction 导致的 location
+mutation，作为独立 replay defect 处理。
+
+v257 本批没有合格的 non-Exact cluster，但 Gordian 补齐了历史 HP、Mayo Clinic
+两家公司 Eightfold PCS X family。三家均为 `pcsx-data + ef-* assets`、缺少旧
+`smartApplyData`，由同一 adapter path 返回 unsupported。公开 PCS X API 已验证：
+Gordian 当前精确岗位可恢复，HP 与 Mayo 的旧目标已不在完整 title-filtered
+inventory，可闭环为 verified no-match。因此 `.258` 以一 Exact + 两 evidence
+terminal 为三记录批量恢复目标。
+
+完整报告：
+
+- `docs/COORDINATOR_V257_DIAGNOSTIC_COHORT_PHASE_A.md`
+- `docs/COORDINATOR_V257_DIAGNOSTIC_COHORT_PHASE_C.md`
+- `docs/COORDINATOR_V258_EIGHTFOLD_PCSX_PHASE_A.md`
+
+### v256 development diagnostic cohort
+
+第九批 backend-only development cohort 在冻结 `.255` 上完成：30 条、30 家独立
+公司、与 435 个历史开发 job ID 零重叠，得到 29 Website / 22 Career /
+13 verified Job List / 5 S7 Exact。五条发布 opening 全部通过 company、hiring
+entity、provider、tenant、title、location 和 canonical URL 审计；Williams 的
+正确 Workday exact-title candidate 因列表地点仅显示 `2 Locations` 被 S7 安全
+拒绝，没有错误 URL 发布。
+
+完整 replay 为 25 reproduced、4 budget recovery、1 mismatch、0 fixture gap。
+四条 Career budget recovery 只规范化为 Career not found，没有产品恢复；Great
+Value Hiring 在 live/replay 间发生 `failed`/`partial` 漂移，因此本批不能宣称
+replay closure。
+
+三个数量达到门槛的表面簇均未达到预期恢复门槛。尤其 Starbucks、C&S、CRB 和
+Peachtree 在同版本 90 秒 isolated diagnostic 中 4/4 不再 timeout，但全部转为
+`OPENING_DISCOVERY_INCOMPLETE`，Exact 恢复仍为 0/4，证明预算标签不是底层根因。
+本轮不修改产品代码、不升级 `.255`；下一轮继续收集零重叠 backend evidence，只
+允许推进三公司、同 trigger、同 production path 且预期至少恢复三条的通用簇。
+
+完整报告：
+
+- `docs/COORDINATOR_V256_DIAGNOSTIC_COHORT_PHASE_A.md`
+- `docs/COORDINATOR_V256_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+### v255 typed opening failure and replay determinism
+
+v252 的 Barstool Sports、Ichor Systems 与 v254 的 i-Pharm Consulting、Plaid
+满足同一四公司 trigger：generic opening search 捕获了带
+`COMPANY_TIME_BUDGET_EXHAUSTED` 的 `FetchError`，但 live trace 只保存 message，
+availability 随后误分类为 `FETCH_FAILED`；outcome-tape replay 保留 typed reason，
+因此终态不一致。
+
+`.255` 在 opening trace producer 中保留 canonical reason、retryable、HTTP status
+和 transport phase，并让 availability aggregation 消费 singular typed metadata。
+候选、provider、tenant、title/location 和 S7 均不改变。
+
+focused live/replay 4/4 reproduced、0 mismatch、0 fixture gap、0 tape divergence、
+0 missing boundary、0 opening publication。相关 tests 270、provider benchmark
+25/25、resolver 6/6、architecture 47/0。
+
+完整报告：
+
+- `docs/COORDINATOR_V255_OPENING_FAILURE_TAXONOMY_PHASE_A.md`
+- `docs/COORDINATOR_V255_OPENING_FAILURE_TAXONOMY_PHASE_C.md`
+
+### v254 development diagnostic cohort
+
+第八批 backend-only cohort 在冻结 `.253` 上完成：30 条、30 家独立公司、与 405
+个历史开发 job ID 零重叠，得到 29 Website / 21 Career / 17 verified Job List /
+9 S7 Exact。九条 Exact 全部通过 company、hiring entity、title、location、
+provider、tenant、canonical URL 和 live/replay identity 审计，所有安全错误为 0。
+
+完整 replay 为 20 reproduced、7 budget recovery、3 mismatch、0 fixture gap。
+i-Pharm 与 Plaid 和 v252 两条组成 `.255` 四公司 taxonomy cluster；Tigermed 是
+独立 singleton。其他 non-Exact 没有满足三公司共同 trigger、共同 production
+path 和预期恢复至少三条的门槛。
+
+完整报告：
+
+- `docs/COORDINATOR_V254_DIAGNOSTIC_COHORT_PHASE_A.md`
+- `docs/COORDINATOR_V254_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+### v253 Workable numeric embed runtime inventory
+
+American Battery Technology Company、ClassWallet 和 Mention Me 满足同一三公司
+provider-family trigger：第一方 Career page 加载精确 Workable embed asset，包含
+唯一可执行 numeric `whr_embed` 调用，但没有必须依赖的 canonical board anchor。
+
+`.253` 把这类页面建模为不可 checkpoint 的 runtime board
+`widget:<account_id>`，从官方 HTTPS widget endpoint 读取完整库存。JSONP callback、
+字段、shortcode、opening/application URL、重复记录、redirect 和 employer evidence
+全部严格验真。通用 `/j/<shortcode>` 不再被误识别为 tenant `j`；只有完整 native
+inventory、同一 runtime board 和逐 opening employer evidence 连续时才能进入 S7。
+
+最终恢复簇 3/3 verified Job List、3/3 S7 Exact、replay 3/3；ESR、Symmetrio、
+iClassPro 正向控制保持 3/3 Exact、replay 3/3。错误 URL、company、tenant、title、
+location 和 closed publication 均为 0。相关 scoped tests 169、provider benchmark
+25/25、resolver 6/6、architecture 47/0。
+
+完整报告：
+
+- `docs/COORDINATOR_V253_WORKABLE_NUMERIC_EMBED_PHASE_A.md`
+- `docs/COORDINATOR_V253_WORKABLE_NUMERIC_EMBED_PHASE_C.md`
+
+### v252 development diagnostic cohort
+
+第七批 backend-only development cohort 在冻结 `.251` 上完成：30 条、30 家独立
+公司、与历史 372 个 job ID 零重叠，得到 29 Website / 17 Career / 11 verified
+Job List / 6 S7 Exact。六条 Exact 全部通过 company、hiring entity、title、
+location、provider、tenant、open status 和 canonical URL 审计，所有安全错误为
+零。
+
+24 条 non-Exact 仍未形成三独立公司、同 trigger、同 production path、预期恢复
+至少三条的实现簇。本轮没有为 Workable numeric embed、strict structured cards
+或 same-origin dynamic GET 补出第三家；treeNovum 只是一个新的 structured-card
+漏检 singleton。
+
+全量 outcome bundle 导出并 replay 30/30：20 reproduced、8 budget recovery、
+2 mismatch、0 fixture gap、0 tape divergence、0 missing boundary。两个 mismatch
+都是 generic opening portfolio 在 live/replay 间对 `FETCH_FAILED` 与
+`COMPANY_TIME_BUDGET_EXHAUSTED` 的聚合差异，目前只有 Barstool 与 Ichor 两家，
+暂不越过三公司门槛修改。
+
+本轮不修改产品代码、不升级 `.251`、不改变 Fresh100 aggregate。插件、
+authenticated External Apply、coordinator-v2、LLM 分支和 sealed holdout 继续
+冻结。
+
+完整报告：
+
+- `docs/COORDINATOR_V252_DIAGNOSTIC_COHORT_PHASE_A.md`
+- `docs/COORDINATOR_V252_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+### v251 Hireology public inventory
+
+San Diego Padres、Mills Automotive Group / Classic Toyota of Henderson 与 Tim
+Moran Hyundai 满足同一 provider-family trigger：官方 Career 或 provider page
+证据指向公开 Hireology tenant，但 `.246` 没有 native adapter，三条 provider
+isolation 基线均无法发布 Job List。
+
+`.251` 新增严格 Hireology adapter。默认读取官方 v1 完整库存，再只对 exact-title
+候选读取小型 v2 detail，补齐 organization、open status 和精确 location。父级集团
+inventory 返回子品牌 URL 时，opening 只用该 inventory 实际返回的 numeric ID 在父
+tenant 上重建；child tenant 仅保留为 provenance，不能靠 slug 猜测或越过 S7。
+
+同时补齐三条共享契约：
+
+- Hireology replay-safe board 只允许无 query 的
+  `https://careers.hireology.com/<同名 tenant>`；
+- 非 exhaustive 模式下，官方 Career page 已识别 typed provider board 后不再重复
+  运行无关 ATS search，直接交给 S6 做库存和 employer evidence 验证；
+- JSON snapshot 先结构化脱敏再序列化，避免文本 regex 破坏 escaped HTML 属性并
+  造成 tape divergence。
+
+最终标准 45 秒预算 focused live 为 3/3 verified Job List、3/3 S7 Exact，全部
+title/location/provider/tenant/opening URL 正确；自动 replay 3/3。相关测试 547、
+provider benchmark 25/25、resolver 6/6、architecture 47/0。这是独立 development
+cluster 的闭环，不修改 Fresh100 aggregate，也不触碰 plugin、coordinator-v2、
+LLM 分支或 sealed holdout。
+
+完整报告：
+
+- `docs/COORDINATOR_V251_HIREOLOGY_PHASE_A.md`
+- `docs/COORDINATOR_V251_HIREOLOGY_PHASE_C.md`
+
+### v250 development diagnostic cohort
+
+第六批零重叠 cohort 在冻结 `.246` 上完成：30 条、26 家公司，得到 30 Website /
+23 Career / 17 verified Job List / 8 S7 Exact。八条 Exact 对应七家公司、七个唯一
+opening，逐条通过 company、hiring entity、title、location、provider、tenant、
+canonical URL 和开放状态核验，所有安全错误为 0。
+
+22 条 non-Exact 没有形成可直接实现的共同簇。六条 `JOB_BOARD_NOT_FOUND` 分别是
+Hireology、Amazon team page、Roku custom surface、TikTok custom surface、Carrot
+custom Career 和 MedReview custom Career；预算与 transport 终态也分散在 ADP、
+applytojob、SKIMS shared tape、first-party forbidden 和单例预算路径。
+
+原三个 2/3 hypothesis 仍没有第三家公司。San Diego Padres 新暴露的 Hireology
+handoff 被提升为独立 provider-family 调查，不与其他 S5 标签合并。只有额外当前
+开放公司证明同一 public API 和同一 adapter 缺口后才进入 Phase B。
+
+完整 replay 没有被误报为 30/30：两条同公司 SKIMS 记录发生 tape divergence。
+其余 28 条按隔离分组得到 24 strict reproduced、2 budget-normalized、2 mismatch、
+0 fixture gap。完整报告：
+
+- `docs/COORDINATOR_V250_DIAGNOSTIC_COHORT_PHASE_C.md`
+- `docs/COORDINATOR_V251_HIREOLOGY_PHASE_A.md`
+
+### v249 development diagnostic cohort
+
+第五批零重叠 cohort 在冻结 `.246` 上完成：30 条、28 家公司，得到 30 Website /
+22 Career / 18 verified Job List / 6 S7 Exact。六条 Exact 全部通过 title、
+location、provider、tenant、URL 和开放状态核验，Exact precision 6/6，所有安全
+错误为 0。
+
+24 条非 Exact 没有形成三公司同路径 cluster。Google、Bumble 和 Del Monte 是
+正确库存负控；Tebra、Constellation West、Fiverr、Odoo、LANDED、Starbucks、
+Starface、DSD、InterEx、Solomon 和 Roku 分属不同 provider、custom inventory
+或 relationship 路径；八条预算终态也混合访问阻塞、弱首页、动态站点和招聘主体
+不明确，不能按终态合并。
+
+三个最接近的 hypothesis 仍全部停在 2/3：Workable numeric embed、严格结构职位卡
+parser、同源 dynamic GET。v249 没有任何 matching trigger，不能用相似 CSS 或普通
+Career 页面凑第三例。
+
+30/30 replay 完整导出：22 complete、5 budget-normalized、3 mismatch、0 fixture
+gap、0 tape divergence、0 missing boundary。两条 mismatch 是不同 provider 的
+terminal-code drift；Fanatics 仅 relationship evidence URL 选择不同，Exact URL
+和身份完全一致。它们也不满足当前实现门槛。
+
+下一步继续定向后端 evidence collection，代码保持 `.246`。完整报告：
+
+- `docs/COORDINATOR_V249_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+### v248 development diagnostic cohort
+
+第四批零重叠 development cohort 在冻结 `.246` 后端上完成：30 条、29 家公司，
+得到 29 Website / 20 Career / 11 verified Job List / 7 S7 Exact。七条 Exact
+逐条通过 company、title、location、provider、tenant 和 canonical opening URL
+审计，错误 URL、跨公司、跨 tenant 和错误地点均为 0。
+
+本轮仍没有达到三独立公司的可实现 cluster。五家 official-host 403 只共享
+transport 分类，不共享可恢复的下游候选；S5/S6 失败进一步拆为 Workable numeric
+embed、root self-loop、URL 去重丢失强证据、helper-composed API、低分 direct link、
+WebForms、跨域首方 handoff、静态 HTML 变体和 Nuxt inventory 等独立路径。
+
+30/30 capture 已导出并 replay，29 reproduced、1 terminal-reason mismatch、0 fixture
+gap。Workable numeric embed 另做四家公司 focused gate：American Battery 与
+ClassWallet 是两条真正未恢复路径，ESR 与 Symmetrio 通过现有 direct Workable
+证据 Exact；加上已有 iClassPro positive control 后，仍只有两家 recovery company，
+所以暂不实现。
+
+下一步继续收集后端 causal evidence。只有同一触发条件、同一生产代码路径覆盖
+至少三家独立公司，并预期批量恢复至少三家时，才冻结 Phase A contract 并进入
+Phase B。插件、coordinator-v2、LLM 分支和 sealed holdout 均保持冻结。
+
+完整报告：
+
+- `docs/COORDINATOR_V248_DIAGNOSTIC_COHORT_PHASE_C.md`
+- `docs/WORKABLE_NUMERIC_EMBED_CAUSAL_EVIDENCE.md`
+
+### v247 development diagnostic cohort
+
+在不修改 `.246` 后端的前提下，新一批 30 条、六角色、27 家公司的 development
+cohort 完成冷启动：27 Website / 20 Career / 15 verified Job List / 8 S7 Exact。
+输入与 Fresh100、v245 和 v246 diagnostic job ID 均零重叠。
+
+八条 Exact 已逐条核验，title、location、provider、tenant 和 opening URL 均正确，
+Exact precision 8/8，错误 URL、跨公司和跨 tenant 均为 0。SpaceXAI 两条具有
+LinkedIn official company URL、`x.ai` 首方 Open Roles 和 Greenhouse `xai` 的连续
+身份链。
+
+本轮没有达到三独立公司的实现簇。表面的 fetch-budget、403、generic inventory
+和 S5/S6 标签分别拆成 Harri、HTML 200 KB 截断、ApplicantPro route、UltiPro host、
+Workable embed、Firebase、Eightfold、多地点 title、持续外部阻塞等独立根因。
+当前只并行回查 Handraise 截断与 Swig Harri 两条高价值 singleton 是否能在历史
+development evidence 中找到至少两家同路径公司；不足门槛则继续收集新 cohort，
+不写公司特例。
+
+30/30 replay 完成，26 reproduced、4 mismatch、0 fixture gap。两条 SpaceXAI 是
+同公司 exact-conflict，Crete 是预算终态差异，Pigment 是 incomplete inventory
+与多地点 S7 差异；三种形态均未达到三公司门槛，因此暂不放宽 replay 或身份门。
+
+完整报告：
+
+- `docs/COORDINATOR_V247_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+### LinkedIn-official homepage alias continuity
+
+`.246` 使用新的 30 条 development-only cohort 批量收集后端失败证据。该
+cohort 与 Fresh100 和上一批 24 条 diagnostic job ID 均零重叠，冻结 `.245`
+live 为 23 Website / 20 Career / 15 Job List / 9 Exact。
+
+并行因果审计否决了表面的四公司 S5 cluster：Cricut、Agile Defense、Vasion、
+AECOM 分别是 asset 输出未回灌、内联 JS transport 未解析、组件 chunk 预算、
+first-party CTA/超大库存过滤，不能共用一条修复。S2 审计则确认 Yum! Brands、
+County of Maui、Duke University Health System 共用一个 LinkedIn-official
+homepage alias rejection contract，达到三公司门槛。
+
+新规则要求公司名、LinkedIn slug 与主页组织身份/标题前缀经过受限 descriptor
+归一后完全相等，不使用 fuzzy matching 或公司特例。最终 focused live 为 3/3
+正确官网、2/3 verified Job List、Duke 1 条 S7 Exact；Maui 后续保持预算终态。
+同版本 replay 为 2 reproduced + 1 budget recovery，0 mismatch / 0 fixture gap。
+
+30 条 full replay 仍有两个独立 integrity debt：Cass County 的 runtime-only
+producer state 在连续 replay 中越过真实 restart boundary；Sweep 同公司第二条
+posting 的 provider evidence URL 与 replay 不一致。Cass 在本 cohort 只有一条，
+Sweep 也是单公司形态，均不满足当前三公司实现门槛。
+
+完整报告：
+
+- `docs/COORDINATOR_V246_DIAGNOSTIC_COHORT_PHASE_C.md`
+- `docs/COORDINATOR_V246_LINKEDIN_OFFICIAL_ALIAS_PHASE_C.md`
+
+### Ashby runtime-only locator and replay closure
+
+`.245` closes the diagnostic-cohort worker contract regression without
+weakening checkpoint safety. Ashby tenant case is preserved; lowercase tenant
+roots remain replay-safe, while mixed-case roots are valid only in the live
+runtime portfolio. Scoped replay cannot serialize those locators and therefore
+replays the captured S2-to-S5 producer chain before S6/S7.
+
+Oso and Blossom are 2/2 S7 Exact in focused live and 2/2 reproduced in a clean
+offline bundle with zero mismatch, fixture gap or tape divergence. This
+restores Blossom's existing Frozen100 Exact but does not alter the Fresh100
+development projection. The 24-record diagnostic run also rejected the
+apparent seven-company search, four-company deadline and three-company replay
+groups as shared recall clusters; their correct evidence and code paths differ.
+The next Phase B backend change still requires a new causal group with at least
+three companies and an expected batch recovery of at least three.
+
+Reports:
+
+- `docs/COORDINATOR_V245_ASHBY_RUNTIME_ONLY_CASE_PHASE_C.md`
+- `docs/COORDINATOR_V245_DIAGNOSTIC_COHORT_PHASE_C.md`
+
+### Local SearXNG focused A/B
+
+`.239` 已把 digest-pinned SearXNG 部署为仅绑定 loopback 的可选后端，并修复 macOS
+系统代理错误截获 Python loopback 请求的问题。冻结 12 条同版本 A/B 中，legacy 为
+1 个 raw Job List / 1 Exact，SearXNG 为 7 个 raw Job List 字段 / 0 Exact；两侧 replay
+均为 12/12。新增字段仍缺完整 identity chain，且 CHAMP 保留了一个错误的 partial
+Greenhouse candidate，因此不能把 7 条称为 verified recovery，search cluster 也没有
+关闭。SearXNG 继续 opt-in，不切换默认搜索后端。
+
+`.240` 修复该 A/B 暴露的展示名身份回归：只有空格分隔的营销后缀不属于 LinkedIn
+slug，且前缀品牌与 slug 精确一致时，parent-page detection 才使用前缀。iClassPro
+恢复 Paylocity Exact `4331044`，DSV 保持 `dsv.com` 并诚实停在
+`OPENING_DISCOVERY_INCOMPLETE`；两条 replay 均 1/1。此修复只恢复既有 audited Exact，
+不改变 36 Exact / 10 Verified No Match / 1 External Blocked / 53 unresolved 的 durable
+development projection。下一轮先解决 unverified partial board publication 与 provider
+relationship continuity，再决定是否扩大 SearXNG live。
+
+完整报告见 `docs/COORDINATOR_V239_LOCAL_SEARXNG_RUNTIME_PHASE_C.md` 与
+`docs/COORDINATOR_V240_DISPLAY_DESCRIPTOR_IDENTITY_PHASE_C.md`。
+
+下一共享安全簇已冻结为 `.241`：S5 明确返回
+`COMPANY_IDENTITY_AMBIGUOUS` 且 `provider_identity.relationship_verified=false`
+时，候选仍可留在内部 portfolio/trace 供 S6 使用，但不能继续投影成产品
+`job_list_page_url`。该规则覆盖 iClassPro、Caesars、CHAMP、Fabric、Prophetic；
+CHAMP 是跨公司负向控制。Phase A 见
+`docs/COORDINATOR_V241_UNVERIFIED_BOARD_PUBLICATION_PHASE_A.md`。
+
+`.241` Phase C 已完成：内部 candidate/portfolio/trace 保留，明确未验证的 board 不再
+投影为产品 Job List，S5 evidence 改为 `candidate_job_board_url`。五条 focused live
+保持 iClassPro Exact，其他四条均没有公开 Job List，同版本 replay 5/5；由于本轮搜索
+没有重现全部历史 ambiguous candidates，不宣称五条 live path 全部复现。656 个 scoped
+tests、25/25 provider、6/6 resolver 与 46/0 architecture gate 通过。下一步拆为两个
+独立簇：Caesars/Fabric/Prophetic 的 provider-owned employer evidence bootstrap，以及
+Hawaiian Electric 两条的 SuccessFactors page-derived tenant 投影。完整报告见
+`docs/COORDINATOR_V241_UNVERIFIED_BOARD_PUBLICATION_PHASE_C.md`。
+
+`.242` Phase A 已冻结下一条后端通用路径：Caesars、Fabric、Prophetic 都在 S5
+产生 typed native-provider portfolio，但 `live_batch_eval` 要求 S5 已经发布 verified
+Job List 才进入 S6，造成“必须先验证关系，才能运行负责验证关系的官方库存阶段”的
+编排死锁。`.242` 只允许严格匹配
+`partial / COMPANY_IDENTITY_AMBIGUOUS + non-generic provider identity +
+matching typed portfolio + durable checkpoint` 的结果继续到 S6；继续运行不等于发布
+Job List，更不等于 Exact。CHAMP 继续作为跨公司负向控制。Provider-owned employer
+evidence extractor 将在该编排边界通过后单独实现。契约与回退条件见
+`docs/COORDINATOR_V242_PROVIDER_IDENTITY_CONTINUATION_PHASE_A.md`。
+
+`.242` focused live 已证明 Caesars 的 S5 partial 可从 durable checkpoint 进入 Oracle
+S6，并读取完整的 3 条 title-filtered inventory；同名 opening 位于 Las Vegas，与输入
+Reno 冲突，因此正确拒绝 Exact。CHAMP 没有公开错误 URL。Fabric/Prophetic 在该轮因
+搜索波动没有重新产生候选，不能作为路径回归证据。由该运行触发的 `.243` Phase A
+冻结 provider-owned employer inventory contract：Greenhouse、Ashby、Oracle 分别提取
+provider-specific 证据，但统一要求 opening 与 board 同 provider/tenant、雇主严格匹配；
+完整 no-match 授权还要求每条库存记录都有一致证据。详见
+`docs/COORDINATOR_V243_PROVIDER_EMPLOYER_INVENTORY_PHASE_A.md`。
+
+`.243` live evidence subsequently rejected the three-provider grouping as one
+recall cluster. Fabric's Greenhouse API contains complete opening-bound
+`company_name=Fabric` evidence and now produces a verified Job List plus
+`OPENING_NOT_FOUND` through real S6/S7. Caesars Oracle inventory is complete,
+but its public details expose no valid JobPosting employer identity; the
+experimental three-detail hydration recovered zero and was removed. Prophetic
+has an exact Ashby UX Designer opening, but its API lacks employer evidence and
+S2 selected an unrelated Canadian `propheticsoftware.com`; this is a resolver
+identity-collision root cause, not an Ashby extraction failure. Therefore
+`.243` is a safe provider-evidence contract improvement, not closure of a
+Caesars/Fabric/Prophetic recall cluster.
+
+`.243` 随后的冻结 8 条因果审计得到 1 个 iClassPro Exact，其他 7 条 replay
+为 8/8。Pitch Aeronautics、Wichita Company Limited 和 Systematic Business
+Consulting 的确共享 S4 18-call transport cap 先于搜索耗尽的代码路径，但同版本
+独立 S5 search wave 对三家公司仍返回 0 个有效候选。因此它们只是共同失败出口，
+不是具有非零批量恢复预期的 recall cluster；暂不实施只会改变错误标签的预算调整。
+Hawaiian Electric 是单一公司的官方 host 403，American Fabrication 与 NextPlay
+则是两个不同身份面的 `JOB_BOARD_NOT_FOUND`。下一轮继续从 53 条 unresolved
+中选择至少三家独立公司、共同触发条件且已证明能产生正确候选的后端簇。完整审计见
+`docs/COORDINATOR_V243_NEXT_CAUSAL_EVIDENCE_PHASE_C.md`。
+
+`.244` 修复了一个 S4 与 Provider Registry 之间的通用 contract 边界：同一已验证
+first-party site family 上的页面，如果 Registry 能从页面严格识别唯一、可列举库存且
+tenant 非空的 provider board，可以作为 Career 输入继续进入 S5；该证据本身仍不能发布
+Job List 或 opening。Hawaiian Electric 两条 Fresh100 记录现均验证到官方 SuccessFactors
+board `custom:hawaiianel`，native adapter 完整检查 84/25 个候选后得到
+`verified_inventory_no_match`，同版本 replay 2/2，错误 URL、跨公司和跨 tenant 均为 0。
+这两条 runtime delta 将 projection 变为 36 Exact、12 Verified No Match、
+1 External Blocked、51 unresolved。随后重建 ordered ledger 发现 `.243` 已经审计且
+8/8 replay 的 iClassPro Exact 未写入 acceptance manifest；纠正该治理遗漏后，当前保守
+projection 为 37 Exact、12 Verified No Match、1 External Blocked、50 unresolved。
+这是同一雇主的两条 focused terminal 加一个旧记账修正，不是完整
+Fresh100 重跑，也不被包装成三公司 recall cluster。完整报告见
+`docs/COORDINATOR_V244_PAGE_EVIDENCED_PROVIDER_CAREER_PHASE_C.md`。
+
+下一轮不实现宽泛的“交互表单搜索”放宽。只读审计确认 DSV、Equifax、StatRad 和
+Aramark 虽都表现为用户可以继续搜索或点入岗位，但分别位于 GET 结果投影、分页 URL
+安全规范化、静态 detail-card 身份和 S7 checkpoint 连续性四条代码路径。后续继续按
+共同 trigger、共同代码路径和至少三家独立公司的非零批量恢复预期选择实现簇。
+
+`.244` 最新 Phase A 已完成对 50 条 unresolved 的三线只读审计。候选/关系、S6
+库存和 transport/budget 三个根因域均没有满足“三家独立公司 + 同 trigger + 同生产
+路径 + 已观察正确候选 + 预期恢复至少三家”的簇。唯一达到公司数的 Pitch、
+Systematic、Wichita S4 fetch-budget 簇，在独立 S5 搜索中是 0/3 有效候选，因此不能
+进入 Phase B。DSV、StatRad、Equifax、Aramark 各有一个确定性 +1 方案，但四者代码
+路径不同，当前硬门槛不允许逐样本实现。下一步必须先选择：扩充非 sealed 诊断
+cohort 寻找第三个共因样本、明确放宽 singleton 实现门槛，或批准新的 browser-backed
+后端架构实验。插件、coordinator-v2、LLM 与 sealed blind 继续冻结。完整审计见
+`docs/COORDINATOR_V244_NEXT_CAUSAL_CLUSTER_AUDIT.md`。
+
+主线选择风险最低的下一步：`.245` 先收集并冻结 24 条非 sealed、与 Fresh100 job ID
+零重叠、覆盖四类职位的 development diagnostic cohort，再用冻结 `.244` 后端、
+`stage_v1`、legacy search 和全新运行目录执行 live + replay。该批只用于寻找第三个
+共享根因样本，不是 blind holdout，也不能改写 Fresh100 分数；运行期间不改代码。
+Phase A 契约见 `docs/COORDINATOR_V245_DIAGNOSTIC_COHORT_PHASE_A.md`。
+
+该冻结诊断运行已暴露一个独立的 release-gate 回归：Oso 与 Blossom 都因 mixed-case
+Ashby tenant 被 adapter 错标 `replay_safe=True`，随后被中央 durable-locator policy
+拒绝并造成 worker crash。相同 contract 对 Oso、Blossom-Health、Fuse、Acorns、
+Distyl、Zello 六个真实 tenant 均可确定性复现；Blossom 还是 Frozen100 已审计 Exact。
+`.245` 只会保留 tenant 大小写并把 mixed-case locator 标为 runtime-only，不放宽中央
+checkpoint policy。Phase A 与验收契约见
+`docs/COORDINATOR_V245_ASHBY_RUNTIME_ONLY_CASE_PHASE_A.md`。
+
+### Versioned SearchBackend
+
+`.238` 完成普通版非 LLM 后端的可替换搜索边界。默认配置继续使用现有 Bing RSS、
+Bing HTML 和 DuckDuckGo 调度，候选顺序、transport budget、circuit breaker、snapshot
+和 replay 边界不变；显式配置时可使用单请求 SearXNG JSON backend。Backend 只产生
+untrusted hit，不做 retry、provider/tenant/relationship 验证，也不能宣布 Exact。S4/S5
+两条搜索路线与 S6 same-site opening search 共享同一实例，后续仍完整经过 provider
+adapter、招聘关系、库存、title/location 和 S7 identity gate。
+
+Run configuration schema 升至 `1.8`，只保存 backend kind、contract version 和 profile
+digest；raw endpoint 为 runtime-only，replay 必须重新提供并通过 digest 校验。Adapter
+version 为 `2026-07-27.238`。该 foundation 阶段尚未配置真实服务，因此当时没有 recall
+声明；后续 `.239/.240` live 结果与未关闭结论记录在上一节。插件、coordinator-v2 和
+LLM 分支均未启用。Phase A/C 见
+`docs/COORDINATOR_V238_SEARCH_BACKEND_CONTRACT_PHASE_A.md` 与
+`docs/COORDINATOR_V238_SEARCH_BACKEND_FOUNDATION_PHASE_C.md`。
+
+### Backend candidate coordinator
+
+用户已暂停插件验收并授权继续普通版非 LLM 后端。ADR-0030 已 accepted，第一阶段
+逻辑协调器已在 `.214` 实现；`.215` 修复真实 LinkedIn slug URL 的 strict job-ID
+绑定，`.216` 修复三路完成但零 board 时的 typed terminal 投影，`.217` 增加 S4 到 S5
+的 cooperative 10 秒 provider-search reservation，`.218` 增加空 RSS bucket 的 bounded
+secondary rescue 和可回放的 typed budget terminal，`.219` 保护已有 verified Career
+traversal 不被低证据 search/tenant probe 抢先耗尽。新引擎继续由
+`candidate_discovery_engine=coordinator_v2` 显式开启；`stage_v1` 暂时保留为默认和
+回滚路径。
+
+`.227/.228` 已补齐 withheld LinkedIn-official Website 的下游证据链。S2 仍然
+fail closed，但可把当前已验证、尚缺 parent/group 招聘关系的官网作为 typed provisional
+evidence 交给 S4；只有同 host Career 或官网真实可见的 navigation handoff 才能建立招聘
+关系。HTTP navigation 只安全升级为 HTTPS candidate，provider/tenant/inventory/S7 门不变。
+五条 Phase A 假设被重新划分：NDIT、Montana、Lubbock 三条共享路径均恢复 verified Job
+Board；NYC 是普通 S2 恢复后的 audited Exact，Heritage 没有 qualifying provisional evidence。
+S5 重复写入 S4 provisional identity 导致的 checkpoint worker failure 已在 `.228` 修复，未
+放宽 checkpoint 防伪。当前下一因果簇是 verified board 进入 S6 后的 deadline/tape
+determinism：Lubbock live 保留 `PROVIDER_FETCH_FAILED`，full replay 有 4 条未消费的 S6
+terminal entries。先修共同 phase-boundary contract，再运行新的 focused live/replay；不靠
+增加全局 timeout，也不运行完整 Fresh100。完整报告见
+`docs/COORDINATOR_V228_PROVISIONAL_OFFICIAL_WEBSITE_PHASE_C.md`。
+
+`.229` 关闭了该结果暴露的 S5-to-S6 handoff 与 typed replay parity 缺陷。
+GovernmentJobs 只有 exact public host、`/careers/{tenant}` path 和 lowercase tenant
+identifier 完全一致时才是 replay-safe locator；checkpoint 只保存 board identity，不保存
+inventory/opening。共享 `provider_fetch_reason` 先保留 typed `FetchError.reason_code`，再退回
+字符串 taxonomy，GovernmentJobs、ApplicantPro、Talemetry、PeopleSoft 已迁移。Lubbock
+第二次 focused live 的 opening child 成功 restore S1-S5，S6 得到完整 14.4 秒且没有重跑 S5；
+当前官方请求仍失败，因此诚实保留 retryable partial。新 capture replay 1/1 reproduced；三
+tenant cold focused capture replay 3/3 reproduced，均为 0 mismatch/fixture gap/tape divergence。
+Lubbock 与 Pharr 在三条 run 中停于修改路径之前，不计作 provider success；College Station
+到达 verified GovernmentJobs board。Fresh100 聚合终态不因基础设施修复改变。下一轮重新从
+至少三家公司共享的 candidate-production/provider-transport 根因选择，不直接扩大全局 timeout。
+完整报告见 `docs/COORDINATOR_V229_S5_S6_HANDOFF_PHASE_C.md`。
+
+`.230` 关闭了 UltiPro provider-family 的公开地点字段选择缺陷。Provider inventory
+在 `DisplayAddress=true` 时同时给出 site label 与结构化 city/state，旧 adapter 错误地
+优先使用 `Corporate`、`ARUP Main` 等 label，导致 S7 把正确 opening 判为地点冲突。现在
+只有 literal boolean true 且 city/state 都是完整 public string 时才优先结构化地址；
+false、字符串 flag、畸形和 partial address 保持旧 fallback，company/provider/tenant/title/
+location gate 均未放宽。Target Hospitality focused live 对同一 UltiPro tenant 和 Security
+Analyst opening 恢复 S7 Exact，location 为 `The Woodlands, Texas`；automatic replay
+1/1 通过。当前保守 Fresh100 development projection 为 29 Exact、9 Verified No Match、
+1 External Blocked、61 unresolved，完整报告见
+`docs/COORDINATOR_V230_ULTIPRO_LOCATION_PHASE_C.md`。
+
+`.231` 关闭了短且模糊的单词公司名被搜索结果、自指 domain/canonical 和
+organization metadata 误认成官网的安全缺陷。没有 LinkedIn 官方官网时，resolver
+现在要求 bounded title/body 身份证据；LinkedIn 提供官网但 homepage 不可验证时，
+该域名也必须独立、精确地建立公司身份。Focus clean focused run 不再发布
+`focus.org` 或另一个同名公司的扩展域名，replay 1/1 reproduced。Ashby `focus`
+仍只作为未授权 partial candidate 出现，说明下一因果簇位于 provider provenance：
+`verified_tenant_probe` 只能证明 tenant inventory 存在，不能凭 tenant/company/domain
+名称相似建立招聘关系。`.232` 将收紧该共享 contract，同时保留 External Apply、
+官网真实 handoff 和 provider-published employer evidence。当前 Fresh100 projection
+仍为 29 Exact、9 Verified No Match、1 External Blocked、61 unresolved。完整报告见
+`docs/COORDINATOR_V231_AMBIGUOUS_IDENTITY_PHASE_C.md`。
+
+`.232` 已关闭 tenant inventory 存在性被错误升级为招聘关系的通用安全漏洞。
+`verified_tenant_probe` 现在保留独立 detection provenance，不再伪装为
+`linked_url_evidence`，也不再凭 tenant/company/domain 名称相等获得授权。旧的
+implicit tenant-name authorization 已移除；durable provider evidence 必须保留
+External Apply、first-party handoff 或 provider-owned identity 来源；S7 对历史
+`tenant_name_match` / `provider_tenant_match` 布尔伪造显式 fail closed。最终同版本
+四条 live 中，Focus、OneApp 的 Ashby probe 和 STRIKE 均未授权且未发布 opening，
+Slant CRM 通过 provider-published employer evidence 保持正确 Exact；replay 4/4。
+这是 precision closure，不增加 Fresh100 recall，projection 仍为
+29 Exact、9 Verified No Match、1 External Blocked、61 unresolved。完整报告见
+`docs/COORDINATOR_V232_TENANT_PROBE_PROVENANCE_PHASE_C.md`。
+
+`.233` 已关闭 scoped replay 对同一次运行内 mutable producer state 重建不足的
+确定性缺陷。只有 checkpoint events 证明 live 从 S5 恢复、且 S5 明确读取
+`stored_verified_provider_board` 时，replay 才会把 authoritative S2/S4 Website
+与 Career evidence 投影到 record-local store；company、LinkedIn identity、
+Website/Career 连续性、provider、tenant 和 canonical board 必须全部一致。
+合法 Versana stored-board capture 重放为 1/1 Exact；历史 Focus 污染链因
+relationship URL 不等于 captured Career URL，在 tape 执行前明确拒绝，不再产生
+误导性的 unconsumed request。`.232` 四条回归 replay 仍为 4/4 reproduced。
+该修复不改变 Fresh100 projection。完整报告见
+`docs/COORDINATOR_V233_CAPTURED_PRODUCER_STATE_PHASE_C.md`。
+
+随后同版本 10 条历史 transport cohort 的冷启动诊断得到 10/10 Website、
+7/10 Career、8/10 Job List、3/10 Exact，replay 10/10。该批不构成 transport
+实现簇：STRIKE 是关系证据不足，QXO 是单条 budget，ProMach 是 Career candidate
+未产生，System One/WENDEL/Conrad 分别是已执行但不完整的 GET 搜索、无招聘
+transport、以及 completeness 未证明的 AJAX inventory。Brown and Caldwell
+恢复当前 Wailuku Exact，因此 projection 调整为 30 Exact、8 Verified No Match、
+1 External Blocked、61 unresolved；BWXT 与 Salas O'Brien 已在旧 projection 中。
+完整诊断见 `docs/COORDINATOR_V233_TRANSPORT_DIAGNOSTIC_PHASE_C.md`。
+
+当前账本已修正一处纯投影错误：Slant CRM 的 `.232` Exact 曾写入报告但仍被
+保留在旧 provider-fetch unresolved bucket。当前保守 projection 是 31 Exact、
+8 Verified No Match、1 External Blocked、60 unresolved；这次修正不冒充新 live
+提升。
+
+`.234` Phase A 冻结下一通用 resolver 簇。Rider Levett Bucknall RLB、Jushi
+Holdings Inc. 和 Heritage Companies 的 LinkedIn 公司页均明确绑定官方 Website，
+且 Website 已成功抓取并提供第一方身份；现有 parent/group 检测却把缩写、法律
+名称和 LinkedIn 显示名差异误判成母公司关系。实现只能用同一 LinkedIn 公司 URL
+携带的身份与首页第一方身份建立别名连续性，不能依赖 domain/search/tenant 名称，
+也不能放宽 Tata Technologies、Google DeepMind、Focus 等负向门。Phase A 见
+`docs/COORDINATOR_V234_LINKEDIN_OFFICIAL_ALIAS_PHASE_A.md`。
+
+`.234` focused live 已证明三家公司都恢复 Website：RLB 和 Jushi 在首轮跨过
+S2/S4，Heritage 在独立 clean retry 中恢复 Website、Career 和 Paylocity Job
+Board。Jushi 随后暴露 scoped replay 对 first-party provider handoff 的单跳假设：
+真实链路为 Career root 到同 host jobs page，再进入 Lever；旧 replay 却要求
+relationship evidence URL 与 Career root 完全相等。`.235` 只修复该 record-local
+producer-state 确定性契约，要求同一 HTTPS host，并继续严格校验 company、LinkedIn
+identity、provider、tenant 和 canonical board。Phase A 见
+`docs/COORDINATOR_V235_MULTIHOP_PROVIDER_REPLAY_PHASE_A.md`。
+
+`.235` Phase C 已完成。原三条 capture 现在可构建并离线重放，3/3 reproduced、
+0 mismatch、0 fixture gap；Heritage clean retry 也以同一 S6 company-budget
+terminal 重放 1/1。`.234` 因果边界为 3/3 Website、3/3 Career，Jushi 与
+Heritage 进一步恢复 verified Job Board；RLB 留在 S5 discovery，Jushi 留在
+relationship fail-closed，Heritage 留在 S6 budget。没有 opening URL 被发布，
+因此不能把本轮包装为 Exact 提升。完整报告见
+`docs/COORDINATOR_V234_LINKEDIN_OFFICIAL_ALIAS_PHASE_C.md`。
+
+同版本随后重跑四家公司、五条 known-domain transport 记录，5/5 都恢复
+Website/Career/Job List，因此旧 TLS/timeout 分组再次被证伪，不能增加 transport
+heuristic 或全局 timeout。B&D Project Manager 与 Northern Clearing 成为 S7
+Exact，Steampunk 成为完整 iCIMS 库存 no-match；Vertiv 保持 relationship identity
+ambiguous，B&D HR 保持 provider-fetch retryable。前四条 replay 4/4，B&D HR 的
+live/replay retry reason 不一致单独保留。当前 development projection 为
+33 Exact、9 Verified No Match、1 External Blocked、57 unresolved。完整报告见
+`docs/COORDINATOR_V235_KNOWN_DOMAIN_DIAGNOSTIC_PHASE_C.md`。
+
+Milwaukee Tool、Dechert、Crawford Thomas 的旧 generic S5→S6 refetch
+timeout 也以原 `.235` 冷重跑，三条都恢复 Job List 且 replay 3/3。Milwaukee
+成为 S7 Exact，Dechert 成为完整库存 no-match，Crawford 留在 inventory
+incomplete。没有一条复现 proposed PageLease 的触发条件，因此拒绝增加该跨阶段
+瞬时状态，避免无收益地扩大 checkpoint/worker/replay 复杂度。当前 projection 为
+34 Exact、10 Verified No Match、1 External Blocked、55 unresolved。报告见
+`docs/COORDINATOR_V235_GENERIC_REFETCH_DIAGNOSTIC_PHASE_C.md`。
+
+B&D HR 的 `PROVIDER_FETCH_FAILED → COMPANY_TIME_BUDGET_EXHAUSTED` replay
+drift 已做全仓非 sealed artifact 审计，只找到 City of Lubbock 为第二家同路径记录。
+两家公司不足以修改 outcome-tape/budget contract；当前保留为 replay debt，等待第三家
+独立 provider/company 证据，不按同一 Lubbock 岗位的多次 run 重复计数。
+
+当前 14 条 `OPENING_DISCOVERY_INCOMPLETE` 已按 transport/parser 因果重新审计，
+没有三家公司共享同一可执行代码路径。Lorum/StatRad detail identity parser 只有两家，
+System One/DSV declared GET completeness 只有两家，Conrad AJAX completeness 为单例；
+其余是无声明 transport、unsafe pagination、错误 board 层级或不同 provider family。
+矩阵 14 条经 job ID 机械核对无漏项：`.220` 的 12 条减 Mayo identity rejection、减
+Lorum `.222` cold retryable，再加 System One、WENDEL 两条和 Conrad。审计见
+`docs/COORDINATOR_V235_INVENTORY_CAUSAL_AUDIT.md`。
+
+WalkMe、OneApp、STRIKE、Focus 的 relationship ambiguity 也不是一个四公司簇：
+WalkMe 是同站 opening traversal，OneApp 是已观察 Pinpoint 链未进入 portfolio，
+STRIKE 是 `strikeusa.com` 与无关 `strike.com` 的身份冲突，Focus 没有任何授权
+handoff。继续禁止 tenant/company/domain 名称相似授权，不修改 relationship gate。
+审计见 `docs/COORDINATOR_V235_RELATIONSHIP_CAUSAL_AUDIT.md`。
+
+`.236` Phase A 冻结新的五公司预算簇。Caesars、Splashlight、Pitch Aeronautics、
+Nisga'a Tek 和 FOTOMILL 均在 S2/S3 成功后让 S4 占满约 62 秒 discovery child
+window，以 `COMPANY_TIME_BUDGET_EXHAUSTED` 结束，S5 独立 provider route 完全未
+执行。现有 `provider_search_reserve_seconds` 只对 proposed coordinator-v2 接线；
+`.236` 将同一 cooperative S4 reservation 用于默认 stage-v1 的 parallel candidate
+portfolio，不启用 coordinator-v2、不增加 company/request budget、不改变身份门。
+Phase A 见 `docs/COORDINATOR_V236_STAGE_V1_PROVIDER_RESERVATION_PHASE_A.md`。
+
+`.236` focused run2 证明 5/5 S4 已在 cooperative reserve 处返回 typed
+`FETCH_BUDGET_EXHAUSTED`，且 5/5 S5 checkpoint 均执行；但 search wave 先运行
+CareerSurface，导致 ProviderSearch 只有四家各 2 个 query、Splashlight 为 0。
+因此 `.236` 尚未闭环，也不改变 projection。`.237` 将 S5 search wave 固定为
+ProviderSearch 先于 CareerSurface；direct External Apply/Website 路、候选排名和
+所有身份门不变。Phase A 见
+`docs/COORDINATOR_V237_PROVIDER_SEARCH_WAVE_PRIORITY_PHASE_A.md`。
+
+`.237` run3 的五家公司均执行 ProviderSearch，query 数为 3/7/7/7/3，replay
+5/5；但 current-version iClassPro regression gate 从 `.235` 的 Paylocity S7 Exact
+退化为 `FETCH_BUDGET_EXHAUSTED`。因此 route coverage 不能作为 closure，`.236/.237`
+两处 stage-v1 行为改动与版本号均已回滚，projection 不变，coordinator-v2 继续
+保持 proposed/disabled。Rejected Phase C 见
+`docs/COORDINATOR_V237_PROVIDER_RESERVATION_PHASE_C.md`。
+
+回滚后的两次全新目录 iClassPro live 分别停在 S2 TLS `NETWORK_TIMEOUT` 与 S4
+retryable `FETCH_FAILED`，两次 replay 均为 1/1。它们没有复现 `.237` 的
+`FETCH_BUDGET_EXHAUSTED`，但当前网络也没有再次拿到 Exact，因此只确认代码和局部
+测试回滚，不声明 live recovery，不把 projection 从 34/10/1/55 上调。
+
+下一因果簇审计没有找到满足三家公司门槛的实现任务。五家公司预算标签在让
+ProviderSearch 5/5 实际执行后恢复数仍为 0，因此不是共同根因；结构化详情、声明式
+GET 搜索、replay reason drift 等候选各只有一到两家公司。下一轮先冻结 `.235`，
+从未解决 development records 批量收集候选 provenance、失败 request、transport
+taxonomy、fallback allocation 与最终 budget owner；只有三家独立公司共享触发
+条件和代码路径且预期批量恢复数非零时，才进入 Phase B。审计见
+`docs/COORDINATOR_V235_NEXT_CAUSAL_CLUSTER_AUDIT.md`。
+
+因果 ledger schema `1.1` 已把上述规则机械化：按 LinkedIn job ID 合并有序 artifacts，
+focused terminal 只有进入人工审核 allowlist 才能改变 projection，已审核终态不能被
+后续 retryable observation 降级，cluster 必须同时通过三家公司、当前版本复现和非零
+批量恢复预期。7 条 `.235` 复现证明旧 generic inventory 分组实际混合 Consider、
+Eightfold 和 Bullhorn OSCP，现按 integration origin 保守拆开并标为证据不足；5 条旧
+`NETWORK_TIMEOUT` 复现得到 0/5 timeout，Lorum 与 Team Royal 恢复并通过完整 S7
+身份审计。当前 projection 为 36 Exact、10 Verified No Match、1 External Blocked、
+53 unresolved；这是代码冻结后的证据修正，不是产品行为提升。报告见
+`docs/COORDINATOR_V235_CAUSAL_LEDGER_AND_TIMEOUT_REPRODUCTION_PHASE_C.md`。
+
+后续两个 `.235` 四条复现分别 4/4 replay，再次否决 `CAREER_PAGE_NOT_FOUND` 和
+`JOB_BOARD_NOT_FOUND` 作为根因：Caesars、Pitch、Systematic 分别是非招聘响应、
+TLS EOF 与 404/TLS 组合；Hawaiian 的两条记录只算一家，CHAMP/Fabric 是两家独立
+board case。当前最大 search-empty 分组也经 snapshot 审计确认是 Bing RSS 无视
+`site:`/quoted constraints、DuckDuckGo challenge 和 Bing HTML 空结果；额外
+Pinpoint/SmartRecruiters probes 恢复 0 条，因此不重排现有 scheduler。需要新的可靠
+SearchBackend 才可能提升这一组，未获得真实后端前不得以放宽过滤或关系门替代。
+
+Consider、Eightfold PCS X、Bullhorn OSCP 三条只读横向审计也没有产生新的实现簇：
+分别只有 1、2、1 家独立公司。通用 page-aware provider contract 已存在，但不得用
+Necessary Ventures、HP/Mayo 或 Crawford 单例/双例直接授权 adapter 实现。当前后端
+下一架构决策是接入可靠 SearchBackend（自托管或外部服务）；继续添加 heuristic、
+重排无命中 probe 或放宽 hiring relationship 均没有证据支持。
+
+已完成：
+
+- immutable S1 `CandidateDiscoveryInput`，明确区分 External Apply 的 observed、
+  observed absent 与 not observed；
+- External Apply、Provider Search、Website/Career 三路独立产出 typed route result；
+- S3 rejection 只压制 URL 与 evidence scope 均匹配的 Website/Career 路线，不再全局
+  阻断 S5；
+- URL 规范化、去重、每个有效路线一个 reservation、确定性排序与完整 attribution；
+- 每条路线的原始 candidate 独立经过 provider registry 与 hiring relationship 验证，
+  相同 URL 不能借用其他路线的授权；
+- Provider Search 在固定 query budget 内 exhaustive 执行，按 S1 identity 确定性轮转
+  9 个 provider family，保留多条结果并按 query bucket 公平选取；
+- run-config schema `1.7`、CLI/live 显式 engine/reservation flag 与版本化 checkpoint 隔离。
+
+当前门禁：两组 focused backend slices 分别为 156/156 与 223/223；七阶段离线 smoke
+保持预期结果；provider 25/25、resolver 6/6、architecture 46/0。`.214` 首轮 focused
+live 因 slug job-ID contract 过窄得到 3/3 worker contract failure，原 artifacts 保持不变。
+`.215` 第二轮已进入候选协调器，但零 board terminal 因无效参数再次产生 3/3 worker
+contract failure，artifacts 同样保留。`.216` 第三轮无 worker crash，replay 3/3、0
+mismatch、0 fixture gap；iClassPro 与 Indica Labs 在 S2 timeout 后各执行 5/5 provider
+query，证明 S2 不再全局阻断 S5。但 Loveland 的 S4 耗尽下游 deadline，provider route
+只得到 0/5，且误记为 completed。`.217` clean live 证明 reservation 生效：Loveland 与
+iClassPro 均执行 5/5 query 和 8 次 tenant probe；41/50 条 RSS 结果均为非 ATS 并被正确
+拒绝。Indica 找到官方 BambooHR handoff 后触发 company deadline，旧 tape 丢失预算控制
+状态，导致 replay 2/3。`.218` 保留五查询 RSS sweep，并为全空 bucket 预留最多两次
+DuckDuckGo rescue；所有候选继续经过原 provider/tenant/S7 门。RetryingFetcher 现发布
+typed company/reservation budget reason，OutcomeTapeFetcher 消费后进入 exhausted 状态，
+不再发出 live 中不存在的额外请求。`.218` clean live 仍为 0/3 Job List，但同版本 replay 为 3/3
+reproduced、0 mismatch、0 fixture gap；三条 secondary rescue 均在第一次请求遇到
+DuckDuckGo challenge。Indica 已有明确 BambooHR handoff，却因 provider search 先执行而
+耗尽 S5 budget，因此 `.219` 把 unsuppressed verified Career legacy traversal 调到 provider
+search 之前，同时保留三路执行与最终 merge。相关 182 tests 通过；随后单条 Indica live
+在 S2 `NETWORK_TIMEOUT` 终止，未触达修改分支，不能计作恢复。随后完成的 development
+Fresh100 S2 search/transport 审计确认 `.188` 有 52 条、`.209` 有 22 条 raw S2 failure，
+但它们不是单一 query
+cluster。五家公司 alternate-query probe 中，SERP 出现 FOTOMILL、IMG、iClassPro 的正确
+域；完整 resolver 只有 FOTOMILL 发布成功，后两家 homepage transport 失败，Dechert 仅
+返回目录站，Tapestrii 仍为空。由于未达到三家公司最终恢复，two-query behavior 已回退，
+只保留每个搜索 source 的 raw/accepted/status 诊断。下一轮分别处理“正确候选已产生但
+transport 验证失败”和“正确候选未产生”；directory/aggregator 被身份门拒绝作为第三类
+观测，不再用 S2 阶段标签合并，也不重复运行同一低收益查询实验。
+此阶段不运行完整 Fresh100、Frozen100 或 sealed blind。
+
+阶段冻结门禁已完成：2,625 tests（4 skipped）、provider 25/25、resolver 6/6、
+architecture 46/0。全量测试暴露的两个 replay error 来自测试 fixture 未从伪造的 schema
+`1.0` payload 中删除 `1.6/1.7` 新字段；fixture 已纠正，生产代码的 strict schema 校验未
+放宽。本轮不再重复全量门禁。
+
+`.219` clean focused run2 再次得到 0/3 Exact，但 3/3 replay 完整。Loveland 的
+provider-search 路线首次稳定产生正确 Paylocity opening `4232544`，随后因 adapter 只能
+从含 UUID 的 board URL 识别 tenant 而以 `provider_not_listable` 拒绝。下一小轮只实现通用
+provider-owned detail bootstrap 与 Paylocity 适配：detail 页必须同时证明 opening、唯一
+tenant、canonical board、精确 title 和 employer；搜索摘要不得授权招聘关系。完整 Phase A
+contract 见 `docs/COORDINATOR_V219_PAYLOCITY_DETAIL_BOOTSTRAP_PHASE_A.md`。
+`.220` 已实现该可选 bootstrap contract 与 Paylocity detail adapter。Loveland 单条 clean
+live 因搜索源未复现 Paylocity candidate 仍为 0/1，但同版本 replay 1/1，因此该次 live 只算
+recall inconclusive。随后使用当前公开 provider 页面和统一 end-to-end fixture contract 验证
+Loveland、iClassPro 与 Resolute Road Hospitality 三个独立 tenant：三条都从 detail 恢复
+canonical board、读取完整库存并通过 title/location/S7；Actabl 的历史 detail 已不再发布所需
+证据并被正确拒绝。相关 focused backend 回归 183 tests 通过，完整 Phase C 见
+`docs/COORDINATOR_V220_PAYLOCITY_DETAIL_BOOTSTRAP_PHASE_C.md`。该 provider variant 可关闭，
+但 Fresh100 总体 recall 未重跑，且 `iClassPro - Class Management Software` 与 provider 法定名
+之间仍缺独立 alias 证据，必须作为身份簇另行处理，不能靠删除描述词放宽 S7。
+
+后续 provider-candidate 审计未找到可直接复制的第二个 adapter cluster。Loveland、iClassPro、
+Heritage 三条精确 Paylocity site query 为 0/3 有效候选，因此不把 Paylocity 加入固定 query rotation；
+`.209` 其余 `provider_not_listable` 均为 trailing-hyphen 或含 `&` 的 speculative tenant guess，
+没有 provider-owned opening/tenant/employer 证据，继续 fail closed。审计见
+`docs/COORDINATOR_V220_PROVIDER_CANDIDATE_AUDIT.md`。下一轮只选择至少三家公司共享且已有
+source-backed evidence 的因果路径，不再从 reason label 或 provider 名称反推 cluster。
+
+`.220` 随后用全新目录完成一次 100 条 development cold start：19 Exact、71 Website、60
+Career、56 Job List，opening 数与 `.209` 相同。19/19 Exact 的 company/provider/tenant/title/
+location/opening identity chain 均通过，未观察到错误 URL、错误城市、跨公司或跨 tenant。
+运行后半段出现集中 92 秒 transport failure，Website coverage 低于 `.209`，不能把该差值解释
+为 coordinator 回归。更确定的缺陷是 Tapestrii、University of Oklahoma、Hays + Sons 三条共享
+`batch_worker_contract_failed`：原始 LinkedIn slug 中的 `%0A` 或空 optional company URL 被直接
+送入 strict `CandidateDiscoveryInput`，`ValueError` 逃出 stage boundary；前两条因此缺少 S2
+snapshot，100 条 replay 在执行前以 integrity failure 正确停止。
+
+`.221` 只修复该 S1-to-coordinator adapter contract：从可信 HTTPS LinkedIn host 提取 job ID，
+重建 `/jobs/view/{id}` canonical evidence；无 ID、带 credentials、foreign host 或非法 optional
+company URL 均不进入 coordinator。严格 input/provider/S7 contract 不变。Phase A 见
+`docs/COORDINATOR_V220_LINKEDIN_INPUT_CANONICALIZATION_PHASE_A.md`。冻结三条 focused live 已完成：
+三条均不再出现 worker contract failure，Tapestrii 与 University of Oklahoma 正常落到 retryable
+`NETWORK_TIMEOUT`，Hays + Sons 通过 company/title/location/provider/tenant/opening 的 S7 审计并
+恢复为 Exact。相同版本 scoped replay 为 3/3 reproduced、0 mismatch、0 fixture gap、0
+replayability drop、0 missing boundary。该 worker/snapshot 簇关闭，但两条 transport failure
+仍属于下一轮待分析问题，不能计作产品恢复。Phase C 见
+`docs/COORDINATOR_V221_LINKEDIN_INPUT_CANONICALIZATION_PHASE_C.md`。
+
+下一轮没有继续按 `OPENING_DISCOVERY_INCOMPLETE` 标签整体修补。冻结证据显示 Lorum、
+Sunbird Software、IMG 三家公司已经拿到正确具体岗位 URL，且详情页都有与该 URL 严格绑定的
+schema.org JobPosting location；共同缺陷是 missing-location candidate 没有统一进入详情补全：
+generic 路线不读取 HTML 编码 JSON，typed provider 路线则提前返回。`.222` 将两类候选接入同一
+bounded detail gate：generic 必须同站，typed 必须同 provider/tenant，JobPosting URL、实际
+fetch URL、selected URL 必须一致，title/location 仍走原严格门。冻结/当前页面解析分别得到
+New York、Sioux Falls 和 Indianapolis；StatRad 只有自由正文地点，明确不纳入。152 个相关
+测试通过，wrong-city 仍拒绝。Phase A 见
+`docs/COORDINATOR_V221_DETAIL_LOCATION_ENRICHMENT_PHASE_A.md`。
+
+`.222` focused live/replay 已完成。全新三条冷输入 run2 中，Sunbird 与 IMG 均得到 S7
+verified Exact：分别命中 JazzHR tenant `sunbirdsoftwareinc` 与 `img`，title/location 与
+LinkedIn 输入完全一致。Lorum 在同一 run 中停于独立的 retryable S2 `NETWORK_TIMEOUT`，没有
+进入本轮修改的 matcher；为验证目标代码路径，另建明确标注的 opening-path run，仅注入 `.220`
+已验证的 `lorum.com` Website/Career evidence，成功选择
+`/open-roles/devops-engineer-34274`，结构化地点 `New York, New York` 通过 exact location gate。
+冷输入 replay 3/3 reproduced，Lorum focused replay 1/1 reproduced，均为 0 mismatch、0 fixture
+gap。该三公司 detail-location cluster 关闭；Lorum 的 S2 transport 失败继续按独立因果簇处理，
+不得用 focused 输入改写冷启动成绩。完整 Phase C 见
+`docs/COORDINATOR_V222_DETAIL_LOCATION_ENRICHMENT_PHASE_C.md`。
+
+Arkema、Aramark、Cintas 的 SuccessFactors provider continuity 另有真实共因，但预计本轮只
+直接恢复一条 Exact，已在
+`docs/COORDINATOR_V221_OPENING_PROVIDER_PROMOTION_PHASE_A.md` 标为 deferred，`.222` 不实现，
+防止不同 title/location/provider 缺陷被包装成一个低收益 cluster。
+
+`.222` 后续 preflight 使用冻结 snapshots 与当前公开详情重新检查该簇。三家公司现在均有同一
+SuccessFactors Career Site JobPosting microdata contract：详情页绑定正确 URL、title、city/state
+和 hiring organization；因此地点补全与 provider continuity 不再是互不相关的猜测，而是同一
+provider-family detail contract 的两个边界。下一轮 `.223` 按
+`docs/COORDINATOR_V223_SUCCESSFACTORS_DETAIL_CONTINUITY_PHASE_A.md` 执行：adapter 只接受同 tenant
+详情 microdata，S6 只从完整 native adapter provenance 提升已 relationship-verified 的 generic
+identity。Arkema 的终端 `Job` 仅作为 SuccessFactors 页面展示后缀处理，不放宽全局 title gate。
+
+`.224` 已完成该 provider-family 实现和 focused Phase C。SuccessFactors adapter 对最多三条
+exact-title detail 执行 canonical URL、同 host/tenant、JobPosting title/location/employer 验证；
+OpeningMatch 仅从 complete native-adapter provenance 提升既有 relationship-verified generic
+identity。Arkema/Beaumont 与 Cintas/Fort Myers 在全新三条 cold run 中均通过 S7 Exact，错误城市、
+跨 tenant 和残缺页面继续 fail closed。live 首轮还暴露 provider inventory evidence 与 legacy
+replay helper 未按 identity contract canonicalize URL；`.224` 修复后 scoped gate 308 tests、完整
+replay 3/3 和 failure replay 1/1 均通过。完整报告见
+`docs/COORDINATOR_V224_SUCCESSFACTORS_DETAIL_CONTINUITY_PHASE_C.md`。
+
+Aramark 已由官方 declared JSON inventory 找到精确 Indianapolis SuccessFactors opening，但 S5
+checkpoint 没有持久化 `_trace_binds_declared_inventory()` 依赖的 transient discovered board，S7
+因此保持拒绝。当前 artifacts 只有 Aramark 一家公司满足该 exact boundary shape；下一轮先寻找
+至少三家公司共同证据，再决定是持久化 typed board contract 还是消除对 transient object 的依赖，
+不得用单样本放宽跨 host identity gate。
+
+`.225` Phase A 已冻结下一个五公司通用簇。ARUP Laboratories、STEAMe、WalkMe、OneApp 与
+Crosby 都在 candidate coordinator 与 legacy Website/Career merge 后丢失 producer-owned
+portfolio completeness：`_merge_legacy_website_route()` 无条件写入
+`eligible_set_complete=False`，即使所有 retained authorized boards 已被 complete source portfolio
+覆盖且 S6 已全部尝试。修复只按 authorized eligible board identity 合并完整性；未授权的
+Lever/Ashby 搜索候选仍是诊断数据，不能授权岗位或污染官方完整性结论。任何 cap、未完成 producer
+或仅由 incomplete source 覆盖的 authorized board 继续 fail closed。完整 contract、验收和回退边界
+见 `docs/COORDINATOR_V225_PORTFOLIO_COMPLETENESS_MERGE_PHASE_A.md`。
+
+`.225` code-frozen focused live 进一步纠正了该 Phase A 假设。STEAMe 与 ARUP 确实进入
+explicit complete-source merge，修复后两者的 portfolio 均为 complete；STEAMe 通过 JazzHR
+detail/title/Chicago location 与 S7 恢复 Exact，ARUP 则继续暴露独立的 UltiPro invalid response
+和 company-budget 问题。Sony 既有真实多 board fixture 构成第三个同 contract 公司回归。
+WalkMe、OneApp 本轮停在 S2 timeout，Crosby 的 legacy success 没有发布 source portfolio，三者
+不能算本 merge defect 的 live recovery。5/5 scoped tape 均成功导出和执行，4 reproduced；ARUP
+在 live `INVALID_STRUCTURED_DATA` 与 replay `COMPANY_TIME_BUDGET_EXHAUSTED` 之间发生 terminal
+reason mismatch，身份前缀不变。完整 Phase C 见
+`docs/COORDINATOR_V225_PORTFOLIO_COMPLETENESS_MERGE_PHASE_C.md`；当前保守投影为 25/100 Exact，
+见 `docs/FRESH_100_CURRENT_CLOSURE_MATRIX.md`，不得替代正式 cold rerun。
+
+下一轮并行因果审计否决了两个看似较大的标签簇。Diamondback、Prophetic、WICHITA 虽然都以
+budget terminal 结束，但分别属于第一方路径 read timeout、公司身份/盲 tenant 探测混合、以及
+TLS/403/错误实体混合；共同 budget classifier 不是共同根因。ARUP 的 live parser error 到 replay
+budget terminal mismatch 也只有单例，历史其他 budget transition 方向与触发不同。两项均不改
+代码。下一步保持 `.225` 冻结，复跑 10 条“正确官网 host 已产生但所有独立 transport 同时
+timeout”的记录，用无代码恢复率判断网络波动还是 transport implementation defect。审计见
+`docs/COORDINATOR_V225_NEXT_CAUSAL_CLUSTER_AUDIT.md`。
+
+`.225` 代码冻结的 10-record known-host transport rerun 已完成。此前同轮超时的 10 条中 9 条
+Website 在零 transport 修改下恢复，8 条到达 Job List；BWXT/Idaho Falls 与 Salas O'Brien/
+Evansville 通过完整 S7 identity chain 恢复 Exact。System One 是唯一仍停 S2 timeout 的样本，
+不足以形成三公司 implementation contract，因此不再修改 retry/backoff/global budget。10/10 scoped
+replay reproduced，0 mismatch、0 fixture gap。恢复后的记录分别转入 verified no-match、Career、
+portfolio 与 opening-inventory 根因，不再包装为 S2 cluster。完整报告见
+`docs/COORDINATOR_V225_TRANSPORT_RERUN_PHASE_C.md`；保守 Fresh100 投影更新为 27/100 Exact。
+
+随后对 14 条 opening/inventory 与 7 条 Career terminal 做并行因果拆分，两组均没有达到三家
+独立公司的同根因实现门槛。WENDEL 两个 posting 只能算一家公司；HP Eightfold PCS X、Home
+Depot CWS、Cretex hosted iCIMS 均为 provider/shape 单例；其余 S6 证据不足以共享 contract。
+S4 侧则混合外部委托且库存为空、历史无公开岗位、未生成候选和 ProMach 单例，不能扩大 path
+猜测或改写 `VERIFIED_NOT_FOUND`。下一步只读审计 Job Board 未验证的 CHAMP/Fabric/Hawaiian
+Electric 三家公司和 HTTP forbidden 的 Altec/City of Sioux Falls/NDIT 三家公司。详见
+`docs/COORDINATOR_V225_DOWNSTREAM_CAUSAL_AUDIT.md`。
+
+Job Board 未验证与 HTTP forbidden 的三公司审计同样否决统一修改。CHAMP、Fabric、Hawaiian
+Electric 分别是 Freshteam 声明、未证实的动态库存、明确 SuccessFactors 跨域 handoff 未 bootstrap；
+Altec、Sioux Falls、NDIT 的 403 则分别来自官方岗位库存、官方官网/Career、以及错误候选
+`kxnet.com`，没有共同阶段或 host。当前 broad failure labels 已完成因果拆分。下一步不再继续
+逐条 heuristic，而是在已有 non-sealed fixtures/artifacts 中只读寻找三种 singleton shape 的复现，
+达到三家公司后才冻结新 contract。审计见
+`docs/COORDINATOR_V225_BOARD_AND_FORBIDDEN_AUDIT.md`。
+
+对 durable terminal semantics 的独立审计还纠正了 closure matrix：Matlen Silver、City of
+Pharr、SDS International、IGNITE、PACS、Ken Garff、Brown and Caldwell、QXO 都由完整官方
+库存产生 `verified_inventory_no_match`，应计为 goal 允许的 evidence-backed terminal，而不是
+SYSTEM_GAP。按 canonical LinkedIn job URL 依次 overlay `.220/.221/.222/.224/.225` code-frozen
+artifacts 后，当前 100 条唯一记录的保守投影为 27 Exact、8 Verified No Match、1 External
+Blocked（Altec 官方库存持续 403）、64 unresolved。原因数量改用 durable terminal reason 的互斥
+计数，不再把重叠的人工 cluster 数量相加；focused runs 没有人工 evaluation annotations，故仍
+不是正式 disposition report。
+
+现有 non-sealed recurrence mining 找到下一合法三公司簇：NDIT、City of Lubbock、State of
+Montana 均已验证 LinkedIn official homepage，但候选因 parent/group 身份需要下游招聘关系而被
+安全拒绝；resolver 随后把 `kxnet.com`、`cityoflubbock.com`、`state-of-montana.com` 等无关
+host 的 403/timeout 投影为公司终态。`.226` 只修 failure provenance：存在该类 withheld official
+candidate 时，保留的 transport failure 必须属于同 registrable site；否则退回诚实的
+`WEBSITE_NOT_RESOLVED`。parent/group URL 仍不发布，所有招聘关系和 S7 门保持不变。Phase A 见
+`docs/COORDINATOR_V226_OFFICIAL_CANDIDATE_FAILURE_ATTRIBUTION_PHASE_A.md`。
+
+`.226` focused cold live/replay 已完成。Lubbock 与 NDIT 分别抑制错误
+`cityoflubbock.com` timeout 和 `kxnet.com` 403，诚实保留为 `WEBSITE_NOT_RESOLVED`；Montana
+抑制无关 `.com` failures，但当前 `mt.gov` 本身 timeout，按同站 contract 正确保留 typed
+`NETWORK_TIMEOUT`。三条均未发布 Website/Job Board/opening，parent/group 拒绝未放宽；3/3
+replay reproduced、0 mismatch、0 fixture gap。S5 independent coordinator 后续仍以
+`JOB_BOARD_NOT_FOUND` 结束，因此 aggregate closure counts 不变。本轮关闭错误 transport 归因，
+不宣称 recall 增长。Phase C 见
+`docs/COORDINATOR_V226_OFFICIAL_CANDIDATE_FAILURE_ATTRIBUTION_PHASE_C.md`。
+
+仍未完成：真实物理并行、route-local snapshot/checkpoint scope、company deadline 内的
+硬预算 reservation，以及 CLI/library/插件相同输入下的完整 entry parity。它们必须在
+逻辑协调器 live 证明有效后继续，不得把当前 serial coordinator 宣称为物理并行。
+
+### Authenticated External Apply input-parity gate（插件 `0.3.2`，暂停）
+
+该插件 gate 执行时 `coordinator-v2` 仍为 proposed，尚未实现行为迁移。已先在登录态 Chrome 中用
+page-scan v3 采集 24 条当前 LinkedIn Jobs：24/24 绑定 canonical job ID，18/24 明确
+出现 `on company website` 按钮，6/24 为 Easy Apply，0 条 detail 未观察到。18 个站外
+按钮均没有 DOM `href` 或可安全清洗的目标 URL，因此 External Apply URL 覆盖仍为
+0/24，但不能再解释成“岗位没有站外 Apply”。
+
+插件 `0.3.2` 只修通用输入边界：同源 `/preload/` iframe、两类 card DOM、card/job URL/
+detail identity 同步、稳定等待、恢复原 card 的 ID 竞态，以及普通外部按钮不能误判为
+Easy Apply。无 URL 的外部按钮记录为
+`detail_observed_but_apply_absent + target_url_unavailable_in_dom`，不能进入 provider/S7。
+局部门禁 42/42。完整报告见
+`docs/AUTHENTICATED_EXTERNAL_APPLY_INPUT_PARITY_GATE.md`。
+
+目的地捕获架构已按 ADR-0031 实现为插件 `0.4.0` 和 adapter `.213`。第一版采用零新增权限的
+单岗位用户确认流程：在 LinkedIn detail 武装 canonical job ID，用户正常点击真实 Apply，随后
+在站外目标页再次打开插件确认绑定。pending state 只进 `chrome.storage.session`；不自动点击、
+不监听全部 tab、不注入 MAIN world、不增加 `<all_urls>`。目标 tab 必须是 source tab 的同页导航
+或带相同 `openerTabId` 的新 tab。浏览器清洗后还须通过 token-authenticated loopback Python
+validation endpoint；direct record 在构造 `CompanyInput` 前再次清洗。捕获结果仍须完整经过
+provider/tenant/relationship/S6/S7。
+
+最小实现的离线门已完成：2,591 tests（4 skipped）、provider 25/25、resolver 6/6、architecture
+46/0。下一道决策门是 20-30 条登录态 focused gate，报告 External Apply 覆盖、supported provider、
+specific opening、S7 Exact、普通路径重叠和净新增；报告完成后再次停止。只有真实净新增证明价值
+且人工确认成为主要瓶颈，才评审 optional `tabs` 后台观测。
+插件 focused 报告前不继续其 authenticated acceptance；本限制不再阻止已获授权的
+普通版 backend coordinator。仍不运行完整 Fresh100，也不打开 blind v2/v3。
 
 两轮通用稳定化修复已经完成：`.210` 修复 stored provider tenant 被误投影为招聘
 主体；`.211` 在冻结四公司 live 中恢复 `0/4` Exact，已于 `.212` 回退。按照既定
@@ -36,25 +1364,25 @@ Pinpoint、SmartRecruiters、Workday、Oracle 和 Eightfold。Fresh100 输入中
 Apply 覆盖为 `0/100`；候选未产生组的 30 个非 Exact 记录虽然看到了 1,434 条原始
 SERP 结果，最终产出 Provider Candidate 为 0。
 
-下一阶段候选方案是新增 immutable `CandidateDiscoveryInput` 和 route-local
+此前提出的候选方案是新增 immutable `CandidateDiscoveryInput` 和 route-local
 `CandidateDiscoveryCoordinator`：External Apply/Provider Search 不等待 S2，Website/
 Career 在 S4 后追加；S3 rejection 改为 route-local；搜索保留预算内多个结果并均衡
 provider family；company deadline 内为三路和 opening inventory 分别预留预算。S6/S7、
 provider/tenant、title/location 和 URL 安全门保持不变。完整证据、迁移边界及验收合同见
 `docs/FRESH_100_V212_ARCHITECTURE_REVIEW.md`。
 
-该方案属于超过既定两轮上限的 contract/orchestration migration，行为实现开始前需要
-明确架构授权。开发时只跑受影响局部测试和 scoped replay；集成冻结后只跑一次全量
-offline gate。随后先做 development focused live，再做记录出口 IP/ASN/country 与
-connect/TLS/TTFB 的 current/US 网络四格 A/B。sealed holdout v2/v3 在开发门和
-Frozen100 回归门关闭前继续封存。
+该 contract/orchestration migration 已获用户明确授权并完成第一阶段逻辑实现。开发时
+只跑受影响局部测试和 scoped replay；集成冻结后只跑一次全量 offline gate。随后先做
+development focused live，再做记录出口 IP/ASN/country 与 connect/TLS/TTFB 的
+current/US 网络四格 A/B。sealed holdout v2/v3 在开发门和 Frozen100 回归门关闭前继续
+封存。
 
-迁移前 contract 已进一步冻结为 proposed `ADR-0030`。新 engine 必须进入 run-config
+迁移 contract 已冻结为 accepted `ADR-0030`。新 engine 已进入 run-config
 schema/digest，保留 staged rollback engine；coordinator 只调度和合并 untrusted lead，
 不得接管 provider、relationship、inventory 或 S7。第一阶段先证明三路逻辑独立和
 deterministic merge；route-local capture/checkpoint 支持完成前不得宣称真实并发，也
-不得序列化 future、线程、fetcher 或部分候选池。ADR 状态仍为 proposed，不构成行为
-实现授权。
+不得序列化 future、线程、fetcher 或部分候选池。当前只完成 serial logical
+coordination，物理并行仍需独立验收。
 
 ## 已完成稳定化轮次（2026-07-21，`.210` -> `.212`）
 
@@ -1545,7 +2873,8 @@ provider、bridge contract 或 blind-holdout 标注。后端稳定化与人工�
 | E3 结果展示与安全 | 已完成 | 校验 run payload/rate；只渲染 public HTTPS opening/job-list 链接；失败保留 reason code |
 | E4 自动化插件门禁 | 已完成 | 14 个 content DOM 场景、12 个 popup workflow；全量 1421 tests、25/25 provider、6/6 resolver、architecture 26/0 |
 | E5 真实登录态验收 | 主流程已通过 | Microsoft 新版 DOM 达到 1 selected job / 1 Apply；即时链接、严格 run 和结果展示已验证；v0.2.2 in-flight reopen 未重复人工执行 |
-| E6 当前批次整页扫描 | 真实复验中 | v0.3.1 双模式：Selected 即时详情；Page 串行绑定最多 30 个 currentJobId，逐条等待 Apply 状态，带进度、取消和原选择恢复 |
+| E6 当前批次整页扫描 | input-parity 完成 | v0.3.2 登录态 24/24 detail observed；18 个站外按钮无 DOM URL、6 个 Easy Apply；目的地捕获待独立 contract |
+| E7 button-only 目的地捕获 | 离线完成，live 待验收 | v0.4.0 单岗位用户确认；session-only state、source/opener 绑定、浏览器/Python 双重清洗；不新增权限 |
 
 真实验收只能声明已经执行的范围。当前可以声明“真实 LinkedIn 主流程通过”，但不能把未重复
 执行的 v0.2.2 in-flight reopen 写成真人通过；该行为由 popup harness 覆盖。人工 gate 不允许

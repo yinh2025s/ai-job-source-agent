@@ -1,6 +1,6 @@
 # ADR-0030: Coordinate Independent Candidate Discovery Routes
 
-- Status: proposed; behavior implementation requires explicit user authorization
+- Status: proposed; opt-in prototype frozen, product migration not approved
 - Date: 2026-07-21
 
 ## Context
@@ -12,8 +12,12 @@ a deterministic S3 failure. Provider search is also first-hit rather than
 bounded-exhaustive. The resulting system has three producer classes but no
 independent route coordinator.
 
-Fresh100 confirms that this is not merely terminology. Its input contains no
-External Apply observation. For 30 non-Exact records in the candidate-not-
+Fresh100 confirms that this is not merely terminology. Its anonymous public
+input contains no External Apply observation. A later authenticated input-
+parity gate observed 18/24 visible off-site Apply controls and six Easy Apply
+controls, but LinkedIn exposed all 18 off-site controls as buttons without a DOM
+target URL. This establishes a separate browser-input capability gap and does
+not authorize this coordinator proposal. For 30 non-Exact records in the candidate-not-
 produced group, provider search issued 150 fixed queries, observed 1,434 raw
 SERP results and emitted zero provider candidates. The five-query schedule
 always reaches general, Greenhouse, Lever, Ashby and Workable while excluding
@@ -22,8 +26,10 @@ the same later provider families. Details are recorded in
 
 The two permitted stabilization repairs have already completed, and the second
 recovered 0/4 declared Exact openings before being reverted. This proposal is a
-new orchestration contract, not a third local heuristic. It remains proposed
-until the user explicitly authorizes the migration.
+new orchestration contract, not a third local heuristic. An opt-in logical
+prototype exists for evaluation, but the product remains on `stage_v1`.
+Physical route concurrency and any product migration remain separately gated
+by route-local snapshot and checkpoint evidence scopes and explicit approval.
 
 ## Decision
 
@@ -146,6 +152,27 @@ cannot borrow another route's reservation until that route is completed,
 inapplicable or explicitly releases it. Request, query and candidate limits
 remain independently bounded.
 
+The accepted serial implementation reserves `provider_search_reserve_seconds`
+from S4 at the retrying fetch boundary. Before each S4 dispatch, effective
+remaining time is `global_remaining - provider_reserve`; a non-positive value
+returns retryable `FETCH_BUDGET_EXHAUSTED`, finalizes the existing S4 evidence
+scope and checkpoint, and releases the reservation when the runner enters S5.
+The live runner's existing post-S5 opening reserve remains independent. This
+does not create another process, stage, snapshot scope or persisted runtime
+object.
+
+Provider search first spends one Bing RSS request per scheduled provider query.
+If every accepted bucket is still empty, composition reserves at most two
+additional DuckDuckGo HTML requests for deterministic empty-bucket rescue.
+Rescue results remain untrusted and pass the same ATS-host, provider, tenant,
+relationship, inventory and S7 gates.
+
+Deadline ownership is a typed fetch terminal, not an error-message inference.
+`COMPANY_TIME_BUDGET_EXHAUSTED` and `FETCH_BUDGET_EXHAUSTED` are persisted by
+snapshot capture; outcome-tape replay switches `remaining_fetch_seconds()` to
+exhausted after consuming either terminal so later request scheduling matches
+live execution. Ordinary network timeouts remain `NETWORK_TIMEOUT`.
+
 Lower network latency can improve outcomes but cannot substitute for this
 scheduler contract. A controlled current-exit/United-States-exit A/B remains a
 separate release experiment.
@@ -154,8 +181,9 @@ separate release experiment.
 
 This migration changes deterministic execution semantics.
 
-1. Run configuration upgrades from `1.5` to `1.6` and requires
-   `candidate_discovery_engine` with `stage_v1` or `coordinator_v2`.
+1. Run configuration upgrades from `1.5` through `1.6` to `1.7`; it requires
+   `candidate_discovery_engine` with `stage_v1` or `coordinator_v2`, and `1.7`
+   versions the provider-search reservation.
 2. Adapter version advances from `.212`; old checkpoints therefore miss safely.
 3. Old run payloads retain their original digest and may execute only with their
    compatible staged implementation. They are never silently reserialized as
@@ -237,6 +265,8 @@ addresses the observed orchestration failure. It increases bounded work because
 productive early routes no longer suppress independent evidence. Route budgets,
 candidate caps and deterministic merge contain that cost.
 
-This ADR does not authorize implementation by itself. Until the user explicitly
-approves coordinator-v2, `.212` behavior remains current and this record stays
-`proposed`.
+The prototype implements logical route independence, deterministic
+route-reserved merge, bounded-exhaustive provider search and persistence
+isolation behind an explicit flag. It does not authorize a product-default
+migration, LLM integration, relaxed identity gates, physical route concurrency
+without route-local evidence scopes, or consumption of sealed holdouts.

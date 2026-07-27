@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0",
+  "cohort": "fresh100-development-20260718",
+  "policy": "reviewed_durable_terminal_allowlist",
+  "expected_record_count": 100,
+  "expected_outcome_counts": {
+    "exact": 37,
+    "external_blocked": 1,
+    "unresolved": 50,
+    "verified_no_match": 12
+  },
+  "accepted_terminals": {
+    "4193245312": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V225_TRANSPORT_RERUN_PHASE_C.md"
+    },
+    "4290752432": {
+      "durable_outcome": "verified_no_match",
+      "evidence_ref": "docs/COORDINATOR_V235_KNOWN_DOMAIN_DIAGNOSTIC_PHASE_C.md"
+    },
+    "4335431264": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V232_TENANT_PROBE_PROVENANCE_PHASE_C.md"
+    },
+    "4405588363": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V221_LINKEDIN_INPUT_CANONICALIZATION_PHASE_C.md"
+    },
+    "4416993271": {
+      "durable_outcome": "verified_no_match",
+      "evidence_ref": "docs/COORDINATOR_V244_PAGE_EVIDENCED_PROVIDER_CAREER_PHASE_C.md"
+    },
+    "4416280287": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V235_CAUSAL_LEDGER_AND_TIMEOUT_REPRODUCTION_PHASE_C.md"
+    },
+    "4421960984": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V225_TRANSPORT_RERUN_PHASE_C.md"
+    },
+    "4423350020": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V224_SUCCESSFACTORS_DETAIL_CONTINUITY_PHASE_C.md"
+    },
+    "4424789545": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V224_SUCCESSFACTORS_DETAIL_CONTINUITY_PHASE_C.md"
+    },
+    "4425365717": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V228_PROVISIONAL_OFFICIAL_WEBSITE_PHASE_C.md"
+    },
+    "4426438449": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V222_DETAIL_LOCATION_ENRICHMENT_PHASE_C.md"
+    },
+    "4426611583": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V225_PORTFOLIO_COMPLETENESS_MERGE_PHASE_C.md"
+    },
+    "4432015135": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V222_DETAIL_LOCATION_ENRICHMENT_PHASE_C.md"
+    },
+    "4433489743": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V233_TRANSPORT_DIAGNOSTIC_PHASE_C.md"
+    },
+    "4434655043": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V235_GENERIC_REFETCH_DIAGNOSTIC_PHASE_C.md"
+    },
+    "4437076185": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V230_ULTIPRO_LOCATION_PHASE_C.md"
+    },
+    "4437878290": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V235_CAUSAL_LEDGER_AND_TIMEOUT_REPRODUCTION_PHASE_C.md"
+    },
+    "4438146712": {
+      "durable_outcome": "verified_no_match",
+      "evidence_ref": "docs/COORDINATOR_V235_GENERIC_REFETCH_DIAGNOSTIC_PHASE_C.md"
+    },
+    "4438894054": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V235_KNOWN_DOMAIN_DIAGNOSTIC_PHASE_C.md"
+    },
+    "4438885728": {
+      "durable_outcome": "verified_no_match",
+      "evidence_ref": "docs/COORDINATOR_V244_PAGE_EVIDENCED_PROVIDER_CAREER_PHASE_C.md"
+    },
+    "4440062680": {
+      "durable_outcome": "verified_no_match",
+      "evidence_ref": "docs/COORDINATOR_V228_PROVISIONAL_OFFICIAL_WEBSITE_PHASE_C.md"
+    },
+    "4440288309": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V235_KNOWN_DOMAIN_DIAGNOSTIC_PHASE_C.md"
+    },
+    "4440790313": {
+      "durable_outcome": "external_blocked",
+      "evidence_ref": "docs/COORDINATOR_V225_BOARD_AND_FORBIDDEN_AUDIT.md"
+    },
+    "4441446072": {
+      "durable_outcome": "exact",
+      "evidence_ref": "docs/COORDINATOR_V243_NEXT_CAUSAL_EVIDENCE_PHASE_C.md"
+    },
+    "4441635475": {
+      "durable_outcome": "verified_no_match",
+      "evidence_ref": "docs/COORDINATOR_V225_TRANSPORT_RERUN_PHASE_C.md"
+    }
+  }
+}

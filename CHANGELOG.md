@@ -1,5 +1,1268 @@
 # Changelog
 
+## 2026-07-27 - v273 current public diagnostic cohort frozen
+
+- Collected two new S1-only public LinkedIn card pools across twelve queries
+  and mechanically froze 30 independent companies.
+- Prior pool/diagnostic company and job-ID overlap is zero; input SHA-256 is
+  `d10afae92b17c43604192ca8e4240c77f337acf950ce42a77a5ad36aa6a7fc79`;
+  sealed holdouts were not read.
+- Frozen `.270` will run serially with isolated live/replay roots. No
+  implementation is selected from a shared stage label alone.
+- Completed 30/30 live records with 26 Websites, 22 Careers, 18 verified Job
+  Lists and 13 S7 Exact openings. Same-version replay reproduced all 30 with
+  zero mismatch, fixture gap or request-plan divergence.
+- Audited every URL-bearing record: all 13 published Exact openings preserve
+  company, provider, tenant, title and location; Tessera Labs was correctly
+  rejected for unverified provider relationship. Wrong URL, wrong location,
+  cross-company and cross-tenant publication are zero.
+- The 17 non-Exact records split into thirteen executable causes; none meets
+  the three-company/three-recovery implementation threshold. No new provider,
+  heuristic or scheduler change is selected.
+- Full release gates pass 2834 tests (4 skipped), provider benchmark 25/25,
+  resolver benchmark 6/6 and architecture validation 48/0. Two stale test
+  fixtures were updated to carry the employer/location evidence already
+  required by the frozen identity contract; product code did not change.
+- `.273` is the final new cohort in this release cycle. Work proceeds directly
+  to ownership review, grouped commits and push.
+
+## 2026-07-27 - v272 Jobvite qualification declined
+
+- Combined LHH, The IMA Group and Samtec original public inputs in a focused
+  three-record baseline without injecting provider URLs.
+- The IMA Group retained a verified Jobvite board; Samtec's handoff did not
+  reproduce; LHH produced an unrelated SmartRecruiters `Axiado` tenant that S7
+  rejected as unverified.
+- Replay reproduced 3/3, but only two credible Jobvite relationships remain.
+  No adapter is implemented before the required three-company threshold.
+
+## 2026-07-27 - v271 residual backend diagnostic cohort frozen
+
+- Frozen all 18 remaining unused companies from the v252/v254/v256/v257/v260
+  S1-only public pools with zero company and job-ID overlap against v245-v265
+  diagnostic cohorts.
+- Input SHA-256 is
+  `557e50c7dfcf97d38d7371b5b567d131b74c32013f697cd36ad8baba8435878b`;
+  the manifest records `sealed_holdouts_read=false`.
+- Frozen `.270` will run serially with isolated checkpoint, completion,
+  evidence, snapshot and replay roots. No implementation follows unless a
+  shared causal cluster covers at least three independent companies.
+- The run completed with 15/18 Websites, 9/18 Careers, 7/18 verified Job Lists
+  and 5/18 S7 Exact openings. Replay reproduced 18/18 with zero mismatch,
+  fixture gap or tape divergence; all five Exact URLs passed identity and
+  location audit.
+- No new implementation cluster qualifies. Career and opening failures split
+  into distinct regional, identity, transport, static-shell, bespoke-search,
+  Kering and Jobvite causes. Historical development artifacts will be mined
+  read-only before any provider implementation is selected.
+
+## 2026-07-27 - v270 prefixed API-key redaction accepted
+
+- Final `.269` review found a Google Maps key under `mapsApiKey` in both a
+  homepage snapshot and scoped replay tape.
+- `.270` treats canonical names ending in `apikey` as sensitive and redacts
+  bounded `*apiKey`, `*api_key` and `*api-key` fields in structured and text
+  bodies. `apiKeyEnabled` remains semantic.
+- Final isolated live kept 3/3 verified Job Lists, one location-exact S7
+  opening and two evidence-backed no-match outcomes. Scoped replay reproduced
+  3/3 with zero mismatch, fixture gap or tape divergence.
+- Combined artifact audit found zero invalid or raw values across 54 HMG URL
+  ticket fields, 56 HMG HTML fields, 12 HMG refresh fields and 12 prefixed
+  API-key fields.
+- Focused tests pass 124/124, provider benchmark 25/25, resolver benchmark 6/6
+  and architecture 48 adapters / 0 issues.
+
+## 2026-07-27 - v269 HMG search-entry request identity behavior gate
+
+- `.268` live produced 3/3 verified Job Lists and the expected Kavaliro Exact,
+  but replay diverged with two unconsumed entries beginning at the HMG
+  search-entry POST.
+- The rotating search-entry `t` ticket remained in the request-body fingerprint
+  even though the sanitized page emitted an inert replacement.
+- `.269` redacts `t` only for the exact HTTPS `/index.smpl`,
+  `arg=jb_search_results`, `action=1` form contract. Generic forms, wrong paths,
+  different titles and other `arg` values remain semantic.
+- Final isolated `.269` live kept 3/3 verified Job Lists, one location-exact S7
+  opening and two evidence-backed no-match outcomes. Scoped replay reproduced
+  3/3 with zero mismatch, fixture gap or tape divergence.
+- Audits found zero raw tickets across 54 HMG URL fields, 26 HTML form fields
+  and 6 inventory refresh fields. Focused tests pass 122/122, provider
+  benchmark 25/25, resolver benchmark 6/6 and architecture 48 adapters / 0
+  issues.
+
+## 2026-07-27 - v268 HMG tape body redaction selected
+
+- Read-only artifact review found that `.267` sanitized URL metadata but left
+  raw HMG `h/t` validation tickets inside scoped replay `page.html` bodies.
+- `.268` recognizes only the complete HMG board or inventory-response contract
+  and replaces raw tickets with deterministic inert values that preserve token
+  shape and multi-page replay semantics. Generic fields named `h` or `t` remain
+  unchanged.
+- New sanitation and replay-contract tests pass in the focused 120-test group.
+  Final acceptance requires new isolated live/replay artifacts and recursive
+  URL plus body audits.
+
+## 2026-07-27 - v267 Haley Marketing review hardening behavior gate
+
+- Post-implementation review found that `.266` stopped on exact title without
+  requiring target location, which could miss a later same-title opening in
+  the correct city.
+- `.267` adds title-plus-location early-stop semantics, validates
+  provider-published canonical detail URLs and archived state, covers the
+  search-entry and ticket-refresh variants, and redacts HMG `h/t` validation
+  tickets from sanitized request identity.
+- Final isolated live recovered 3/3 verified Job Lists: Kavaliro returned a
+  location-exact S7 opening, while Madison-Davis and Top Prospect Group returned
+  complete evidence-backed no-match inventories without fabricated URLs.
+- Same-version scoped replay reproduced 3/3 with zero mismatch or fixture gap.
+  An audit of 54 HMG URL fields found zero raw ticket leakage.
+- Related tests passed 103/103, provider benchmark 25/25, resolver benchmark
+  6/6 and the 48-adapter architecture gate reported zero issues. `.266` remains
+  causal evidence; `.267` remains behavior evidence because `.268` owns the
+  replay-body privacy closure.
+
+## 2026-07-27 - v265 closure and v266 Haley Marketing cluster selected
+
+- Frozen `.261` completed 30/30 v265 live records with 26 Websites, 24
+  Careers, 20 verified Job Lists and 5 S7 Exact openings; same-version replay
+  reproduced 30/30 with no integrity or request-plan divergence.
+- Sol, krea.ai, Essentia Health, Infleqtion and Moog pass company, provider,
+  tenant, title, location and canonical-opening audit. Wrong URL, wrong
+  location, cross-company and cross-tenant publication are zero.
+- Madison-Davis, Top Prospect Group and Kavaliro expose the same Haley
+  Marketing HMG Job Board contract: `hmg-jb.css`, `combobo.js`,
+  `JBSearchList_form`, same-origin `/json/index.smpl` inventory and
+  `/jb/{slug}/{POST_ID}` details.
+- Focused anonymous inventory probes found Kavaliro's exact Jacksonville
+  Quality Engineer and complete zero-result target-title inventories for the
+  other two boards. This is the first new provider cluster with one common
+  trigger, one production path and three expected terminal recoveries.
+- `.266` is limited to a native page-aware provider adapter and focused
+  verification. Stage scheduling, identity gates, plugin, coordinator-v2, LLM
+  and sealed holdouts remain unchanged.
+- Added the page-aware `haley_marketing` adapter with strict multi-signal
+  detection, same-host replay locator, search-entry POST support, bounded
+  title-filtered JSON pagination and same-tenant `/jb/{slug}/{POST_ID}`
+  candidate construction.
+- The final isolated run reached 3/3 verified Job Lists: Kavaliro became an S7
+  Exact Quality Engineer in Jacksonville, while Madison-Davis and Top Prospect
+  Group returned complete provider-backed `OPENING_NOT_FOUND`. Wrong URL,
+  wrong location, cross-company and cross-tenant results are zero.
+- Same-version scoped replay reproduced 3/3 with zero mismatch or fixture gap.
+  Focused related tests passed 49/49, provider benchmark 25/25, resolver
+  benchmark 6/6 and architecture validation reported 48 native adapters with
+  zero issues.
+
+## 2026-07-27 - v264 backend diagnostic closure and v265 input frozen
+
+- Frozen `.261` completed 30/30 v264 live records with 27 Websites, 20 Careers,
+  18 verified Job Lists and 7 S7 Exact openings; full replay reproduced 30/30
+  with no integrity or request-plan divergence.
+- All seven Exact openings pass the full identity and URL audit. Arkema
+  correctly resolves Beaumont, Texas; wrong URL, cross-company, cross-tenant
+  and wrong-location publication remain zero.
+- Neither the three-company 403 cluster nor the three-company provider
+  relationship cluster has expected recovery of three. All other causes remain
+  one- or two-company protocols, so v264 makes no product-code change.
+- Froze v265 with 30 further unused companies, zero prior diagnostic company or
+  job-ID overlap and 13 role families.
+
+## 2026-07-27 - v263 backend diagnostic closure and v264 input frozen
+
+- Frozen `.261` completed 30/30 v263 live records with 30 Websites, 25 Careers,
+  18 verified Job Lists and 10 S7 Exact openings.
+- All ten Exact openings pass company, hiring entity, provider/tenant, title,
+  location, captured-current-state and canonical-URL audit. Wrong URL,
+  cross-company, cross-tenant and wrong-location publication are zero.
+- Full same-version replay reproduced 30/30 with zero mismatch, fixture gap,
+  budget recovery, extra request or unconsumed tape.
+- No causal recall cluster reaches three independent companies with expected
+  recovery of at least three. Peachtree proves the same visible-card parser
+  symptom as ProKids, but the strict count remains two.
+- Froze v264 from unused S1-only public-pool records: 30 new companies, 30 new
+  LinkedIn job IDs and six role families. It has zero company-name and job-ID
+  overlap with all prior diagnostic inputs.
+
+## 2026-07-27 - v262 replay audit and v263 backend input frozen
+
+- Historical runtime-only replay audit confirms the request-plan divergence
+  for only Cass County Government and Vertisystem. NevadaNano and D&B
+  Engineers and Architects replayed without tape divergence, so the defect
+  remains below the three-company implementation threshold.
+- Froze a new backend-only diagnostic cohort from the unused v260 S1-only
+  public pool: 30 records, 30 independent companies, 30 unique LinkedIn job
+  IDs and zero job-ID overlap with prior diagnostic inputs.
+- Frozen `.261` will run serially with isolated live, checkpoint, completion,
+  snapshot and replay roots. Plugin, authenticated External Apply,
+  coordinator-v2, LLM and sealed holdouts remain excluded.
+
+## 2026-07-27 - Career transport reservation `.261`
+
+- Added an evidence-aware reservation to the existing Career transport
+  dispatch ceiling. Blind ATS probes are marked speculative and cannot consume
+  the final quarter of a bounded budget, capped at six dispatches; official,
+  search and provider-backed phases may use that capacity.
+- Added typed `SPECULATIVE_ROUTE_BUDGET_RESERVED` trace evidence so an
+  intentionally skipped speculative request is not retried and cannot pollute
+  the final terminal as global `FETCH_BUDGET_EXHAUSTED`.
+- In the four-company focused live, blind ATS fell from 11-14 dispatches to
+  5-8 and Career search received 6/6 reserved dispatches for every record.
+  All four moved from false budget terminals to deterministic
+  `CAREER_PAGE_NOT_FOUND`; automatic replay passed 4/4.
+- This is a scheduler correctness repair, not a recall gain. The same four
+  records were audited as separate downstream causes: one has no captured
+  public entry, while the other three expose distinct locale, first-party
+  numeric employment and generic Apply shapes. No cause reaches the
+  three-company implementation gate; the run remains 0 Career / 0 Job List /
+  0 Exact.
+- Bing HTML challenge classification and attempted-S5 terminal projection are
+  confirmed four-record observability defects, but captured search responses
+  contain no correct candidate and their expected Career recovery is 0/4.
+  They are recorded without displacing recall work.
+- Related tests pass 218/218, provider benchmark 25/25, resolver benchmark
+  6/6 and architecture validation 47/0. Plugin, coordinator-v2, LLM branch,
+  Fresh100 projection and sealed holdouts remain unchanged.
+
+## 2026-07-27 - v262 backend diagnostic input frozen
+
+- The next backend-only development cohort contains 30 unused S1-only public
+  records, 30 independent companies and six role families with five records
+  each.
+- It has zero overlap against 589 known public development job IDs. Selection
+  used only public-search order, known-ID exclusion, duplicate-company
+  exclusion and role quotas; no S2-S7 outcome influenced inclusion.
+- Frozen `.261` will run serially with isolated checkpoint, completion,
+  snapshot and replay roots. Plugin, coordinator-v2, LLM and sealed holdouts
+  remain excluded.
+
+## 2026-07-27 - v262 frozen backend live and failed replay gate
+
+- Frozen `.261` completed 30 serial live records with 27 Websites, 23 Careers,
+  18 verified Job Lists and 4 S7 Exact openings.
+- MrBeast, Meta, Helion and Yamaha pass company, hiring entity,
+  provider/tenant, title, location, current inventory and canonical URL audit.
+  Wrong URL, cross-company, cross-tenant and wrong-location publication are
+  zero.
+- Automatic replay failed closed on Vertisystem: live performed one Career
+  GET, three declared-asset GETs and one WP Job Manager POST, while replay
+  hydrated a runtime-only board and skipped the first four tape entries.
+  The run is not reported as replay-complete.
+- Portfolio and opening terminals split into distinct protocol causes. No
+  recall cluster reaches three independent companies; runtime-only board
+  replay determinism remains under historical contract audit.
+
+## 2026-07-27 - v260 backend diagnostic evidence on frozen `.259`
+
+- Froze an eleventh backend-only cohort with 30 records, 30 independent
+  companies, six new role families and zero overlap against 581 known public
+  development job IDs.
+- Frozen `.259` reached 29 Websites, 21 Careers, 15 verified Job Lists and 5
+  S7 Exact openings. All five pass company, hiring entity, provider, tenant,
+  title, location, current-state and canonical-URL audit; safety errors are
+  zero.
+- Replay exported and reproduced 30/30 with zero mismatch, fixture gap,
+  expected transition or budget recovery.
+- The only implementation-qualified root cause is four-company Career
+  transport starvation: blind ATS probes consume 11-14 of 24 dispatches before
+  stronger official navigation/path evidence. This advances to `.261`.
+- MrBeast exposes a singleton terminal-projection inconsistency: its exact
+  Greenhouse opening is safe, but top-level status/job-list fields remain
+  partial. HP portfolio pollution and intermediary publication remain below
+  their respective three-company gates.
+- No product code or Fresh100 projection changes in this evidence-only run.
+
+## 2026-07-27 - Location-aware snapshot redaction `.259`
+
+- Split geographic response-body `state` handling from OAuth/query `state`
+  without making `state` broadly public.
+- Structured JSON preserves `state` only inside a bounded location/address
+  object with sibling geographic evidence and no authentication context.
+  Embedded strict JSON uses the same classifier; unknown, OAuth and unquoted
+  state values remain redacted.
+- Scoped replay no longer hydrates an old redacted geographic state into
+  `offline-replay-redacted-credential`; credentials retain shape-only
+  hydration and no secret is restored.
+- Newly captured ReachMobi, Team Royal, ADDMAN, iClassPro, San Diego Padres,
+  Mills Automotive Group and Tim Moran Hyundai are 7/7 live Exact and 7/7
+  replay Exact. Opening URL, title, location and location classification match
+  exactly for every record across BambooHR, Paylocity and Hireology.
+- Relevant tests pass 276, provider benchmark 25/25, resolver benchmark 6/6,
+  architecture validation 47/0 and scoped `git diff --check`.
+- Fresh100 projection, plugin, coordinator-v2, LLM branch and sealed holdouts
+  are unchanged.
+
+## 2026-07-27 - Eightfold PCS X public inventory `.258`
+
+- Added strict support for the public Eightfold PCS X shell and same-origin
+  `/api/pcsx/search` inventory while preserving the legacy `smartApplyData`
+  path.
+- The adapter requires exact `code#pcsx-data` state, enabled search config,
+  safe domain and board identity, stable bounded counts, unique numeric job
+  IDs, same-origin detail paths and a valid success envelope. Cross-origin,
+  malformed, duplicate and non-production evidence fails closed.
+- Provider-published operating-company fields become opening-bound employer
+  evidence. Gordian reaches the exact Product Marketing Manager opening;
+  Mayo Clinic produces a complete official title-filtered no-match.
+- HP's final live trace also reads the native PCS X inventory completely and
+  confirms three nonmatching records. Its aggregate terminal remains
+  `JOB_BOARD_PORTFOLIO_INCOMPLETE` when noisy untrusted provider-search
+  candidates enter the wider portfolio, so `.258` does not misstate that
+  separate scheduler defect as closed.
+- The final focused code passes 22 Eightfold tests, 211 related integration
+  tests, provider benchmark 25/25, resolver benchmark 6/6 and architecture
+  validation 47/0. Focused automatic replay passes for every recorded run.
+- Fresh100 projection, plugin, coordinator-v2, LLM branch and sealed holdouts
+  are unchanged.
+
+## 2026-07-27 - v257 backend evidence on unchanged `.255`
+
+- Froze a tenth backend-only cohort with 30 records, 30 independent companies
+  and zero overlap against 529 known public development job IDs.
+- Frozen `.255` reached 27 Websites, 20 Careers, 15 verified Job Lists and 10
+  raw Exact openings. Safety audit accepts 9/10; CRG is an unsafe staffing
+  intermediary publication because the page identifies an undisclosed client
+  as the actual employer.
+- Replay exported 30/30 with 25 reproduced, five non-product budget
+  normalizations, zero comparator mismatch and zero fixture gap. ReachMobi and
+  ADDMAN expose separate location mutation caused by snapshot redaction.
+- No within-cohort non-Exact group qualifies. Gordian supplies the third
+  independent Eightfold PCS X company after HP and Mayo Clinic; that
+  provider-family contract advances separately to `.258`.
+- Fresh100 projection, plugin, coordinator-v2, LLM branch and sealed holdouts
+  are unchanged.
+
+## 2026-07-27 - v256 backend evidence on unchanged `.255`
+
+- Froze a ninth backend-only cohort with 30 records, 30 independent companies
+  and zero overlap against 435 prior development job IDs.
+- Frozen `.255` reached 29 Websites, 22 Careers, 13 verified Job Lists and 5
+  S7 Exact openings. All five pass company, title, location, provider, tenant
+  and canonical URL audit; all publication safety errors are zero.
+- Replay exported 30/30 with 25 reproduced, four non-product budget
+  normalizations, one Great Value Hiring status mismatch and zero fixture gap.
+- A same-version 90-second diagnostic disproved the four-company generic
+  opening-budget hypothesis: all four became inventory-incomplete and 0/4
+  recovered Exact. Career-budget and provider-search-noise groups also have
+  zero demonstrated three-company recovery.
+- No implementation cluster qualifies, so no product code, version, Fresh100
+  projection, plugin, coordinator-v2, LLM branch or sealed holdout changed.
+
+## 2026-07-27 - Typed opening failure and replay closure `.255`
+
+- Preserved typed `FetchError` reason, retryability, status and transport phase
+  when generic opening and provider-page discovery write trace failures.
+- Availability aggregation now consumes typed singular provider/page failures
+  instead of reclassifying the message
+  `company time budget exhausted at caller deadline` as generic
+  `FETCH_FAILED`.
+- The shared defect was observed across Barstool Sports, Ichor Systems,
+  i-Pharm Consulting and Plaid in two independent development cohorts.
+- Focused `.255` live/replay reproduces 4/4 outcomes with zero mismatch,
+  fixture gap, tape divergence, missing boundary or published opening URL.
+- Scoped tests pass 270, provider benchmark 25/25, resolver benchmark 6/6 and
+  architecture validation 47/0.
+- This is taxonomy/replay correctness only; Fresh100 projection, plugin work,
+  coordinator-v2, LLM work and sealed holdouts are unchanged.
+
+## 2026-07-27 - v254 backend evidence on unchanged `.253`
+
+- Froze an eighth backend-only cohort with 30 records, 30 independent companies
+  and zero overlap against 405 prior development job IDs.
+- Frozen `.253` reached 29 Websites, 21 Careers, 17 verified Job Lists and 9
+  S7 Exact openings. All nine pass company, title, location, provider, tenant,
+  canonical URL and live/replay identity audit; all safety errors are zero.
+- Replay exported 30/30: 20 reproduced, seven budget recoveries, three
+  mismatches and zero fixture gaps. Two mismatches establish the `.255`
+  four-company typed-failure cluster; Tigermed remains a singleton.
+- A suspected generated-locale Career-path group failed the recovery gate:
+  only one of six first-party `/careers` checks returned a real Career page.
+- No other three-company common trigger and code path was found. This
+  evidence-only cohort does not change Fresh100 projection.
+
+## 2026-07-27 - Workable numeric embed runtime inventory `.253`
+
+- Added strict page-aware discovery for first-party Career pages that load the
+  official Workable embed asset and declare one executable numeric
+  `whr_embed` account. Comments, string literals, conflicting IDs, lookalike
+  assets, unsafe Career URLs and non-HTTPS API redirects fail closed.
+- Added bounded strict JSONP inventory parsing with exact shortcode-derived
+  opening URLs, complete-inventory semantics and provider-published employer
+  evidence. Generic `/j/<shortcode>` URLs no longer become tenant `j`.
+- Extended the generic native-inventory identity contract so a complete,
+  employer-bound inventory can bind an opening to a runtime-only,
+  page-evidenced provider board. Missing employer evidence, another board or
+  another tenant remains rejected by S7.
+- American Battery Technology Company, ClassWallet and Mention Me recover 3/3
+  verified Job Lists, 3/3 S7 Exact and replay 3/3. ESR, Symmetrio and iClassPro
+  remain 3/3 Exact and replay 3/3 as positive controls.
+- Scoped tests pass 169, provider benchmark 25/25, resolver benchmark 6/6,
+  architecture validation 47/0 and scoped `git diff --check`.
+- This is a separate development cluster; Fresh100 projection, plugin work,
+  coordinator-v2, LLM work and sealed holdouts are unchanged.
+
+## 2026-07-27 - v252 backend evidence on unchanged `.251`
+
+- Froze a seventh backend-only development cohort with 30 records, 30
+  independent companies and zero LinkedIn job-ID overlap against the original
+  and Fresh100 cohorts plus v245-v250.
+- The serial cold run reached 29 Websites, 17 Careers, 11 verified Job Lists
+  and 6 S7 Exact openings.
+- Audited all six Exact records: company, hiring entity, title, location,
+  provider, tenant, captured open state and canonical opening URL are correct.
+  Wrong URL, cross-company, cross-tenant, wrong-location and closed-opening
+  publication are zero.
+- No non-Exact path meets the three-company implementation gate. The cohort
+  supplies no third recovery company for Workable numeric embed, structured
+  job cards or same-origin dynamic GET inventory.
+- Exported and replayed 30/30 outcomes: 20 reproduced, eight budget recoveries,
+  two reason-code mismatches, zero fixture gaps, zero tape divergences and zero
+  missing snapshot boundaries. Barstool and Ichor preserve identity and publish
+  no opening but differ between `FETCH_FAILED` and
+  `COMPANY_TIME_BUDGET_EXHAUSTED`.
+- This is evidence collection on unchanged `.251`; no product code, Fresh100
+  projection, plugin, coordinator-v2, LLM branch or sealed holdout changed.
+
+## 2026-07-27 - Hireology public inventory and replay closure `.251`
+
+- Added a native Hireology adapter for strict
+  `careers.hireology.com/<tenant>` boards and numeric description URLs. Custom
+  Career domains are accepted only when the fetched page contains unique
+  Hireology-owned API, canonical or asset evidence.
+- Uses the official v1 full inventory for bounded, complete title/location
+  discovery, then fetches only exact-title v2 detail records to verify current
+  status, organization, location and provider-published employer evidence.
+  Candidate URLs are rebuilt on the verified parent inventory tenant; child
+  tenant URLs returned by the API remain provenance and never authorize a
+  cross-tenant guess.
+- Added a strict replay-safe locator policy for Hireology and fixed the
+  non-exhaustive S5 scheduler to avoid unrelated provider search after an
+  official Career page already yields a typed provider board. Pending
+  relationship evidence may continue to S6, but S7 publication remains
+  mandatory.
+- Snapshot sanitization now parses JSON structurally before redaction and keeps
+  ordinary HTML attributes such as `data-placeholder-token` intact. This
+  prevents credential redaction from corrupting replay JSON while still
+  removing sensitive structured fields.
+- Final same-version focused live recovered San Diego Padres, Mills Automotive
+  Group / Classic Toyota of Henderson and Tim Moran Hyundai: 3/3 verified Job
+  Lists, 3/3 S7 Exact, exact location for all three, zero wrong URL,
+  cross-company or cross-tenant publication, and 3/3 automatic replay.
+- Relevant integrated tests pass 547, production provider benchmark 25/25,
+  resolver benchmark 6/6, architecture validation 47/0 and
+  `git diff --check`. No full suite was run for this scoped provider,
+  scheduler and replay-sanitization change.
+- Fresh100 aggregate scores are unchanged because these are separate
+  development records. Plugin work, coordinator-v2, the LLM branch and sealed
+  holdouts remain frozen.
+
+## 2026-07-27 - v250 backend diagnostic evidence on unchanged `.246`
+
+- Ran a sixth zero-overlap, 30-record, six-role backend cohort: 30 Websites,
+  23 Careers, 17 verified Job Lists and 8 S7 Exact records.
+- Audited all eight Exact results, representing seven independent companies
+  and seven unique openings. Company, hiring entity, title, location, provider,
+  tenant, current status and canonical URL are correct; wrong URL,
+  cross-company, cross-tenant, wrong-location and closed-opening publication
+  remain zero.
+- Reclassified the 22 non-Exact records by executable cause. The six
+  `JOB_BOARD_NOT_FOUND` records traverse six different provider/custom-surface
+  paths, and the transport/budget records also split across distinct providers
+  and replay behavior.
+- v250 supplies no third company for Workable numeric embeds, strict structured
+  job cards or same-origin dynamic GET inventory. San Diego Padres contributes
+  one new Hireology provider-family lead, which is evaluated separately before
+  any adapter implementation.
+- The initial full replay exposed two same-company SKIMS tape divergences.
+  Isolated replay of the other 28 records produced 24 strict reproductions, two
+  budget-normalized outcomes, two terminal mismatches and zero fixture gaps.
+- No `.250` product code or Fresh100 projection changed. Plugin work,
+  coordinator-v2, the LLM branch and sealed holdouts remain frozen.
+
+## 2026-07-27 - v249 backend diagnostic evidence on unchanged `.246`
+
+- Ran a fifth zero-overlap, 30-record, six-role backend cohort: 30 Websites,
+  22 Careers, 18 verified Job Lists and 6 S7 Exact.
+- Audited every Exact with 6/6 correct company, title, location, provider,
+  tenant, canonical URL and open status. Wrong URL, cross-company, cross-tenant,
+  wrong-location and closed-opening publication remain zero.
+- Audited all 24 non-Exact records by trigger and production path. Correct
+  inventory no-matches, distinct provider/custom inventory transports,
+  relationship gaps and heterogeneous upstream budget exits do not form a
+  common recovery cluster.
+- v249 supplies no third recovery company for Workable numeric embeds, strict
+  structured job cards or same-origin dynamic GET inventory. Each hypothesis
+  remains at two independent companies.
+- Exported and replayed all 30 records: 22 complete reproductions, five
+  budget-normalized comparisons, three mismatches, zero fixture gaps, zero tape
+  divergence and zero missing snapshot boundaries. The mismatches are two
+  provider-specific terminal-code drifts and one Fanatics evidence-URL
+  provenance drift; opening identity is unchanged.
+- No product code, adapter version or Fresh100 projection changed. Plugin work,
+  coordinator-v2, the LLM branch and sealed holdouts remain frozen.
+
+## 2026-07-27 - v248 backend diagnostic evidence on unchanged `.246`
+
+- Ran a fourth zero-overlap, 30-record, six-role backend cohort on frozen
+  `.246`: 29 Websites, 20 Careers, 11 verified Job Lists and 7 S7 Exact.
+- Audited all seven Exact openings with 7/7 company, title, location, provider,
+  tenant and canonical-opening correctness; wrong URL, cross-company,
+  cross-tenant and wrong-location publication remain zero.
+- Reclassified the non-Exact records by executable cause. Official-host blocks,
+  absent candidates, numeric Workable embeds, root loops, dedup evidence loss,
+  helper-composed APIs, low-evidence direct links, WebForms, cross-domain
+  handoffs and dynamic/static inventory variants are separate code paths.
+- Full same-version replay exported 30/30 and reproduced 29, with one
+  Equip terminal-reason mismatch and zero fixture gaps.
+- Audited the Workable numeric-embed hypothesis. American Battery and
+  ClassWallet are two recovery cases; ESR, Symmetrio and iClassPro are positive
+  controls already recovered by stronger direct paths. The hypothesis remains
+  below the three-independent-company implementation gate.
+- No product code, adapter version or Fresh100 projection changed. Plugin work,
+  coordinator-v2, the LLM branch and sealed holdouts remain frozen.
+
+## 2026-07-27 - v247 backend diagnostic evidence on unchanged `.246`
+
+- Ran a third zero-overlap, 30-record, six-role development cohort on the
+  frozen `.246` backend. It reached 27 Websites, 20 Careers, 15 verified Job
+  Lists and 8 S7 Exact openings.
+- Audited every Exact against captured first-party and provider evidence:
+  precision is 8/8, with zero wrong URL, location, company or tenant. The two
+  SpaceXAI openings have a continuous LinkedIn -> `x.ai` -> Greenhouse `xai`
+  relationship.
+- Split the apparent upstream budget and downstream generic-inventory groups
+  into their actual causes. Harri support, bounded HTML truncation,
+  ApplicantPro and UltiPro route variants, Workable embeds, Firebase,
+  Eightfold, multi-location titles and persistent official-host blocks are
+  separate code paths.
+- No group meets the three-independent-company implementation gate. Handraise's
+  200 KB evidence truncation and Swig's first-party Harri handoff are retained
+  as singleton leads while historical development artifacts are audited for
+  matching companies.
+- The full offline bundle replayed 30/30 with 26 reproduced and four
+  mismatches: two same-company SpaceXAI exact-conflict terminals, one Crete
+  budget-reason change and one Pigment incomplete-inventory/location change.
+  Fixture gaps remain zero; no replay safety rule was relaxed.
+- No code or Fresh100 projection changed. The extension, coordinator-v2, LLM
+  path and sealed holdouts remain frozen.
+
+## 2026-07-27 - LinkedIn-official homepage alias continuity `.246`
+
+- Audited a new 30-record, six-role, development-only cohort with zero job-ID
+  overlap against Fresh100 and the prior 24-record diagnostic cohort. The
+  frozen `.245` live reached 23 Websites, 20 Careers, 15 Job Lists and 9 Exact
+  openings.
+- Rejected `JOB_BOARD_NOT_FOUND` as a shared cluster: Cricut, Agile Defense,
+  Vasion and AECOM have four distinct S5 causes. The nearest shared shape has
+  only two companies and is not authorized for implementation.
+- Identified a three-company resolver cluster where LinkedIn declares the
+  official website but bounded homepage aliases are falsely rejected as a
+  parent/group identity: Yum! Brands, County of Maui and Duke University Health
+  System.
+- Added an exact alias-token contract across requested company name, LinkedIn
+  slug and structured homepage identity/title. It removes only bounded
+  connectors, organization descriptors and web-title suffixes; it does not use
+  fuzzy matching or a company/domain table.
+- Preserved parent-company negative controls. `Tata Technologies -> Tata`,
+  `Bosch Home -> Bosch`, `Google DeepMind -> Google` and a single-token
+  `University of Rochester -> Rochester` remain rejected.
+- Final focused live reaches the correct official Website for 3/3, verified Job
+  Lists for Yum and Duke, and a S7 Exact Duke Phenom opening with matching
+  title, Durham location and tenant `DUHDUHUS`. Maui retains an honest budget
+  terminal after the official site.
+- Focused replay passes with 2 reproduced, 1 budget recovery, zero mismatch and
+  zero fixture gap. Relevant tests pass 367, provider benchmark 25/25, resolver
+  benchmark 6/6, architecture validation 46/0 and `git diff --check` is clean.
+- The diagnostic full replay exposed separate Cass County restart-boundary and
+  same-company Sweep evidence-provenance mismatches. They remain isolated
+  replay debt and are not folded into this resolver product fix.
+- Fresh100 aggregate scores do not change because this is a separate diagnostic
+  cohort. The extension, coordinator-v2, LLM path and sealed holdouts remain
+  frozen.
+
+## 2026-07-27 - Ashby runtime-only tenant and replay boundary `.245`
+
+- Fixed a shared Ashby adapter contract failure for case-sensitive tenant
+  roots. Lowercase tenants remain durable and replay-safe; mixed-case tenants
+  preserve their exact URL and tenant but are runtime-only.
+- Kept the central durable-locator policy unchanged. Mixed-case Ashby boards
+  cannot enter checkpoint payloads, and no tenant is lowercased or fabricated.
+- Scoped replay now recognizes typed provider locators that cannot safely cross
+  the S5 checkpoint boundary and replays their captured producer chain instead.
+  It does not promote runtime state into a durable locator.
+- Oso and Blossom focused live both reached S7 Exact through official
+  first-party Career handoffs and complete Ashby inventory. The clean offline
+  bundle reproduced 2/2 with zero mismatch, fixture gap or tape divergence.
+  Company, title, location, provider, tenant and opening URL remained equal.
+- This restores the existing Frozen100 Blossom Exact regression and closes the
+  two-company diagnostic worker crash. It does not change the reconciled
+  Fresh100 projection of 37 Exact, 12 Verified No Match, 1 External Blocked and
+  50 unresolved.
+- Relevant integrated tests pass 298, provider benchmark 25/25, resolver
+  benchmark 6/6, architecture validation 46/0 and `git diff --check` is clean.
+  The full test suite was intentionally not rerun for this scoped provider and
+  replay contract change.
+
+## 2026-07-27 - Page-evidenced provider Career continuation `.244`
+
+- Fixed the S4-to-Provider-Registry contract boundary for strict same-site
+  provider pages. A fetched first-party-family page may become a Career input
+  only when the registry derives one listing-capable board with a non-empty
+  tenant on that same registrable site.
+- Preserved all publication gates. Page evidence alone does not publish a Job
+  List, establish an opening or bypass provider, hiring-relationship, inventory,
+  title, location or S7 validation.
+- A fresh-root two-record Hawaiian Electric live run verified the official
+  SuccessFactors board and tenant `custom:hawaiianel`. Complete native
+  inventories of 84 and 25 candidates produced two evidence-backed Verified No
+  Match terminals, with no opening URL published.
+- Same-version replay reproduced 2/2 with zero fixture gap or tape divergence.
+  The `.244` runtime delta produces 36 Exact, 12 Verified No Match,
+  1 External Blocked and 51 unresolved.
+- Rebuilding the ordered ledger found that the already audited `.243`
+  iClassPro Exact and 8/8 replay had been omitted from the reviewed acceptance
+  manifest. Correcting that governance error makes the reconciled projection
+  37 Exact, 12 Verified No Match, 1 External Blocked and 50 unresolved. It is
+  not an additional `.244` product-code recovery.
+- Relevant integrated tests pass 458, provider benchmark 25/25, resolver
+  benchmark 6/6, architecture validation 46/0 and `git diff --check` is clean.
+  The full test suite was intentionally not rerun for this scoped S4 change.
+- A separate read-only form-search audit rejected the apparent four-record
+  grouping: the examples occupy four different code paths, so no broad
+  interactive-form relaxation is authorized.
+- Rebuilt the ordered 100-record causal ledger and audited all 50 remaining
+  unresolved records across candidate/relationship, S6 inventory and
+  transport/budget workstreams. No group meets the three-company,
+  common-code-path and nonzero batch-recovery gate. The only three-company
+  budget group has an evidenced product recovery expectation of 0/3, so no
+  further Phase B change is authorized under the current policy.
+- Froze the next evidence-collection contract: a 24-record, multi-role,
+  non-sealed diagnostic cohort with zero Fresh100 job-ID overlap. It will run
+  on the unchanged `.244` backend with isolated artifacts and cannot alter
+  Fresh100 or holdout metrics.
+- The frozen diagnostic run exposed a mixed-case Ashby locator contract
+  regression. Oso and Blossom crash because the adapter marks case-sensitive
+  tenant roots replay-safe while the central durable policy correctly rejects
+  them. Six real mixed-case tenant examples reproduce the contract, and
+  Blossom is an existing Frozen100 audited Exact. The `.245` fix is frozen as a
+  runtime-only locator change; central checkpoint safety remains unchanged.
+
+## 2026-07-27 - Provider identity continuation and employer evidence `.243`
+
+- Fixed the batch-only S5-to-S6 deadlock. A durable typed native-provider
+  portfolio may continue from `COMPANY_IDENTITY_AMBIGUOUS` into official
+  inventory validation without publishing an unverified Job List.
+- Added safe portfolio checkpoint projection. Runtime-only members are omitted,
+  retained subsets become incomplete, and canonical Greenhouse/Ashby tenant
+  locators are replay-safe only on official query-free board roots.
+- Carried provider-owned employer evidence through native matcher trace.
+  Greenhouse `company_name` evidence is accepted only for openings on the same
+  tenant. Complete no-match authorization requires matching evidence for every
+  inventory opening.
+- Real Fabric Greenhouse S6/S7 now verifies the official Job List and
+  `OPENING_NOT_FOUND`. Caesars safely remains unverified because Oracle detail
+  lacks employer identity; Prophetic safely remains unverified because its
+  exact Ashby opening is discontinuous from the wrongly resolved Canadian
+  website.
+- Rejected the apparent three-provider recall cluster after live evidence
+  showed three distinct causes. Relevant tests pass 506, provider benchmark
+  25/25, resolver benchmark 6/6, architecture validation 46/0 and
+  `git diff --check` is clean. No full Fresh100 or full test suite was run.
+- Audited a separate code-frozen eight-record causal slice with 8/8 replay.
+  Three independent companies share pre-search S4 transport exhaustion, but
+  the independent search wave also returned zero valid candidates for all
+  three. No budget-only product change or recall claim is made.
+
+## 2026-07-27 - Fail-closed unverified Job List publication `.241`
+
+- Fixed a shared product projection defect where S5 candidates with
+  `COMPANY_IDENTITY_AMBIGUOUS` and
+  `provider_identity.relationship_verified=false` remained visible as public
+  `job_list_page_url` values.
+- Preserved the candidate, provider identity, portfolio and complete trace for
+  S6 and diagnostics. Unverified S5 evidence is now named
+  `candidate_job_board_url`; verified Job Lists retain the public field.
+- A five-record focused live preserved iClassPro Exact `4331044` and published
+  no Job List for Caesars, CHAMP, Fabric or Prophetic. Current search responses
+  did not reproduce all historical ambiguous candidates, so this is not claimed
+  as full live reproduction. Same-version replay passed 5/5.
+- Scoped tests pass 656, provider benchmark 25/25, resolver benchmark 6/6,
+  architecture validation 46/0 and `git diff --check` is clean.
+
+## 2026-07-27 - Local SearXNG A/B and identity regression guard `.240`
+
+- Added an isolated, digest-pinned SearXNG runtime bound only to loopback. Its
+  JSON-only settings, image/settings profile digest, disabled container logs
+  and runtime secret are documented under `deploy/searxng/`.
+- Fixed Python loopback requests being intercepted by the macOS system proxy.
+  Literal localhost/loopback URLs now use a separate proxy-free cookie session;
+  public and non-loopback traffic is unchanged.
+- Ran a frozen 12-record `.239` A/B. Legacy produced 1 raw Job List and 1 Exact;
+  SearXNG produced 7 raw Job List fields and 0 Exact. Both replayed 12/12.
+  Because every new board lacked a complete identity chain and CHAMP retained
+  an unrelated partial candidate, the causal cluster remains open and SearXNG
+  remains optional.
+- Added a strict LinkedIn display-descriptor identity guard. A spaced suffix is
+  excluded from parent-page detection only when the prefix exactly matches the
+  normalized LinkedIn company slug. `.240` restores iClassPro Paylocity Exact
+  `4331044`; DSV retains first-party `dsv.com` and stops at typed incomplete
+  inventory. Both focused captures replay 1/1.
+- Scoped tests, provider benchmark 25/25, resolver benchmark 6/6 and
+  architecture validation 46/0 pass. No full Fresh100 or full test suite was
+  run.
+
+## 2026-07-27 - Versioned SearchBackend foundation `.238`
+
+- Added an optional single-request `SearchBackend` contract while preserving
+  the default Bing RSS, Bing HTML and DuckDuckGo schedule exactly. Search hits
+  remain untrusted and cannot bypass provider, tenant, hiring-relationship,
+  inventory, title, location or S7 identity validation.
+- Added a SearXNG JSON adapter with strict endpoint validation, malformed
+  response handling and hashed trace provenance. S4/S5 candidate search and S6
+  same-site opening search share one injected backend instance.
+- Advanced deterministic run configuration to schema `1.8`. It stores only
+  backend kind, contract version and profile digest; legacy `1.7` payloads
+  replay unchanged. SearXNG replay requires the runtime endpoint again and
+  rejects profile mismatch.
+- Added CLI and live-runner configuration without API-key command-line
+  arguments. Adapter version is `2026-07-27.238`.
+- This is infrastructure, not a recall claim. No external SearXNG endpoint was
+  configured, so the 12 search-filtered records across 11 companies remain
+  unresolved and the development projection stays 36 Exact, 10 Verified No
+  Match, 1 External Blocked and 53 unresolved. Plugin, coordinator-v2 and LLM
+  work remain frozen.
+- Scoped integration passes 286 tests; the production provider benchmark is
+  25/25, resolver benchmark 6/6, architecture validation 46 adapters / 0
+  issues, and `git diff --check` is clean.
+
+## 2026-07-26 - Causal ledger and frozen `.235` reproductions
+
+- Added an evidence-backed causal failure ledger keyed by LinkedIn job ID.
+  Ordered focused artifacts cannot downgrade audited terminals or promote new
+  terminals without an explicit acceptance manifest. Implementation clusters
+  additionally require current-version reproduction and a reviewed nonzero
+  batch-recovery expectation.
+- Rejected the apparent generic inventory cluster after a seven-record `.235`
+  live showed that Necessary Ventures, HP and Crawford Thomas use Consider,
+  Eightfold and Bullhorn OSCP. Ledger schema `1.1` now scopes unidentified
+  inventory integrations by origin instead of grouping unrelated provider
+  families under one fallback stop reason.
+- Rejected the historical five-record `NETWORK_TIMEOUT` cluster after a clean
+  `.235` run reproduced zero timeouts and replayed 5/5. Lorum and Team Royal
+  recovered audited Exact openings without code changes; the conservative
+  development projection is now 36 Exact, 10 Verified No Match,
+  1 External Blocked and 53 unresolved.
+- Two further four-record `.235` reproductions replayed 4/4 each and split the
+  old Career and Job Board labels into unrelated HTTP, TLS, non-career response,
+  relationship and per-provider causes. Bing RSS snapshot review showed ignored
+  query constraints, while DuckDuckGo was challenged and Bing HTML was empty.
+  Direct checks of the currently unscheduled Pinpoint/SmartRecruiters probes
+  recovered zero boards, so no scheduler or identity-gate change is authorized.
+- Read-only provider-family audits found one Consider company, two Eightfold
+  PCS X companies and one Bullhorn OSCP company. The shared provider framework
+  can host those adapters, but no family reaches the three-company
+  implementation gate. The next recall decision is a reliable SearchBackend,
+  not another sample heuristic.
+
+## 2026-07-26 - Rejected stage-v1 provider reservation experiment
+
+- Tested the existing S4 cooperative reservation on production `stage_v1` and
+  gave Provider Search first use of the S5 search wave. Five focused companies
+  executed 3–7 provider queries and replayed 5/5.
+- Rejected and rolled back both behavior changes after the required current
+  iClassPro regression check lost its verified Paylocity Exact and ended at
+  `FETCH_BUDGET_EXHAUSTED`. Route coverage is not accepted when it reduces
+  product recall. Current adapter version remains `.235`; coordinator-v2
+  remains proposed and disabled.
+- Two fresh-directory rollback checks ended in independent retryable network
+  failures (`NETWORK_TIMEOUT` in S2, then `FETCH_FAILED` in S4), both with 1/1
+  replay. They do not reproduce the rejected budget signature, but they also
+  do not prove live Exact recovery; the development projection remains
+  34 Exact, 10 Verified No Match, 1 External Blocked and 55 unresolved.
+- A follow-up causal audit found no remaining group that currently meets the
+  three-company implementation gate. The five-company budget label is rejected
+  as a root cause because enabling Provider Search recovered 0/5 while
+  regressing iClassPro. Smaller candidate groups contain only one or two
+  independent employers. The next backend cycle is code-frozen causal evidence
+  collection, not another heuristic or budget change.
+
+## 2026-07-23 - Official Website alias and multi-hop replay `.235`
+
+- Added a strict LinkedIn-official alias identity path for acronym, legal-name
+  and verified LinkedIn display-name differences. It requires evidence from the
+  same LinkedIn company identity and first-party homepage; domain, search and
+  tenant-name similarity remain insufficient.
+- Focused live recovers Websites and Careers for Rider Levett Bucknall RLB,
+  Jushi Holdings and Heritage Companies. Jushi reaches its Lever board;
+  Heritage reaches its Paylocity board after a clean transport retry.
+- Fixed scoped replay for a captured same-host first-party intermediate page
+  between Career root and ATS handoff. Company, LinkedIn identity, provider,
+  tenant and canonical board continuity remain mandatory.
+- The original three-record capture replays 3/3 and Heritage's clean retry
+  replays 1/1. Resolver tests pass 148/148, replay tests 107/107, the integrated
+  slice 232/232, resolver benchmark 6/6 and architecture gate 46/0. No opening
+  URL was published by this focused cohort, and aggregate terminal counts do
+  not change.
+- A subsequent frozen-code, five-record known-domain diagnostic recovered
+  Website, Career and Job List for every record without a transport change.
+  B&D Project Manager and Northern Clearing are audited Exact; Steampunk is a
+  verified inventory no-match. The current development projection becomes
+  33 Exact, 9 Verified No Match, 1 External Blocked and 57 unresolved. Four
+  records replay exactly; B&D HR retains one retry-reason mismatch as explicit
+  replay debt.
+- A second frozen-code diagnostic reran Milwaukee Tool, Dechert and Crawford
+  Thomas before introducing a process-local S5-to-S6 page lease. All three
+  recovered their generic Job Lists and replayed 3/3; Milwaukee is Exact,
+  Dechert is a verified inventory no-match and Crawford remains inventory
+  incomplete. The page-lease proposal is rejected for lack of a current
+  three-company trigger. Projection becomes 34 Exact, 10 Verified No Match,
+  1 External Blocked and 55 unresolved.
+
+## 2026-07-23 - Captured mutable producer-state replay `.233`
+
+- Reconstructed record-local Website and Career prerequisites only when
+  checkpoint events prove a captured S5 continuation explicitly read a stored
+  provider board. Company, LinkedIn identity, URLs, provider, tenant and board
+  must all remain continuous.
+- Tightened the legacy replay fallback so Website evidence cannot masquerade
+  as the Career-to-provider handoff. Missing or conflicting producer state now
+  fails before tape execution with an explicit diagnostic.
+- A legitimate stored-board Versana capture replays 1/1 Exact; the historical
+  polluted Focus chain is rejected at preflight instead of ending with an
+  unconsumed request. The final `.232` four-record capture remains 4/4
+  reproduced. Integrated gates pass 643 tests, provider 25/25, resolver 6/6
+  and architecture 46/0.
+- A subsequent code-frozen ten-record transport diagnostic recovered 10/10
+  Websites, 8/10 Job Lists and three Exact openings with 10/10 replay. It
+  rejects the historical transport label as a common code cluster. Brown and
+  Caldwell advances from the older no-match projection to a current audited
+  Wailuku Exact; no transport heuristic was added.
+
+## 2026-07-23 - Tenant-probe provenance and S7 fail-closed gate `.232`
+
+- Preserved `verified_tenant_probe` as an existence-only detection method
+  instead of mapping it to first-party linked URL evidence. Tenant, company and
+  domain name equality no longer establishes a hiring relationship.
+- Removed the legacy implicit tenant-name authorization path, required durable
+  stored boards to retain an approved relationship source and made S7 reject
+  name-only relationship methods even when an upstream boolean is true.
+- Final same-version live keeps Focus, OneApp's Ashby candidate and STRIKE
+  unauthorized while Slant CRM remains an audited S7 Exact through
+  provider-published employer evidence. Replay reproduces 4/4 with no fixture
+  gap or mismatch; 457 focused tests pass.
+
+## 2026-07-23 - Ambiguous short-name Website identity gate `.231`
+
+- Rejected short ambiguous company Website candidates whose only identity
+  evidence is a self-referential domain, canonical URL or organization name.
+  Bounded page text, a verified exact LinkedIn official-site identity or an
+  existing authoritative identity contract remains sufficient.
+- A final Focus-shaped clean run publishes neither `focus.org` nor the
+  unrelated extended-domain LinkedIn candidate. It retains the Ashby board
+  only as an unauthorized partial and publishes no opening URL.
+- Focused replay reproduces 1/1 with zero mismatch or fixture gap; 204 scoped
+  resolver/upstream/checkpoint/evaluation tests pass. The Fresh100 projection
+  remains 29 Exact and 61 unresolved because `.231` is a safety correction,
+  not a recall claim. See the `.231` Phase A and Phase C reports.
+
+## 2026-07-23 - UltiPro display-address location continuity `.230`
+
+- Fixed the UltiPro adapter to honor a literal public `DisplayAddress=true`
+  contract. A complete structured city/state now takes precedence over
+  organizational labels such as `Corporate`, `ARUP Main` or a building name;
+  malformed and partial addresses retain the prior safe fallback.
+- Target Hospitality now reaches an audited S7 Exact for the same official
+  UltiPro tenant and Security Analyst opening, with location
+  `The Woodlands, Texas`. Automatic replay reproduces 1/1 with the same
+  provider, tenant, title, location and opening URL.
+- Scoped gates pass 214 tests, provider 25/25, resolver 6/6 and architecture
+  46/0. The conservative Fresh100 projection advances to 29 Exact and 61
+  unresolved. See the `.230` Phase A and Phase C reports.
+
+## 2026-07-23 - Replay-safe S5-S6 handoff and typed provider budget parity `.229`
+
+- Added a strict public locator policy for canonical GovernmentJobs boards.
+  Exact host, `/careers/{tenant}` path and lowercase tenant identifier must
+  agree before the board can cross a checkpoint; current inventory and opening
+  evidence are never persisted by the locator.
+- Added shared provider fetch classification that preserves typed
+  `FetchError.reason_code` before falling back to display strings.
+  GovernmentJobs, ApplicantPro, Talemetry and PeopleSoft now retain company or
+  cooperative budget semantics instead of degrading them to an ordinary
+  provider failure.
+- A Lubbock live run now restores S1-S5 into the opening-only child and gives
+  S6 its complete 14.4-second reserve instead of spending it rerunning S5. Its
+  current official request remains retryable, so no opening URL is published.
+  Same-version replay is 1/1 reproduced with zero gap or divergence.
+- A three-tenant cold focused run reached GovernmentJobs for City of College
+  Station; Lubbock and Pharr stopped upstream and are not counted as provider
+  successes. Full capture replay is 3/3 reproduced, zero mismatch and zero
+  fixture gap. No wrong URL, company or tenant was published.
+- Integrated gates pass 373 tests, provider 25/25, resolver 6/6 and
+  architecture 46/0. See the `.229` Phase A and Phase C reports.
+
+## 2026-07-23 - Provisional official-site evidence and navigation handoff `.228`
+
+- Added immutable, checkpointed provisional Website evidence for a currently
+  verified LinkedIn-official site that still requires downstream parent/group
+  hiring proof. It never populates the Website result or independently
+  authorizes a provider, tenant or opening.
+- S4 may close that relationship only through an exact-host verified Career
+  page or typed navigation observed on the verified homepage. Visible public
+  HTTP Career links are safely upgraded to HTTPS candidates after strict
+  public-host and URL checks; every candidate still passes provider, tenant,
+  inventory and S7 validation.
+- Fixed S5 portfolio merge so it does not republish an unchanged provisional
+  hiring identity outside S4. The checkpoint anti-forgery rule remains strict.
+- Focused live recovers verified Job Boards for NDIT, State of Montana and City
+  of Lubbock. NDIT is a verified inventory no-match; Montana and Lubbock retain
+  typed opening-fetch failures. NYC DSS independently reaches an audited Exact
+  through ordinary S2, while Heritage is reclassified because no provisional
+  candidate exists. Wrong URL/company/tenant publication remains zero.
+- Scoped gates pass 441 tests, provider 25/25, resolver 6/6 and architecture
+  46/0; the `.228` checkpoint fix passes 111 focused tests. Lubbock's full
+  replay exposes a separate four-entry S6 deadline-tape divergence, so replay
+  closure remains pending. See
+  `docs/COORDINATOR_V228_PROVISIONAL_OFFICIAL_WEBSITE_PHASE_C.md`.
+
+## 2026-07-23 - Official candidate failure attribution `.226`
+
+- Bound retained S2 transport failures to a withheld LinkedIn-official,
+  homepage-verified candidate's registrable site when that candidate is
+  rejected solely because a downstream parent/group hiring relationship is
+  still required.
+- Unrelated speculative-host 403/timeouts remain visible in resolver trace but
+  no longer become the company's terminal failure. Parent/group URLs are still
+  rejected and cannot create Website, hiring, provider, tenant or opening
+  evidence.
+- Added default-priority, same-site retention, unrelated-host suppression and
+  full resolver-flow tests. The focused resolver/discovery/evaluation/checkpoint
+  gate passes 233 tests.
+- A three-company cold run suppressed the wrong `cityoflubbock.com` timeout and
+  `kxnet.com` 403. Montana suppressed unrelated failures but retained a current
+  same-site `mt.gov` timeout. No Website or opening was published. Replay
+  reproduced 3/3 with zero mismatch or fixture gap. See the Phase A and
+  `docs/COORDINATOR_V226_OFFICIAL_CANDIDATE_FAILURE_ATTRIBUTION_PHASE_C.md`
+  reports.
+
+## 2026-07-23 - Authorized portfolio completeness merge `.225`
+
+- Replaced S5's unconditional loss of `eligible_set_complete` when merging the
+  candidate coordinator with the legacy Website/Career route. Completeness is
+  now scoped to authorized eligible board identities and is retained only when
+  complete producer portfolios cover every such board.
+- Unauthorized targeted-search candidates remain diagnostic: they cannot
+  authorize an opening, create a hiring relationship, or invalidate an
+  independently complete first-party portfolio. Authorized boards that appear
+  only in an incomplete producer, capped merges, and missing completeness
+  evidence continue to fail closed.
+- Added contract coverage for diagnostic candidates, uncovered authorized
+  boards, incomplete producers, the eight-board cap, and Sony's complete
+  first-party multi-board portfolio. The focused discovery/checkpoint/replay
+  gate passes 256 tests.
+- A five-record cold live produced 5/5 Job Lists and one S7-verified Exact for
+  STEAMe, with zero unsafe URL publication. ARUP also retained a complete
+  portfolio but its current UltiPro response was invalid; Crosby had no
+  explicit legacy source portfolio, while WalkMe and OneApp stopped at S2
+  timeouts. This corrected the original broad classification instead of
+  claiming five-company recovery.
+- Scoped tapes exported and replayed 5/5 records. Four outcomes reproduced;
+  ARUP retained identical identity but changed from live
+  `INVALID_STRUCTURED_DATA` to replay `COMPANY_TIME_BUDGET_EXHAUSTED`, so the
+  replay gate remains open. See the Phase A and
+  `docs/COORDINATOR_V225_PORTFOLIO_COMPLETENESS_MERGE_PHASE_C.md` reports.
+- A separate code-frozen ten-record known-host transport rerun recovered 9/10
+  Websites without any transport code change, reached 8/10 Job Lists and S7
+  Exact for BWXT and Salas O'Brien. Full replay reproduced 10/10 with zero
+  mismatch or fixture gap. The prior timeout wave is classified as external
+  network state, so no retry or global-budget expansion was added. See
+  `docs/COORDINATOR_V225_TRANSPORT_RERUN_PHASE_C.md`.
+- Rebuilt the projected Fresh100 closure matrix by canonical LinkedIn job ID
+  instead of summing overlapping failure clusters. The 100 unique latest
+  outcomes are 27 Exact, 8 evidence-backed Verified No Match, 1 official
+  External Blocked and 64 unresolved. This remains a development projection,
+  not a replacement for the next full cold benchmark.
+
+## 2026-07-22 - SuccessFactors detail continuity and canonical identity evidence `.224`
+
+- Added bounded SuccessFactors detail verification for exact-title candidates.
+  Canonical URL, host/tenant, JobPosting title, city/state and hiring
+  organization must all agree; wrong city, tenant, redirect and malformed or
+  truncated detail evidence remain fail closed.
+- Added native-adapter identity promotion only when a relationship-verified
+  generic identity is backed by complete adapter provenance binding the exact
+  provider, tenant, board and selected opening. The SuccessFactors-only
+  terminal display token `Job` does not relax global title matching.
+- Canonicalized provider-inventory evidence and legacy replay URLs before
+  constructing strict identity contracts. This removed the live worker crash
+  and the automatic replay crash exposed by trailing-slash official URLs.
+- The scoped backend/replay gate passes 308 tests. A clean three-company live
+  reached S7 Exact for Arkema/Beaumont and Cintas/Fort Myers; both passed
+  company, title, location, provider, tenant and opening audit. Aramark's
+  official declared inventory found an exact Indianapolis opening but S7
+  rejected it because its transient discovered-board evidence is not durable
+  across the phase checkpoint.
+- Same-version replay reproduced 3/3 outcomes and the one-record failure bundle
+  replay passed. No wrong URL, wrong location, cross-company or cross-tenant
+  result was published. Aramark is retained as a separate durability defect;
+  only one current company has that exact shape, so no identity gate was
+  relaxed. See
+  `docs/COORDINATOR_V224_SUCCESSFACTORS_DETAIL_CONTINUITY_PHASE_C.md`.
+
+## 2026-07-22 - URL-bound detail location enrichment `.222`
+
+- Reclassified the next Fresh100 failures by executable cause. Lorum, Sunbird
+  Software and IMG already had the correct exact-title opening, while an
+  exact-URL schema.org JobPosting on each detail page contained the required
+  location. Generic enrichment missed Lorum's bounded HTML-encoded object, and
+  native providers returned before detail enrichment for the two JazzHR jobs.
+- Missing-location candidates now enter one bounded detail verification path.
+  Generic candidates remain same-site; typed candidates must identify to the
+  same registered provider and tenant. The detail JobPosting URL, fetched URL
+  and selected URL must be equal, and title/location retain their strict gates.
+- Added bounded support for HTML-encoded schema.org JobPosting objects. It does
+  not parse arbitrary prose; StatRad is excluded because its location is only
+  present in free text.
+- Frozen/current page audit extracts New York from Lorum, Sioux Falls from
+  Sunbird and Indianapolis from IMG. Focused tests pass 177/177, including
+  wrong-city rejection and existing broad remote-location behavior.
+- A clean three-record cold-input run reached S7 Exact for Sunbird and IMG;
+  both JazzHR openings have exact title/location and same-provider/tenant
+  identity. Lorum ended earlier at retryable S2 `NETWORK_TIMEOUT`, so a
+  separately labelled opening-path run reused only its previously verified
+  first-party Website/Career input and recovered the correct generic opening.
+  Replay reproduced the three cold-input outcomes 3/3 and the Lorum focused
+  outcome 1/1 with zero mismatch or fixture gap. This location-enrichment
+  cluster is closed; Lorum's cold S2 transport failure remains independent.
+  See `docs/COORDINATOR_V222_DETAIL_LOCATION_ENRICHMENT_PHASE_C.md`.
+- A separate SuccessFactors provider-promotion Phase A was retained but
+  deferred: the defect is real, yet the current batch predicts only one direct
+  Exact recovery and should not be mixed into this cluster.
+
+## 2026-07-22 - Canonical LinkedIn coordinator evidence `.221`
+
+- Ran one code-frozen Fresh100 development cold start with new checkpoint,
+  completion, evidence and snapshot roots. `.220` retained 19/100 Exact and 56
+  Job Lists; all 19 Exact passed company/provider/tenant/title/location/opening
+  identity audit. A mid-run network degradation reduced Website coverage to 71
+  and is not treated as a product-cluster closure.
+- Tapestrii, University of Oklahoma and Hays + Sons independently raised the
+  same coordinator input `ValueError`. Encoded-newline LinkedIn job slugs and
+  empty optional company URLs reached strict `CandidateDiscoveryInput` without
+  adapter normalization, escaped the stage boundary and produced three
+  `batch_worker_contract_failed` outcomes.
+- The S1-to-coordinator adapter now extracts a job ID only from credential-free
+  public HTTPS LinkedIn hosts, rebuilds the canonical `/jobs/view/{id}` URL,
+  omits URLs without a valid ID, and converts malformed optional company
+  evidence to `None`. `CandidateDiscoveryInput` itself remains fail-closed.
+- The live replay plan correctly refused to execute because Tapestrii and
+  University lacked a captured S2 boundary. The frozen `.221` focused live now
+  produces normal typed outcomes for all three records: Tapestrii and
+  University end in retryable `NETWORK_TIMEOUT`, while Hays + Sons reaches an
+  S7-verified Exact opening. Same-version replay passes 3/3 with zero mismatch,
+  fixture gap, replayability drop or missing boundary. This worker-contract
+  cluster is closed; the two transport failures remain open under their own
+  causal analysis. See
+  `docs/COORDINATOR_V221_LINKEDIN_INPUT_CANONICALIZATION_PHASE_C.md`.
+
+## 2026-07-21 - Provider-owned Paylocity detail bootstrap `.220`
+
+- Preserved `.219` focused run2: 0/3 Exact with strict replay 3/3. Loveland's
+  targeted search produced the correct Paylocity Apply/Details opening URLs,
+  but both were rejected as `provider_not_listable` because the adapter could
+  identify only tenant-bearing board URLs.
+- Added an optional provider candidate-bootstrap contract. The generic
+  portfolio layer may fetch one targeted opening only through an adapter that
+  implements the contract; the adapter must return a canonical board plus
+  immutable provider-employer evidence.
+- Paylocity now recognizes provider-owned Apply/Details routes without treating
+  them as boards. Its bootstrap accepts only a same-ID final detail page with
+  exact requested title, one tenant UUID, at most one consistent board slug and
+  provider `pageData` employer identity. Conflicting tenant/slug, title,
+  redirect or structured data fails closed.
+- A bootstrapped search candidate still passes the existing employer matcher,
+  board inventory, title/location and S7 gates. Search snippets remain
+  untrusted. A shared three-company end-to-end matrix and current public
+  provider captures validate Loveland, iClassPro and Resolute Road Hospitality;
+  stale Actabl detail evidence is correctly rejected. Paylocity also avoids a
+  duplicated country-extended location. The focused backend slice passes 183
+  tests, provider benchmark 25/25 and architecture 46/0; the full suite was
+  intentionally not repeated.
+- The clean Loveland live did not reproduce the search candidate, but replayed
+  1/1. It is inconclusive for recall. The actual Fresh100 iClassPro display name
+  still needs independent alias evidence and was not fixed by relaxing company
+  identity. Full evidence is in
+  `docs/COORDINATOR_V220_PAYLOCITY_DETAIL_BOOTSTRAP_PHASE_C.md`.
+- A follow-up three-company Paylocity site-search preflight produced 0/3 valid
+  candidates, and the remaining historical `provider_not_listable` leads were
+  malformed speculative tenant guesses. No query-rotation or slug-normalizing
+  heuristic was added; see
+  `docs/COORDINATOR_V220_PROVIDER_CANDIDATE_AUDIT.md`.
+
+## 2026-07-21 - Protect verified Website/Career work before search `.219`
+
+- `.218` clean focused live retained 0/3 Job Lists but passed strict same-version
+  replay 3/3 with zero mismatch, fixture gap or tape divergence. The bounded
+  secondary source was reached once per company and consistently returned a
+  DuckDuckGo challenge, so no unsafe search lead was admitted.
+- Indica again exposed an official Career-to-BambooHR handoff, but serial S5 ran
+  lower-evidence provider search and tenant probes before the existing legacy
+  first-party traversal, consuming the remaining company budget.
+- Coordinator-v2 now runs an available, unsuppressed verified Career traversal
+  before lower-confidence provider search, then still evaluates and merges all
+  coordinator routes. Added an explicit scheduling regression; provider,
+  tenant, relationship, inventory and S7 contracts are unchanged.
+- A clean one-record `.219` live ended at S2 `NETWORK_TIMEOUT`, so it did not
+  exercise the changed S5 branch and is recorded as inconclusive rather than a
+  recovery. The next phase is a development-cohort S2 search/transport audit,
+  not repeated live retries.
+- The S2 audit separated query drift from homepage verification transport. A
+  five-company alternate-query probe produced the correct official domain for
+  three records, but full resolver verification published only FOTOMILL; IMG
+  and iClassPro timed out, Dechert returned directories, and Tapestrii remained
+  empty. The two-query behavior was therefore reverted. Privacy-safe per-source
+  raw/accepted counts remain in S2 trace for the next causal pass.
+- Final offline gates pass 2,625 tests with four intentional skips, provider
+  benchmark 25/25, resolver benchmark 6/6 and architecture validation with 46
+  native adapters / 0 issues. Two replay tests were corrected to construct a
+  genuine schema `1.0` payload by excluding fields introduced in schemas `1.6`
+  and `1.7`; production configuration validation remains strict.
+
+## 2026-07-21 - Search rescue and replayable budget terminals `.218`
+
+- Preserved the clean `.217` focused artifacts. The S4 reservation worked:
+  Loveland and iClassPro each completed 5 provider queries and 8 tenant probes,
+  but all 41/50 RSS results were correctly rejected as non-ATS. Indica found an
+  official BambooHR handoff, then exposed one live/replay reason mismatch.
+- Added a bounded DuckDuckGo rescue for empty ATS query buckets after the full
+  Bing RSS diversity sweep. Two rescue requests are reserved by composition;
+  all leads still pass existing ATS-host, provider, tenant, relationship,
+  inventory and S7 gates.
+- Caller-deadline and downstream-reservation terminations now leave the retry
+  boundary as typed `COMPANY_TIME_BUDGET_EXHAUSTED` or
+  `FETCH_BUDGET_EXHAUSTED`. Outcome-tape replay enters an exhausted budget state
+  after consuming either terminal, preventing requests that live never issued.
+- Kept ordinary transport timeouts as `NETWORK_TIMEOUT` and strict replay
+  comparison unchanged. Clean `.218` live retained 0/3 Job Lists, while replay
+  passed 3/3 with zero mismatch or fixture gap. Full evidence is in
+  `docs/COORDINATOR_V218_FOCUSED_LIVE.md`.
+
+## 2026-07-21 - Stage-local provider-search reservation `.217`
+
+- Added a versioned `provider_search_reserve_seconds` contract in run-config
+  schema `1.7`; coordinator-v2 defaults to a 10-second S5 reservation while
+  stage-v1 behavior remains unchanged.
+- The canonical runner now enters a runtime-only stage budget scope inside each
+  existing evidence boundary. During S4, the retrying fetch boundary subtracts
+  the S5 reservation from the global remaining deadline; reaching it returns
+  retryable `FETCH_BUDGET_EXHAUSTED`, allowing normal scope finalization and
+  checkpoint publication before S5 releases the reserved window.
+- Preserved search `deadline_exhausted` as typed route `budget_exhausted` and
+  added bounded privacy-safe diagnostics for raw/accepted/skipped results,
+  query errors and tenant-probe counts. Tenant probes now contribute to route
+  request counts; their URLs are not copied into coordinator trace.
+- Added fake-clock, runner-scope, composition, route-terminal and schema
+  migration tests. The focused backend slice passes 136 tests. The clean
+  three-record live proved the reservation but recovered 0/3 Job Lists and
+  replayed 2/3 outcomes; details are preserved in
+  `docs/COORDINATOR_V217_FOCUSED_LIVE.md`.
+
+## 2026-07-21 - Coordinator empty-route terminal `.216`
+
+- Preserved the failed `.215` focused artifacts. Candidate production now ran
+  to completion, but the zero-board terminal called `make_stage_result` with an
+  unsupported keyword and converted all three honest misses into worker
+  contract failures.
+- Removed the invalid override and added a stage regression proving three empty
+  completed routes return typed non-retryable `JOB_BOARD_NOT_FOUND` without a
+  worker crash. Retryability continues to come only from the central reason
+  taxonomy.
+- The clean `.216` focused live completes without worker errors and same-version
+  replay passes 3/3 with zero mismatch or fixture gap. It recovers 0/3 Job Lists:
+  two S2 timeouts still execute 5/5 provider queries, while Loveland reaches S5
+  with 0/5 after S4 consumes the company deadline. Coordinator closure is
+  rejected pending typed budget exhaustion and an S5 reservation. Full evidence
+  is in `docs/COORDINATOR_V216_FOCUSED_LIVE.md`.
+
+## 2026-07-21 - Coordinator LinkedIn slug binding `.215`
+
+- Kept the failed `.214` focused artifacts immutable. All three development
+  records exposed the same input-contract defect before candidate discovery:
+  LinkedIn's canonical `/jobs/view/<title>-<job-id>` path was parsed by S1 but
+  rejected by the coordinator's numeric-only path binder.
+- The binder now accepts either `/jobs/view/<job-id>` or a slug whose final
+  hyphen-delimited token is the exact supplied numeric job ID. Query-bound IDs,
+  LinkedIn host checks and all candidate URL safety rules remain unchanged.
+- `.215` must rerun the same three records from clean checkpoint, completion,
+  evidence, snapshot and replay roots; no `.214` outcome is reclassified as a
+  discovery result.
+
+## 2026-07-21 - Independent candidate coordinator `.214`
+
+- Implemented accepted ADR-0030 behind the versioned
+  `candidate_discovery_engine=coordinator_v2` feature flag. The default remains
+  `stage_v1` until focused live and replay acceptance complete.
+- Froze immutable S1 discovery input and three typed route outcomes for External
+  Apply, provider-targeted search and Website/Career discovery. An S3 rejection
+  can now suppress only matching Website evidence; it cannot globally erase
+  independent routes.
+- Added deterministic provenance-preserving merge, per-productive-route
+  reservation, Python 3.10-compatible contracts and independent S5
+  relationship verification. Shared URLs cannot borrow another route's hiring
+  authorization.
+- Made provider search exhaustive within its fixed query budget, rotated that
+  budget deterministically across nine provider families, retained multiple
+  results and selected candidates fairly across query buckets.
+- Added explicit CLI and live-runner engine flags and run-configuration schema
+  `1.6`; staged checkpoints remain isolated by configuration digest and adapter
+  version. Physical route concurrency and route-local persistence remain
+  deferred.
+- Focused backend slices pass 156 and 223 tests respectively. The seven-stage
+  offline smoke preserves expected outputs; provider benchmark is 25/25,
+  resolver benchmark 6/6 and architecture validation 46/0. Focused live/replay
+  is the next gate; Fresh100, Frozen100 and sealed holdouts have not been run.
+- Authenticated extension acceptance remains paused by user direction. No LLM
+  branch code or sealed holdout data was inspected or integrated.
+
+## 2026-07-21 - User-mediated External Apply capture architecture
+
+- Implemented accepted ADR-0031 for button-only External Apply targets in
+  extension `0.4.0` and adapter `2026-07-21.213`. Authenticated live acceptance
+  is still pending and no success-rate claim is made.
+- Added a single-posting, user-mediated, zero-new-permission flow instead of
+  MAIN-world interception or background observation of arbitrary tabs.
+- Froze exact job-ID binding, `chrome.storage.session` expiry, typed fail-closed
+  outcomes, browser/Python sanitizer parity, minimal navigation provenance,
+  privacy constraints and the 20-30-record authenticated acceptance gate.
+- Added a synchronous token-authenticated loopback validation endpoint and
+  re-sanitized every direct `external_apply_url` before `CompanyInput`
+  construction. A captured target remains an untrusted provider candidate.
+- Added popup arm/confirm/cancel/reopen recovery, exact source/opener binding,
+  tracking removal, safe committed-record recovery and typed navigation
+  provenance. The extension never clicks Apply or closes the user's tab.
+- Integrated gates pass 2,591 tests (4 skipped), provider 25/25, resolver 6/6
+  and architecture validation with 46 adapters and 0 issues.
+- Kept `coordinator-v2` proposed. Fresh100, Frozen100 and sealed blind holdouts
+  were not run or opened during this implementation.
+
+## 2026-07-21 - Authenticated External Apply input-parity gate (`0.3.2`)
+
+- Kept `coordinator-v2` proposed and unimplemented. No Fresh100, Frozen100 or
+  sealed blind holdout was executed.
+- Ran installed page-scan v3 against 24 logged-in LinkedIn Jobs details. All 24
+  had canonical job IDs and observed details: 18 exposed an off-site Apply
+  button without a DOM target URL and six exposed Easy Apply; zero details were
+  unobserved.
+- Corrected the prior generic-button misclassification, same-origin LinkedIn
+  `/preload/` iframe discovery, legacy card support, selected-card restoration,
+  detail stability and explicit five-state observation traces. No company or
+  provider exception was added.
+- Captured zero External Apply URLs, so provider/specific-opening/S7 focused
+  verification had an empty eligible input set and was not fabricated. Full
+  results are in `docs/AUTHENTICATED_EXTERNAL_APPLY_INPUT_PARITY_GATE.md`.
+- Focused extension, popup, bridge and source-posting gates pass 42/42. The
+  capture bridge was intentionally capture-only and returned `Complete`
+  immediately rather than running the backend.
+
 ## 2026-07-21 - Post-`.212` architecture review
 
 - Completed the required architecture review after the two-round generic
