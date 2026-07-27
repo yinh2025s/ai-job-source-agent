@@ -1,5 +1,25 @@
 # Changelog
 
+## 2026-07-28 - v273 release completion audit
+
+- Stopped all new live cohorts after v273 and retained the frozen `.270`
+  backend behavior.
+- Confirmed the integrated release gate: 2,834 tests passed (4 skipped),
+  provider benchmark 25/25, resolver benchmark 6/6, architecture validation
+  48/0 and clean diff validation.
+- Confirmed backend release base `616d2d8` on `origin/main`; product code,
+  governance documents and the v273 artifact checksum are committed and
+  pushed before this grouped audit documentation commit.
+- Added `docs/BACKEND_RELEASE_COMPLETION_AUDIT_V273.md` to separate proven
+  release evidence from missing product-goal evidence.
+- Recorded that the latest Fresh100 matrix remains a development projection
+  with 50 unresolved records, and that current-version Fresh100 cold/replay,
+  Frozen100 no-regression and two qualifying unseen-cohort gates remain
+  unproven.
+- Kept the authenticated-apply plugin prototype and LLM experiment isolated.
+  No new live, sealed holdout execution or behavioral implementation was
+  started.
+
 ## 2026-07-27 - v273 current public diagnostic cohort frozen
 
 - Collected two new S1-only public LinkedIn card pools across twelve queries

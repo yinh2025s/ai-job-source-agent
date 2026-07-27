@@ -23,7 +23,27 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-27，`.273` backend release closure）
+## 当前架构进度（2026-07-28，v273 release completion audit）
+
+v273 之后已经停止新批次，完成全量门禁、分组提交并推送。后端 release
+base `616d2d8` 已在 `origin/main`；本次只追加分组的完成度审计文档，不含
+产品行为修改。完整验收证据表见：
+
+- `docs/BACKEND_RELEASE_COMPLETION_AUDIT_V273.md`
+
+本轮 backend release cycle 已经收口，但不得把它描述为最终产品目标完成：
+
+- v273 是 30 条 development diagnostic cohort，不是 Fresh100 或 blind
+  holdout；
+- 当前 Fresh100 只有 37 Exact、12 Verified No Match、1 External Blocked、
+  50 unresolved 的保守投影，没有 `.270` 的统一冷启动 100 条成绩；
+- 当前版本 Fresh100 100/100 replay 和 Frozen100 69 Exact 无回归均未证明；
+- 两批真正陌生 cohort 的 eligible recall >=70% 门槛未满足，sealed v2/v3
+  仍保持未观察状态。
+
+因此当前计划状态是：**暂停新 live 和行为实现，保留产品总目标为 open**。
+下一阶段只有在重新授权统一 Fresh100/Frozen100 验收，或按 one-shot contract
+执行 sealed holdout 时才启动；不得继续累积零散诊断批次或未提交修改。
 
 ### v273 current public backend diagnostic cohort
 
