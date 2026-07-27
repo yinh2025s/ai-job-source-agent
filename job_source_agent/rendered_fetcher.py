@@ -508,6 +508,7 @@ def _execute_job_search_interaction(
 
     form = _interaction_form(page, interaction.form_ordinal)
     field = _interaction_query_field(form, interaction)
+    _verify_declared_interaction_action(field, interaction, initial_url)
     submit_control = _interaction_submit_control(form, interaction)
     field.fill(
         interaction.target_title,
@@ -591,6 +592,27 @@ def _interaction_query_field(form, interaction: JobSearchInteraction):
             retryable=False,
         )
     return matches[0]
+
+
+def _verify_declared_interaction_action(
+    field,
+    interaction: JobSearchInteraction,
+    page_url: str,
+) -> None:
+    expected = interaction.declared_action_url
+    if expected is None:
+        return
+    raw_action = field.get_attribute("data-action")
+    try:
+        observed = normalize_url(raw_action, page_url) if raw_action else None
+    except (TypeError, ValueError):
+        observed = None
+    if observed != expected or _https_origin(expected) != _https_origin(page_url):
+        raise FetchError(
+            "job-search declared action changed before execution",
+            reason_code="OPENING_DISCOVERY_INCOMPLETE",
+            retryable=False,
+        )
 
 
 def _interaction_submit_control(form, interaction: JobSearchInteraction):

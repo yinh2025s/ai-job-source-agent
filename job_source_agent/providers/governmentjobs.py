@@ -5,6 +5,10 @@ import json
 import re
 from urllib.parse import unquote, urlencode, urlparse
 
+from ..job_search_actions import (
+    discover_job_search_actions,
+    verify_job_search_submission,
+)
 from ..reasons import reason_spec
 from ..web import FetchError
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery, provider_fetch_reason
@@ -61,6 +65,75 @@ class GovernmentJobsAdapter:
                 response_source=board_page.source,
                 rejected_final_url=board_page.final_url or board_page.url,
             )
+
+        interaction_trace: dict[str, object] = {}
+        if query.title and query.title.strip():
+            discovery = discover_job_search_actions(board_page, query.title)
+            interaction_trace["discovery"] = list(discovery.trace)
+            if len(discovery.interactive_actions) == 1:
+                interaction = discovery.interactive_actions[0]
+                interaction_trace["fingerprint"] = interaction.fingerprint()
+                try:
+                    rendered_page = fetcher.fetch(
+                        board_url,
+                        interaction=interaction,
+                    )
+                except TypeError as error:
+                    if "interaction" not in str(error):
+                        raise
+                    interaction_trace["status"] = "capability_unavailable"
+                except (FetchError, OSError, TimeoutError) as error:
+                    interaction_trace["status"] = "fetch_failed"
+                    interaction_trace["reason_code"] = provider_fetch_reason(error)
+                else:
+                    rendered_final_url = rendered_page.final_url or rendered_page.url
+                    if (
+                        _response_tenant(rendered_final_url) != tenant
+                        or _page_tenant(rendered_page.html) != tenant
+                    ):
+                        return _failure(
+                            board,
+                            "PROVIDER_VARIANT_UNSUPPORTED",
+                            "interactive_cross_tenant_or_missing_page_identity",
+                            inventory_url=board_url,
+                            response_source=rendered_page.source,
+                            rejected_final_url=rendered_final_url,
+                            interaction_trace=interaction_trace,
+                        )
+                    submission = verify_job_search_submission(
+                        board_page,
+                        rendered_page,
+                        request_url=board_url,
+                    )
+                    interaction_trace["status"] = submission.status
+                    interaction_trace["change_kind"] = submission.change_kind
+                    if submission.page is not None:
+                        parsed = _parse_inventory(
+                            submission.page.html,
+                            tenant,
+                            allow_job_list_container=True,
+                        )
+                        if not isinstance(parsed, str):
+                            return _complete_result(
+                                board,
+                                tenant,
+                                query,
+                                parsed,
+                                inventory_url=board_url,
+                                response_source=submission.page.source,
+                                interaction_trace=interaction_trace,
+                            )
+                        interaction_trace["parse_stop_reason"] = parsed
+                        code = _inventory_parse_failure_code(parsed)
+                        return _failure(
+                            board,
+                            code,
+                            parsed,
+                            retryable=reason_spec(code).retryable,
+                            inventory_url=board_url,
+                            response_source=submission.page.source,
+                            interaction_trace=interaction_trace,
+                        )
         try:
             page = fetcher.fetch(
                 inventory_url,
@@ -86,12 +159,7 @@ class GovernmentJobsAdapter:
 
         parsed = _parse_inventory(page.html, tenant)
         if isinstance(parsed, str):
-            if parsed == "inventory_cap_exceeded":
-                code = "FETCH_BUDGET_EXHAUSTED"
-            elif parsed == "javascript_inventory_shell":
-                code = "PROVIDER_VARIANT_UNSUPPORTED"
-            else:
-                code = "INVALID_STRUCTURED_DATA"
+            code = _inventory_parse_failure_code(parsed)
             return _failure(
                 board,
                 code,
@@ -99,50 +167,16 @@ class GovernmentJobsAdapter:
                 retryable=reason_spec(code).retryable,
                 inventory_url=inventory_url,
                 response_source=page.source,
+                interaction_trace=interaction_trace,
             )
-        candidates, total, variant = parsed
-        title = _normalize(query.title)
-        location = _normalize(query.location)
-        visible_candidates = [
-            candidate
-            for candidate in candidates
-            if not title or title in _normalize(candidate.title)
-        ]
-        inventory_scope = "title_filtered" if title else "full"
-        return AdapterResult(
-            provider=self.name,
-            board=board,
-            candidates=visible_candidates,
-            reason_code="EMPTY_PROVIDER_RESPONSE" if not visible_candidates else None,
-            inventory_scope=inventory_scope,
-            inventory_complete=True,
-            trace={
-                "adapter": self.name,
-                "variant": variant,
-                "tenant": tenant,
-                "board_urls": [board_url],
-                "api_urls": [inventory_url],
-                "response_source": page.source,
-                "records_seen": len(candidates),
-                "total": total,
-                "candidate_count": len(visible_candidates),
-                "exact_title_found": bool(
-                    title
-                    and any(
-                        _normalize(candidate.title) == title
-                        for candidate in visible_candidates
-                    )
-                ),
-                "location_match_found": bool(
-                    location
-                    and any(
-                        location in _normalize(candidate.location)
-                        for candidate in visible_candidates
-                    )
-                ),
-                "inventory_scope": inventory_scope,
-                "inventory_complete": True,
-            },
+        return _complete_result(
+            board,
+            tenant,
+            query,
+            parsed,
+            inventory_url=inventory_url,
+            response_source=page.source,
+            interaction_trace=interaction_trace,
         )
 
 
@@ -271,7 +305,12 @@ class _InventoryHTMLParser(HTMLParser):
             self._location_parts.append(data)
 
 
-def _parse_inventory(raw: str, tenant: str):
+def _parse_inventory(
+    raw: str,
+    tenant: str,
+    *,
+    allow_job_list_container: bool = False,
+):
     if not isinstance(raw, str) or len(raw) > _MAX_RESPONSE_CHARS:
         return "inventory_cap_exceeded"
     try:
@@ -280,7 +319,11 @@ def _parse_inventory(raw: str, tenant: str):
         payload = None
     if payload is not None:
         return _parse_json_inventory(payload, tenant)
-    return _parse_html_inventory(raw, tenant)
+    return _parse_html_inventory(
+        raw,
+        tenant,
+        allow_job_list_container=allow_job_list_container,
+    )
 
 
 def _parse_json_inventory(payload, tenant: str):
@@ -334,8 +377,19 @@ def _json_candidate(row, tenant: str) -> JobCandidate | None:
     )
 
 
-def _parse_html_inventory(raw: str, tenant: str):
-    if 'id="job-list-container"' in raw or "id='job-list-container'" in raw:
+def _parse_html_inventory(
+    raw: str,
+    tenant: str,
+    *,
+    allow_job_list_container: bool = False,
+):
+    if (
+        not allow_job_list_container
+        and (
+            'id="job-list-container"' in raw
+            or "id='job-list-container'" in raw
+        )
+    ):
         return "javascript_inventory_shell"
     parser = _InventoryHTMLParser(tenant)
     try:
@@ -369,6 +423,73 @@ def _parse_html_inventory(raw: str, tenant: str):
     return candidates, total, "governmentjobs_public_xhr_html"
 
 
+def _inventory_parse_failure_code(reason: str) -> str:
+    if reason == "inventory_cap_exceeded":
+        return "FETCH_BUDGET_EXHAUSTED"
+    if reason == "javascript_inventory_shell":
+        return "PROVIDER_VARIANT_UNSUPPORTED"
+    return "INVALID_STRUCTURED_DATA"
+
+
+def _complete_result(
+    board: JobBoard,
+    tenant: str,
+    query: JobQuery,
+    parsed,
+    *,
+    inventory_url: str,
+    response_source: str,
+    interaction_trace: dict[str, object],
+) -> AdapterResult:
+    candidates, total, variant = parsed
+    title = _normalize(query.title)
+    location = _normalize(query.location)
+    visible_candidates = [
+        candidate
+        for candidate in candidates
+        if not title or title in _normalize(candidate.title)
+    ]
+    inventory_scope = "title_filtered" if title else "full"
+    trace = {
+        "adapter": "governmentjobs",
+        "variant": variant,
+        "tenant": tenant,
+        "board_urls": [_board_url(tenant)],
+        "api_urls": [inventory_url],
+        "response_source": response_source,
+        "records_seen": len(candidates),
+        "total": total,
+        "candidate_count": len(visible_candidates),
+        "exact_title_found": bool(
+            title
+            and any(
+                _normalize(candidate.title) == title
+                for candidate in visible_candidates
+            )
+        ),
+        "location_match_found": bool(
+            location
+            and any(
+                location in _normalize(candidate.location)
+                for candidate in visible_candidates
+            )
+        ),
+        "inventory_scope": inventory_scope,
+        "inventory_complete": True,
+    }
+    if interaction_trace:
+        trace["interactive_search"] = interaction_trace
+    return AdapterResult(
+        provider="governmentjobs",
+        board=board,
+        candidates=visible_candidates,
+        reason_code="EMPTY_PROVIDER_RESPONSE" if not visible_candidates else None,
+        inventory_scope=inventory_scope,
+        inventory_complete=True,
+        trace=trace,
+    )
+
+
 def _detail_identity(url: str, tenant: str) -> tuple[str, str] | None:
     if url.startswith("http"):
         parsed = _safe_url(url)
@@ -400,6 +521,7 @@ def _failure(
     inventory_url: str | None = None,
     response_source: str | None = None,
     rejected_final_url: str | None = None,
+    interaction_trace: dict[str, object] | None = None,
 ) -> AdapterResult:
     trace = {
         "adapter": "governmentjobs",
@@ -414,6 +536,8 @@ def _failure(
         trace["response_source"] = response_source
     if rejected_final_url is not None:
         trace["rejected_final_url"] = rejected_final_url
+    if interaction_trace:
+        trace["interactive_search"] = interaction_trace
     return AdapterResult(
         provider="governmentjobs",
         board=board,

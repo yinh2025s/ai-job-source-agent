@@ -19,9 +19,11 @@ class RecordingFetcher:
         self.error = error
         self.final_url = final_url
         self.requests = []
+        self.interactions = []
 
-    def fetch(self, url, data=None, headers=None):
+    def fetch(self, url, data=None, headers=None, *, interaction=None):
         self.requests.append((url, data, headers))
+        self.interactions.append(interaction)
         if self.error:
             raise self.error
         response = self.responses.pop(0)
@@ -31,8 +33,42 @@ class RecordingFetcher:
         return Page(url=url, final_url=self.final_url or url, html=raw, source="fixture-governmentjobs")
 
 
-def board_html(tenant="lubbock"):
-    return f'<html data-agency-folder-name="{tenant}"><title>Job Opportunities</title></html>'
+def board_html(tenant="lubbock", *, search_form=False):
+    form = (
+        '<form class="search-form">'
+        '<input id="keyword-search-input" name="keyword" placeholder="Search" '
+        'data-action="/careers/Home/SearchByKeyword">'
+        '<button type="submit">Search</button></form>'
+        if search_form
+        else ""
+    )
+    return (
+        f'<html data-agency-folder-name="{tenant}">'
+        f"<title>Job Opportunities</title>{form}</html>"
+    )
+
+
+def rendered_inventory(
+    tenant="lubbock",
+    *,
+    total=1,
+    title="Information Security and Compliance Analyst",
+    location="Information Technology, Lubbock, TX",
+):
+    rows = (
+        '<article class="job-item">'
+        f'<a href="/careers/{tenant}/jobs/5342417-0/'
+        f'{title.lower().replace(" ", "-")}">'
+        f'{title}<span class="location">{location}</span></a></article>'
+        if total
+        else ""
+    )
+    return (
+        f'<html data-agency-folder-name="{tenant}">'
+        f'<div id="number-found-items">{total} '
+        f'{"job" if total == 1 else "jobs"} found</div>'
+        f'<div id="job-list-container">{rows}</div></html>'
+    )
 
 
 def job(tenant="lubbock", job_id=5342417, title="Information Security and Compliance Analyst", location="Information Technology, Lubbock, TX"):
@@ -136,6 +172,158 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
         self.assertEqual(result.candidates[0].location, "Information Technology, Lubbock, TX")
         self.assertTrue(result.trace["exact_title_found"])
         self.assertTrue(result.trace["location_match_found"])
+
+    def test_uses_declared_interaction_for_complete_title_filtered_inventory(self):
+        fetcher = RecordingFetcher(
+            responses=[
+                board_html(search_form=True),
+                rendered_inventory(),
+            ]
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(
+                title="Information Security and Compliance Analyst",
+                location="Lubbock, TX",
+            ),
+        )
+
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(
+            result.candidates[0].url,
+            LUBBOCK
+            + "/jobs/5342417-0/information-security-and-compliance-analyst",
+        )
+        self.assertEqual(len(fetcher.requests), 2)
+        self.assertIsNotNone(fetcher.interactions[1])
+        self.assertEqual(
+            fetcher.interactions[1].target_title,
+            "Information Security and Compliance Analyst",
+        )
+        self.assertEqual(
+            result.trace["interactive_search"]["status"],
+            "submitted",
+        )
+        self.assertEqual(
+            result.trace["variant"],
+            "governmentjobs_public_xhr_html",
+        )
+
+    def test_unchanged_interaction_falls_back_to_static_inventory(self):
+        landing = board_html(search_form=True)
+        fetcher = RecordingFetcher(
+            responses=[
+                landing,
+                landing,
+                {"TotalCount": 0, "Jobs": []},
+            ]
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Missing Role"),
+        )
+
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertEqual(len(fetcher.requests), 3)
+        self.assertEqual(
+            result.trace["interactive_search"]["status"],
+            "transport_unchanged",
+        )
+
+    def test_interactive_capability_absence_falls_back_without_crashing(self):
+        landing = board_html(search_form=True)
+
+        class LegacyFetcher:
+            def __init__(self):
+                self.calls = 0
+
+            def fetch(self, url, data=None, headers=None):
+                self.calls += 1
+                if self.calls == 1:
+                    return Page(url, landing, final_url=url)
+                return Page(
+                    url,
+                    json.dumps({"TotalCount": 0, "Jobs": []}),
+                    final_url=url,
+                )
+
+        fetcher = LegacyFetcher()
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Missing Role"),
+        )
+
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
+        self.assertEqual(fetcher.calls, 2)
+        self.assertEqual(
+            result.trace["interactive_search"]["status"],
+            "capability_unavailable",
+        )
+
+    def test_cross_tenant_interactive_result_fails_closed(self):
+        fetcher = RecordingFetcher(
+            responses=[
+                board_html(search_form=True),
+                Page(
+                    CSTX,
+                    rendered_inventory("cstx"),
+                    final_url=CSTX,
+                    source="browser",
+                ),
+            ]
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Information Security and Compliance Analyst"),
+        )
+
+        self.assertFalse(result.inventory_complete)
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
+        self.assertEqual(
+            result.trace["stop_reason"],
+            "interactive_cross_tenant_or_missing_page_identity",
+        )
+
+    def test_incomplete_interactive_count_does_not_become_verified_no_match(self):
+        incomplete = (
+            '<html data-agency-folder-name="lubbock">'
+            '<div id="number-found-items">2 jobs found</div>'
+            '<div id="job-list-container">'
+            '<article class="job-item">'
+            '<a href="/careers/lubbock/jobs/5342417-0/data-analyst">'
+            "Data Analyst</a></article></div></html>"
+        )
+        fetcher = RecordingFetcher(
+            responses=[
+                board_html(search_form=True),
+                incomplete,
+                {"TotalCount": 0, "Jobs": []},
+            ]
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Data Analyst"),
+        )
+
+        self.assertFalse(result.inventory_complete)
+        self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertEqual(len(fetcher.requests), 2)
+        self.assertEqual(
+            result.trace["interactive_search"]["parse_stop_reason"],
+            "inventory_count_mismatch",
+        )
 
     def test_parses_complete_html_fragment_and_preserves_same_tenant_detail(self):
         html = """

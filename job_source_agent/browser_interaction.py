@@ -4,6 +4,7 @@ from dataclasses import asdict, dataclass
 import hashlib
 import json
 import re
+from urllib.parse import urlparse
 
 
 _SAFE_FIELD = re.compile(r"^[A-Za-z][A-Za-z0-9_.:-]{0,127}$")
@@ -21,6 +22,7 @@ class JobSearchInteraction:
     query_id: str | None = None
     query_placeholder: str | None = None
     submit_tag: str = "button"
+    declared_action_url: str | None = None
     kind: str = "job_search_form"
 
     def __post_init__(self) -> None:
@@ -47,6 +49,22 @@ class JobSearchInteraction:
             raise ValueError("a semantic query field locator is required")
         if self.submit_tag not in {"a", "button", "input", "span"}:
             raise ValueError("submit tag is unsupported")
+        if self.declared_action_url is not None:
+            try:
+                parsed_action = urlparse(self.declared_action_url)
+                action_port = parsed_action.port
+            except (TypeError, ValueError):
+                raise ValueError("declared action URL is unsafe") from None
+            if (
+                len(self.declared_action_url) > 2048
+                or parsed_action.scheme.casefold() != "https"
+                or not parsed_action.hostname
+                or parsed_action.username is not None
+                or parsed_action.password is not None
+                or action_port not in {None, 443}
+                or parsed_action.fragment
+            ):
+                raise ValueError("declared action URL is unsafe")
         for name, value in (
             ("target title", self.target_title),
             ("submit text", self.submit_text),
@@ -55,8 +73,11 @@ class JobSearchInteraction:
                 raise ValueError(f"{name} is unsafe")
 
     def fingerprint(self) -> str:
+        values = asdict(self)
+        if values["declared_action_url"] is None:
+            values.pop("declared_action_url")
         payload = json.dumps(
-            asdict(self),
+            values,
             sort_keys=True,
             separators=(",", ":"),
             ensure_ascii=True,
