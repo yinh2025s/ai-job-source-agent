@@ -1380,7 +1380,6 @@ def _interaction_trace(interaction: JobSearchInteraction) -> dict[str, object]:
         "target_title": interaction.target_title,
         "submit_text": interaction.submit_text,
         "submit_tag": interaction.submit_tag,
-        "declared_action_url": interaction.declared_action_url,
         "fingerprint": interaction.fingerprint(),
     }
 

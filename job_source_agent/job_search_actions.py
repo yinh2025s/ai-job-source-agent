@@ -432,7 +432,6 @@ class _Field:
     value: str
     input_type: str
     semantic_text: str
-    data_action: str
 
 
 @dataclass
@@ -505,7 +504,6 @@ class _FormParser(HTMLParser):
                             values.get(key, "")
                             for key in ("name", "id", "placeholder", "aria-label")
                         ),
-                        data_action=values.get("data-action", ""),
                     )
                 )
         elif tag == "button":
@@ -600,18 +598,8 @@ def discover_job_search_actions(
         query_field = _query_field(form)
         disposition = "eligible"
         normalized = safe_normalize_url(form.action or page_url, page_url)
-        declared_data_action = (
-            safe_normalize_url(query_field.data_action, page_url)
-            if query_field is not None and query_field.data_action
-            else None
-        )
         if query_field is None or not query_field.name:
             disposition = "no_job_query_field"
-        elif query_field.data_action and (
-            not declared_data_action
-            or not _safe_same_origin(declared_data_action, page_url)
-        ):
-            disposition = "unsafe_action"
         elif form.method not in {"get", "post"}:
             disposition = "unsupported_method"
         elif form.method == "post" and not (
@@ -622,7 +610,7 @@ def discover_job_search_actions(
             and _has_job_context(form, query_field, page_url, normalized)
         ):
             disposition = "unsupported_method"
-        elif _is_interactive_only(form, query_field):
+        elif _is_interactive_only(form):
             disposition = "interactive_only"
         elif not normalized or not _safe_same_origin(normalized, page_url):
             disposition = "unsafe_action"
@@ -696,10 +684,6 @@ def discover_job_search_actions(
                 eligible.append((ordinal, interaction))
                 trace_item["disposition"] = "interactive_eligible"
                 trace_item["submit_text"] = interaction.submit_text
-                if interaction.declared_action_url is not None:
-                    trace_item["declared_action_url"] = (
-                        interaction.declared_action_url
-                    )
             elif trace_item["disposition"] in {
                 "interactive_only",
                 "unsupported_method",
@@ -980,16 +964,11 @@ def _query_field(form: _Form) -> _Field | None:
     return candidates[0] if candidates else None
 
 
-def _is_interactive_only(form: _Form, query_field: _Field) -> bool:
+def _is_interactive_only(form: _Form) -> bool:
     return bool(
         not form.action
-        and (
-            query_field.data_action
-            or (
-                any(button.button_type == "button" for button in form.buttons)
-                and not any(button.button_type == "submit" for button in form.buttons)
-            )
-        )
+        and any(button.button_type == "button" for button in form.buttons)
+        and not any(button.button_type == "submit" for button in form.buttons)
     )
 
 
@@ -1014,14 +993,6 @@ def _interactive_action(
     if len(query_fields) != 1:
         return None, "interactive_ambiguous_fields"
     query_field = query_fields[0]
-    declared_data_action = None
-    if query_field.data_action:
-        declared_data_action = safe_normalize_url(query_field.data_action, page_url)
-        if (
-            not declared_data_action
-            or not _safe_same_origin(declared_data_action, page_url)
-        ):
-            return None, "interactive_unsafe_action"
     if any(
         field is not query_field and not _is_location_scope_field(field)
         for field in editable_fields
@@ -1080,7 +1051,6 @@ def _interactive_action(
                 target_title=target_title,
                 submit_text=submit_text,
                 submit_tag=button.submit_tag,
-                declared_action_url=declared_data_action,
             ),
             "interactive_eligible",
         )
