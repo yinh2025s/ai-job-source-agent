@@ -6,6 +6,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CONTENT_SCRIPT = ROOT / "extension" / "content.js"
+SAFETY_SCRIPT = ROOT / "extension" / "external_apply_safety.js"
 HARNESS = ROOT / "tests" / "fixtures" / "extension" / "content_harness.js"
 
 
@@ -58,6 +59,7 @@ class ExtensionContentTests(unittest.TestCase):
                 "apply_mode": "linkedin_native",
                 "evidence_source": "authenticated_detail_dom",
                 "job_url": "https://www.linkedin.com/jobs/view/808",
+                "observation": "linkedin_native_observed",
             },
         )
 
@@ -129,7 +131,7 @@ class ExtensionContentTests(unittest.TestCase):
         self.assertEqual(record["job_location"], "Reston, VA")
         self.assertEqual(
             record["external_apply_url"],
-            "https://apply.careers.microsoft.com/careers/job/1970393556824773?utm_source=linkedin",
+            "https://apply.careers.microsoft.com/careers/job/1970393556824773",
         )
         self.assertEqual(
             record["source_trace"]["dom"],
@@ -187,6 +189,8 @@ class ExtensionContentTests(unittest.TestCase):
         self.assertEqual(response["state"], "partial")
         self.assertEqual(response["scanned_count"], 2)
         self.assertEqual(response["failure_count"], 1)
+        self.assertEqual(response["navigation_failure_count"], 1)
+        self.assertEqual(response["detail_not_observed_count"], 0)
         self.assertEqual(
             [record["linkedin_job_url"] for record in response["records"]],
             ["https://www.linkedin.com/jobs/view/201"],
@@ -239,9 +243,99 @@ class ExtensionContentTests(unittest.TestCase):
             for record in response["records"]
         ))
 
+    def test_page_scan_emits_explicit_authenticated_observation_categories(self):
+        scenarios = {
+            "page_delayed_external": "external_apply_observed",
+            "page_native": "linkedin_native_observed",
+            "page_closed": "closed_observed",
+            "page_apply_absent": "detail_observed_but_apply_absent",
+            "page_detail_not_observed": "detail_not_observed",
+        }
+
+        for scenario, expected in scenarios.items():
+            with self.subTest(scenario=scenario):
+                response = self._collect(scenario)
+                observations = {
+                    record["source_trace"]["linkedin_posting"]["observation"]
+                    for record in response["records"]
+                }
+                self.assertEqual(observations, {expected})
+
+    def test_page_scan_marks_missing_detail_partial_without_calling_apply_absent(self):
+        response = self._collect("page_detail_not_observed")
+
+        self.assertEqual(response["state"], "partial")
+        self.assertEqual(response["failure_count"], 1)
+        self.assertEqual(response["navigation_failure_count"], 0)
+        self.assertEqual(response["detail_not_observed_count"], 1)
+        self.assertEqual(
+            response["records"][0]["source_trace"]["dom"]["scope"],
+            "authenticated_search_card",
+        )
+
+    def test_closed_observation_drops_residual_external_apply_url(self):
+        record = self._collect("page_closed_with_external")["records"][0]
+
+        self.assertEqual(record["external_apply_url"], None)
+        self.assertEqual(
+            record["source_trace"]["linkedin_posting"]["observation"],
+            "closed_observed",
+        )
+
+    def test_external_button_without_dom_url_is_not_misclassified_as_native(self):
+        record = self._collect("page_external_button_without_url")["records"][0]
+        posting = record["source_trace"]["linkedin_posting"]
+
+        self.assertEqual(record["external_apply_url"], None)
+        self.assertEqual(posting["apply_mode"], "unknown")
+        self.assertEqual(posting["observation"], "detail_observed_but_apply_absent")
+        self.assertEqual(
+            posting["external_apply_control"],
+            "target_url_unavailable_in_dom",
+        )
+
+    def test_capture_preparation_freezes_exact_selected_job_identity(self):
+        response = self._collect("capture_prepare_external_button")
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["capture_contract"], "1")
+        self.assertEqual(response["source"]["linkedin_job_id"], "806")
+        self.assertEqual(
+            response["source"]["linkedin_job_url"],
+            "https://www.linkedin.com/jobs/view/806",
+        )
+        self.assertEqual(response["source"]["company_name"], "Company 806")
+        self.assertEqual(
+            response["source"]["external_apply_control"],
+            "target_url_unavailable_in_dom",
+        )
+
+    def test_capture_preparation_rejects_non_external_control(self):
+        response = self._collect("capture_reject_native_button")
+
+        self.assertFalse(response["ok"])
+        self.assertEqual(response["error_code"], "external_control_not_observed")
+
+    def test_page_scan_supports_same_origin_iframe_and_legacy_cards(self):
+        response = self._collect("page_legacy_iframe")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(response["candidate_count"], 2)
+        self.assertEqual(
+            [record["linkedin_job_url"] for record in response["records"]],
+            [
+                "https://www.linkedin.com/jobs/view/901",
+                "https://www.linkedin.com/jobs/view/902",
+            ],
+        )
+        self.assertEqual(
+            response["records"][0]["source_trace"]["linkedin_posting"]["observation"],
+            "external_apply_observed",
+        )
+
     def _collect(self, scenario: str) -> dict:
         completed = subprocess.run(
-            ["node", str(HARNESS), str(CONTENT_SCRIPT), scenario],
+            ["node", str(HARNESS), str(SAFETY_SCRIPT), str(CONTENT_SCRIPT), scenario],
             check=True,
             capture_output=True,
             text=True,

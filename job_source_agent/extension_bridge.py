@@ -17,7 +17,7 @@ from .composition import (
     FetcherConfig,
     build_application,
 )
-from .linkedin import company_inputs_from_records
+from .linkedin import company_inputs_from_records, sanitize_public_external_apply_url
 from .models import dataclass_to_dict
 
 
@@ -167,7 +167,7 @@ class ExtensionBridgeHandler(BaseHTTPRequestHandler):
     def do_POST(self) -> None:  # noqa: N802
         if not self._authorized():
             return
-        if self.path != "/v1/runs":
+        if self.path not in {"/v1/runs", "/v1/external-apply/validate"}:
             self._json_response(404, {"error": "not_found"})
             return
         try:
@@ -179,8 +179,16 @@ class ExtensionBridgeHandler(BaseHTTPRequestHandler):
             return
         try:
             payload = json.loads(self.rfile.read(length))
-            records = payload.get("records") if isinstance(payload, dict) else None
-            run_id = self.server.manager.submit(records)
+            if not isinstance(payload, dict):
+                raise ValueError("Request body must be an object.")
+            if self.path == "/v1/external-apply/validate":
+                safe_url = sanitize_public_external_apply_url(payload.get("external_apply_url"))
+                if not safe_url:
+                    self._json_response(400, {"error": "external_apply_url_invalid"})
+                    return
+                self._json_response(200, {"status": "valid", "external_apply_url": safe_url})
+                return
+            run_id = self.server.manager.submit(payload.get("records"))
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             self._json_response(400, {"error": "invalid_request", "detail": str(exc)})
             return

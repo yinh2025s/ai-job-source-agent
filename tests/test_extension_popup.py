@@ -6,6 +6,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 POPUP_SCRIPT = ROOT / "extension" / "popup.js"
+SAFETY_SCRIPT = ROOT / "extension" / "external_apply_safety.js"
+CAPTURE_SCRIPT = ROOT / "extension" / "capture_session.js"
 HARNESS = ROOT / "tests" / "fixtures" / "extension" / "popup_harness.js"
 
 
@@ -29,11 +31,19 @@ class ExtensionPopupTests(unittest.TestCase):
             "clickable_safe_links",
             "scanned_apply_fallback",
             "button_recovery",
+            "arm_single_capture",
+            "restore_confirm_capture",
+            "wrong_opener_capture",
+            "sensitive_target_capture",
+            "backend_rejects_capture",
         ]
         for scenario in scenarios:
             with self.subTest(scenario=scenario):
                 completed = subprocess.run(
-                    ["node", str(HARNESS), str(POPUP_SCRIPT), scenario],
+                    [
+                        "node", str(HARNESS), str(SAFETY_SCRIPT), str(CAPTURE_SCRIPT),
+                        str(POPUP_SCRIPT), scenario,
+                    ],
                     check=True,
                     capture_output=True,
                     text=True,

@@ -7,7 +7,7 @@ logged-in Chrome session.
 ## Preconditions
 
 - Chrome is logged into LinkedIn and the AI Job Source Agent unpacked extension is installed.
-- The extension card in `chrome://extensions` shows version `0.3.1` after **Reload**.
+- The extension card in `chrome://extensions` shows version `0.4.0` after **Reload**.
 - The local bridge is running with an explicit token:
 
 ```bash
@@ -70,6 +70,31 @@ Fix a reusable failure cluster with a minimal sanitized fixture. Do not add a co
 selector or move ATS/provider logic into the extension.
 
 ## Latest Acceptance Evidence
+
+On 2026-07-21, page-scan v3 collected 24/24 canonical job IDs and matching
+authenticated details from LinkedIn's same-origin `/preload/` Jobs iframe. Six
+were Easy Apply and 18 exposed an `on company website` button whose target URL
+was absent from the DOM; zero details were unobserved. The scanner did not
+invent destinations or submit button-only controls to provider/S7 validation.
+The full input-parity result is recorded in
+`docs/AUTHENTICATED_EXTERNAL_APPLY_INPUT_PARITY_GATE.md`.
+
+Extension `0.4.0` implements ADR-0031's button-only target experiment. It remains
+selected-job and user-mediated, adds no Chrome permission, persists pending state
+only in `chrome.storage.session`, and sanitizes the confirmed target independently
+in the extension and Python input boundary. Its release gate is a separate
+20-30-record authenticated run; offline tests must not be used to claim live
+coverage or Exact improvement.
+
+For each button-only selected posting in that gate:
+
+1. Select **Scan selected**, then **Capture target** for the matching job.
+2. Click LinkedIn's visible **Apply on company website** button yourself.
+3. On the resulting company page, open the extension and verify the frozen
+   company/title plus target host before selecting **Confirm target**.
+4. Select **Verify source** and retain only the run ID and typed result.
+5. Treat a missing opener binding, expired attempt, sensitive URL or backend
+   rejection as a failed capture; do not manually paste or guess a URL.
 
 On 2026-07-15, a logged-in Microsoft Jobs search exposed LinkedIn's obfuscated search UI. Version
 `0.2.0` correctly returned `not_ready` instead of inventing a record; read-only DOM inspection then

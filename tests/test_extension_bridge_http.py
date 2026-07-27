@@ -91,6 +91,37 @@ class ExtensionBridgeHttpTests(unittest.TestCase):
         self.assertEqual(payload, {"error": "run_not_found"})
         self._assert_response_headers(headers)
 
+    def test_external_apply_validation_uses_python_sanitizer(self):
+        status, headers, payload = self._request(
+            "POST",
+            "/v1/external-apply/validate",
+            body=json.dumps({
+                "external_apply_url": "https://jobs.example.com/opening?source=linkedin"
+            }).encode("utf-8"),
+        )
+
+        self.assertEqual(status, 200)
+        self.assertEqual(
+            payload,
+            {
+                "status": "valid",
+                "external_apply_url": "https://jobs.example.com/opening?source=linkedin",
+            },
+        )
+        self._assert_response_headers(headers)
+
+        status, headers, payload = self._request(
+            "POST",
+            "/v1/external-apply/validate",
+            body=json.dumps({
+                "external_apply_url": "https://127.0.0.1/private?token=secret"
+            }).encode("utf-8"),
+        )
+        self.assertEqual(status, 400)
+        self.assertEqual(payload, {"error": "external_apply_url_invalid"})
+        self.assertNotIn("127.0.0.1", json.dumps(payload))
+        self._assert_response_headers(headers)
+
     def test_wrong_token_returns_401(self):
         status, headers, payload = self._request(
             "GET",

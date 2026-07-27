@@ -17,6 +17,21 @@
   const visibleMatches = (root, selector) => (
     Array.from(root.querySelectorAll(selector)).filter(isVisible)
   );
+  const linkedinDocument = () => {
+    for (const frame of Array.from(document.querySelectorAll("iframe"))) {
+      try {
+        const nested = frame.contentDocument;
+        if (nested && (
+          nested.querySelectorAll("a[href*='/jobs/view/']").length
+          || nested.querySelectorAll("[data-testid='lazy-column'] [role='button'][tabindex='0']").length
+          || nested.querySelectorAll("li[data-occludable-job-id]").length
+        )) return nested;
+      } catch {
+        // Cross-origin frames are never eligible evidence roots.
+      }
+    }
+    return document;
+  };
   const isEnabled = (node) => (
     !node.disabled
     && !node.hasAttribute?.("disabled")
@@ -31,6 +46,13 @@
     }
     return "";
   };
+  const firstVisible = (root, selectors) => {
+    for (const selector of selectors) {
+      const node = visibleMatches(root, selector)[0];
+      if (node) return node;
+    }
+    return null;
+  };
   const firstHref = (root, selectors) => {
     for (const selector of selectors) {
       const node = visibleMatches(root, selector).find((candidate) => candidate.href);
@@ -41,30 +63,6 @@
   const LINKEDIN_HOST = (hostname) => (
     hostname === "linkedin.com" || hostname.endsWith(".linkedin.com")
   );
-  const LINKEDIN_OWNED_HOST = (hostname) => (
-    LINKEDIN_HOST(hostname) || hostname === "licdn.com" || hostname.endsWith(".licdn.com")
-  );
-  const LOOKS_LIKE_LINKEDIN_HOST = (hostname) => /(?:linkedin|licdn)/i.test(hostname);
-  const isPublicHost = (hostname) => {
-    const host = hostname.toLowerCase().replace(/^\[|\]$/g, "");
-    if (!host || host === "localhost" || host.endsWith(".localhost")
-      || host.endsWith(".local") || host.endsWith(".internal")) {
-      return false;
-    }
-    if (host === "::" || host === "::1" || /^(?:fc|fd|fe8|fe9|fea|feb)/i.test(host)) return false;
-    const octets = host.split(".").map(Number);
-    if (octets.length !== 4 || octets.some((octet) => !Number.isInteger(octet) || octet < 0 || octet > 255)) {
-      return true;
-    }
-    return !(
-      octets[0] === 0 || octets[0] === 10 || octets[0] === 127 || octets[0] >= 224
-      || (octets[0] === 100 && octets[1] >= 64 && octets[1] <= 127)
-      || (octets[0] === 169 && octets[1] === 254)
-      || (octets[0] === 172 && octets[1] >= 16 && octets[1] <= 31)
-      || (octets[0] === 192 && octets[1] === 168)
-      || (octets[0] === 198 && (octets[1] === 18 || octets[1] === 19))
-    );
-  };
   const jobIdFromValue = (value) => {
     const match = String(value || "").match(/(?:^|jobPosting:)(\d+)$/i);
     return match ? match[1] : "";
@@ -89,26 +87,9 @@
       return "";
     }
   };
-  const hasSensitiveQuery = (url) => {
-    const sensitiveKey = /(?:^|[_-])(?:token|session|auth|authorization|api[_-]?key|csrf|xsrf|secret|password|credential|signature|sig)(?:$|[_-])/i;
-    return Array.from(url.searchParams.keys()).some((key) => sensitiveKey.test(key));
-  };
   const isSafeExternalApplyUrl = (value) => {
-    try {
-      let url = new URL(value, location.href);
-      if (LINKEDIN_HOST(url.hostname.toLowerCase())) {
-        if (url.protocol !== "https:" || url.pathname !== "/safety/go/") return "";
-        const target = url.searchParams.get("url");
-        if (!target) return "";
-        url = new URL(target);
-      }
-      if (!/^https?:$/.test(url.protocol) || url.username || url.password || url.hash) return "";
-      if (!isPublicHost(url.hostname) || LINKEDIN_OWNED_HOST(url.hostname.toLowerCase())
-        || LOOKS_LIKE_LINKEDIN_HOST(url.hostname) || hasSensitiveQuery(url)) return "";
-      return url.href;
-    } catch {
-      return "";
-    }
+    const sanitizer = globalThis.JobSourceExternalApplySafety?.sanitize;
+    return typeof sanitizer === "function" ? sanitizer(value, location.href) : "";
   };
   const EXTERNAL_APPLY_SELECTORS = [
     "a[data-control-name='jobdetails_topcard_external_apply']",
@@ -140,7 +121,7 @@
   const selectedSemanticDetail = () => {
     const selectedId = selectedJobId();
     if (!selectedId) return null;
-    const titleLink = visibleMatches(document, "a[href*='/jobs/view/']").find((link) => (
+    const titleLink = visibleMatches(linkedinDocument(), "a[href*='/jobs/view/']").find((link) => (
       canonicalJobUrl(link.href).endsWith(`/${selectedId}`)
     ));
     if (!titleLink) return null;
@@ -174,6 +155,7 @@
     return { root, header, titleLink, locationNode, selectedId };
   };
   const explicitRootJobId = (root) => {
+    if (!root) return "";
     for (const attribute of [
       "data-current-job-id",
       "data-job-id",
@@ -209,7 +191,7 @@
     };
     const selectedId = selectedJobId();
     const roots = DETAIL_ROOT_SELECTORS.flatMap((selector) => (
-      visibleMatches(document, selector).map((root) => ({
+      visibleMatches(linkedinDocument(), selector).map((root) => ({
         root,
         selector,
         explicitJobId: explicitRootJobId(root)
@@ -250,7 +232,13 @@
   ].join(", ")).some((button) => {
     if (!isEnabled(button)) return false;
     const label = `${text(button)} ${button.getAttribute("aria-label") || ""}`.toLowerCase();
-    return label.includes("apply");
+    return label.includes("easy apply")
+      || (button.getAttribute("data-control-name") || "") === "jobdetails_topcard_inapply";
+  });
+  const hasExternalApplyControl = (root) => visibleMatches(root, "button").some((button) => {
+    if (!isEnabled(button)) return false;
+    const label = `${text(button)} ${button.getAttribute("aria-label") || ""}`.toLowerCase();
+    return label.includes("apply") && label.includes("company website");
   });
   const hasClosedBanner = (root) => visibleMatches(root, [
     ".jobs-details-top-card__apply-error",
@@ -266,21 +254,30 @@
   const linkedinPostingEvidence = (root, jobUrl, externalUrl) => {
     let availability = "unknown";
     let applyMode = "unknown";
+    let observation = "detail_observed_but_apply_absent";
     if (hasClosedBanner(root)) {
       availability = "closed";
+      observation = "closed_observed";
     } else if (externalUrl) {
       availability = "active";
       applyMode = "external";
+      observation = "external_apply_observed";
     } else if (hasNativeApply(root)) {
       availability = "active";
       applyMode = "linkedin_native";
+      observation = "linkedin_native_observed";
     }
-    return {
+    const evidence = {
       availability,
       apply_mode: applyMode,
       evidence_source: "authenticated_detail_dom",
-      job_url: jobUrl
+      job_url: jobUrl,
+      observation
     };
+    if (!externalUrl && hasExternalApplyControl(root)) {
+      evidence.external_apply_control = "target_url_unavailable_in_dom";
+    }
+    return evidence;
   };
 
   const detailRecord = () => {
@@ -289,6 +286,7 @@
     const header = detailRoot.header || root;
     const jobUrl = detailRoot.jobUrl;
     const externalUrl = externalApplyUrl(root);
+    const postingEvidence = linkedinPostingEvidence(root, jobUrl, externalUrl);
     const linkedinCompanyUrl = canonicalCompanyUrl(firstHref(root, [
       ".job-details-jobs-unified-top-card__company-name a[href*='/company/']",
       ".jobs-unified-top-card__company-name a[href*='/company/']",
@@ -296,7 +294,9 @@
     ]));
     return {
       linkedin_job_url: jobUrl,
-      external_apply_url: externalUrl || null,
+      external_apply_url: postingEvidence.observation === "external_apply_observed"
+        ? externalUrl
+        : null,
       linkedin_company_url: linkedinCompanyUrl || null,
       company_name: firstText(header, [
         "[aria-label^='Company, ']",
@@ -319,7 +319,7 @@
       ]),
       source: "linkedin_browser_extension",
       source_trace: {
-        linkedin_posting: linkedinPostingEvidence(root, jobUrl, externalUrl),
+        linkedin_posting: postingEvidence,
         dom: {
           scope: "authenticated_detail_dom",
           root_selector: detailRoot.selector,
@@ -329,9 +329,38 @@
     };
   };
 
+  const prepareExternalApplyCapture = () => {
+    const record = detailRecord();
+    const posting = record.source_trace?.linkedin_posting;
+    const selectedId = selectedJobId();
+    const recordId = jobIdFromValue(record.linkedin_job_url?.split("/").pop());
+    if (!selectedId || recordId !== selectedId || !record.company_name || !record.job_title) {
+      return { ok: false, error_code: "source_identity_changed" };
+    }
+    if (
+      record.external_apply_url
+      || posting?.observation !== "detail_observed_but_apply_absent"
+      || posting?.external_apply_control !== "target_url_unavailable_in_dom"
+    ) {
+      return { ok: false, error_code: "external_control_not_observed" };
+    }
+    return {
+      ok: true,
+      capture_contract: "1",
+      source: {
+        linkedin_job_id: selectedId,
+        linkedin_job_url: record.linkedin_job_url,
+        company_name: record.company_name,
+        job_title: record.job_title,
+        job_location: record.job_location || "",
+        external_apply_control: "target_url_unavailable_in_dom"
+      }
+    };
+  };
+
   const cardRecords = () => {
     const cards = visibleMatches(
-      document,
+      linkedinDocument(),
       "li.jobs-search-results__list-item, [data-occludable-job-id], .job-card-container, .base-card"
     );
     const records = [];
@@ -409,16 +438,47 @@
   };
 
   const PAGE_CARD_SELECTOR = "[data-testid='lazy-column'] [role='button'][tabindex='0']";
+  const PAGE_CARD_SELECTORS = [
+    PAGE_CARD_SELECTOR,
+    "li[data-occludable-job-id]",
+    ".job-card-container[data-job-id]"
+  ];
   const PAGE_SCAN_LIMIT = 30;
   const PAGE_NAVIGATION_POLLS = 12;
-  const PAGE_DETAIL_POLLS = 24;
-  const PAGE_POLL_INTERVAL_MS = 50;
+  const PAGE_DETAIL_POLLS = 32;
+  const PAGE_DETAIL_MIN_POLLS = 4;
+  const PAGE_DETAIL_STABLE_POLLS = 3;
+  const PAGE_POLL_INTERVAL_MS = 75;
   let activePageScan = null;
 
   const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-  const pageCards = () => visibleMatches(document, PAGE_CARD_SELECTOR).filter((card) => (
-    isEnabled(card) && visibleMatches(card, "p").filter((paragraph) => text(paragraph)).length >= 3
-  ));
+  const pageCards = () => {
+    const seen = new Set();
+    const seenJobIds = new Set();
+    return PAGE_CARD_SELECTORS.flatMap((selector) => (
+      visibleMatches(linkedinDocument(), selector)
+    )).filter((card) => {
+      if (seen.has(card) || !isEnabled(card)) return false;
+      seen.add(card);
+      const cardJobId = explicitRootJobId(card)
+        || explicitRootJobId(visibleMatches(card, ".job-card-container[data-job-id]")[0]);
+      if (cardJobId && seenJobIds.has(cardJobId)) return false;
+      const title = firstText(card, [
+        ".job-card-list__title--link",
+        ".job-card-container__link",
+        "a[href*='/jobs/view/']"
+      ]);
+      const company = firstText(card, [
+        ".artdeco-entity-lockup__subtitle",
+        ".job-card-container__primary-description",
+        ".job-card-container__company-name"
+      ]);
+      const paragraphs = visibleMatches(card, "p").filter((paragraph) => text(paragraph));
+      const eligible = Boolean((title && company) || paragraphs.length >= 3);
+      if (eligible && cardJobId) seenJobIds.add(cardJobId);
+      return eligible;
+    });
+  };
   const firstDescendantText = (root, selectors) => {
     for (const selector of selectors) {
       for (const node of Array.from(root.querySelectorAll(selector))) {
@@ -431,14 +491,38 @@
   const frozenCardMetadata = (card) => {
     const paragraphs = visibleMatches(card, "p").filter((paragraph) => text(paragraph));
     const titleParagraph = paragraphs[0];
-    const title = firstDescendantText(titleParagraph, ["[aria-hidden='true']", "span"])
-      || text(titleParagraph);
+    const titleLink = firstVisible(card, [
+      ".job-card-list__title--link",
+      ".job-card-container__link",
+      "a[href*='/jobs/view/']"
+    ]);
+    const title = (
+      titleParagraph
+        ? firstDescendantText(titleParagraph, ["[aria-hidden='true']", "span"])
+          || text(titleParagraph)
+        : ""
+    ) || text(titleLink);
+    const jobId = explicitRootJobId(card)
+      || explicitRootJobId(visibleMatches(card, ".job-card-container[data-job-id]")[0])
+      || jobIdFromValue(canonicalJobUrl(titleLink?.href).split("/").pop());
     return {
       card,
-      selected: /^selected\s*,/i.test(text(titleParagraph)),
+      clickTarget: titleLink || card,
+      jobId,
+      selected: selectedJobId() === jobId
+        || /^selected\s*,/i.test(text(titleParagraph))
+        || (card.getAttribute("aria-selected") || "").toLowerCase() === "true",
       job_title: title,
-      company_name: text(paragraphs[1]),
-      job_location: text(paragraphs[2])
+      company_name: text(paragraphs[1]) || firstText(card, [
+        ".artdeco-entity-lockup__subtitle",
+        ".job-card-container__primary-description",
+        ".job-card-container__company-name"
+      ]),
+      job_location: text(paragraphs[2]) || firstText(card, [
+        ".artdeco-entity-lockup__caption",
+        ".job-card-container__metadata-item",
+        ".job-card-container__metadata-wrapper li"
+      ])
     };
   };
   const listedPageRecord = (metadata, jobUrl) => ({
@@ -454,7 +538,8 @@
         availability: "listed",
         apply_mode: "unknown",
         evidence_source: "authenticated_search_card",
-        job_url: jobUrl
+        job_url: jobUrl,
+        observation: "detail_not_observed"
       },
       dom: {
         scope: "authenticated_search_card",
@@ -463,14 +548,43 @@
       }
     }
   });
-  const completeDetailFor = (jobUrl) => {
-    const record = detailRecord();
-    return record.linkedin_job_url === jobUrl && record.company_name && record.job_title ? record : null;
+  const comparableText = (value) => String(value || "").replace(/\s+/g, " ").trim().toLowerCase();
+  const comparableCompany = (left, right) => {
+    const normalizedLeft = comparableText(left);
+    const normalizedRight = comparableText(right);
+    return normalizedLeft === normalizedRight
+      || (normalizedLeft.length >= 4 && normalizedRight.includes(normalizedLeft))
+      || (normalizedRight.length >= 4 && normalizedLeft.includes(normalizedRight));
   };
-  const detailApplyResolved = (record) => (
-    Boolean(record)
-    && record.source_trace?.linkedin_posting?.availability !== "unknown"
-  );
+  const completeDetailFor = (jobUrl, metadata) => {
+    const record = detailRecord();
+    const matchingMetadata = !metadata || (
+      comparableCompany(record.company_name, metadata.company_name)
+      && comparableText(record.job_title) === comparableText(metadata.job_title)
+    );
+    return record.linkedin_job_url === jobUrl
+      && record.company_name
+      && record.job_title
+      && matchingMetadata
+      ? record
+      : null;
+  };
+  const detailApplyResolved = (record) => new Set([
+    "external_apply_observed",
+    "linkedin_native_observed",
+    "closed_observed"
+  ]).has(record?.source_trace?.linkedin_posting?.observation);
+  const detailFingerprint = (record) => JSON.stringify({
+    apply_mode: record.source_trace.linkedin_posting.apply_mode,
+    availability: record.source_trace.linkedin_posting.availability,
+    company_name: record.company_name,
+    external_apply_url: record.external_apply_url,
+    identity_source: record.source_trace.dom.identity_source,
+    job_title: record.job_title,
+    linkedin_job_url: record.linkedin_job_url,
+    observation: record.source_trace.linkedin_posting.observation,
+    external_apply_control: record.source_trace.linkedin_posting.external_apply_control || null
+  });
   const mergeRecord = (record, detail) => Object.fromEntries(
     Object.entries({ ...record, ...detail }).map(([key, value]) => [
       key,
@@ -493,15 +607,31 @@
     }
     return "";
   };
-  const settleDetailFor = async (jobUrl, scan) => {
+  const settleDetailFor = async (jobUrl, metadata, scan) => {
     let latestDetail = null;
+    let latestFingerprint = "";
+    let stablePolls = 0;
     for (let attempt = 0; attempt < PAGE_DETAIL_POLLS; attempt += 1) {
-      const detail = completeDetailFor(jobUrl);
-      if (detail) latestDetail = detail;
-      if (detailApplyResolved(detail) || scan.cancelled) return detail;
+      const detail = completeDetailFor(jobUrl, metadata);
+      if (detail) {
+        const fingerprint = detailFingerprint(detail);
+        stablePolls = fingerprint === latestFingerprint ? stablePolls + 1 : 1;
+        latestFingerprint = fingerprint;
+        latestDetail = detail;
+      } else {
+        latestDetail = null;
+        latestFingerprint = "";
+        stablePolls = 0;
+      }
+      if (scan.cancelled) return detail;
+      if (
+        detailApplyResolved(detail)
+        && attempt + 1 >= PAGE_DETAIL_MIN_POLLS
+        && stablePolls >= PAGE_DETAIL_STABLE_POLLS
+      ) return detail;
       await pause(PAGE_POLL_INTERVAL_MS);
     }
-    return latestDetail;
+    return stablePolls >= PAGE_DETAIL_STABLE_POLLS ? latestDetail : null;
   };
   const pageScanResponse = (scan, state) => ({
     ok: true,
@@ -511,7 +641,9 @@
     state,
     scanned_count: scan.scannedCount,
     candidate_count: scan.candidateCount,
-    failure_count: scan.failureCount
+    failure_count: scan.failureCount,
+    navigation_failure_count: scan.navigationFailureCount,
+    detail_not_observed_count: scan.detailNotObservedCount
   });
   const collectPage = async () => {
     const originalJobId = selectedJobId();
@@ -519,14 +651,18 @@
     const scan = {
       cancelled: false,
       candidateCount: candidates.length,
+      detailNotObservedCount: 0,
       failureCount: 0,
+      navigationFailureCount: 0,
       records: [],
       scannedCount: 0
     };
     activePageScan = scan;
     const cardsByJobId = new Map();
     const originalCandidate = candidates.find((candidate) => candidate.selected);
-    if (originalJobId && originalCandidate) cardsByJobId.set(originalJobId, originalCandidate.card);
+    if (originalJobId && originalCandidate) {
+      cardsByJobId.set(originalJobId, originalCandidate.clickTarget);
+    }
     try {
       for (const candidate of candidates) {
         if (scan.cancelled) break;
@@ -534,23 +670,34 @@
         scan.scannedCount += 1;
         let currentId = "";
         try {
-          if (candidate.selected && previousId) {
+          if (candidate.selected && previousId && previousId === originalJobId) {
             currentId = previousId;
           } else {
-            candidate.card.click();
-            currentId = await waitForChangedJob(previousId);
+            candidate.clickTarget.click();
+            if (candidate.jobId) {
+              const selected = await waitForSelectedJob(candidate.jobId, previousId);
+              currentId = selected ? candidate.jobId : "";
+            } else {
+              currentId = await waitForChangedJob(previousId);
+            }
           }
         } catch {
           currentId = "";
         }
         if (!currentId) {
           scan.failureCount += 1;
+          scan.navigationFailureCount += 1;
         } else {
-          cardsByJobId.set(currentId, candidate.card);
+          cardsByJobId.set(currentId, candidate.clickTarget);
           const jobUrl = `https://www.linkedin.com/jobs/view/${currentId}`;
           let record = listedPageRecord(candidate, jobUrl);
-          const detail = await settleDetailFor(jobUrl, scan);
-          if (detail) record = mergeRecord(record, detail);
+          const detail = await settleDetailFor(jobUrl, candidate, scan);
+          if (detail) {
+            record = mergeRecord(record, detail);
+          } else {
+            scan.failureCount += 1;
+            scan.detailNotObservedCount += 1;
+          }
           if (!scan.records.some((existing) => existing.linkedin_job_url === jobUrl)) {
             scan.records.push(record);
           }
@@ -593,6 +740,14 @@
   };
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "prepare_external_apply_capture") {
+      try {
+        sendResponse(prepareExternalApplyCapture());
+      } catch {
+        sendResponse({ ok: false, error_code: "source_identity_changed" });
+      }
+      return false;
+    }
     if (message?.type === "cancel_job_source_page") {
       const cancelled = Boolean(activePageScan && !activePageScan.cancelled);
       if (activePageScan) activePageScan.cancelled = true;

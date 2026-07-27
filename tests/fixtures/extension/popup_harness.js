@@ -59,11 +59,16 @@ function deferred() {
   return { promise, resolve, reject };
 }
 
-function createHarness({ fetchQueue = [], scanQueue = [], pageQueue = [], cancelQueue = [], runId = null, tab = null } = {}) {
+function createHarness({
+  fetchQueue = [], scanQueue = [], pageQueue = [], cancelQueue = [], captureQueue = [],
+  runId = null, tab = null, sessionStorage = {},
+} = {}) {
   const ids = [
     "bridgeState", "popupRoot", "scanSelectedButton", "scanPageButton", "runButton", "refreshButton", "saveButton",
     "bridgeUrl", "bridgeToken", "message", "recordCount", "applyCount", "runPanel",
     "runStatus", "jobListRate", "openingRate", "results", "scanPanel", "scanResults",
+    "capturePanel", "captureStatus", "captureTitle", "captureCompany", "captureTarget",
+    "confirmCaptureButton", "cancelCaptureButton",
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
   elements.scanButton = elements.scanSelectedButton;
@@ -73,11 +78,12 @@ function createHarness({ fetchQueue = [], scanQueue = [], pageQueue = [], cancel
   elements.applyCount.textContent = "0 Apply URLs";
   elements.runPanel.hidden = true;
   elements.scanPanel.hidden = true;
+  elements.capturePanel.hidden = true;
   const fetchCalls = [];
   const timers = new Map();
   let nextTimer = 1;
   const storage = { bridgeUrl: elements.bridgeUrl.value, bridgeToken: elements.bridgeToken.value, runId };
-  const storageCalls = { set: [], remove: [] };
+  const storageCalls = { set: [], remove: [], sessionSet: [], sessionRemove: [] };
   const executed = [];
   const sentMessages = [];
   const runtimeListeners = [];
@@ -86,6 +92,7 @@ function createHarness({ fetchQueue = [], scanQueue = [], pageQueue = [], cancel
   const sandbox = {
     URL,
     AbortController,
+    crypto: { randomUUID: () => "01234567-89ab-cdef-0123-456789abcdef" },
     document: {
       getElementById: (id) => elements[id],
       createElement: () => new FakeElement(),
@@ -115,13 +122,29 @@ function createHarness({ fetchQueue = [], scanQueue = [], pageQueue = [], cancel
             storageCalls.remove.push(key);
           },
         },
+        session: {
+          get: async (keys) => Object.fromEntries(
+            (Array.isArray(keys) ? keys : [keys])
+              .filter((key) => Object.prototype.hasOwnProperty.call(sessionStorage, key))
+              .map((key) => [key, sessionStorage[key]])
+          ),
+          set: async (values) => {
+            Object.assign(sessionStorage, values);
+            storageCalls.sessionSet.push(values);
+          },
+          remove: async (key) => {
+            for (const item of Array.isArray(key) ? key : [key]) delete sessionStorage[item];
+            storageCalls.sessionRemove.push(key);
+          },
+        },
       },
       tabs: {
         query: async () => [tab || defaultTab],
         sendMessage: async (tabId, message) => {
           sentMessages.push({ tabId, message });
           const queue = message.type === "collect_job_source_records" ? scanQueue
-            : (message.type === "collect_job_source_page" ? pageQueue : cancelQueue);
+            : (message.type === "collect_job_source_page" ? pageQueue
+              : (message.type === "prepare_external_apply_capture" ? captureQueue : cancelQueue));
           const next = queue.shift();
           if (next instanceof Error) throw next;
           return next?.promise || next;
@@ -141,10 +164,12 @@ function createHarness({ fetchQueue = [], scanQueue = [], pageQueue = [], cancel
     },
   };
   sandbox.globalThis = sandbox;
-  vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), sandbox, { filename: process.argv[2] });
+  for (const scriptPath of process.argv.slice(2, 5)) {
+    vm.runInNewContext(fs.readFileSync(scriptPath, "utf8"), sandbox, { filename: scriptPath });
+  }
 
   return {
-    elements, fetchCalls, timers, storage, storageCalls, executed, sentMessages,
+    elements, fetchCalls, timers, storage, sessionStorage, storageCalls, executed, sentMessages,
     emitProgress(message, sender = { tab: { id: 4 } }) {
       runtimeListeners.forEach((listener) => listener(message, sender));
     },
@@ -180,6 +205,46 @@ const complete = (runId, results = []) => response(200, {
   status: "complete",
   summary: { rates: { job_list: 0.5, opening: 0.5 } },
   results,
+});
+const captureRecord = () => ({
+  company_name: "Acme",
+  job_title: "Staff Engineer",
+  job_location: "Remote",
+  linkedin_job_url: "https://www.linkedin.com/jobs/view/1234567890",
+  external_apply_url: null,
+  source_trace: {
+    linkedin_posting: {
+      observation: "detail_observed_but_apply_absent",
+      external_apply_control: "target_url_unavailable_in_dom",
+    },
+  },
+});
+const capturePreparation = () => ({
+  ok: true,
+  capture_contract: "1",
+  source: {
+    linkedin_job_id: "1234567890",
+    linkedin_job_url: "https://www.linkedin.com/jobs/view/1234567890",
+    company_name: "Acme",
+    job_title: "Staff Engineer",
+    job_location: "Remote",
+    external_apply_control: "target_url_unavailable_in_dom",
+  },
+});
+const awaitingCapture = () => ({
+  schema: "job_source_capture_session",
+  version: 1,
+  state: "awaiting_user_navigation",
+  capture_id: "capture_0123456789abcdef",
+  source_tab_id: 4,
+  linkedin_job_id: "1234567890",
+  linkedin_job_url: "https://www.linkedin.com/jobs/view/1234567890",
+  company: "Acme",
+  title: "Staff Engineer",
+  location: "Remote",
+  external_control_evidence: { observed: true, visible: true, enabled: true, off_site: true },
+  started_at: "2026-07-21T00:00:00.000Z",
+  expires_at: "2099-07-21T00:05:00.000Z",
 });
 
 async function invalidEndpointNoFetch() {
@@ -468,6 +533,111 @@ async function buttonRecovery() {
   assert.equal(h.elements.saveButton.disabled, false);
 }
 
+async function armSingleCapture() {
+  const record = captureRecord();
+  const h = createHarness({
+    fetchQueue: [health()],
+    tab: { id: 4, url: "https://www.linkedin.com/jobs/search/?currentJobId=1234567890" },
+    scanQueue: [{
+      ok: true, scan_version: "2", state: "ready",
+      page_url: "https://www.linkedin.com/jobs/search/?currentJobId=1234567890",
+      records: [record],
+    }],
+    captureQueue: [capturePreparation()],
+  });
+  await h.settle();
+  h.elements.scanSelectedButton.click();
+  await h.settle();
+  const captureButton = h.elements.scanResults.children[0].children[2];
+  assert.equal(captureButton.textContent, "Capture target");
+  captureButton.click();
+  await h.settle();
+  const stored = h.sessionStorage.externalApplyCaptureSession;
+  assert.equal(stored.state, "awaiting_user_navigation");
+  assert.equal(stored.linkedin_job_id, "1234567890");
+  assert.equal(h.elements.capturePanel.hidden, false);
+  assert.equal(h.elements.captureStatus.textContent, "Waiting");
+  assert.equal(h.elements.message.textContent, "Capture armed.");
+}
+
+async function restoreAndConfirmCapture() {
+  const h = createHarness({
+    fetchQueue: [
+      health(),
+      response(200, {
+        status: "valid",
+        external_apply_url: "https://jobs.example.com/roles/42",
+      }),
+    ],
+    tab: {
+      id: 8,
+      openerTabId: 4,
+      url: "https://jobs.example.com/roles/42?utm_source=linkedin",
+    },
+    sessionStorage: { externalApplyCaptureSession: awaitingCapture() },
+  });
+  await h.settle();
+  assert.equal(h.elements.captureStatus.textContent, "Target ready");
+  assert.equal(h.elements.captureTarget.textContent, "jobs.example.com");
+  assert.equal(h.elements.confirmCaptureButton.disabled, false);
+  h.elements.confirmCaptureButton.click();
+  await h.settle();
+  assert.equal(h.elements.capturePanel.hidden, true);
+  assert.equal(h.elements.applyCount.textContent, "1 Apply URLs");
+  const record = h.sessionStorage.externalApplyCapturedRecord;
+  assert.equal(record.external_apply_url, "https://jobs.example.com/roles/42");
+  assert.equal(
+    record.source_trace.linkedin_posting.evidence_source,
+    "authenticated_user_apply_navigation",
+  );
+  assert.equal(h.sessionStorage.externalApplyCaptureSession, undefined);
+}
+
+async function wrongOpenerFailsClosed() {
+  const h = createHarness({
+    fetchQueue: [health()],
+    tab: { id: 8, openerTabId: 99, url: "https://jobs.example.com/roles/42" },
+    sessionStorage: { externalApplyCaptureSession: awaitingCapture() },
+  });
+  await h.settle();
+  assert.equal(h.sessionStorage.externalApplyCaptureSession, undefined);
+  assert.equal(h.elements.capturePanel.hidden, true);
+  assert.match(h.elements.message.textContent, /could not be bound/);
+}
+
+async function sensitiveTargetFailsClosed() {
+  const h = createHarness({
+    fetchQueue: [health()],
+    tab: {
+      id: 8,
+      openerTabId: 4,
+      url: "https://jobs.example.com/roles/42?auth_token=secret",
+    },
+    sessionStorage: { externalApplyCaptureSession: awaitingCapture() },
+  });
+  await h.settle();
+  assert.equal(h.sessionStorage.externalApplyCaptureSession, undefined);
+  assert.equal(JSON.stringify(h.sessionStorage).includes("secret"), false);
+  assert.match(h.elements.message.textContent, /sensitive URL data/);
+}
+
+async function backendRejectsCapture() {
+  const h = createHarness({
+    fetchQueue: [
+      health(),
+      response(400, { error: "external_apply_url_invalid" }),
+    ],
+    tab: { id: 8, openerTabId: 4, url: "https://jobs.example.com/roles/42" },
+    sessionStorage: { externalApplyCaptureSession: awaitingCapture() },
+  });
+  await h.settle();
+  h.elements.confirmCaptureButton.click();
+  await h.settle();
+  assert.equal(h.sessionStorage.externalApplyCaptureSession, undefined);
+  assert.equal(h.sessionStorage.externalApplyCapturedRecord, undefined);
+  assert.match(h.elements.message.textContent, /backend rejected/);
+}
+
 const scenarios = {
   invalid_endpoint_no_fetch: invalidEndpointNoFetch,
   duplicate_submission: duplicateSubmission,
@@ -486,10 +656,15 @@ const scenarios = {
   clickable_safe_links: clickableSafeLinks,
   scanned_apply_fallback: scannedApplyRemainsAvailableWithoutVerifiedOpening,
   button_recovery: buttonRecovery,
+  arm_single_capture: armSingleCapture,
+  restore_confirm_capture: restoreAndConfirmCapture,
+  wrong_opener_capture: wrongOpenerFailsClosed,
+  sensitive_target_capture: sensitiveTargetFailsClosed,
+  backend_rejects_capture: backendRejectsCapture,
 };
 
-const scenario = scenarios[process.argv[3]];
-if (!scenario) throw new Error(`Unknown scenario: ${process.argv[3]}`);
+const scenario = scenarios[process.argv[5]];
+if (!scenario) throw new Error(`Unknown scenario: ${process.argv[5]}`);
 scenario().then(() => process.stdout.write(JSON.stringify({ ok: true }))).catch((error) => {
   process.stderr.write(`${error.stack}\n`);
   process.exitCode = 1;

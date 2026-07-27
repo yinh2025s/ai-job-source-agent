@@ -264,15 +264,27 @@ navigation 和显式 same-site job portal 放在 speculative route family 之前
 
 `extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。Search SPA 的详情证据必须绑定当前 `currentJobId` 或 detail root 的明确 job identity，不能把竞争 card 或 stale root 的 company/title/apply 组合到当前职位。Content response 使用 scan contract v2 的 `ready/not_ready`，popup 只进行有界 readiness retry。
 
+ADR-0031 已在 extension `0.4.0` / adapter `.213` 实现 button-only External Apply 边界。首版只允许
+单岗位用户确认：在 LinkedIn detail 冻结 canonical job ID 后，由用户正常点击 Apply；在站外
+目标页再次调用插件并确认绑定。pending attempt 只保存于 `chrome.storage.session`，目标必须是
+source tab 的同页导航或具有相同 `openerTabId` 的新 tab；不批量点击、不观察任意后台 tab、不注入
+MAIN world，也不增加权限。目标 URL 必须先通过共享浏览器 sanitizer，再通过 token-authenticated
+loopback validation endpoint，且 direct record 在 Python 输入边界再次清洗。capture 使用独立
+`authenticated_user_apply_navigation` provenance；之后仍只是进入 provider/S6/S7 的 untrusted lead。
+`coordinator-v2` 不因该设计自动获批。
+
 `scripts/extension_bridge.py` 只绑定 loopback，使用 bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。Popup 只接受无 path/query/fragment/credential 的 `http://127.0.0.1:<port>`，请求有超时、重复操作保护、有限 polling recovery 和 stale-run 清理；展示层只链接 public HTTPS 结果。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
 
 Extension scan v3 将即时 selected-detail 与当前批次 page scan 分开。Page scan 只消费
-`data-testid=lazy-column` 内 visible/enabled、具有至少三项可见 card metadata 的 job-card，先冻结
-title/company/location，再串行触发站内选择并观察新的 `currentJobId`；没有 observed job ID 就不生成
-record。每轮最多 30 条，支持 progress/cancel、去重与原选择恢复。它不读取 cookie、LinkedIn API、
-React internals、raw HTML 或 browser storage，也不翻页并声称覆盖全部搜索结果。Detail 已在小预算内
-完成时可以合并同 identity Apply evidence。每个 identity 最多等待约 1.2 秒，直到 external、native 或
-closed 状态明确；超时保留 listed/unknown，由 Selected scan 或后端继续处理。
+当前 LinkedIn Jobs DOM 的顶层或同源 `/preload/` iframe；同时支持 `data-testid=lazy-column`
+card 和 `li[data-occludable-job-id]` card。扫描先冻结 title/company/location 和可见 job ID，再串行
+触发站内选择；已知 card ID 必须与 URL `currentJobId`、匹配 detail identity 一致，没有 observed
+job ID 就不生成 record。每轮最多 30 条，支持 progress/cancel、去重与原选择恢复。它不读取 cookie、
+LinkedIn API、React internals、raw HTML 或 browser storage，也不翻页并声称覆盖全部搜索结果。
+Detail 使用有界连续稳定采样并显式区分 external URL、Easy Apply、closed、detail observed without
+usable target 和 detail not observed。普通 `.jobs-apply-button` 不能推导 Easy Apply；可见 `on company
+website` button 若没有 DOM URL，只记录 `target_url_unavailable_in_dom`，不能产生 External Apply
+candidate 或 Exact evidence。
 
 ## Source Posting Availability
 

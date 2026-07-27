@@ -216,12 +216,18 @@ class ExtensionBridgeTests(unittest.TestCase):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
 
         self.assertEqual(manifest["manifest_version"], 3)
+        self.assertEqual(manifest["permissions"], ["activeTab", "scripting", "storage"])
+        self.assertNotIn("tabs", manifest["permissions"])
         self.assertNotIn("<all_urls>", manifest["host_permissions"])
         self.assertEqual(
             manifest["content_scripts"][0]["matches"],
             ["https://www.linkedin.com/jobs/*"],
         )
         self.assertIn("http://127.0.0.1/*", manifest["host_permissions"])
+        self.assertEqual(
+            manifest["content_scripts"][0]["js"],
+            ["external_apply_safety.js", "content.js"],
+        )
 
     def _wait_for_run(self, manager: ExtensionRunManager, run_id: str) -> dict:
         deadline = time.monotonic() + 3
@@ -231,6 +237,7 @@ class ExtensionBridgeTests(unittest.TestCase):
                 return run
             time.sleep(0.01)
         self.fail("Extension run did not complete before the test deadline.")
+
 
 
 if __name__ == "__main__":

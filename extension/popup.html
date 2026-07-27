@@ -16,6 +16,20 @@
     </header>
 
     <main id="popupRoot" aria-busy="false">
+      <section id="capturePanel" class="capture-panel" aria-live="polite" hidden>
+        <div class="capture-heading">
+          <h2>External Apply</h2>
+          <span id="captureStatus" class="capture-status"></span>
+        </div>
+        <strong id="captureTitle"></strong>
+        <span id="captureCompany"></span>
+        <span id="captureTarget" class="capture-target"></span>
+        <div class="capture-actions">
+          <button id="confirmCaptureButton" class="primary" type="button" disabled>Confirm target</button>
+          <button id="cancelCaptureButton" type="button">Cancel</button>
+        </div>
+      </section>
+
       <section class="toolbar" aria-label="Job controls">
         <button id="scanSelectedButton" class="primary" type="button">Scan selected</button>
         <button id="scanPageButton" type="button">Scan page</button>
@@ -66,6 +80,8 @@
         <button id="saveButton" class="quiet" type="button">Save connection</button>
       </details>
     </main>
+    <script src="external_apply_safety.js"></script>
+    <script src="capture_session.js"></script>
     <script src="popup.js"></script>
   </body>
 </html>

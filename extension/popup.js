@@ -3,7 +3,10 @@ const POLL_DELAY_MS = 2000;
 const SCAN_RETRY_DELAY_MS = 350;
 const MAX_SCAN_RETRIES = 2;
 const MAX_POLL_RETRIES = 2;
-const PAGE_SCAN_WATCHDOG_MS = 60000;
+const PAGE_SCAN_WATCHDOG_MS = 120000;
+const CAPTURE_TTL_MS = 5 * 60 * 1000;
+const CAPTURE_SESSION_KEY = "externalApplyCaptureSession";
+const CAPTURE_RECORD_KEY = "externalApplyCapturedRecord";
 
 const state = {
   records: [],
@@ -13,8 +16,10 @@ const state = {
   connectionKey: null,
   runInFlight: false,
   pageScan: null,
+  captureSession: null,
+  captureTargetTab: null,
   nextPageScanId: 1,
-  busy: { selectedScan: false, pageScan: false, run: false, poll: false, save: false },
+  busy: { selectedScan: false, pageScan: false, run: false, poll: false, save: false, capture: false },
 };
 const $ = (id) => document.getElementById(id);
 
@@ -39,6 +44,8 @@ function syncBusyUi() {
   $("runButton").textContent = state.runInFlight ? "Verifying..." : "Verify source";
   $("refreshButton").disabled = busy || !state.runId;
   $("saveButton").disabled = busy;
+  $("confirmCaptureButton").disabled = busy || state.captureSession?.state !== "target_presented";
+  $("cancelCaptureButton").disabled = busy || !state.captureSession;
 }
 
 function setBusy(operation, busy) {
@@ -177,6 +184,151 @@ function validPageScanResponse(payload) {
     && payload.records.every(isObject);
 }
 
+function captureApi() {
+  const api = globalThis.JobSourceCaptureSession;
+  if (!api || typeof api.arm !== "function") throw new Error("Capture contract is unavailable.");
+  return api;
+}
+
+function captureBinding(session = state.captureSession) {
+  return {
+    capture_id: session.capture_id,
+    linkedin_job_id: session.linkedin_job_id,
+    linkedin_job_url: session.linkedin_job_url,
+  };
+}
+
+function captureErrorMessage(reason) {
+  const messages = {
+    capture_expired: "External Apply capture expired.",
+    permission_unavailable: "The active target page is unavailable.",
+    source_identity_changed: "The selected LinkedIn job changed.",
+    external_control_not_observed: "No eligible company-website Apply button is selected.",
+    target_not_observed: "The company target page was not observed.",
+    target_is_linkedin: "The captured page is still owned by LinkedIn.",
+    unsafe_target_url: "The target page URL was rejected.",
+    sensitive_target_url: "The target page contains sensitive URL data.",
+    ambiguous_capture: "The target page could not be bound to one job.",
+    bridge_validation_failed: "The local backend rejected the target URL.",
+  };
+  return messages[reason] || "External Apply capture failed.";
+}
+
+function renderCapturePanel() {
+  const session = state.captureSession;
+  $("capturePanel").hidden = !session;
+  if (!session) {
+    $("captureStatus").textContent = "";
+    $("captureTitle").textContent = "";
+    $("captureCompany").textContent = "";
+    $("captureTarget").textContent = "";
+    syncBusyUi();
+    return;
+  }
+  $("captureTitle").textContent = session.title;
+  $("captureCompany").textContent = session.company;
+  if (session.state === "target_presented") {
+    $("captureStatus").textContent = "Target ready";
+    $("captureTarget").textContent = new URL(session.target_url).hostname;
+  } else {
+    $("captureStatus").textContent = "Waiting";
+    $("captureTarget").textContent = "";
+  }
+  syncBusyUi();
+}
+
+function validCapturedRecord(record) {
+  if (!isObject(record) || record.source !== "linkedin_browser_extension") return false;
+  const safeUrl = globalThis.JobSourceExternalApplySafety?.sanitize(record.external_apply_url);
+  const posting = record.source_trace?.linkedin_posting;
+  return Boolean(
+    safeUrl && safeUrl === record.external_apply_url
+    && /^https:\/\/www\.linkedin\.com\/jobs\/view\/\d+$/.test(record.linkedin_job_url || "")
+    && typeof record.company_name === "string" && record.company_name
+    && typeof record.job_title === "string" && record.job_title
+    && posting?.evidence_source === captureApi().PROVENANCE
+    && posting?.job_url === record.linkedin_job_url
+    && posting?.apply_mode === "external"
+  );
+}
+
+function renderRecordSet(records) {
+  state.records = records;
+  $("recordCount").textContent = String(records.length);
+  $("applyCount").textContent = `${records.filter((item) => item.external_apply_url).length} Apply URLs`;
+  renderScannedRecords();
+}
+
+async function clearCaptureSession() {
+  state.captureSession = null;
+  state.captureTargetTab = null;
+  await chrome.storage.session.remove(CAPTURE_SESSION_KEY);
+  renderCapturePanel();
+}
+
+async function failCapture(reason) {
+  await clearCaptureSession();
+  setMessage(captureErrorMessage(reason));
+}
+
+async function restoreCaptureState() {
+  if (!chrome.storage?.session) return;
+  const saved = await chrome.storage.session.get([CAPTURE_SESSION_KEY, CAPTURE_RECORD_KEY]);
+  if (validCapturedRecord(saved[CAPTURE_RECORD_KEY])) {
+    renderRecordSet([saved[CAPTURE_RECORD_KEY]]);
+  } else if (saved[CAPTURE_RECORD_KEY] !== undefined) {
+    await chrome.storage.session.remove(CAPTURE_RECORD_KEY);
+  }
+  const stored = saved[CAPTURE_SESSION_KEY];
+  if (stored === undefined) return;
+  const recovered = captureApi().recover(stored, new Date().toISOString());
+  if (!recovered.ok) {
+    await failCapture(recovered.reason);
+    return;
+  }
+  state.captureSession = recovered.session;
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!tab?.id || typeof tab.url !== "string") {
+    await failCapture("permission_unavailable");
+    return;
+  }
+  if (state.captureSession.state === "awaiting_user_navigation") {
+    if (tab.id === state.captureSession.source_tab_id && tab.url.startsWith("https://www.linkedin.com/jobs/")) {
+      renderCapturePanel();
+      return;
+    }
+    if (tab.id !== state.captureSession.source_tab_id && tab.openerTabId !== state.captureSession.source_tab_id) {
+      await failCapture("ambiguous_capture");
+      return;
+    }
+    const targetUrl = globalThis.JobSourceExternalApplySafety?.sanitize(tab.url);
+    const presented = captureApi().presentTarget(state.captureSession, {
+      ...captureBinding(),
+      permission_available: true,
+      target_url: targetUrl || tab.url,
+    }, new Date().toISOString());
+    if (!presented.ok) {
+      await failCapture(presented.reason);
+      return;
+    }
+    state.captureSession = presented.session;
+    state.captureTargetTab = tab;
+    await chrome.storage.session.set({ [CAPTURE_SESSION_KEY]: state.captureSession });
+  } else if (state.captureSession.state === "target_presented") {
+    if (tab.id !== state.captureSession.source_tab_id && tab.openerTabId !== state.captureSession.source_tab_id) {
+      await failCapture("ambiguous_capture");
+      return;
+    }
+    const targetUrl = globalThis.JobSourceExternalApplySafety?.sanitize(tab.url);
+    if (!targetUrl || targetUrl !== state.captureSession.target_url) {
+      await failCapture("ambiguous_capture");
+      return;
+    }
+    state.captureTargetTab = tab;
+  }
+  renderCapturePanel();
+}
+
 async function loadSettings() {
   const saved = await chrome.storage.local.get(["bridgeUrl", "bridgeToken", "runId"]);
   if (saved.bridgeUrl) $("bridgeUrl").value = saved.bridgeUrl;
@@ -189,6 +341,7 @@ async function loadSettings() {
     state.connectionKey = null;
   }
   syncBusyUi();
+  await restoreCaptureState();
   await checkHealth();
   if (state.runId) await pollRun();
 }
@@ -212,7 +365,9 @@ async function sendContentMessage(tabId, message) {
     response = await chrome.tabs.sendMessage(tabId, message);
   } catch {
     try {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+      await chrome.scripting.executeScript({
+        target: { tabId }, files: ["external_apply_safety.js", "content.js"]
+      });
       response = await chrome.tabs.sendMessage(tabId, message);
     } catch (error) {
       throw new Error(`Page scan failed: ${error?.message || "content script injection failed."}`);
@@ -233,6 +388,181 @@ async function requestSelectedScan(tabId, attempt = 0) {
   }
   if (!response.ok) throw new Error(payloadMessage(response, "Page scan failed."));
   return response.records;
+}
+
+function captureEligible(record) {
+  const posting = record?.source_trace?.linkedin_posting;
+  return Boolean(
+    !record?.external_apply_url
+    && posting?.observation === "detail_observed_but_apply_absent"
+    && posting?.external_apply_control === "target_url_unavailable_in_dom"
+    && /^https:\/\/www\.linkedin\.com\/jobs\/view\/\d+$/.test(record.linkedin_job_url || "")
+  );
+}
+
+function validCapturePreparation(payload) {
+  const source = payload?.source;
+  return Boolean(
+    payload?.ok === true && payload.capture_contract === "1" && isObject(source)
+    && /^\d+$/.test(source.linkedin_job_id || "")
+    && source.linkedin_job_url === `https://www.linkedin.com/jobs/view/${source.linkedin_job_id}`
+    && typeof source.company_name === "string" && source.company_name
+    && typeof source.job_title === "string" && source.job_title
+    && source.external_apply_control === "target_url_unavailable_in_dom"
+  );
+}
+
+async function armExternalApplyCapture(record) {
+  if (hasBusyOperation()) return;
+  setBusy("capture", true);
+  setMessage();
+  try {
+    if (!chrome.storage?.session) throw new Error(captureErrorMessage("permission_unavailable"));
+    const existing = await chrome.storage.session.get(CAPTURE_SESSION_KEY);
+    if (existing[CAPTURE_SESSION_KEY] !== undefined) {
+      throw new Error(captureErrorMessage("ambiguous_capture"));
+    }
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !tab.url?.startsWith("https://www.linkedin.com/jobs/")) {
+      throw new Error(captureErrorMessage("source_identity_changed"));
+    }
+    const prepared = await sendContentMessage(tab.id, { type: "prepare_external_apply_capture" });
+    if (!validCapturePreparation(prepared)) {
+      throw new Error(captureErrorMessage(prepared?.error_code || "source_identity_changed"));
+    }
+    if (prepared.source.linkedin_job_url !== record.linkedin_job_url) {
+      throw new Error(captureErrorMessage("source_identity_changed"));
+    }
+    const started = new Date();
+    const input = {
+      capture_id: `capture_${crypto.randomUUID().replaceAll("-", "")}`,
+      source_tab_id: tab.id,
+      linkedin_job_id: prepared.source.linkedin_job_id,
+      linkedin_job_url: prepared.source.linkedin_job_url,
+      company: prepared.source.company_name,
+      title: prepared.source.job_title,
+      location: prepared.source.job_location || "",
+      external_control_evidence: { observed: true, visible: true, enabled: true, off_site: true },
+      started_at: started.toISOString(),
+      expires_at: new Date(started.getTime() + CAPTURE_TTL_MS).toISOString(),
+    };
+    const armed = captureApi().arm(null, input, input.started_at);
+    if (!armed.ok) throw new Error(captureErrorMessage(armed.reason));
+    const awaiting = captureApi().awaitNavigation(
+      armed.session,
+      {
+        capture_id: input.capture_id,
+        linkedin_job_id: input.linkedin_job_id,
+        linkedin_job_url: input.linkedin_job_url,
+      },
+      input.started_at,
+    );
+    if (!awaiting.ok) throw new Error(captureErrorMessage(awaiting.reason));
+    state.captureSession = awaiting.session;
+    state.captureTargetTab = null;
+    await chrome.storage.session.remove(CAPTURE_RECORD_KEY);
+    await chrome.storage.session.set({ [CAPTURE_SESSION_KEY]: state.captureSession });
+    renderCapturePanel();
+    setMessage("Capture armed.");
+  } catch (error) {
+    setMessage(error.message || "External Apply capture failed.");
+  } finally {
+    setBusy("capture", false);
+  }
+}
+
+function capturedRecord(capture) {
+  return {
+    linkedin_job_url: capture.linkedin_job_url,
+    external_apply_url: capture.external_apply_url,
+    linkedin_company_url: null,
+    company_name: capture.company,
+    job_title: capture.title,
+    job_location: capture.location,
+    source: "linkedin_browser_extension",
+    source_trace: {
+      linkedin_posting: {
+        availability: "active",
+        apply_mode: "external",
+        evidence_source: capture.provenance,
+        job_url: capture.linkedin_job_url,
+        observation: "external_apply_observed",
+        external_apply_control: "user_confirmed_navigation",
+      },
+      navigation_capture: {
+        capture_contract: "1",
+        capture_id: capture.capture_id,
+        method: "user_confirmed_active_tab",
+      },
+    },
+  };
+}
+
+async function confirmCapturedTarget() {
+  if (hasBusyOperation() || state.captureSession?.state !== "target_presented") return;
+  setBusy("capture", true);
+  setMessage();
+  try {
+    const now = new Date().toISOString();
+    const validating = captureApi().validate(state.captureSession, captureBinding(), now);
+    if (!validating.ok) {
+      await failCapture(validating.reason);
+      return;
+    }
+    let payload;
+    try {
+      payload = await bridgeFetch("/v1/external-apply/validate", {
+        method: "POST",
+        body: JSON.stringify({ external_apply_url: state.captureSession.target_url }),
+      });
+    } catch {
+      await failCapture("bridge_validation_failed");
+      return;
+    }
+    if (
+      !isObject(payload) || payload.status !== "valid"
+      || payload.external_apply_url !== state.captureSession.target_url
+    ) {
+      await failCapture("bridge_validation_failed");
+      return;
+    }
+    const bound = captureApi().bind(validating.session, {
+      ...captureBinding(validating.session),
+      bridge_validated: true,
+      target_url: payload.external_apply_url,
+    }, now);
+    if (!bound.ok) {
+      await failCapture(bound.reason);
+      return;
+    }
+    const committed = captureApi().commit(bound.session, captureBinding(bound.session), now);
+    if (!committed.ok) {
+      await failCapture(committed.reason);
+      return;
+    }
+    const record = capturedRecord(committed.capture);
+    await chrome.storage.session.set({ [CAPTURE_RECORD_KEY]: record });
+    await clearCaptureSession();
+    renderRecordSet([record]);
+    setMessage("External Apply target captured.");
+  } catch {
+    await failCapture("ambiguous_capture");
+  } finally {
+    setBusy("capture", false);
+  }
+}
+
+async function cancelCapture() {
+  if (hasBusyOperation() || !state.captureSession) return;
+  setBusy("capture", true);
+  const result = captureApi().cancel(
+    state.captureSession,
+    state.captureSession.capture_id,
+    new Date().toISOString(),
+  );
+  await clearCaptureSession();
+  setMessage(result.reason === "cancelled" ? "Capture cancelled." : captureErrorMessage(result.reason));
+  setBusy("capture", false);
 }
 
 async function scanSelected() {
@@ -372,6 +702,7 @@ async function runDiscovery() {
     state.runInFlight = true;
     state.pollRetries = 0;
     await chrome.storage.local.set({ runId: state.runId });
+    if (chrome.storage?.session) await chrome.storage.session.remove(CAPTURE_RECORD_KEY);
     $("runPanel").hidden = false;
     $("runStatus").textContent = "Queued";
   } catch (error) {
@@ -513,6 +844,13 @@ function renderScannedRecords() {
       source.textContent = "LinkedIn job selected";
       item.append(source);
     }
+    if (captureEligible(record)) {
+      const capture = document.createElement("button");
+      capture.type = "button";
+      capture.textContent = "Capture target";
+      capture.addEventListener("click", () => armExternalApplyCapture(record));
+      item.append(capture);
+    }
     return item;
   }));
 }
@@ -580,4 +918,6 @@ $("scanPageButton").addEventListener("click", scanLoadedPage);
 $("runButton").addEventListener("click", runDiscovery);
 $("refreshButton").addEventListener("click", pollRun);
 $("saveButton").addEventListener("click", saveConnection);
+$("confirmCaptureButton").addEventListener("click", confirmCapturedTarget);
+$("cancelCaptureButton").addEventListener("click", cancelCapture);
 loadSettings();

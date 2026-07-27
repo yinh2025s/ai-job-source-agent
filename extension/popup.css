@@ -49,6 +49,18 @@ h2 { font-size: 14px; }
 
 main { padding: 16px 20px 20px; }
 
+.capture-panel {
+  margin-bottom: 14px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #dfe3e8;
+}
+.capture-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.capture-status { color: #64717e; font-size: 11px; font-weight: 700; }
+.capture-panel > strong, .capture-panel > span { display: block; font-size: 12px; }
+.capture-panel > span { margin-top: 3px; color: #64717e; }
+.capture-target { overflow-wrap: anywhere; }
+.capture-actions { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
+
 .toolbar { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
 .toolbar #runButton { grid-column: 1 / -1; }
 button {
@@ -97,6 +109,7 @@ button.quiet { min-height: 28px; padding: 4px 8px; font-size: 12px; }
 .results span { color: #64717e; }
 .results a { color: #1769aa; font-weight: 700; text-decoration: none; }
 .results a:hover { text-decoration: underline; }
+.results button { width: 100%; margin-top: 6px; min-height: 30px; padding: 4px 8px; font-size: 12px; }
 
 .message { min-height: 18px; margin-top: 12px; color: #9b2c2c; font-size: 12px; }
 
