@@ -92,3 +92,21 @@ This result preserves the design boundary: candidate generation is not product
 success. The feature remains off and the route is retained only as an
 experimental fallback. No Fresh100, blind holdout, main merge or second paid
 prompt experiment is authorized by this result.
+
+## Post-Run 008 Downstream Decision
+
+The downstream audit in
+`docs/LLM_RUN008_DOWNSTREAM_VERIFICATION_REPORT.md` found no implementation
+cluster that satisfies the precommitted three-company/three-terminal-recovery
+threshold. The four correct hypotheses failed on distinct paths: provider
+relationship plus inventory, an external HTTP 403, nested public-sector
+identity, and root verification allocation. Sharing S2 as a stage does not make
+these one causal cluster.
+
+The LLM branch is also behind main's deterministic public-domain,
+provisional-continuation, relationship, transport-budget and S7 location
+contracts. Those changes are interdependent backend behavior, not justification
+for a bulk cherry-pick or another model run. The route is paused until a general
+downstream defect has at least three independently verifiable examples and the
+zero-trust hypothesis layer can be evaluated against the current deterministic
+backend. Run 009 remains unauthorized.

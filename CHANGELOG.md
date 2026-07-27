@@ -10,6 +10,18 @@
 
 ### Changed
 
+- Completed the read-only post-Run008 downstream verification audit. All 1,631
+  sealed capture hashes and the 18/18 replay remain valid. The new closure
+  matrix records candidate correctness, Top-3 presence, executed request,
+  transport taxonomy, rejecting gate, budget owner, downstream evidence and
+  generic recoverability for every cohort record. None of the seven proposed
+  clusters meets the fixed three-company/three-terminal-recovery threshold, so
+  no production fix, focused live run, paid model call, prompt change,
+  Fresh100/blind run or main merge was performed. Read-only comparison also
+  shows that the LLM branch is behind main's public-domain, provisional
+  continuation, relationship, transport and location/S7 contracts. Run 009 is
+  not eligible and the LLM route is paused.
+
 - Completed the one-shot fixed 18-record DeepSeek URL-hypothesis run 008 on
   capture commit `f755fc7`. Frozen search recall was 0/18, LLM hypothesis and
   combined candidate recall were 4/18 (+22.22pp), verified website recall was

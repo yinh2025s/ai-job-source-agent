@@ -25,6 +25,28 @@
 
 ## 当前架构轨道（2026-07-26，LLM Candidate Reasoning zero-trust URL hypotheses）
 
+2026-07-28 的 post-Run008 downstream 审计已经完成，结论为暂停 LLM 路线，
+不申请 Run009。封存的 1,631 个 artifact hash 与 18/18 replay 继续通过；
+没有新模型调用、prompt 调整、Fresh100、blind run、main 修改或 feature
+启用。18 条 closure matrix 将候选、实际验证请求、transport taxonomy、
+拒绝 gate、budget owner 和可恢复性逐条固定在
+`docs/LLM_RUN008_DOWNSTREAM_VERIFICATION_REPORT.md`。
+
+七个候选方向均未同时满足三家公司/明确 provider-family、同触发条件、同生产
+路径、一个通用修复和至少三条正确终态恢复的门槛。Benefis、NDIT 和 Ken Garff
+虽然都在 S2 附近出现正确候选，但分别是正确 Career HTTP 403、Career 已读取后
+的 nested identity rejection、以及 root 未获 verification slot，不能包装成
+同一个 scheduling cluster。因此本轮按 contract 停止生产代码实现和 focused
+live，而不是增加单公司规则。
+
+只读比较确认普通版 main 已经拥有 LLM 分支缺少的 authoritative public-domain
+discovery、provisional Career continuation、route-local relationship evidence、
+stage transport reservation、严格 location/S7 gate 和两个额外 adapter；但 main
+没有 LLM hypothesis，也没有 Ken Garff 类调度问题的已验证通用修复。未来若重新
+开启该路线，应先把零信任 hypothesis 层接到新版 deterministic backend，并用
+新的三公司证据重新立项，不能继续在旧 pipeline 上调 prompt 或批量 cherry-pick
+main 的大提交。
+
 用户随后明确授权一次新的固定 18 条 URL-hypothesis A/B（run 008），用于回答
 `run-007` 的 22.22pp 为什么仍低于 promotion gate。该授权只覆盖本 development
 cohort、最多 30 次调用和 USD 0.05；不覆盖 Fresh100、blind cohort 或第二次付费重跑。
