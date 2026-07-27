@@ -104,6 +104,7 @@ _GENERIC_PRODUCT_OR_TEAM_WORDS = {
     "business", "department", "group", "organization", "platform", "product",
     "products", "team",
 }
+_FORM_MARKER_VALUE = re.compile(r"^[^\x00-\x1f\x7f]{1,480}$")
 
 
 @dataclass(frozen=True)
@@ -448,6 +449,7 @@ class _Form:
     action: str
     method: str
     marker: str
+    stable_marker: str | None
     fields: list[_Field]
     buttons: list[_Button]
 
@@ -471,6 +473,7 @@ class _FormParser(HTMLParser):
                     values.get(name, "")
                     for name in ("id", "class", "aria-label", "data-testid")
                 ),
+                stable_marker=_stable_form_marker(values),
                 fields=[],
                 buttons=[],
             )
@@ -696,6 +699,8 @@ def discover_job_search_actions(
                 eligible.append((ordinal, interaction))
                 trace_item["disposition"] = "interactive_eligible"
                 trace_item["submit_text"] = interaction.submit_text
+                if interaction.form_marker is not None:
+                    trace_item["form_marker"] = interaction.form_marker
                 if interaction.declared_action_url is not None:
                     trace_item["declared_action_url"] = (
                         interaction.declared_action_url
@@ -1022,6 +1027,11 @@ def _interactive_action(
             or not _safe_same_origin(declared_data_action, page_url)
         ):
             return None, "interactive_unsafe_action"
+    form_marker = None
+    if declared_data_action is not None:
+        form_marker = form.stable_marker
+        if form_marker is None:
+            return None, "interactive_missing_form_marker"
     if any(
         field is not query_field and not _is_location_scope_field(field)
         for field in editable_fields
@@ -1081,6 +1091,7 @@ def _interactive_action(
                 submit_text=submit_text,
                 submit_tag=button.submit_tag,
                 declared_action_url=declared_data_action,
+                form_marker=form_marker,
             ),
             "interactive_eligible",
         )
@@ -1127,6 +1138,30 @@ def _is_button_like(values: dict[str, str]) -> bool:
         if token
     }
     return bool(class_tokens & _INTERACTIVE_CLASS_TOKENS)
+
+
+def _stable_form_marker(values: dict[str, str]) -> str | None:
+    for name in ("id", "data-testid", "aria-label"):
+        value = " ".join(values.get(name, "").split())
+        if value and _FORM_MARKER_VALUE.fullmatch(value):
+            return f"{name}:{value}"
+    class_tokens = {
+        token
+        for token in values.get("class", "").split()
+        if _FORM_MARKER_VALUE.fullmatch(token)
+    }
+    if not class_tokens:
+        return None
+    selected = min(
+        class_tokens,
+        key=lambda token: (
+            not bool(re.search(r"(?:career|job|search)", token, re.I)),
+            -len(token),
+            token.casefold(),
+            token,
+        ),
+    )
+    return f"class:{selected}"
 
 
 def _semantic_submit_text(button: _Button) -> str:

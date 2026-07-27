@@ -96,6 +96,22 @@ class RequestIdentityTests(unittest.TestCase):
         self.assertEqual(interaction.query_placeholder, "Job Title")
         self.assertEqual(interaction.submit_tag, "span")
 
+    def test_form_marker_preserves_legacy_positional_kind_argument(self):
+        interaction = JobSearchInteraction(
+            0,
+            "query",
+            "Data Analyst",
+            "Search",
+            "job-keywords",
+            None,
+            "button",
+            None,
+            "job_search_form",
+        )
+
+        self.assertEqual(interaction.kind, "job_search_form")
+        self.assertIsNone(interaction.form_marker)
+
     def test_navigation_normalization_preserves_response_affecting_empty_query_values(self):
         normalized = normalize_url(
             "https://example.test/api?themeid=&utm_source=test&job_id="

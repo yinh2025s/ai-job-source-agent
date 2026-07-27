@@ -92,7 +92,8 @@ class FakeInteractionControl:
 
 
 class FakeInteractionForm:
-    def __init__(self, inputs, buttons, *, controls_by_tag=None):
+    def __init__(self, inputs, buttons, *, attrs=None, controls_by_tag=None):
+        self.attrs = dict(attrs or {})
         self.inputs = inputs
         self.buttons = buttons
         self.controls_by_tag = {
@@ -101,6 +102,9 @@ class FakeInteractionForm:
             **(controls_by_tag or {}),
         }
         self.locator_calls = []
+
+    def get_attribute(self, name):
+        return self.attrs.get(name)
 
     def locator(self, selector):
         self.locator_calls.append(selector)
@@ -858,7 +862,13 @@ class SmartRenderedFetcherTests(unittest.TestCase):
             }
         )
         button = FakeInteractionControl(text="Search jobs")
-        page.forms = [FakeInteractionForm([field], [button])]
+        page.forms = [
+            FakeInteractionForm(
+                [field],
+                [button],
+                attrs={"class": "search-form"},
+            )
+        ]
         interaction = JobSearchInteraction(
             form_ordinal=0,
             query_name="keywords",
@@ -868,6 +878,7 @@ class SmartRenderedFetcherTests(unittest.TestCase):
             declared_action_url=(
                 "https://jobs.example.com/careers/SearchByKeyword"
             ),
+            form_marker="class:search-form",
         )
 
         with self.assertRaisesRegex(FetchError, "declared action changed"):
@@ -903,6 +914,109 @@ class SmartRenderedFetcherTests(unittest.TestCase):
 
         self.assertIn("Platform Engineer results", html)
         self.assertEqual(len(button.click_calls), 1)
+
+    def test_job_search_interaction_resolves_form_by_stable_marker(self):
+        page = FakeInteractionPage()
+        field = FakeInteractionControl(
+            attrs={
+                "name": "keywords",
+                "id": "job-query",
+                "type": "search",
+                "data-action": "/careers/SearchByKeyword",
+            }
+        )
+
+        def show_results():
+            page.dom = "<main>Platform Engineer results</main>"
+
+        button = FakeInteractionControl(text="Search jobs", on_click=show_results)
+        page.forms = [
+            FakeInteractionForm([], [], attrs={"class": "oauth"}),
+            FakeInteractionForm([], [], attrs={"id": "login"}),
+            FakeInteractionForm(
+                [field],
+                [button],
+                attrs={"class": " search-form   compact "},
+            ),
+        ]
+        interaction = JobSearchInteraction(
+            form_ordinal=0,
+            query_name="keywords",
+            query_id="job-query",
+            target_title="Platform Engineer",
+            submit_text="Search jobs",
+            declared_action_url=(
+                "https://jobs.example.com/careers/SearchByKeyword"
+            ),
+            form_marker="class:search-form",
+        )
+
+        html, _final_url = _execute_job_search_interaction(
+            page,
+            page.url,
+            interaction,
+            timeout_seconds=1,
+            timeout_error_type=TimeoutError,
+            clock=lambda: 10.0,
+            sleeper=lambda _seconds: None,
+        )
+
+        self.assertIn("Platform Engineer results", html)
+        self.assertEqual(field.fill_calls[0][0], "Platform Engineer")
+        self.assertEqual(len(button.click_calls), 1)
+
+    def test_job_search_interaction_marker_must_match_exactly_once(self):
+        for markers in (
+            ("other-form",),
+            ("search-form", "search-form"),
+        ):
+            with self.subTest(markers=markers):
+                page = FakeInteractionPage()
+                field = FakeInteractionControl(
+                    attrs={
+                        "name": "keywords",
+                        "id": "job-query",
+                        "type": "search",
+                        "data-action": "/careers/SearchByKeyword",
+                    }
+                )
+                button = FakeInteractionControl(text="Search jobs")
+                page.forms = [
+                    FakeInteractionForm(
+                        [field],
+                        [button],
+                        attrs={"class": marker},
+                    )
+                    for marker in markers
+                ]
+                interaction = JobSearchInteraction(
+                    form_ordinal=0,
+                    query_name="keywords",
+                    query_id="job-query",
+                    target_title="Platform Engineer",
+                    submit_text="Search jobs",
+                    declared_action_url=(
+                        "https://jobs.example.com/careers/SearchByKeyword"
+                    ),
+                    form_marker="class:search-form",
+                )
+
+                with self.assertRaisesRegex(
+                    FetchError,
+                    "form marker match is ambiguous",
+                ):
+                    _execute_job_search_interaction(
+                        page,
+                        page.url,
+                        interaction,
+                        timeout_seconds=1,
+                        timeout_error_type=TimeoutError,
+                        clock=lambda: 10.0,
+                        sleeper=lambda _seconds: None,
+                    )
+
+                self.assertEqual(field.fill_calls, [])
+                self.assertEqual(button.click_calls, [])
 
     def test_hcs_placeholder_field_and_span_action_succeed(self):
         page = FakeInteractionPage(url="https://careers.hcs.example/jobs")

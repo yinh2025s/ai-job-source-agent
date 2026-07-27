@@ -144,7 +144,12 @@ class GovernmentJobsAdapter:
                 },
             )
         except (FetchError, OSError, TimeoutError) as error:
-            return _fetch_failure(board, error, inventory_url)
+            return _fetch_failure(
+                board,
+                error,
+                inventory_url,
+                interaction_trace=interaction_trace,
+            )
 
         final_url = page.final_url or page.url
         if _response_tenant(final_url) != tenant:
@@ -155,6 +160,7 @@ class GovernmentJobsAdapter:
                 inventory_url=inventory_url,
                 response_source=page.source,
                 rejected_final_url=final_url,
+                interaction_trace=interaction_trace,
             )
 
         parsed = _parse_inventory(page.html, tenant)
@@ -549,7 +555,13 @@ def _failure(
     )
 
 
-def _fetch_failure(board: JobBoard, error: Exception, url: str) -> AdapterResult:
+def _fetch_failure(
+    board: JobBoard,
+    error: Exception,
+    url: str,
+    *,
+    interaction_trace: dict[str, object] | None = None,
+) -> AdapterResult:
     reason = provider_fetch_reason(error)
     return _failure(
         board,
@@ -557,6 +569,7 @@ def _fetch_failure(board: JobBoard, error: Exception, url: str) -> AdapterResult
         "inventory_fetch_failed",
         retryable=reason_spec(reason).retryable,
         inventory_url=url,
+        interaction_trace=interaction_trace,
     )
 
 

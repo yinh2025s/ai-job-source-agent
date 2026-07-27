@@ -24,6 +24,7 @@ class JobSearchInteraction:
     submit_tag: str = "button"
     declared_action_url: str | None = None
     kind: str = "job_search_form"
+    form_marker: str | None = None
 
     def __post_init__(self) -> None:
         if self.kind != "job_search_form":
@@ -49,6 +50,24 @@ class JobSearchInteraction:
             raise ValueError("a semantic query field locator is required")
         if self.submit_tag not in {"a", "button", "input", "span"}:
             raise ValueError("submit tag is unsupported")
+        if self.form_marker is not None:
+            if (
+                not isinstance(self.form_marker, str)
+                or self.form_marker != " ".join(self.form_marker.split())
+                or not _SAFE_TEXT.fullmatch(self.form_marker)
+            ):
+                raise ValueError("form marker is unsafe")
+            marker_name, separator, marker_value = self.form_marker.partition(":")
+            if (
+                separator != ":"
+                or marker_name not in {"id", "class", "aria-label", "data-testid"}
+                or not marker_value
+                or (
+                    marker_name == "class"
+                    and len(marker_value.split()) != 1
+                )
+            ):
+                raise ValueError("form marker is unsafe")
         if self.declared_action_url is not None:
             try:
                 parsed_action = urlparse(self.declared_action_url)
@@ -74,8 +93,9 @@ class JobSearchInteraction:
 
     def fingerprint(self) -> str:
         values = asdict(self)
-        if values["declared_action_url"] is None:
-            values.pop("declared_action_url")
+        for optional_key in ("declared_action_url", "form_marker"):
+            if values[optional_key] is None:
+                values.pop(optional_key)
         payload = json.dumps(
             values,
             sort_keys=True,

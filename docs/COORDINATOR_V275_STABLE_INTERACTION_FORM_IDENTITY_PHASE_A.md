@@ -30,22 +30,26 @@ shared trigger, one shared browser executor path and three expected recoveries.
 
 ## Revised Contract
 
-`JobSearchInteraction` may carry an optional normalized `form_marker`. It is
+`JobSearchInteraction` may carry an optional structured `form_marker`. It is
 allowed only when discovered from the form's existing id, class, aria-label or
-data-testid values. For the field-declared `data-action` path, the marker is
-required.
+data-testid values. The descriptor includes the attribute name, so values from
+different attributes cannot collide. For the field-declared `data-action`
+path, the marker is required.
 
 The marker must:
 
 - contain no control characters;
 - be bounded in length;
-- be normalized as collapsed visible text;
+- prefer exact `id`, `data-testid` or `aria-label` values;
+- use one deterministic class token when no stronger marker exists;
 - enter the interaction fingerprint and replay request identity.
 
 When a marker is present, the browser executor examines at most 32 forms using
-fixed attribute names. It must find exactly one form whose normalized marker
-equals the frozen marker. It then applies the existing exact query-field,
-declared-action and submit-control checks inside that form.
+fixed attribute names. Exact-value markers must match exactly; class markers
+must remain a member of the initialized form's class-token set, allowing class
+order changes and additional state classes. Exactly one form must match. The
+executor then applies the existing exact query-field, declared-action and
+submit-control checks inside that form.
 
 It must fail closed when:
 

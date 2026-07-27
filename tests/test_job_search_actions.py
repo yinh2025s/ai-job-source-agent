@@ -697,12 +697,17 @@ class JobSearchActionTests(unittest.TestCase):
                                 "https://www.governmentjobs.com"
                                 "/careers/Home/SearchByKeyword"
                             ),
+                            form_marker="class:search-form",
                         ),
                     ),
                 )
                 self.assertEqual(
                     result.trace[0]["disposition"],
                     "interactive_eligible",
+                )
+                self.assertEqual(
+                    result.trace[0]["form_marker"],
+                    "class:search-form",
                 )
 
     def test_field_declared_action_changes_interaction_fingerprint(self):
@@ -726,6 +731,53 @@ class JobSearchActionTests(unittest.TestCase):
 
         self.assertNotEqual(first.declared_action_url, second.declared_action_url)
         self.assertNotEqual(first.fingerprint(), second.fingerprint())
+
+    def test_field_declared_form_marker_changes_interaction_fingerprint(self):
+        def interaction(marker):
+            result = discover_job_search_actions(
+                Page(
+                    "https://jobs.example.com/careers",
+                    (
+                        f'<form class="{marker}">'
+                        '<input name="keyword" placeholder="Search jobs" '
+                        'data-action="/careers/SearchByKeyword">'
+                        '<button type="submit">Search</button></form>'
+                    ),
+                ),
+                "Data Analyst",
+            )
+            return result.interactive_actions[0]
+
+        first = interaction("job-search")
+        second = interaction("job-search compact")
+
+        self.assertEqual(first.form_marker, "class:job-search")
+        self.assertEqual(second.form_marker, "class:job-search")
+        self.assertEqual(first.fingerprint(), second.fingerprint())
+
+        third = interaction("compact search-panel")
+        self.assertEqual(third.form_marker, "class:search-panel")
+        self.assertNotEqual(first.fingerprint(), third.fingerprint())
+
+    def test_field_declared_transport_requires_stable_form_marker(self):
+        result = discover_job_search_actions(
+            Page(
+                "https://jobs.example.com/careers",
+                (
+                    "<form>"
+                    '<input name="keyword" placeholder="Search jobs" '
+                    'data-action="/careers/SearchByKeyword">'
+                    '<button type="submit">Search</button></form>'
+                ),
+            ),
+            "Data Analyst",
+        )
+
+        self.assertEqual(result.interactive_actions, ())
+        self.assertEqual(
+            result.trace[0]["disposition"],
+            "interactive_missing_form_marker",
+        )
 
     def test_cross_origin_field_declared_transport_fails_closed(self):
         page = Page(

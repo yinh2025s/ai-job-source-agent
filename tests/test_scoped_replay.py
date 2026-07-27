@@ -167,6 +167,8 @@ class ScopedReplayControllerTests(unittest.TestCase):
             query_name="q",
             target_title="Secret Staff Engineer",
             submit_text="Search",
+            declared_action_url="https://example.com/careers/SearchByKeyword",
+            form_marker="class:search-form",
         )
         controller = ScopedReplayController(
             {

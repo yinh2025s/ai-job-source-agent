@@ -27,6 +27,8 @@ class RecordingFetcher:
         if self.error:
             raise self.error
         response = self.responses.pop(0)
+        if isinstance(response, Exception):
+            raise response
         if isinstance(response, Page):
             return response
         raw = response if isinstance(response, str) else json.dumps(response)
@@ -231,6 +233,56 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
         self.assertTrue(result.inventory_complete)
         self.assertEqual(result.reason_code, "EMPTY_PROVIDER_RESPONSE")
         self.assertEqual(len(fetcher.requests), 3)
+        self.assertEqual(
+            result.trace["interactive_search"]["status"],
+            "transport_unchanged",
+        )
+
+    def test_static_fallback_failure_preserves_interaction_trace(self):
+        landing = board_html(search_form=True)
+        fetcher = RecordingFetcher(
+            responses=[
+                landing,
+                landing,
+                FetchError("static endpoint failed", reason_code="NETWORK_TIMEOUT"),
+            ]
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Missing Role"),
+        )
+
+        self.assertFalse(result.inventory_complete)
+        self.assertEqual(result.reason_code, "NETWORK_TIMEOUT")
+        self.assertEqual(
+            result.trace["interactive_search"]["status"],
+            "transport_unchanged",
+        )
+        self.assertRegex(
+            result.trace["interactive_search"]["fingerprint"],
+            r"^[0-9a-f]{64}$",
+        )
+
+    def test_static_cross_tenant_failure_preserves_interaction_trace(self):
+        landing = board_html(search_form=True)
+        fetcher = RecordingFetcher(
+            responses=[
+                landing,
+                landing,
+                Page(CSTX, board_html("cstx"), final_url=CSTX),
+            ]
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            self.board,
+            JobQuery(title="Missing Role"),
+        )
+
+        self.assertFalse(result.inventory_complete)
+        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
         self.assertEqual(
             result.trace["interactive_search"]["status"],
             "transport_unchanged",

@@ -506,7 +506,7 @@ def _execute_job_search_interaction(
             retryable=False,
         )
 
-    form = _interaction_form(page, interaction.form_ordinal)
+    form = _interaction_form(page, interaction)
     field = _interaction_query_field(form, interaction)
     _verify_declared_interaction_action(field, interaction, initial_url)
     submit_control = _interaction_submit_control(form, interaction)
@@ -542,18 +542,45 @@ def _execute_job_search_interaction(
     return final_dom, final_url
 
 
-def _interaction_form(page, form_ordinal: int):
+def _interaction_form(page, interaction: JobSearchInteraction):
     locator = getattr(page, "locator", None)
     if not callable(locator):
         raise RenderCapabilityUnavailable("Playwright locators are unavailable")
     forms = locator("form")
-    if forms.count() <= form_ordinal:
+    form_count = forms.count()
+    if interaction.form_marker is None:
+        if form_count <= interaction.form_ordinal:
+            raise FetchError(
+                "job-search form is unavailable",
+                reason_code="OPENING_DISCOVERY_INCOMPLETE",
+                retryable=False,
+            )
+        return forms.nth(interaction.form_ordinal)
+    if form_count > 32:
         raise FetchError(
-            "job-search form is unavailable",
+            "job-search form count exceeds the safety bound",
             reason_code="OPENING_DISCOVERY_INCOMPLETE",
             retryable=False,
         )
-    return forms.nth(form_ordinal)
+    matches = []
+    marker_name, _separator, marker_value = interaction.form_marker.partition(":")
+    for index in range(form_count):
+        candidate = forms.nth(index)
+        observed = candidate.get_attribute(marker_name) or ""
+        marker_matches = (
+            marker_value in observed.split()
+            if marker_name == "class"
+            else " ".join(observed.split()) == marker_value
+        )
+        if marker_matches:
+            matches.append(candidate)
+    if len(matches) != 1:
+        raise FetchError(
+            "job-search form marker match is ambiguous",
+            reason_code="OPENING_DISCOVERY_INCOMPLETE",
+            retryable=False,
+        )
+    return matches[0]
 
 
 def _interaction_query_field(form, interaction: JobSearchInteraction):
