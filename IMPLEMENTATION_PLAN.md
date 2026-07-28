@@ -25,6 +25,24 @@
 
 ## 当前架构进度（2026-07-29，`.281` Fresh100 gate measured）
 
+### Historical `.278` cold rerun and `.282` rejection
+
+用户批准的历史 `.278` gate 已在 detached commit `d86a021e`、全新运行目录和
+`--no-resume` 下完成 100/100：91 Website、78 Career、70 Job List、32 S7
+Exact。32/32 Exact 通过 serialized identity/URL audit，错误 URL、错误地点、
+跨公司和跨 tenant 为 0。Strict replay record integrity 为 100/100、fixture
+gap 为 0，但 outcome gate 只有 95 reproduced、2 budget recovery、3 mismatch，
+因此 release gate 失败。该结果不覆盖 `.278` run1，也不改写当前 `.281` 分数。
+
+随后两个 `.282` focused 实验均未达到至少三家公司、至少三条 terminal recovery
+的门槛。GovernmentJobs 官方 XHR transport 只让 College Station 命中目标；
+Lubbock 目标不在返回库存，Wichita tenant 与输入雇主身份不连续。Career
+per-probe deadline 只恢复 Diamondback，NDIT 和 ARUP 仍为网络 timeout。两项
+实现和 `.282` 版本均已回退，当前行为恢复为 `.281`。
+
+- `docs/FRESH_100_V278_COLD_RUN2_REPORT.md`
+- `docs/COORDINATOR_V282_REJECTED_EXPERIMENTS_PHASE_C.md`
+
 ### `.281` Fresh100 current-version cold gate
 
 当前 `.281` commit `e38be3d` 已使用全新 checkpoint、completion、evidence 和

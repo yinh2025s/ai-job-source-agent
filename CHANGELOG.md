@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-29 - Historical `.278` cold rerun and rejected `.282` experiments
+
+- Ran the user-authorized `.278` Fresh100 cohort from detached commit
+  `d86a021e`, new runtime roots and no resume. Completed 100/100 with 91
+  Websites, 78 Career pages, 70 Job Lists and 32 S7 Exact openings.
+- Audited all 32 Exact outputs with zero unsafe, wrong-location, cross-company
+  or cross-tenant publication.
+- Strict replay passed 100-record integrity and had zero fixture gaps, but
+  failed at 95 reproduced, two budget recoveries and three mismatches. The
+  historical rerun does not overwrite `.278` run1 or the current `.281`
+  measurement.
+- Kept the raw capsule local because one public Google browser-key-shaped value
+  appears in one checkpoint, one completion record and the trace.
+- Rejected and reverted two `.282` experiments before a full current-version
+  cohort: GovernmentJobs recovered only College Station through the discovered
+  first-party inventory transport, and Career probe deadlines recovered only
+  Diamondback Energy. Neither met the three-company/three-recovery rule.
+
 ## 2026-07-29 - Fresh100 `.281` current-version cold measurement
 
 - Ran the observed Fresh100 development cohort once from new checkpoint,
