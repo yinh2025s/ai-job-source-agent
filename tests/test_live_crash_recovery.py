@@ -327,7 +327,7 @@ class LiveCrashRecoveryTests(unittest.TestCase):
             manifest = json.loads(
                 (bundle_dir / "bundle-manifest.json").read_text(encoding="utf-8")
             )
-            self.assertEqual(manifest["bundle_schema_version"], 7)
+            self.assertEqual(manifest["bundle_schema_version"], 8)
             self.assertEqual(manifest["evidence_mode"], "scoped_outcome_tape")
             self.assertEqual(manifest["outcome_gate"]["status"], "passed")
             self.assertEqual(manifest["record_integrity"]["status"], "passed")

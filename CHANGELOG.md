@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-29 - Recorded company-budget replay boundary `.281`
+
+- Qualified one replay-only cluster across Fresh100 and many independent
+  unsealed diagnostic companies: live ended a stage with
+  `COMPANY_TIME_BUDGET_EXHAUSTED`, while latency-free scoped replay changed the
+  same stage to a non-retryable semantic no-result.
+- Added a fail-closed recorded-boundary projection after full tape
+  consumption. It requires same-stage failure, stable upstream identity and no
+  expected transition; retryable drift, identity drift, fixture gaps and
+  later-stage advancement remain unprojected.
+- Preserved the underlying replay outcome in trace and exposed projection
+  counts in summary/manifest. Advanced legacy/scoped bundle schemas to `6/8`
+  and documented the contract in ADR-0033.
+- Fresh focused replay moved Diamondback Energy and State of Montana from two
+  budget recoveries to 2/2 reproduced. Three current Frozen controls reproduced
+  without projection. Five real historical diagnostic source/replay pairs
+  projected to 5/5 reproduced.
+- Full cross-version Fresh replay correctly stopped on an unrelated WalkMe
+  tape divergence, so no Fresh100 100/100 claim was made.
+- Passed 2,862 tests (4 skipped), provider 25/25, resolver 6/6, architecture
+  48/0, credential-shape scan 0 and `git diff --check`.
+
 ## 2026-07-28 - Rejected `.281` iCIMS card-location experiment
 
 - Tested one generic hosted-iCIMS parser change against Elderwood, Steampunk

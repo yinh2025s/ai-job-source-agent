@@ -23,7 +23,43 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，`.281` iCIMS experiment rejected）
+## 当前架构进度（2026-07-29，`.281` replay boundary released）
+
+### `.281` recorded company-budget replay boundary
+
+Fresh100 的 Diamondback Energy、State of Montana 与多批 unsealed diagnostic
+公司的同一 replay production path 表明：live 在 stage 结束时被 outer company
+wall-clock budget 截断，source 记录 `COMPANY_TIME_BUDGET_EXHAUSTED`；scoped
+replay 不消耗真实网络延迟，因此同一 tape 会在同阶段变成
+`CAREER_PAGE_NOT_FOUND`。这不是 provider/domain outcome 改变，而是外层终止边界
+没有进入确定性 replay。
+
+`.281` 只在 scoped tape 全消费后、source/replay 首个失败 stage 相同、replay
+终态 non-retryable、上游 identity prefix 一致且没有 expected transition 时恢复
+录制的 company-budget terminal。底层 replay outcome 和 stages 进入 trace；
+retryable drift、fixture gap、identity drift 和 later-stage advancement 均不投影。
+Live pipeline、provider、matcher 和 S7 不变。ADR-0033 冻结该 contract，
+legacy/scoped bundle schema 升到 `6/8`。
+
+Fresh 两条 focused scoped replay 为 2 reproduced、0 recovery、0 mismatch、0
+gap；Frozen 的 Haystack×2、Randstad 三条正常 budget terminal 保持 3
+reproduced、projection 0。旧 `.255` diagnostic 已成功消费 tape 的五家真实
+source/replay pair 由当前 production projection 验证为 5 reproduced。旧 capsule
+的 current full replay 被 transport-reservation config parity 拒绝，校验未降低。
+
+`.278` Fresh100 全量 current-code replay 在后续 `.280` WalkMe 行为变化处产生
+unrelated tape divergence，因此不宣称 `.281` Fresh100 100/100。Versana 和 Brown
+and Caldwell mismatch 仍开放；下一次完整 strict replay 必须来自新同版本 live
+capsule。完整报告：
+
+- `docs/REPLAY_V281_RECORDED_COMPANY_BUDGET_BOUNDARY_PHASE_A.md`
+- `docs/REPLAY_V281_RECORDED_COMPANY_BUDGET_BOUNDARY_PHASE_C.md`
+- `docs/adr/0033-replay-recorded-company-budget-boundaries.md`
+
+两条并行只读审计同时确认，Fresh100 剩余 discovery 和 S6/S7 记录没有新的合法
+三公司 recall cluster。GovernmentJobs 只有两家公司；DSV static card、Aramark
+S7 projection、Nisga'a Tek iCIMS handoff 均为 singleton。继续禁止公司特例、
+预算放宽和 identity gate 降级。
 
 ### `.281` iCIMS card-location experiment
 

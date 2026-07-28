@@ -55,6 +55,7 @@ from scripts.replay_failure_bundle import (
     _freeze_company_discovery_evidence,
     _hydrate_redacted_json_credentials,
     _normalize_identity_contract,
+    _apply_recorded_company_budget_boundaries,
     _remove_derived_hiring_entity_inputs,
     _replay_search_backend,
     _replay_resume_stage,
@@ -2908,7 +2909,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                 (root / "bundle" / "replay-trace.json").read_text(encoding="utf-8")
             )
 
-        self.assertEqual(manifest["bundle_schema_version"], 7)
+        self.assertEqual(manifest["bundle_schema_version"], 8)
         self.assertEqual(manifest["evidence_mode"], "scoped_outcome_tape")
         self.assertEqual(manifest["outcome_gate"]["status"], "passed")
         self.assertEqual(manifest["record_integrity"]["status"], "passed")
@@ -3319,7 +3320,7 @@ class FailureReplayBundleTests(unittest.TestCase):
                 (root / "bundle" / "replay-results.json").read_text(encoding="utf-8")
             )
 
-        self.assertEqual(manifest["bundle_schema_version"], 5)
+        self.assertEqual(manifest["bundle_schema_version"], 6)
         self.assertEqual(manifest["run_configuration"], source_config.to_payload())
         self.assertEqual(manifest["run_configuration_digest"], source_config.digest)
         self.assertEqual(manifest["run_configuration_provenance"], "source_record")
@@ -4625,6 +4626,271 @@ class FailureReplayBundleTests(unittest.TestCase):
             gate["records"][0]["reason"],
             "company_budget_replay_normalized",
         )
+
+    def test_recorded_company_budget_boundary_projects_same_stage_terminal(self):
+        source = {
+            "company_name": "Budget Projection",
+            "company_website_url": "https://budget-projection.example",
+            "pipeline_status": "failed",
+            "career_page_url": None,
+            "job_list_page_url": None,
+            "open_position_url": None,
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                    "retryable": True,
+                },
+                {"stage": "job_board_discovery", "status": "not_run"},
+                {"stage": "opening_match", "status": "not_run"},
+            ],
+        }
+        replayed = {
+            **source,
+            "pipeline_status": "partial",
+            "career_page_url": "https://budget-projection.example/careers",
+            "run_configuration": {"adapter_version": "2.8.1"},
+            "source_trace": {"replay": {"record_id": "record-281"}},
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "partial",
+                    "reason_code": "CAREER_PAGE_NOT_FOUND",
+                    "retryable": False,
+                },
+                {"stage": "job_board_discovery", "status": "not_run"},
+                {"stage": "opening_match", "status": "not_run"},
+            ],
+        }
+        replay_trace = {
+            "source_trace": {"replay": {"record_id": "record-281"}},
+            "stages": {
+                "career_discovery": {
+                    "terminal_diagnostic": "ordinary semantic no-result",
+                }
+            },
+        }
+
+        projected_count = _apply_recorded_company_budget_boundaries(
+            [source],
+            [replayed],
+            [replay_trace],
+        )
+
+        self.assertEqual(projected_count, 1)
+        self.assertEqual(replayed["pipeline_status"], "failed")
+        self.assertIsNone(replayed["career_page_url"])
+        self.assertIsNone(replayed["job_list_page_url"])
+        self.assertIsNone(replayed["open_position_url"])
+        self.assertEqual(
+            replayed["stages"][3],
+            {
+                "stage": "career_discovery",
+                "status": "failed",
+                "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                "retryable": True,
+            },
+        )
+        self.assertEqual(
+            replayed["run_configuration"],
+            {"adapter_version": "2.8.1"},
+        )
+        self.assertEqual(
+            replayed["source_trace"]["replay"]["record_id"],
+            "record-281",
+        )
+        diagnostic = replay_trace["trace"]["replay"][
+            "recorded_company_budget_boundary"
+        ]
+        self.assertEqual(
+            diagnostic["underlying_stages"][0],
+            {
+                "stage": "career_discovery",
+                "status": "partial",
+                "reason_code": "CAREER_PAGE_NOT_FOUND",
+                "retryable": False,
+            },
+        )
+        self.assertEqual(
+            diagnostic["underlying_outcome"]["failure_stage"]["reason_code"],
+            "CAREER_PAGE_NOT_FOUND",
+        )
+        self.assertEqual(
+            replay_trace["stages"]["career_discovery"]["terminal_diagnostic"],
+            "ordinary semantic no-result",
+        )
+        gate = _build_outcome_gate(
+            [{"company_name": "Budget Projection"}],
+            [replayed],
+            source_records=[source],
+        )
+        self.assertEqual(
+            gate["classification_counts"],
+            {
+                "reproduced": 1,
+                "expected_transition": 0,
+                "budget_recovery": 0,
+                "fixture_gap": 0,
+                "mismatch": 0,
+            },
+        )
+
+    def test_recorded_company_budget_boundary_skips_declared_transition(self):
+        source, replayed, replay_trace = self._recorded_budget_projection_records(
+            replay_stage="career_discovery",
+            replay_reason="CAREER_PAGE_NOT_FOUND",
+            replay_retryable=False,
+        )
+        original_replay = json.loads(json.dumps(replayed))
+        original_trace = json.loads(json.dumps(replay_trace))
+
+        projected_count = _apply_recorded_company_budget_boundaries(
+            [source],
+            [replayed],
+            [replay_trace],
+            replay_records=[{
+                "source_trace": {
+                    "replay": {
+                        "expected_transition": {
+                            "pipeline_status": "partial",
+                            "failure_stage": {
+                                "stage": "career_discovery",
+                                "status": "partial",
+                                "reason_code": "CAREER_PAGE_NOT_FOUND",
+                            },
+                        },
+                    },
+                },
+            }],
+        )
+
+        self.assertEqual(projected_count, 0)
+        self.assertEqual(replayed, original_replay)
+        self.assertEqual(replay_trace, original_trace)
+
+    def test_recorded_company_budget_boundary_rejects_retryable_same_stage_drift(self):
+        source, replayed, replay_trace = self._recorded_budget_projection_records(
+            replay_stage="career_discovery",
+            replay_reason="NETWORK_TIMEOUT",
+            replay_retryable=True,
+        )
+        original_replay = json.loads(json.dumps(replayed))
+        original_trace = json.loads(json.dumps(replay_trace))
+
+        projected_count = _apply_recorded_company_budget_boundaries(
+            [source],
+            [replayed],
+            [replay_trace],
+        )
+
+        self.assertEqual(projected_count, 0)
+        self.assertEqual(replayed, original_replay)
+        self.assertEqual(replay_trace, original_trace)
+
+    def test_recorded_company_budget_boundary_rejects_later_stage_advancement(self):
+        source, replayed, replay_trace = self._recorded_budget_projection_records(
+            replay_stage="job_board_discovery",
+            replay_reason="JOB_BOARD_NOT_FOUND",
+            replay_retryable=False,
+        )
+        original_replay = json.loads(json.dumps(replayed))
+        original_trace = json.loads(json.dumps(replay_trace))
+
+        projected_count = _apply_recorded_company_budget_boundaries(
+            [source],
+            [replayed],
+            [replay_trace],
+        )
+
+        self.assertEqual(projected_count, 0)
+        self.assertEqual(replayed, original_replay)
+        self.assertEqual(replay_trace, original_trace)
+
+    def test_recorded_company_budget_boundary_rejects_identity_prefix_drift(self):
+        source, replayed, replay_trace = self._recorded_budget_projection_records(
+            replay_stage="career_discovery",
+            replay_reason="CAREER_PAGE_NOT_FOUND",
+            replay_retryable=False,
+        )
+        replayed["company_website_url"] = "https://wrong.example"
+        original_replay = json.loads(json.dumps(replayed))
+        original_trace = json.loads(json.dumps(replay_trace))
+
+        projected_count = _apply_recorded_company_budget_boundaries(
+            [source],
+            [replayed],
+            [replay_trace],
+        )
+
+        self.assertEqual(projected_count, 0)
+        self.assertEqual(replayed, original_replay)
+        self.assertEqual(replay_trace, original_trace)
+
+    @staticmethod
+    def _recorded_budget_projection_records(
+        *,
+        replay_stage,
+        replay_reason,
+        replay_retryable,
+    ):
+        source = {
+            "company_name": "Budget Projection",
+            "company_website_url": "https://budget-projection.example",
+            "pipeline_status": "failed",
+            "stages": [
+                {"stage": "linkedin_discovery", "status": "success"},
+                {"stage": "website_resolution", "status": "success"},
+                {"stage": "hiring_identity_resolution", "status": "success"},
+                {
+                    "stage": "career_discovery",
+                    "status": "failed",
+                    "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+                    "retryable": True,
+                },
+            ],
+        }
+        replay_stages = [
+            {"stage": "linkedin_discovery", "status": "success"},
+            {"stage": "website_resolution", "status": "success"},
+            {"stage": "hiring_identity_resolution", "status": "success"},
+        ]
+        if replay_stage == "career_discovery":
+            replay_stages.append(
+                {
+                    "stage": replay_stage,
+                    "status": "partial",
+                    "reason_code": replay_reason,
+                    "retryable": replay_retryable,
+                }
+            )
+        else:
+            replay_stages.extend(
+                [
+                    {"stage": "career_discovery", "status": "success"},
+                    {
+                        "stage": replay_stage,
+                        "status": "partial",
+                        "reason_code": replay_reason,
+                        "retryable": replay_retryable,
+                    },
+                ]
+            )
+        replayed = {
+            **source,
+            "pipeline_status": "partial",
+            "stages": replay_stages,
+        }
+        replay_trace = {
+            "source_trace": {"replay": {"record_id": "record-281"}},
+        }
+        return source, replayed, replay_trace
 
     def test_same_stage_budget_normalization_rejects_retryable_drift(self):
         source = {

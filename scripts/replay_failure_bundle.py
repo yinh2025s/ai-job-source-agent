@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import hashlib
 import json
 import os
@@ -93,8 +94,8 @@ from scripts.export_replay_input import (
 )
 
 
-BUNDLE_SCHEMA_VERSION = 5
-SCOPED_BUNDLE_SCHEMA_VERSION = 7
+BUNDLE_SCHEMA_VERSION = 6
+SCOPED_BUNDLE_SCHEMA_VERSION = 8
 SCOPED_REPLAY_SOURCE_KINDS = _SCOPED_REPLAY_SOURCE_KINDS
 SCOPED_REPLAY_PRODUCER_DEPENDENCIES = {
     "career_discovery": "website_resolution",
@@ -476,9 +477,24 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         }
     result_records = [result.result_record() for result in discoveries]
     trace_records = [dataclass_to_dict(result.trace_record()) for result in discoveries]
+    recorded_company_budget_boundary_count = 0
+    if evidence_mode == "scoped_outcome_tape":
+        recorded_company_budget_boundary_count = (
+            _apply_recorded_company_budget_boundaries(
+                source_records,
+                result_records,
+                trace_records,
+                replay_records=replay_records,
+            )
+        )
     summary = summarize_results(trace_records)
     summary["run_configuration"] = run_configuration.to_payload()
     summary["run_configuration_digest"] = run_configuration.digest
+    summary["replay_projection_counts"] = {
+        "recorded_company_budget_boundary": (
+            recorded_company_budget_boundary_count
+        ),
+    }
     outcome_gate = _build_outcome_gate(
         replay_records,
         result_records,
@@ -508,6 +524,9 @@ def replay_failure_bundle(args: argparse.Namespace, *, allow_empty: bool = False
         "run_configuration_digest": run_configuration.digest,
         "run_configuration_provenance": run_configuration_provenance,
         "evidence_mode": evidence_mode,
+        "recorded_company_budget_boundary_count": (
+            recorded_company_budget_boundary_count
+        ),
         "record_plans": [
             {
                 "source_ordinal": plan.source_ordinal,
@@ -3182,6 +3201,148 @@ def _build_outcome_gate(
         "classification_counts": counts,
         "records": comparisons,
     }
+
+
+_RECORDED_BUDGET_RESULT_FIELDS = (
+    "company_website_url",
+    "hiring_entity_name",
+    "career_root_url",
+    "career_page_url",
+    "job_list_page_url",
+    "open_position_url",
+    "identity_assertion",
+    "status",
+    "error",
+    "error_code",
+    "pipeline_status",
+    "career_page_status",
+    "job_board_status",
+    "opening_match_status",
+    "output_validation_status",
+)
+
+
+def _apply_recorded_company_budget_boundaries(
+    source_records: list[dict],
+    result_records: list[dict],
+    trace_records: list[dict],
+    *,
+    replay_records: list[dict] | None = None,
+) -> int:
+    """Restore a captured same-stage outer-budget terminal after tape replay.
+
+    Scoped replay intentionally removes live network latency. Once the
+    captured tape has been consumed, a stage that hit the outer company
+    deadline can therefore reach its ordinary semantic no-result terminal.
+    Preserve the authoritative live boundary only for an identity-stable,
+    non-retryable outcome in that same stage.
+    """
+
+    projected = 0
+    record_count = min(
+        len(source_records),
+        len(result_records),
+        len(trace_records),
+    )
+    for index in range(record_count):
+        source = source_records[index]
+        result = result_records[index]
+        trace_record = trace_records[index]
+        replay_input = (
+            replay_records[index]
+            if replay_records is not None and index < len(replay_records)
+            else None
+        )
+        if (
+            replay_input is not None
+            and _expected_transition(replay_input) is not None
+        ):
+            continue
+
+        source_failure = _first_non_success_result_stage(source)
+        replay_failure = _first_non_success_result_stage(result)
+        if (
+            not isinstance(source_failure, dict)
+            or not isinstance(replay_failure, dict)
+            or source_failure.get("reason_code")
+            != "COMPANY_TIME_BUDGET_EXHAUSTED"
+            or source_failure.get("stage") != replay_failure.get("stage")
+            or not _is_budget_recovery(source, result)
+        ):
+            continue
+
+        stage = str(source_failure["stage"])
+        underlying_outcome = _result_outcome(
+            result,
+            failure_stage=None,
+            include_identity=True,
+        )
+        underlying_stages = _stages_from_boundary(result, stage)
+
+        _project_source_budget_terminal(source, result, stage)
+        _project_source_budget_terminal(source, trace_record, stage)
+        trace = trace_record.get("trace")
+        if not isinstance(trace, dict):
+            trace = {}
+            trace_record["trace"] = trace
+        replay_trace = trace.setdefault("replay", {})
+        if not isinstance(replay_trace, dict):
+            replay_trace = {}
+            trace["replay"] = replay_trace
+        replay_trace["recorded_company_budget_boundary"] = {
+            "schema_version": "1.0",
+            "stage": stage,
+            "reason_code": "COMPANY_TIME_BUDGET_EXHAUSTED",
+            "underlying_outcome": underlying_outcome,
+            "underlying_stages": underlying_stages,
+        }
+        projected += 1
+    return projected
+
+
+def _project_source_budget_terminal(
+    source: dict,
+    target: dict,
+    stage: str,
+) -> None:
+    for field in _RECORDED_BUDGET_RESULT_FIELDS:
+        if field in source:
+            target[field] = copy.deepcopy(source[field])
+        else:
+            target.pop(field, None)
+
+    source_stages = source.get("stages")
+    target_stages = target.get("stages")
+    if not isinstance(source_stages, list) or not isinstance(target_stages, list):
+        return
+    source_by_name = {
+        item.get("stage"): item
+        for item in source_stages
+        if isinstance(item, dict) and item.get("stage") in PIPELINE_STAGES
+    }
+    boundary_index = PIPELINE_STAGES.index(stage)
+    target["stages"] = [
+        copy.deepcopy(source_by_name.get(stage_name, item))
+        if stage_name in PIPELINE_STAGES
+        and PIPELINE_STAGES.index(stage_name) >= boundary_index
+        else item
+        for item in target_stages
+        for stage_name in [item.get("stage") if isinstance(item, dict) else None]
+    ]
+
+
+def _stages_from_boundary(record: dict, stage: str) -> list[dict]:
+    stages = record.get("stages")
+    if not isinstance(stages, list):
+        return []
+    boundary_index = PIPELINE_STAGES.index(stage)
+    return [
+        copy.deepcopy(item)
+        for item in stages
+        if isinstance(item, dict)
+        and item.get("stage") in PIPELINE_STAGES
+        and PIPELINE_STAGES.index(item["stage"]) >= boundary_index
+    ]
 
 
 def _replay_record_id(record: dict | None) -> str | None:

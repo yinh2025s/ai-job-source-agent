@@ -42,3 +42,4 @@ NNNN-short-decision-title.md
 - [ADR-0028: Cache Verified Company Discovery Evidence](0028-cache-verified-company-discovery-evidence.md)
 - [ADR-0030: Coordinate Independent Candidate Discovery Routes](0030-coordinate-independent-candidate-routes.md)
 - [ADR-0032: Inject Versioned Search Backends](0032-inject-versioned-search-backends.md)
+- [ADR-0033: Replay Recorded Company-Budget Boundaries](0033-replay-recorded-company-budget-boundaries.md)
