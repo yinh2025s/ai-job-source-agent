@@ -23,7 +23,43 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，GovernmentJobs `.275` focused closure）
+## 当前架构进度（2026-07-28，Fresh100 `.275` cold gate）
+
+### Fresh100 current `.275` cold gate
+
+v273 后没有打开新 cohort。本轮只对已有 Fresh100 development cohort 执行
+current-version `.275` 冷启动和 full replay，运行期间代码冻结，所有
+checkpoint、completion、evidence、snapshot 和 replay root 均为新目录。
+
+Live 完成 100/100：91 Website、77 Career、72 verified Job List、31 S7 Exact。
+31 条 Exact 的错误 opening URL、错误 title/location、跨公司、跨 tenant 和
+缺失 evidence 均为零。与 `.270` 相比，BWXT、TreeHouse Foods 恢复，
+Jushi、IMG、Target Hospitality 丢失，净变化为 -1 Exact。
+
+原始 causal ledger 为 **31 Exact / 21 Verified No Match / 1 External Blocked /
+47 unresolved**。叠加已有逐条审核的 focused terminal allowlist 后，当前
+development projection 为 **38 Exact / 19 Verified No Match / 1 External
+Blocked / 42 unresolved**。投影不能改写 raw live 的 31/100。
+
+Full replay 记录完整性通过，执行 100/100，但 outcome gate 为 97 reproduced、
+2 budget recovery、1 mismatch、0 fixture gap。Brown and Caldwell 的 UltiPro
+structured-State snapshot drift 只预期恢复一条终态；Diamondback Energy 和
+State of Montana 的 caller-deadline normalization 只有两家公司且不恢复产品
+终态。对 47 条 unresolved 的独立审计也没有找到满足同 trigger、同 code path、
+至少三家公司且至少三条预期恢复的合法簇。因此不进入 Phase B，不改产品代码。
+
+Release privacy scan 发现公开来源网页在 40 个 capture/replay 文件中嵌入 6 个
+Google Maps browser API key。原值未进入 Git；正式 release copy 已统一替换为
+`[REDACTED_GOOGLE_MAPS_KEY]`，复扫为 0。因为 body bytes 被修改，该 archive
+只作为审计记录，不声明可执行 replay。下次 live release 前必须先把这个通用
+capture sanitizer gap 做独立资格审查，但本轮不因此继续开批次或累积代码修改。
+
+本轮停止新 live，只做 artifact 封存、治理同步、门禁、分组 commit 和 push。
+Fresh replay 100/100、Frozen100 当前版本无回归和两批陌生 cohort 验收仍未完成，
+产品总目标保持 open。完整记录见：
+
+- `docs/FRESH_100_CURRENT_V275_COLD_GATE_PHASE_C.md`
+- `docs/FRESH_100_CURRENT_CLOSURE_MATRIX.md`
 
 ### v276 existing-evidence completion audit
 

@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-28 - Fresh100 current `.275` cold gate
+
+- Reused the existing Fresh100 development cohort; no new or sealed cohort was
+  opened, and code remained frozen throughout live and replay.
+- Completed 100/100 cold live records with 91 Websites, 77 Career pages, 72
+  verified Job Lists and 31 S7 Exact openings.
+- Audited all 31 Exact results with zero wrong opening URL, wrong title,
+  wrong location, cross-company, cross-tenant or missing-evidence publication.
+- Classified the raw run as 31 Exact, 21 Verified No Match, one External
+  Blocked and 47 unresolved. The separate reviewed projection is now 38 Exact,
+  19 Verified No Match, one External Blocked and 42 unresolved.
+- Full replay executed 100/100 with 97 reproduced, two budget recoveries, one
+  Brown and Caldwell mismatch and zero fixture gaps; the replay gate remains
+  failed.
+- Rejected Phase B: neither the replay defects nor the unresolved-record
+  signatures share a common trigger, production path and at least three
+  expected terminal recoveries.
+- Found six public-site Google Maps browser API keys in 40 capture/replay
+  files. None entered Git; the release copy replaces them with a deterministic
+  redaction marker and scans clean. The scrubbed archive is audit-only because
+  captured body hashes necessarily change.
+- Made no product-code change and stopped new live work. The run is preserved
+  under `fresh100-current-v275-cold-20260728-run1.tar.zst`; only its checksum is
+  tracked (`a35cb2227c0caf738914792e7412fb915302b8bc19416b7408be3b365576af27`).
+
 ## 2026-07-28 - Existing-evidence completion audit `.276`
 
 - Kept product behavior at `.275`; no new cohort, live benchmark, sealed
