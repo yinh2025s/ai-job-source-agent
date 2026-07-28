@@ -4,6 +4,7 @@ import json
 import re
 from dataclasses import dataclass, replace
 from html import unescape
+from html.parser import HTMLParser
 from urllib.parse import parse_qs, parse_qsl, quote_plus, urlencode, urlparse, urlunparse
 
 from .career_search import search_site_openings
@@ -60,6 +61,50 @@ STOPWORDS = {
 
 MIN_TITLE_MATCH_SCORE = 45
 MIN_PROVIDER_TITLE_MATCH_SCORE = 65
+_VISIBLE_DETAIL_MAX_NODES = 20_000
+_VISIBLE_DETAIL_MAX_TEXT_CHARS = 500_000
+_VISIBLE_DETAIL_NEAR_TITLE_CHARS = 600
+_VISIBLE_DETAIL_LOCATION_CONTEXT_CHARS = 240
+_VISIBLE_DETAIL_IGNORED_TAGS = {
+    "aside",
+    "footer",
+    "head",
+    "header",
+    "nav",
+    "noscript",
+    "script",
+    "style",
+    "template",
+}
+_VISIBLE_DETAIL_VOID_TAGS = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+}
+_VISIBLE_DETAIL_LOCATION_CONTEXT = re.compile(
+    r"(?:"
+    r"\bwork\s+locations?\b"
+    r"|\blocations?\b"
+    r"|\bwhere\s+and\s+how\s+you\s+can\s+work\b"
+    r"|\b(?:corporate\s+)?offices?\b"
+    r"|\b(?:role|position|job)\s+is\s+(?:based|located)\b"
+    r"|\bbased\s+in\b"
+    r")",
+    re.IGNORECASE,
+)
+
+
 @dataclass
 class OpeningMatch:
     url: str
@@ -673,6 +718,16 @@ class JobOpeningMatcher:
             detail_postings.extend(
                 _strict_page_bound_detail_postings(page.html, page_url)
             )
+            if provider == "generic":
+                detail_postings.extend(
+                    _strict_visible_first_party_detail_postings(
+                        page.html,
+                        page_url,
+                        job_list_url,
+                        target_title,
+                        target_location,
+                    )
+                )
             for posting in detail_postings:
                 posting_url = validate_output_url(
                     posting["url"],
@@ -711,6 +766,12 @@ class JobOpeningMatcher:
                     posting["location"],
                     target_location,
                 )
+                evidence_type = str(posting.get("evidence_type") or "jobposting")
+                evidence_reason = (
+                    "verified same-site visible job detail"
+                    if evidence_type == "visible_first_party_detail"
+                    else "verified same-site JobPosting detail"
+                )
                 matched = replace(
                     candidate,
                     url=posting_url,
@@ -718,7 +779,7 @@ class JobOpeningMatcher:
                     score=candidate.score + 100,
                     reasons=(
                         candidate.reasons
-                        + ["verified same-site JobPosting detail"]
+                        + [evidence_reason]
                         + location_reasons
                     ),
                     location_score=location_score,
@@ -2130,6 +2191,289 @@ def _strict_page_bound_detail_postings(
         }
         for candidate in extract_detail_page_candidates(html, source_url)
     ]
+
+
+class _VisibleDetailIdentityParser(HTMLParser):
+    """Collect bounded, non-navigation H1 and body text from one detail page."""
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[tuple[str, bool]] = []
+        self.h1_stack: list[list[str]] = []
+        self.headings: list[str] = []
+        self.parts: list[str] = []
+        self.nodes = 0
+        self.text_chars = 0
+        self.exhausted = False
+
+    def handle_starttag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        normalized_tag = tag.casefold()
+        self.nodes += 1
+        if self.nodes > _VISIBLE_DETAIL_MAX_NODES:
+            self.exhausted = True
+            return
+        values = {name.casefold(): (value or "") for name, value in attrs}
+        inherited_blocked = bool(self.stack and self.stack[-1][1])
+        style = values.get("style", "").casefold().replace(" ", "")
+        blocked = bool(
+            inherited_blocked
+            or normalized_tag in _VISIBLE_DETAIL_IGNORED_TAGS
+            or "hidden" in values
+            or values.get("aria-hidden", "").casefold() == "true"
+            or "display:none" in style
+            or "visibility:hidden" in style
+        )
+        if normalized_tag == "h1" and not blocked:
+            self.h1_stack.append([])
+        if normalized_tag not in _VISIBLE_DETAIL_VOID_TAGS:
+            self.stack.append((normalized_tag, blocked))
+
+    def handle_startendtag(
+        self,
+        tag: str,
+        attrs: list[tuple[str, str | None]],
+    ) -> None:
+        self.handle_starttag(tag, attrs)
+        if tag.casefold() not in _VISIBLE_DETAIL_VOID_TAGS:
+            self.handle_endtag(tag)
+
+    def handle_data(self, data: str) -> None:
+        if (
+            self.exhausted
+            or (self.stack and self.stack[-1][1])
+            or not data.strip()
+        ):
+            return
+        remaining = _VISIBLE_DETAIL_MAX_TEXT_CHARS - self.text_chars
+        if remaining <= 0:
+            self.exhausted = True
+            return
+        value = data[:remaining]
+        self.parts.append(value)
+        self.text_chars += len(value)
+        if self.h1_stack:
+            self.h1_stack[-1].append(value)
+        if len(data) > remaining:
+            self.exhausted = True
+
+    def handle_endtag(self, tag: str) -> None:
+        normalized_tag = tag.casefold()
+        if normalized_tag == "h1" and self.h1_stack:
+            heading = " ".join(" ".join(self.h1_stack.pop()).split())
+            if heading:
+                self.headings.append(heading)
+        match_index = next(
+            (
+                index
+                for index in range(len(self.stack) - 1, -1, -1)
+                if self.stack[index][0] == normalized_tag
+            ),
+            None,
+        )
+        if match_index is not None:
+            del self.stack[match_index:]
+
+
+def _strict_visible_first_party_detail_postings(
+    html: str,
+    source_url: str,
+    job_list_url: str,
+    target_title: str,
+    target_location: str,
+) -> list[dict[str, object]]:
+    """Return one page-bound posting from strict visible first-party evidence."""
+
+    if (
+        not isinstance(html, str)
+        or not html
+        or len(html) > 2_000_000
+        or not target_title.strip()
+        or not target_location.strip()
+    ):
+        return []
+    canonical_page = safe_normalize_url(source_url)
+    canonical_board = safe_normalize_url(job_list_url)
+    if (
+        not canonical_page
+        or not canonical_board
+        or not _visible_detail_url_shape_matches(
+            canonical_page,
+            canonical_board,
+            target_title,
+        )
+    ):
+        return []
+
+    parser = _VisibleDetailIdentityParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except (TypeError, ValueError):
+        return []
+    if parser.exhausted:
+        return []
+
+    matching_headings = [
+        heading
+        for heading in parser.headings
+        if publication_title_identity_matches(
+            heading,
+            target_title,
+            target_location=target_location,
+        )
+    ]
+    if len(matching_headings) != 1:
+        return []
+
+    visible_text = " ".join(" ".join(parser.parts).split())
+    observed_location = _visible_target_location_evidence(
+        visible_text,
+        matching_headings[0],
+        target_location,
+    )
+    if (
+        not observed_location
+        or _is_explicit_location_mismatch(observed_location, target_location)
+        or not _strict_location_identity_matches(
+            observed_location,
+            target_location,
+        )
+    ):
+        return []
+
+    return [
+        {
+            "url": canonical_page,
+            "title": matching_headings[0],
+            "location": observed_location,
+            "hiring_organization_name": None,
+            "hiring_organization_url": canonical_page,
+            "hiring_organization_url_present": True,
+            "evidence_type": "visible_first_party_detail",
+        }
+    ]
+
+
+def _visible_target_location_evidence(
+    visible_text: str,
+    matched_heading: str,
+    target_location: str,
+) -> str | None:
+    target_city = target_location.split(",", 1)[0].strip()
+    city_tokens = re.findall(r"[a-z0-9]+", target_city.casefold())
+    ignored = {"area", "greater", "metro", "metropolitan"}
+    city_tokens = [token for token in city_tokens if token not in ignored]
+    if not city_tokens:
+        return None
+
+    city_pattern = re.compile(
+        r"(?<![A-Za-z0-9])"
+        + r"[\s\u00a0,./&'-]+".join(
+            re.escape(token) for token in city_tokens
+        )
+        + r"(?![A-Za-z0-9])",
+        re.IGNORECASE,
+    )
+    normalized_heading = " ".join(matched_heading.split())
+    heading_index = visible_text.casefold().find(normalized_heading.casefold())
+    for match in city_pattern.finditer(visible_text):
+        after_heading = (
+            heading_index >= 0
+            and match.start() >= heading_index
+            and match.start() - heading_index <= _VISIBLE_DETAIL_NEAR_TITLE_CHARS
+        )
+        context_start = max(
+            0,
+            match.start() - _VISIBLE_DETAIL_LOCATION_CONTEXT_CHARS,
+        )
+        explicit_context = bool(
+            _VISIBLE_DETAIL_LOCATION_CONTEXT.search(
+                visible_text[context_start:match.start()]
+            )
+        )
+        if after_heading or explicit_context:
+            return _visible_city_with_adjacent_region(
+                visible_text,
+                match.start(),
+                match.end(),
+            )
+    return None
+
+
+def _visible_detail_url_shape_matches(
+    detail_url: str,
+    job_list_url: str,
+    target_title: str,
+) -> bool:
+    parsed = urlparse(detail_url)
+    path_parts = [part for part in parsed.path.casefold().split("/") if part]
+    if not path_parts:
+        return False
+    listing_leaves = {
+        "career",
+        "careers",
+        "job",
+        "jobs",
+        "openings",
+        "opportunities",
+        "positions",
+        "results",
+        "search",
+    }
+    if path_parts[-1] in listing_leaves:
+        return False
+
+    scored = score_job_link(
+        RawLink(
+            url=detail_url,
+            text=target_title,
+            source_url=job_list_url,
+            origin="visible_detail_shape",
+        ),
+        job_list_url,
+    )
+    if is_likely_job_detail(scored):
+        return True
+
+    title_tokens = {
+        token
+        for token in re.findall(r"[a-z0-9]+", target_title.casefold())
+        if token not in STOPWORDS and len(token) >= 3
+    }
+    leaf_tokens = set(re.findall(r"[a-z0-9]+", path_parts[-1]))
+    required_overlap = min(2, len(title_tokens))
+    return bool(
+        required_overlap
+        and len(title_tokens & leaf_tokens) >= required_overlap
+    )
+
+
+def _visible_city_with_adjacent_region(
+    visible_text: str,
+    city_start: int,
+    city_end: int,
+) -> str:
+    from .opening_selection_validation import _US_STATES
+
+    region_names = sorted(
+        {*_US_STATES, *_US_STATES.values()},
+        key=len,
+        reverse=True,
+    )
+    tail = visible_text[city_end : city_end + 40]
+    region_match = re.match(
+        r"\s*,?\s*(?:"
+        + "|".join(re.escape(region) for region in region_names)
+        + r")\b",
+        tail,
+        re.IGNORECASE,
+    )
+    end = city_end + region_match.end() if region_match else city_end
+    return " ".join(visible_text[city_start:end].split())
 
 
 def _listing_detail_hiring_organization_matches(
