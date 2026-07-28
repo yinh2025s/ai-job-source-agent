@@ -1,5 +1,34 @@
 # Changelog
 
+## 2026-07-28 - Fresh100 `.278` measurement and replay semantics `.279`
+
+- Ran the user-authorized `.278` Fresh100 cold measurement from new checkpoint,
+  completion, evidence and snapshot roots with code frozen through live and
+  strict replay.
+- Completed 100/100 with 90 Websites, 76 Career pages, 69 verified Job Lists
+  and 31 authoritative S7 Exact openings. All 31 Exact outputs passed company,
+  title, location, provider, tenant and opening-URL review.
+- Initial full replay completed 100/100 with 93 reproduced, two budget
+  recoveries, five mismatches and zero fixture gaps.
+- Qualified one three-company replay cluster: the scoped tape path did not
+  restore the recorded Career transport-budget snapshot, causing Caesars,
+  ProMach and Systematic Business Consulting to be upgraded incorrectly to
+  `NO_PUBLIC_OPENINGS`.
+- Added a replay-only recorded-budget wrapper that leaves request outcomes to
+  the tape, validates run-configuration parity and restores cache-hit
+  diagnostics. No provider, candidate, identity or opening rule changed.
+- Replayed the same 100-record capsule offline and improved determinism to 96
+  reproduced, two budget recoveries, two mismatches and zero fixture gaps.
+  Versana and Brown and Caldwell remain separate singleton replay debts.
+- Passed 192 focused tests, the full 2,848-test suite (4 skipped), provider
+  benchmark 25/25, resolver benchmark 6/6, architecture 48/0, tracked
+  credential-shape scan 0 and `git diff --check`.
+- Confirmed the raw `.278` capsule is not shareable: ten Google browser-key
+  shapes from one public Maps script remain in trace/checkpoint/completion
+  serialization. Authoritative snapshot index and blobs pass integrity.
+- Bumped the adapter to `.279`; sealed cohorts, plugin, coordinator-v2 and the
+  LLM branch remained isolated, and no new live batch was started.
+
 ## 2026-07-28 - `.278` release completion audit
 
 - Reconciled the full product completion matrix with the code-frozen `.277`

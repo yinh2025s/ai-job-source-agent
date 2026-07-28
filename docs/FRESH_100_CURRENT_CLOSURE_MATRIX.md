@@ -2,32 +2,34 @@
 
 ## Current Status
 
-The latest authoritative raw measurement is the code-frozen Fresh100 `.277`
+The latest authoritative raw measurement is the code-frozen Fresh100 `.278`
 cold gate. It completed all 100 records and is kept separate from any
 cross-version focused projection.
 
-| State | `.277` raw |
+| State | `.278` raw |
 | --- | ---: |
-| S7 Exact | **29/100** |
-| Evidence-backed Verified No Match | **19/100** |
-| Evidence-backed External Blocked | **1/100** |
-| Unresolved / nonterminal | **51/100** |
+| S7 Exact | **31/100** |
+| Evidence-backed Verified No Match | **21/100** |
+| Evidence-backed External Blocked | **2/100** |
+| Unresolved / nonterminal | **46/100** |
 | Published wrong URL/company/tenant/location | **0** |
 
-The `.277` run reached 87 Websites, 73 Career pages, 69 verified Job Lists and
-29 S7 Exact openings. All 29 Exact records passed the opening URL, title,
+The `.278` run reached 90 Websites, 76 Career pages, 69 verified Job Lists and
+31 S7 Exact openings. All 31 Exact records passed the opening URL, title,
 location, company, provider and tenant safety audit. Same-version replay
-exported and executed 100 records but failed acceptance at 98 reproduced, one
-budget recovery, one mismatch and zero fixture gaps.
+exported and executed 100 records but initially failed acceptance at 93
+reproduced, two budget recoveries, five mismatches and zero fixture gaps.
 
-Relative to `.275`, IMG became Exact while Frost, Versana DevOps and ProMach
-lost Exact. The raw score moved from 31 to 29. Focused evidence remains useful
-for diagnosis, but it does not overwrite this measurement.
+`.279` restores the recorded Career transport-budget snapshot during scoped
+replay. The unchanged `.278` capsule then reaches 96 reproduced, two budget
+recoveries, two mismatches and zero fixture gaps. This does not overwrite the
+immutable `.278` live measurement.
 
-The gate is documented in
-`docs/FRESH_100_CURRENT_V277_MEASUREMENT_GATE_PHASE_C.md`. `.278` only fixes the
-qualified four-host JWT snapshot privacy cluster; it does not change the
-`.277` live score, repair the Brown replay mismatch or close the product goal.
+The remaining replay mismatches are Versana and Brown and Caldwell. The raw
+capsule also retains ten Google browser-key-shaped serialization values from
+one public Maps script, so it is not shareable. The gate and replay closure are
+documented in `docs/FRESH_100_CURRENT_V278_REPLAY_BUDGET_PHASE_A.md` and
+`docs/FRESH_100_CURRENT_V279_REPLAY_BUDGET_PHASE_C.md`.
 
 ## Previous `.275` Reviewed Projection
 

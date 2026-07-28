@@ -23,7 +23,36 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，snapshot privacy `.278`）
+## 当前架构进度（2026-07-28，replay semantics `.279`）
+
+### `.278` Fresh100 measurement and `.279` replay budget closure
+
+用户批准的 `.278` Fresh100 cold live 已完成 100/100：90 Website、76 Career、
+69 verified Job List、31 authoritative S7 Exact，pipeline success / partial /
+failed 为 31 / 47 / 22。31/31 Exact 均通过 company、title、location、
+provider、tenant 和 opening URL 安全审计，错误 URL、跨公司、跨 tenant 和错误
+地点均为 0。
+
+初始 strict replay 为 93 reproduced、2 budget recovery、5 mismatch、0 fixture
+gap。Caesars、ProMach 和 Systematic Business Consulting 三家公司共享同一根因：
+scoped replay 恢复 outcome tape，却没有恢复 live Career stage 的 immutable
+transport-budget snapshot，导致 replay 错误地产生 `NO_PUBLIC_OPENINGS`。
+
+`.279` 增加 replay-only recorded-budget wrapper，tape 继续拥有请求顺序与结果；
+wrapper 只恢复 source trace 中已经存在的 budget/cache-hit 诊断并校验配置一致性。
+同一 100-record capsule 离线 replay 改善为 96 reproduced、2 budget recovery、
+2 mismatch、0 fixture gap。Versana 和 Brown and Caldwell 是两条不同 singleton
+根因，不授权继续实现。
+
+`.278` raw capsule 仍不能分享：一个 public Google Maps script 的 browser-key
+shape 在 trace/checkpoint/completion serialization 中残留 10 处。Snapshot
+authoritative index/blob integrity 通过，mutable `sites` alias 不作为权威证据。
+Lab37 的 S7 Exact 安全，但 legacy `status`/Job List 字段不一致，作为 singleton
+publication debt 保留。本轮不启动新 live，不打开 sealed cohort，不触碰 plugin、
+coordinator-v2 或 LLM branch。详见：
+
+- `docs/FRESH_100_CURRENT_V278_REPLAY_BUDGET_PHASE_A.md`
+- `docs/FRESH_100_CURRENT_V279_REPLAY_BUDGET_PHASE_C.md`
 
 ### `.277` Fresh100 measurement and `.278` JWT privacy closure
 
