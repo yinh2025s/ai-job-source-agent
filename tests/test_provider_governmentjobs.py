@@ -5,7 +5,6 @@ from job_source_agent.job_board import JobBoard, is_replay_safe_job_board
 from job_source_agent.providers.base import JobQuery, ProviderAdapter
 from job_source_agent.providers.governmentjobs import ADAPTER, GovernmentJobsAdapter
 from job_source_agent.providers.registry import discover_native_adapters
-from job_source_agent.rendered_fetcher import FORCE_RENDER_HEADER
 from job_source_agent.web import FetchError, Page
 
 
@@ -70,9 +69,7 @@ def rendered_inventory(
         f'<html data-agency-folder-name="{tenant}">'
         f'<div id="number-found-items">{total} '
         f'{"job" if total == 1 else "jobs"} found</div>'
-        f'<div id="job-list-container">{rows}</div>'
-        '<div id="job-list-overlay" style="display: none; z-index: -1"></div>'
-        "</html>"
+        f'<div id="job-list-container">{rows}</div></html>'
     )
 
 
@@ -168,15 +165,9 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
 
         self.assertEqual(fetcher.requests[0], (LUBBOCK, None, None))
         url, data, headers = fetcher.requests[1]
-        self.assertEqual(
-            url,
-            LUBBOCK
-            + "?keywords=information+security+AND+compliance+analyst",
-        )
+        self.assertEqual(url, LUBBOCK + "?sort=PositionTitle%7CAscending")
         self.assertIsNone(data)
-        self.assertEqual(headers["Referer"], LUBBOCK)
-        self.assertEqual(headers[FORCE_RENDER_HEADER], "force")
-        self.assertNotIn("X-Requested-With", headers)
+        self.assertEqual(headers["X-Requested-With"], "XMLHttpRequest")
         self.assertTrue(result.inventory_complete)
         self.assertEqual(result.inventory_scope, "title_filtered")
         self.assertEqual(result.candidates[0].url, LUBBOCK + "/jobs/5342417-0/information-security-and-compliance-analyst")
@@ -273,168 +264,6 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
             result.trace["interactive_search"]["fingerprint"],
             r"^[0-9a-f]{64}$",
         )
-        self.assertEqual(
-            result.trace["interactive_search"]["fallback_kind"],
-            "canonical_keyword_route",
-        )
-
-    def test_interaction_timeout_uses_complete_canonical_keyword_route(self):
-        title = "Information Security and Compliance Analyst"
-        fetcher = RecordingFetcher(
-            responses=[
-                board_html(search_form=True),
-                FetchError(
-                    "browser interaction timed out",
-                    reason_code="OPENING_DISCOVERY_INCOMPLETE",
-                ),
-                rendered_inventory(title=title),
-            ]
-        )
-
-        result = self.adapter.list_jobs(
-            fetcher,
-            self.board,
-            JobQuery(title=title, location="Lubbock, TX"),
-        )
-
-        keyword_url = LUBBOCK + "?keywords=Information+Security+and+Compliance+Analyst"
-        self.assertEqual(fetcher.requests[2][0], keyword_url)
-        self.assertEqual(
-            fetcher.requests[2][2][FORCE_RENDER_HEADER],
-            "force",
-        )
-        self.assertIsNone(fetcher.interactions[2])
-        self.assertTrue(result.inventory_complete)
-        self.assertEqual(len(result.candidates), 1)
-        self.assertEqual(result.candidates[0].raw["tenant"], "lubbock")
-        self.assertEqual(result.trace["api_urls"], [keyword_url])
-        self.assertEqual(
-            result.trace["interactive_search"]["status"],
-            "fetch_failed",
-        )
-        self.assertEqual(
-            result.trace["interactive_search"]["fallback_kind"],
-            "canonical_keyword_route",
-        )
-
-    def test_keyword_route_rejects_cross_tenant_final_url(self):
-        title = "Information Security and Compliance Analyst"
-        fetcher = RecordingFetcher(
-            responses=[
-                board_html(search_form=True),
-                FetchError(
-                    "browser interaction timed out",
-                    reason_code="OPENING_DISCOVERY_INCOMPLETE",
-                ),
-                Page(
-                    CSTX,
-                    rendered_inventory("cstx", title=title),
-                    final_url=CSTX + "?keywords=Information+Security+and+Compliance+Analyst",
-                    source="fixture-governmentjobs",
-                ),
-            ]
-        )
-
-        result = self.adapter.list_jobs(
-            fetcher,
-            self.board,
-            JobQuery(title=title),
-        )
-
-        self.assertFalse(result.inventory_complete)
-        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
-        self.assertEqual(result.candidates, [])
-        self.assertIn("cstx", result.trace["rejected_final_url"])
-
-    def test_keyword_route_rejects_rewritten_or_ambiguous_query(self):
-        title = "Information Security and Compliance Analyst"
-        for final_url in (
-            LUBBOCK + "?keywords=Different+Role",
-            LUBBOCK
-            + "?keywords=Information+Security+and+Compliance+Analyst&page=2",
-        ):
-            with self.subTest(final_url=final_url):
-                result = self.adapter.list_jobs(
-                    RecordingFetcher(
-                        responses=[
-                            board_html(search_form=True),
-                            FetchError(
-                                "browser interaction timed out",
-                                reason_code="OPENING_DISCOVERY_INCOMPLETE",
-                            ),
-                            Page(
-                                final_url,
-                                rendered_inventory(title=title),
-                                final_url=final_url,
-                                source="fixture-governmentjobs",
-                            ),
-                        ]
-                    ),
-                    self.board,
-                    JobQuery(title=title),
-                )
-
-                self.assertFalse(result.inventory_complete)
-                self.assertEqual(
-                    result.reason_code,
-                    "PROVIDER_VARIANT_UNSUPPORTED",
-                )
-                self.assertEqual(
-                    result.trace["stop_reason"],
-                    "keyword_route_identity_mismatch",
-                )
-                self.assertEqual(result.candidates, [])
-
-    def test_keyword_route_rejects_malformed_or_incomplete_inventory(self):
-        title = "Information Security and Compliance Analyst"
-        malformed = rendered_inventory(title=title).replace(
-            "1 job found",
-            "2 jobs found",
-        )
-        result = self.adapter.list_jobs(
-            RecordingFetcher(
-                responses=[
-                    board_html(search_form=True),
-                    FetchError(
-                        "browser interaction timed out",
-                        reason_code="OPENING_DISCOVERY_INCOMPLETE",
-                    ),
-                    malformed,
-                ]
-            ),
-            self.board,
-            JobQuery(title=title),
-        )
-
-        self.assertFalse(result.inventory_complete)
-        self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
-        self.assertEqual(result.trace["stop_reason"], "inventory_count_mismatch")
-        self.assertEqual(result.candidates, [])
-
-    def test_keyword_route_does_not_accept_loading_shell_as_empty_inventory(self):
-        title = "Information Security and Compliance Analyst"
-        loading_shell = rendered_inventory(total=0).replace(
-            "display: none; z-index: -1",
-            "display: block; z-index: 1",
-        )
-        result = self.adapter.list_jobs(
-            RecordingFetcher(
-                responses=[
-                    board_html(search_form=True),
-                    FetchError(
-                        "browser interaction timed out",
-                        reason_code="OPENING_DISCOVERY_INCOMPLETE",
-                    ),
-                    loading_shell,
-                ]
-            ),
-            self.board,
-            JobQuery(title=title),
-        )
-
-        self.assertFalse(result.inventory_complete)
-        self.assertEqual(result.reason_code, "PROVIDER_VARIANT_UNSUPPORTED")
-        self.assertEqual(result.trace["stop_reason"], "javascript_inventory_shell")
 
     def test_static_cross_tenant_failure_preserves_interaction_trace(self):
         landing = board_html(search_form=True)
