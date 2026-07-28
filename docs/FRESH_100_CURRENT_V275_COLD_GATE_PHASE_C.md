@@ -147,11 +147,13 @@ verification, acceptance-ledger validation and `git diff --check`.
 
 The release privacy scan found six distinct Google Maps browser API keys
 embedded by public source sites across 40 trace, checkpoint, snapshot and replay
-files. No authenticated LinkedIn state, cookies or user credentials were used.
-The raw values were never added to Git. The release copy replaces every value
-with `[REDACTED_GOOGLE_MAPS_KEY]`; a second scan reports zero remaining matches.
-This changes captured body bytes, so the archive is an audit record rather than
-an executable replay capsule. The replay result above was produced before the
+files. A follow-up shape audit found one AWS access-key-ID-shaped value from one
+public job board across three snapshot/replay files. No authenticated LinkedIn
+state, cookies or user credentials were used. The raw values were never added
+to Git. The corrected release copy replaces them with deterministic Google and
+AWS redaction markers; a second scan reports zero remaining matches. This
+changes captured body bytes, so the archive is an audit record rather than an
+executable replay capsule. The replay result above was produced before the
 release scrub.
 
 This is a general capture-sanitizer gap to qualify before another live release,
@@ -174,7 +176,7 @@ The tracked checksum is:
 
 SHA-256:
 
-`a35cb2227c0caf738914792e7412fb915302b8bc19416b7408be3b365576af27`
+`319c494b276deb89424be2e7970c5d1fb13bf2a80e97c1e173ecd067445ccd85`
 
 The archive payload is intentionally ignored by Git. Its checksum, privacy
 notice and this report are versioned. The archive preserves the recorded replay

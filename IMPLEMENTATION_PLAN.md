@@ -49,10 +49,12 @@ State of Montana 的 caller-deadline normalization 只有两家公司且不恢�
 至少三家公司且至少三条预期恢复的合法簇。因此不进入 Phase B，不改产品代码。
 
 Release privacy scan 发现公开来源网页在 40 个 capture/replay 文件中嵌入 6 个
-Google Maps browser API key。原值未进入 Git；正式 release copy 已统一替换为
-`[REDACTED_GOOGLE_MAPS_KEY]`，复扫为 0。因为 body bytes 被修改，该 archive
-只作为审计记录，不声明可执行 replay。下次 live release 前必须先把这个通用
-capture sanitizer gap 做独立资格审查，但本轮不因此继续开批次或累积代码修改。
+Google Maps browser API key；后续 shape audit 又在同一公开 job board 的 3 个
+snapshot/replay 文件中发现 1 个 AWS access-key-ID-shaped value。原值均未进入
+Git；纠正后的 release copy 已统一替换为确定性 Google/AWS marker，复扫为 0。
+因为 body bytes 被修改，该 archive 只作为审计记录，不声明可执行 replay。
+下次 live release 前必须先把这些 capture sanitizer gap 做独立资格审查，但
+本轮不因此继续开批次或累积未提交代码修改。
 
 本轮停止新 live，只做 artifact 封存、治理同步、门禁、分组 commit 和 push。
 Fresh replay 100/100、Frozen100 当前版本无回归和两批陌生 cohort 验收仍未完成，

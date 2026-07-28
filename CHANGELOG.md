@@ -18,12 +18,13 @@
   signatures share a common trigger, production path and at least three
   expected terminal recoveries.
 - Found six public-site Google Maps browser API keys in 40 capture/replay
-  files. None entered Git; the release copy replaces them with a deterministic
-  redaction marker and scans clean. The scrubbed archive is audit-only because
-  captured body hashes necessarily change.
+  files and one AWS access-key-ID-shaped value in three public-board files.
+  None entered Git; the corrected release copy replaces both shapes with
+  deterministic redaction markers and scans clean. The scrubbed archive is
+  audit-only because captured body hashes necessarily change.
 - Made no product-code change and stopped new live work. The run is preserved
   under `fresh100-current-v275-cold-20260728-run1.tar.zst`; only its checksum is
-  tracked (`a35cb2227c0caf738914792e7412fb915302b8bc19416b7408be3b365576af27`).
+  tracked (`319c494b276deb89424be2e7970c5d1fb13bf2a80e97c1e173ecd067445ccd85`).
 
 ## 2026-07-28 - Existing-evidence completion audit `.276`
 
