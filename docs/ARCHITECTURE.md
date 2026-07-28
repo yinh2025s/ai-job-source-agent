@@ -492,6 +492,17 @@ verification allocation 恢复精确输入，最后才使用 canonical selected 
 
 当前结构已经达到 provider/resolver/fetch/evaluation 并行开发门槛；剩余债务按 ownership workstream 继续收缩。
 
+`.280` keeps visible first-party detail identity inside the generic opening
+matcher rather than adding a provider or stage special case. Existing
+structured posting parsers remain first. The fallback is bounded and requires
+a specific same-site detail URL, one strict visible H1, contextual target-city
+evidence, adjacent-state consistency and no closed-opening signal; document
+head, navigation and hidden content are excluded. It only produces
+`OpeningSelectionEvidence`. S5 route authorization and S7's verified
+company/provider/tenant/board/opening/title/location chain remain mandatory for
+publication. A four-company focused live and same-version replay pass 4/4,
+while three real wrong-location pages remain rejected.
+
 ## Ownership Boundaries
 
 | Workstream | Target ownership | 不应修改 |

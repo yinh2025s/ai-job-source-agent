@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-28 - First-party visible detail identity `.280`
+
+- Qualified one four-company generic matcher defect: a verified first-party
+  board exposed a same-site specific detail whose visible H1 and target
+  location were exact, but no supported structured `JobPosting` existed.
+- Added one bounded visible-detail fallback after existing structured parsers.
+  It excludes document head/navigation/hidden content, requires a unique strict
+  title H1, contextual target-city evidence, adjacent-state consistency and a
+  specific detail URL, and keeps existing closed-page and S7 identity gates.
+- Added no company, domain, provider or job-ID special case. RLB, WENDEL and
+  System One wrong-location pages remain rejected, along with synthetic
+  head-only location, duplicate-H1, same-city wrong-state, listing/search,
+  closed and cross-site controls.
+- A code-frozen four-record focused live reached 4/4 Websites, Careers, Job
+  Lists and S7 Exact openings for WalkMe, StatRad, Aiken House and Canva.
+  Same-version scoped replay reproduced 4/4 with zero mismatch, fixture gap,
+  budget recovery or replayability drop.
+- Passed 281 focused tests, the full 2,857-test suite (4 skipped), provider
+  benchmark 25/25, resolver benchmark 6/6, architecture 48/0, tracked and
+  focused-artifact credential-shape scans 0, and `git diff --check`.
+- Preserved the immutable `.278` Fresh100 score at 31 Exact. The focused gate
+  proves two expected current-cohort recoveries but does not replace a future
+  code-frozen full measurement. Sealed cohorts, plugin, coordinator-v2 and the
+  LLM branch remained isolated.
+
 ## 2026-07-28 - `.279` completion and causal-cluster audit
 
 - Re-audited the `.278` Fresh100 unresolved ledger through four isolated,

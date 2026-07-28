@@ -23,7 +23,35 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，replay semantics `.279`）
+## 当前架构进度（2026-07-28，visible detail identity `.280`）
+
+### `.280` first-party visible detail identity
+
+四家公司共享同一个 S6 production root cause：已授权的 generic first-party Job
+Board 产生同站具体岗位 detail，页面有唯一严格匹配的可见 H1 和目标地点，但没有
+系统已支持的结构化 `JobPosting`，因此统一停在
+`jobposting_identity_not_verified`。WalkMe、StatRad、Aiken House 和 Canva
+分别提供独立页面证据，预期恢复 4/4，达到 Phase B 门槛。
+
+`.280` 在既有结构化 parser 全部无结果后增加 bounded visible-detail fallback。
+它排除 head/navigation/hidden 内容，要求具体 detail URL、唯一匹配 H1、靠近岗位
+标题或明确 location/workplace label 的目标城市，并拒绝相邻州信息冲突、关闭页面、
+跨站 detail、listing/search URL。该 matcher 只构造候选，S5 route authorization
+和 S7 company/provider/tenant/board/opening/title/location 链继续拥有最终发布权。
+
+新的四条 code-frozen focused live 为 4 Website / 4 Career / 4 Job List /
+4 S7 Exact；同版本 scoped replay 为 4 reproduced、0 mismatch、0 fixture gap、
+0 budget recovery。RLB、WENDEL 和 System One 三个真实错误地点控制继续拒绝。
+全量门禁为 2,857 tests（4 skipped）、provider 25/25、resolver 6/6、
+architecture 48/0。
+
+WalkMe 和 StatRad 属于当前 Fresh100，因此证明两条 expected recovery；Aiken
+House 和 Canva 来自独立 development capture。`.278` 的 31/100 raw Exact
+保持不可变，下一次完整 Fresh100 raw 分数必须来自新的 code-frozen full
+measurement，不能由 focused 4/4 改写。详见：
+
+- `docs/FRESH_100_V280_VISIBLE_DETAIL_IDENTITY_PHASE_A.md`
+- `docs/FRESH_100_V280_VISIBLE_DETAIL_IDENTITY_PHASE_C.md`
 
 ### `.279` completion audit and causal-cluster stop
 

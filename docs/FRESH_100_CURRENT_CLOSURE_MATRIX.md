@@ -31,6 +31,26 @@ one public Maps script, so it is not shareable. The gate and replay closure are
 documented in `docs/FRESH_100_CURRENT_V278_REPLAY_BUDGET_PHASE_A.md` and
 `docs/FRESH_100_CURRENT_V279_REPLAY_BUDGET_PHASE_C.md`.
 
+### `.280` Focused Recovery Evidence
+
+The post-measurement causal audit found a valid four-company opening-identity
+cluster after splitting the earlier three-company portfolio label by actual
+code path. WalkMe, StatRad, Aiken House and Canva all reached a verified
+first-party generic board and a same-site specific detail with one exact
+visible title H1 and target-location evidence, but no supported structured
+posting record.
+
+The bounded `.280` visible-detail contract recovered all four in a new
+code-frozen focused live. Its same-version replay is 4/4 reproduced with zero
+mismatch or fixture gap. RLB, WENDEL and System One remain rejected as real
+wrong-location controls.
+
+Only WalkMe and StatRad belong to this Fresh100 cohort. They provide two
+focused expected recoveries, but the authoritative `.278` row above remains
+31 Exact and 46 unresolved until a full code-frozen measurement reruns all 100
+records. The focused evidence must not be reported as a new raw 33/100 score.
+See `docs/FRESH_100_V280_VISIBLE_DETAIL_IDENTITY_PHASE_C.md`.
+
 The post-gate `.279` causal audit rejected all three company-count labels as
 implementation clusters:
 
