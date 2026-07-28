@@ -479,6 +479,36 @@ class _ProviderInventoryNoMatchService:
         }
 
 
+class _BoardEmployerNoMatchService:
+    def __init__(self, employer_name):
+        self.employer_name = employer_name
+
+    def match_discovered_board(self, board, target_title=None, target_location=None):
+        return None, board.board.url, {
+            "provider_api": {
+                "provider": board.board.provider,
+                "adapter": board.board.provider,
+                "inventory": {
+                    "source": "native_adapter",
+                    "status": "verified_filtered_empty",
+                    "scope": "title_filtered",
+                    "complete": True,
+                    "candidate_count": 0,
+                },
+                "board_employer_evidence": {
+                    "employer_name": self.employer_name,
+                    "display_name": self.employer_name,
+                    "evidence_url": board.board.url,
+                    "extraction_method": "governmentjobs_agency_heading",
+                },
+                "adapter_trace": {
+                    "inventory_scope": "title_filtered",
+                    "inventory_complete": True,
+                },
+            }
+        }
+
+
 class _ExactOpeningService:
     def match_discovered_board(self, board, target_title=None, target_location=None):
         opening = "https://jobs.lever.co/acme/role-123"
@@ -2475,6 +2505,62 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             "COMPANY_IDENTITY_AMBIGUOUS",
         )
         self.assertNotIn("provider_identity", rejected.updates)
+
+    def test_provider_board_employer_conflict_overrides_first_party_route(self):
+        board = DiscoveredJobBoard(
+            board=JobBoard(
+                "https://www.governmentjobs.com/careers/example",
+                "governmentjobs",
+                "example",
+                replay_safe=True,
+            ),
+            detection_method="linked_url_evidence",
+            evidence_url="https://www.governmentjobs.com/careers/example",
+        )
+        relationship = HiringRelationshipEvidence(
+            source_company_name="Example Limited",
+            hiring_entity_name="Example Limited",
+            provider="governmentjobs",
+            tenant="example",
+            evidence_type="first_party_handoff",
+            evidence_url=board.board.url,
+            strength=85,
+            verified=True,
+        )
+        context = PipelineContext.from_company(
+            CompanyInput(
+                company_name="Example Limited",
+                job_title="Staff Engineer",
+            )
+        )
+        context.hiring_entity_name = "Example Limited"
+        context.job_list_page_url = board.board.url
+        context.discovered_job_board = board
+        context.job_board_portfolio = JobBoardPortfolio(
+            boards=(board,),
+            eligible_set_complete=True,
+            route_evidence=(
+                JobBoardRouteEvidence(
+                    provider="governmentjobs",
+                    canonical_board_url=board.board.url,
+                    route_kind="website_career",
+                    source_kind="first_party_ats_link",
+                    hiring_relationship=relationship,
+                ),
+            ),
+        )
+
+        execution = OpeningMatchStage(
+            _BoardEmployerNoMatchService("City of Example"),
+            DEFAULT_PROVIDER_REGISTRY,
+        ).run(context)
+
+        self.assertEqual(
+            execution.result.reason_code,
+            "COMPANY_IDENTITY_AMBIGUOUS",
+        )
+        self.assertTrue(execution.trace["provider_employer_identity_conflict"])
+        self.assertNotIn("open_position_url", execution.updates)
 
     def test_enabled_parallel_candidates_allow_external_and_search_inputs_without_s4(self):
         external = "https://jobs.lever.co/acme/role-123"

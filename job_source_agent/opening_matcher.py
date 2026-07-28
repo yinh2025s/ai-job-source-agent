@@ -1111,6 +1111,11 @@ class JobOpeningMatcher:
                                 evidence.to_trace_payload()
                                 for evidence in adapter_result.employer_evidence
                             ],
+                            "board_employer_evidence": (
+                                adapter_result.board_employer_evidence.to_trace_payload()
+                                if adapter_result.board_employer_evidence is not None
+                                else None
+                            ),
                             "inventory": {
                                 "source": "native_adapter",
                                 "status": (

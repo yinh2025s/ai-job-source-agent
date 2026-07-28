@@ -3,11 +3,15 @@ from __future__ import annotations
 from html.parser import HTMLParser
 import json
 import re
-from urllib.parse import unquote, urlencode, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse
 
 from ..job_search_actions import (
     discover_job_search_actions,
     verify_job_search_submission,
+)
+from ..provider_candidates import (
+    ProviderPublishedBoardEmployerEvidence,
+    ProviderPublishedEmployerEvidence,
 )
 from ..reasons import reason_spec
 from ..web import FetchError
@@ -17,14 +21,27 @@ from .base import AdapterResult, JobBoard, JobCandidate, JobQuery, provider_fetc
 _HOST = "www.governmentjobs.com"
 _TENANT = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 _BOARD_PATH = re.compile(r"^/careers/(?P<tenant>[a-z0-9-]+)/?$", re.I)
+_INVENTORY_PATH = "/careers/home/index"
 _DETAIL_PATH = re.compile(
     r"^/careers/(?P<tenant>[a-z0-9-]+)/jobs/(?P<job_id>[1-9][0-9]{0,19})"
     r"(?:-(?P<variant>[0-9]+))?/(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)/?$",
     re.I,
 )
-_TOTAL = re.compile(r"\b([0-9]{1,6})\s+jobs?\s+found\b", re.I)
+_TOTAL = re.compile(
+    r"\b([0-9]{1,6})\s+(?:jobs?|job\s+postings?)\s+found\b",
+    re.I,
+)
 _PAGE_TENANT = re.compile(
     r"<html\b[^>]*\bdata-agency-folder-name\s*=\s*(['\"])(?P<tenant>[a-z0-9-]+)\1",
+    re.I,
+)
+_AGENCY_NAME = re.compile(
+    r"<h2\b(?=[^>]*\bclass\s*=\s*(['\"])[^'\"]*\bagency-name\b[^'\"]*\1)"
+    r"[^>]*\btitle\s*=\s*(['\"])(?P<name>[^'\"]{1,300})\2[^>]*>",
+    re.I,
+)
+_AGENCY_UI_SUFFIX = re.compile(
+    r"\s+(?:careers?|human\s+resources|employment|job\s+opportunities)\s*$",
     re.I,
 )
 _MAX_RESPONSE_CHARS = 5_000_000
@@ -48,7 +65,7 @@ class GovernmentJobsAdapter:
             return _failure(board, "PROVIDER_VARIANT_UNSUPPORTED", "invalid_board_identity")
 
         board_url = _board_url(tenant)
-        inventory_url = board_url + "?" + urlencode({"sort": "PositionTitle|Ascending"})
+        inventory_url = _inventory_url(tenant, query.title)
         try:
             board_page = fetcher.fetch(board_url)
         except (FetchError, OSError, TimeoutError) as error:
@@ -64,6 +81,18 @@ class GovernmentJobsAdapter:
                 inventory_url=inventory_url,
                 response_source=board_page.source,
                 rejected_final_url=board_page.final_url or board_page.url,
+            )
+        board_employer_evidence = _board_employer_evidence(
+            board_page.html,
+            board_url,
+        )
+        if board_employer_evidence is None:
+            return _failure(
+                board,
+                "INVALID_STRUCTURED_DATA",
+                "missing_or_ambiguous_board_employer_identity",
+                inventory_url=inventory_url,
+                response_source=board_page.source,
             )
 
         interaction_trace: dict[str, object] = {}
@@ -122,6 +151,7 @@ class GovernmentJobsAdapter:
                                 inventory_url=board_url,
                                 response_source=submission.page.source,
                                 interaction_trace=interaction_trace,
+                                board_employer_evidence=board_employer_evidence,
                             )
                         interaction_trace["parse_stop_reason"] = parsed
                         code = _inventory_parse_failure_code(parsed)
@@ -152,7 +182,7 @@ class GovernmentJobsAdapter:
             )
 
         final_url = page.final_url or page.url
-        if _response_tenant(final_url) != tenant:
+        if _inventory_response_tenant(final_url) != tenant:
             return _failure(
                 board,
                 "PROVIDER_VARIANT_UNSUPPORTED",
@@ -183,6 +213,7 @@ class GovernmentJobsAdapter:
             inventory_url=inventory_url,
             response_source=page.source,
             interaction_trace=interaction_trace,
+            board_employer_evidence=board_employer_evidence,
         )
 
 
@@ -233,8 +264,31 @@ def _response_tenant(url: str) -> str | None:
     return tenant if _TENANT.fullmatch(tenant) else None
 
 
+def _inventory_response_tenant(url: str) -> str | None:
+    parsed = _safe_url(url)
+    if parsed is None or _normalized_path(parsed.path).casefold() != _INVENTORY_PATH:
+        return None
+    pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    agency_values = [value.casefold() for key, value in pairs if key == "agency"]
+    if (
+        len(agency_values) != 1
+        or not _TENANT.fullmatch(agency_values[0])
+        or any(key not in {"agency", "keyword"} for key, _value in pairs)
+        or len([1 for key, _value in pairs if key == "keyword"]) != 1
+    ):
+        return None
+    return agency_values[0]
+
+
 def _board_url(tenant: str) -> str:
     return f"https://{_HOST}/careers/{tenant}"
+
+
+def _inventory_url(tenant: str, title: str | None) -> str:
+    return (
+        f"https://{_HOST}{_INVENTORY_PATH}?"
+        + urlencode({"agency": tenant, "keyword": (title or "").strip()})
+    )
 
 
 def _job_board(tenant: str) -> JobBoard:
@@ -264,6 +318,39 @@ def _page_tenant(raw: str) -> str | None:
     return tenants.pop() if len(tenants) == 1 else None
 
 
+def _board_employer_evidence(
+    raw: str,
+    board_url: str,
+) -> ProviderPublishedBoardEmployerEvidence | None:
+    if not isinstance(raw, str) or len(raw) > _MAX_RESPONSE_CHARS:
+        return None
+    names = {
+        " ".join(match.group("name").split())
+        for match in _AGENCY_NAME.finditer(raw)
+        if match.group("name").strip()
+    }
+    if len(names) != 1:
+        return None
+    display_name = names.pop()
+    employer_name = display_name
+    while True:
+        normalized = _AGENCY_UI_SUFFIX.sub("", employer_name).strip()
+        if normalized == employer_name:
+            break
+        employer_name = normalized
+    if not employer_name:
+        return None
+    try:
+        return ProviderPublishedBoardEmployerEvidence(
+            employer_name=employer_name,
+            display_name=display_name,
+            evidence_url=board_url,
+            extraction_method="governmentjobs_agency_heading",
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 class _InventoryHTMLParser(HTMLParser):
     def __init__(self, tenant: str) -> None:
         super().__init__(convert_charrefs=True)
@@ -274,10 +361,37 @@ class _InventoryHTMLParser(HTMLParser):
         self._location_depth = 0
         self._location_parts: list[str] = []
         self.text_parts: list[str] = []
+        self.table_locations: dict[str, str] = {}
+        self.table_location_conflict = False
+        self._table_job_id: str | None = None
+        self._table_location_depth = 0
+        self._table_location_parts: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = {name.casefold(): value for name, value in attrs if value is not None}
         classes = set(values.get("class", "").casefold().split())
+        normalized_tag = tag.casefold()
+        if normalized_tag == "tr":
+            job_id = values.get("data-job-id")
+            self._table_job_id = (
+                job_id
+                if isinstance(job_id, str)
+                and re.fullmatch(r"[1-9][0-9]{0,19}", job_id)
+                else None
+            )
+        elif normalized_tag == "th":
+            job_id = values.get("data-job-id")
+            if isinstance(job_id, str) and re.fullmatch(r"[1-9][0-9]{0,19}", job_id):
+                self._table_job_id = job_id
+        if (
+            normalized_tag == "td"
+            and "job-table-location" in classes
+            and self._table_job_id is not None
+        ):
+            self._table_location_depth = 1
+            self._table_location_parts = []
+        elif self._table_location_depth:
+            self._table_location_depth += 1
         if tag.casefold() == "a" and self._anchor is None:
             href = values.get("href")
             detail = _detail_identity(href, self.tenant) if href else None
@@ -291,6 +405,15 @@ class _InventoryHTMLParser(HTMLParser):
             self._location_depth += 1
 
     def handle_endtag(self, tag: str) -> None:
+        if self._table_location_depth:
+            self._table_location_depth -= 1
+            if self._table_location_depth == 0 and self._table_job_id is not None:
+                location = " ".join(" ".join(self._table_location_parts).split())
+                current = self.table_locations.get(self._table_job_id)
+                if location and current not in (None, location):
+                    self.table_location_conflict = True
+                elif location:
+                    self.table_locations[self._table_job_id] = location
         if self._location_depth:
             self._location_depth -= 1
             if self._location_depth == 0 and self._anchor is not None:
@@ -302,6 +425,8 @@ class _InventoryHTMLParser(HTMLParser):
             self.rows.append(self._anchor)
             self._anchor = None
             self._anchor_parts = []
+        if tag.casefold() == "tr":
+            self._table_job_id = None
 
     def handle_data(self, data: str) -> None:
         self.text_parts.append(data)
@@ -309,6 +434,8 @@ class _InventoryHTMLParser(HTMLParser):
             self._anchor_parts.append(data)
         if self._location_depth:
             self._location_parts.append(data)
+        if self._table_location_depth:
+            self._table_location_parts.append(data)
 
 
 def _parse_inventory(
@@ -404,6 +531,8 @@ def _parse_html_inventory(
     except (TypeError, ValueError):
         return "malformed_inventory_html"
     text = " ".join(" ".join(parser.text_parts).split())
+    if parser.table_location_conflict:
+        return "invalid_inventory_record"
     totals = {int(value) for value in _TOTAL.findall(text)}
     if len(totals) != 1:
         return "missing_or_contradictory_total"
@@ -415,16 +544,32 @@ def _parse_html_inventory(
         title = row.get("title")
         if not isinstance(title, str) or not title or len(title) > 500:
             return "invalid_inventory_record"
-        candidates.append(
-            JobCandidate(
+        candidate = JobCandidate(
                 title=title,
                 url=str(row["url"]),
                 provider="governmentjobs",
-                location=row.get("location"),
+                location=(
+                    parser.table_locations.get(str(row["job_id"]))
+                    or row.get("location")
+                ),
                 raw={"job_id": str(row["job_id"]), "tenant": tenant},
             )
+        duplicate = next(
+            (
+                existing
+                for existing in candidates
+                if existing.raw["job_id"] == candidate.raw["job_id"]
+            ),
+            None,
         )
-    if len(candidates) != total or len({c.raw["job_id"] for c in candidates}) != total:
+        if duplicate is None:
+            candidates.append(candidate)
+        elif (
+            duplicate.url != candidate.url
+            or _normalize(duplicate.title) != _normalize(candidate.title)
+        ):
+            return "duplicate_job_id"
+    if len(candidates) != total:
         return "inventory_count_mismatch"
     return candidates, total, "governmentjobs_public_xhr_html"
 
@@ -446,6 +591,7 @@ def _complete_result(
     inventory_url: str,
     response_source: str,
     interaction_trace: dict[str, object],
+    board_employer_evidence: ProviderPublishedBoardEmployerEvidence,
 ) -> AdapterResult:
     candidates, total, variant = parsed
     title = _normalize(query.title)
@@ -485,6 +631,16 @@ def _complete_result(
     }
     if interaction_trace:
         trace["interactive_search"] = interaction_trace
+    employer_evidence = tuple(
+        ProviderPublishedEmployerEvidence(
+            employer_name=board_employer_evidence.employer_name,
+            descriptor_terms=(),
+            evidence_url=board_employer_evidence.evidence_url,
+            opening_url=candidate.url,
+            extraction_method="governmentjobs_agency_heading",
+        )
+        for candidate in visible_candidates
+    )
     return AdapterResult(
         provider="governmentjobs",
         board=board,
@@ -492,6 +648,8 @@ def _complete_result(
         reason_code="EMPTY_PROVIDER_RESPONSE" if not visible_candidates else None,
         inventory_scope=inventory_scope,
         inventory_complete=True,
+        employer_evidence=employer_evidence,
+        board_employer_evidence=board_employer_evidence,
         trace=trace,
     )
 

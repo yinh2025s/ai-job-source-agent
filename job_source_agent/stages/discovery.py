@@ -1839,6 +1839,31 @@ class OpeningMatchStage:
                 trace=exc.trace,
             )
 
+        if _provider_board_employer_conflicts(context, trace):
+            trace["provider_employer_identity_conflict"] = True
+            return StageExecution(
+                result=make_stage_result(
+                    self.name,
+                    "partial",
+                    reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+                    provider=context.provider,
+                    duration_ms=_elapsed_ms(started),
+                    input_count=1,
+                    evidence=[
+                        {
+                            "type": "provider_board_employer_identity",
+                            "status": "conflict",
+                        }
+                    ],
+                    detail=(
+                        "The provider-published board employer conflicts with the "
+                        "target company identity."
+                    ),
+                ),
+                updates={"job_list_page_url": job_list_url},
+                trace=trace,
+            )
+
         updates = {"job_list_page_url": job_list_url}
         stored_inventory_identity = self._stored_inventory_identity(
             context,
@@ -2027,6 +2052,13 @@ class OpeningMatchStage:
                     diagnostics.append((reason_code, None))
                 continue
 
+            board_employer_conflict = _provider_board_employer_conflicts(
+                context,
+                trace,
+            )
+            if board_employer_conflict:
+                route_authorized = False
+
             if opening_url:
                 inventory_hiring = _provider_inventory_hiring_evidence(
                     context,
@@ -2095,6 +2127,8 @@ class OpeningMatchStage:
                     )
                 )
                 issues = list(dict.fromkeys([*identity_issues, *selection_issues]))
+                if board_employer_conflict:
+                    issues.append("PROVIDER_EMPLOYER_IDENTITY_MISMATCH")
                 if not portfolio.route_evidence:
                     # Schema-v1 and legacy in-memory portfolios had no route-local
                     # authority contract. Preserve their S6 behavior and leave the
@@ -2133,6 +2167,9 @@ class OpeningMatchStage:
                             route_authorized
                             or inventory_hiring is not None
                             or stored_inventory_identity is not None
+                        ),
+                        "provider_employer_identity_conflict": (
+                            board_employer_conflict
                         ),
                         "routes": _route_attempt_trace(routes),
                         "identity_issues": issues,
@@ -2187,10 +2224,13 @@ class OpeningMatchStage:
                         provider_inventory_hiring,
                         candidate_provider_identity,
                     )
-            if stored_inventory_identity is not None:
+            if stored_inventory_identity is not None and not board_employer_conflict:
                 stored_canonical_inventory_complete = True
                 route_authorized = True
-            elif provider_inventory_identity is not None:
+            elif (
+                provider_inventory_identity is not None
+                and not board_employer_conflict
+            ):
                 stored_canonical_inventory_complete = True
                 route_authorized = True
             if route_authorized:
@@ -2223,6 +2263,9 @@ class OpeningMatchStage:
                         else "COMPANY_IDENTITY_AMBIGUOUS"
                     ),
                     "authorized": route_authorized,
+                    "provider_employer_identity_conflict": (
+                        board_employer_conflict
+                    ),
                     "routes": _route_attempt_trace(routes),
                     "trace": trace,
                 }
@@ -2325,6 +2368,15 @@ class OpeningMatchStage:
             detail = (
                 "Provider candidates were discovered, but no route has independent "
                 "evidence that its tenant recruits for the target company."
+            )
+        elif any(
+            attempt.get("provider_employer_identity_conflict") is True
+            for attempt in attempts
+        ):
+            reason_code = "COMPANY_IDENTITY_AMBIGUOUS"
+            detail = (
+                "The provider-published board employer conflicts with the target "
+                "company identity."
             )
         elif incomplete is not None:
             reason_code, diagnostic = incomplete
@@ -4775,6 +4827,29 @@ def _trace_has_complete_native_inventory(trace: object) -> bool:
         and isinstance(adapter_trace, dict)
         and adapter_trace.get("tenant_identity_conflict") is not True
         and not adapter_trace.get("errors")
+    )
+
+
+def _provider_board_employer_conflicts(
+    context: PipelineContext,
+    trace: object,
+) -> bool:
+    if not isinstance(trace, dict):
+        return False
+    provider_api = trace.get("provider_api")
+    evidence = (
+        provider_api.get("board_employer_evidence")
+        if isinstance(provider_api, dict)
+        else None
+    )
+    if not isinstance(evidence, dict):
+        return False
+    employer_name = evidence.get("employer_name")
+    expected = context.hiring_entity_name or context.company.company_name
+    return bool(
+        isinstance(employer_name, str)
+        and _strict_entity_key(employer_name)
+        and _strict_entity_key(employer_name) != _strict_entity_key(expected)
     )
 
 

@@ -23,7 +23,35 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-29，`.281` Fresh100 gate measured）
+## 当前架构进度（2026-07-29，`.283` GovernmentJobs cluster accepted）
+
+### `.283` GovernmentJobs board-employer and XHR contract
+
+`.281` 的三条 GovernmentJobs 记录现已按“证据终态恢复”而非 Exact-only
+重新冻结为一个共同 provider contract。Adapter 先验证 canonical tenant shell，
+从唯一 agency heading 提取 typed board-employer evidence，再调用 provider 前端
+声明的 `/careers/home/index?agency={tenant}&keyword={title}` XHR。响应必须保持
+GovernmentJobs HTTPS host、固定 path、唯一 tenant query、完整计数和 same-tenant
+opening URL；列表和表格重复视图按 job ID 去重，table-local location 绑定到同一
+opening，冲突则 fail closed。
+
+S6 同时消费 board-employer evidence：当前 provider 发布的招聘主体与输入/hiring
+entity 冲突时，即使早期 route 被判为 first-party handoff，也不能发布 Exact 或
+用该 tenant 的空库存形成 no-match。该共享 contract 由 ADR-0034 冻结。
+
+冻结代码的 focused run2 结果为：
+
+- City of College Station：S7 Exact，title/location/provider/tenant 均匹配；
+- City of Lubbock：官方 title-filtered inventory 完整且无目标，verified no-match；
+- WICHITA COMPANY LIMITED：provider 发布 `City of Wichita`，安全返回
+  `COMPANY_IDENTITY_AMBIGUOUS`，不发布 opening。
+
+Strict replay 为 3 reproduced、0 mismatch、0 fixture gap。错误 URL、错误地点、
+跨公司和跨 tenant 发布均为 0。该结果只关闭 GovernmentJobs focused cluster，
+不覆盖 `.281` Fresh100 的 34/100，也不触碰 Frozen100 或 sealed cohorts。报告：
+
+- `docs/COORDINATOR_V283_GOVERNMENTJOBS_XHR_PHASE_C.md`
+- `docs/adr/0034-bind-provider-board-employer-evidence.md`
 
 ### Historical `.278` cold rerun and `.282` rejection
 
@@ -34,11 +62,12 @@ Exact。32/32 Exact 通过 serialized identity/URL audit，错误 URL、错误�
 gap 为 0，但 outcome gate 只有 95 reproduced、2 budget recovery、3 mismatch，
 因此 release gate 失败。该结果不覆盖 `.278` run1，也不改写当前 `.281` 分数。
 
-随后两个 `.282` focused 实验均未达到至少三家公司、至少三条 terminal recovery
-的门槛。GovernmentJobs 官方 XHR transport 只让 College Station 命中目标；
-Lubbock 目标不在返回库存，Wichita tenant 与输入雇主身份不连续。Career
+随后两个 `.282` focused 实验当时均未达到至少三家公司、至少三条 terminal
+recovery 的门槛。GovernmentJobs 的 Exact-only 定义只计入 College Station；
+`.283` 已在不伪造 Exact 的前提下，把 Lubbock 的 complete no-match 与 Wichita
+的 employer identity rejection 纳入统一证据终态 contract。Career
 per-probe deadline 只恢复 Diamondback，NDIT 和 ARUP 仍为网络 timeout。两项
-实现和 `.282` 版本均已回退，当前行为恢复为 `.281`。
+`.282` 实现均已回退；GovernmentJobs 后续实现由 `.283` 独立取代。
 
 - `docs/FRESH_100_V278_COLD_RUN2_REPORT.md`
 - `docs/COORDINATOR_V282_REJECTED_EXPERIMENTS_PHASE_C.md`

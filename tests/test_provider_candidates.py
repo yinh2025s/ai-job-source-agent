@@ -5,6 +5,7 @@ from job_source_agent.provider_candidates import (
     MAX_PROVIDER_CANDIDATES,
     ProviderCandidate,
     ProviderCandidatePool,
+    ProviderPublishedBoardEmployerEvidence,
     ProviderPublishedEmployerEvidence,
     VerifiedProviderCandidate,
     provider_employer_matches_company,
@@ -22,6 +23,23 @@ def candidate(url, source_kind, **kwargs):
 
 
 class ProviderCandidateTests(unittest.TestCase):
+    def test_provider_board_employer_evidence_is_typed_and_canonical(self):
+        evidence = ProviderPublishedBoardEmployerEvidence(
+            employer_name="City of Example",
+            display_name="City of Example Human Resources",
+            evidence_url="https://www.governmentjobs.com/careers/example/",
+            extraction_method="governmentjobs_agency_heading",
+        )
+
+        self.assertEqual(
+            evidence.evidence_url,
+            "https://www.governmentjobs.com/careers/example",
+        )
+        self.assertEqual(
+            evidence.to_trace_payload()["display_name"],
+            "City of Example Human Resources",
+        )
+
     def test_verified_probe_can_carry_provider_published_employer_evidence(self):
         evidence = ProviderPublishedEmployerEvidence(
             employer_name="Slant",

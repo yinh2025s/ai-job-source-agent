@@ -6,7 +6,10 @@ from typing import Any, Protocol, runtime_checkable
 
 from ..contracts import FetchBudget, FetchClient
 from ..job_board import JobBoard
-from ..provider_candidates import ProviderPublishedEmployerEvidence
+from ..provider_candidates import (
+    ProviderPublishedBoardEmployerEvidence,
+    ProviderPublishedEmployerEvidence,
+)
 from ..reasons import canonical_reason_code, classify_fetch_error
 from ..web import FetchError, Page
 
@@ -37,6 +40,7 @@ class AdapterResult:
     inventory_complete: bool = True
     employer_evidence: tuple[ProviderPublishedEmployerEvidence, ...] = ()
     trace: dict[str, Any] = field(default_factory=dict)
+    board_employer_evidence: ProviderPublishedBoardEmployerEvidence | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.employer_evidence, tuple) or any(
@@ -44,6 +48,14 @@ class AdapterResult:
             for item in self.employer_evidence
         ):
             raise TypeError("Provider employer evidence must be an immutable tuple")
+        if (
+            self.board_employer_evidence is not None
+            and not isinstance(
+                self.board_employer_evidence,
+                ProviderPublishedBoardEmployerEvidence,
+            )
+        ):
+            raise TypeError("Provider board employer evidence is invalid")
 
 
 @dataclass(frozen=True)

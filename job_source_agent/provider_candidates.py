@@ -98,6 +98,41 @@ class ProviderPublishedEmployerEvidence:
 
 
 @dataclass(frozen=True)
+class ProviderPublishedBoardEmployerEvidence:
+    """Provider-owned board evidence that names the recruiting organization."""
+
+    employer_name: str
+    display_name: str
+    evidence_url: str
+    extraction_method: str
+
+    def __post_init__(self) -> None:
+        _validate_text(
+            self.employer_name,
+            "provider board employer name",
+            required=True,
+            maximum=300,
+        )
+        _validate_text(
+            self.display_name,
+            "provider board employer display name",
+            required=True,
+            maximum=300,
+        )
+        object.__setattr__(self, "evidence_url", _canonical_public_url(self.evidence_url))
+        if not _EVIDENCE_METHOD.fullmatch(self.extraction_method):
+            raise ValueError("Invalid provider board employer extraction method")
+
+    def to_trace_payload(self) -> dict[str, Any]:
+        return {
+            "employer_name": self.employer_name,
+            "display_name": self.display_name,
+            "evidence_url": self.evidence_url,
+            "extraction_method": self.extraction_method,
+        }
+
+
+@dataclass(frozen=True)
 class ProviderCandidate:
     """Untrusted URL lead. Ranking never grants provider or hiring identity."""
 

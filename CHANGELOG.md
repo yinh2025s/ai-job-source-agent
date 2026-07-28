@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-07-29 - GovernmentJobs provider identity and XHR inventory `.283`
+
+- Reclassified the three-company GovernmentJobs cluster by terminal recovery,
+  not Exact-only recovery: College Station has an exact opening, Lubbock has a
+  complete official title-filtered no-match, and the Wichita tenant publishes
+  a different employer from the LinkedIn input.
+- Added typed provider board-employer evidence and made S6 reject a current
+  provider-published employer conflict even when an earlier route was treated
+  as a first-party handoff.
+- Switched GovernmentJobs inventory to its declared first-party
+  `/careers/home/index?agency=...&keyword=...` XHR, requiring canonical host,
+  path, query, tenant, count and same-tenant opening identities.
+- Parsed the duplicated list/table response as one inventory and bound
+  table-local locations by job ID; conflicting locations fail closed.
+- Focused run1 exposed missing table-location parsing and was retained as a
+  failed diagnostic. Frozen-code run2 reached one Exact, one verified no-match
+  and one identity rejection; strict replay reproduced 3/3 with zero mismatch
+  or fixture gap and zero unsafe/cross-tenant publication.
+- Release-boundary gates passed: 2,862-test discovery had only the sandbox
+  loopback bind restriction, the affected 5-test HTTP module passed outside
+  that restriction, provider benchmark passed 25/25, resolver 6/6 and
+  architecture validation 48 adapters / 0 issues.
+
 ## 2026-07-29 - Historical `.278` cold rerun and rejected `.282` experiments
 
 - Ran the user-authorized `.278` Fresh100 cohort from detached commit

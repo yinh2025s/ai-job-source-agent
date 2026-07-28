@@ -2,7 +2,7 @@ import json
 import unittest
 
 from job_source_agent.job_board import JobBoard, is_replay_safe_job_board
-from job_source_agent.providers.base import JobQuery, ProviderAdapter
+from job_source_agent.providers.base import AdapterResult, JobQuery, ProviderAdapter
 from job_source_agent.providers.governmentjobs import ADAPTER, GovernmentJobsAdapter
 from job_source_agent.providers.registry import discover_native_adapters
 from job_source_agent.web import FetchError, Page
@@ -35,7 +35,12 @@ class RecordingFetcher:
         return Page(url=url, final_url=self.final_url or url, html=raw, source="fixture-governmentjobs")
 
 
-def board_html(tenant="lubbock", *, search_form=False):
+def board_html(
+    tenant="lubbock",
+    *,
+    search_form=False,
+    agency_name="City of Lubbock",
+):
     form = (
         '<form class="search-form">'
         '<input id="keyword-search-input" name="keyword" placeholder="Search" '
@@ -46,7 +51,9 @@ def board_html(tenant="lubbock", *, search_form=False):
     )
     return (
         f'<html data-agency-folder-name="{tenant}">'
-        f"<title>Job Opportunities</title>{form}</html>"
+        f"<title>Job Opportunities</title>"
+        f'<h2 class="agency-name" title="{agency_name}">{agency_name}</h2>'
+        f"{form}</html>"
     )
 
 
@@ -101,6 +108,22 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertTrue(self.adapter.recognizes(url))
                 self.assertEqual(self.adapter.identify_board(url), self.board)
+
+    def test_adapter_result_preserves_legacy_positional_trace_slot(self):
+        result = AdapterResult(
+            "governmentjobs",
+            self.board,
+            [],
+            None,
+            False,
+            "full",
+            True,
+            (),
+            {"legacy": True},
+        )
+
+        self.assertEqual(result.trace, {"legacy": True})
+        self.assertIsNone(result.board_employer_evidence)
 
     def test_canonical_boards_are_replay_safe_for_multiple_tenants(self):
         for tenant, url in (
@@ -165,7 +188,12 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
 
         self.assertEqual(fetcher.requests[0], (LUBBOCK, None, None))
         url, data, headers = fetcher.requests[1]
-        self.assertEqual(url, LUBBOCK + "?sort=PositionTitle%7CAscending")
+        self.assertEqual(
+            url,
+            "https://www.governmentjobs.com/careers/home/index"
+            "?agency=lubbock"
+            "&keyword=information+security+AND+compliance+analyst",
+        )
         self.assertIsNone(data)
         self.assertEqual(headers["X-Requested-With"], "XMLHttpRequest")
         self.assertTrue(result.inventory_complete)
@@ -174,6 +202,40 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
         self.assertEqual(result.candidates[0].location, "Information Technology, Lubbock, TX")
         self.assertTrue(result.trace["exact_title_found"])
         self.assertTrue(result.trace["location_match_found"])
+        self.assertEqual(
+            result.board_employer_evidence.employer_name,
+            "City of Lubbock",
+        )
+        self.assertEqual(
+            result.employer_evidence[0].opening_url,
+            result.candidates[0].url,
+        )
+
+    def test_board_employer_identity_strips_only_provider_ui_suffixes(self):
+        board = JobBoard(CSTX, "governmentjobs", "cstx", replay_safe=True)
+        result = self.adapter.list_jobs(
+            RecordingFetcher(
+                {"TotalCount": 0, "Jobs": []},
+                responses=[
+                    board_html(
+                        "cstx",
+                        agency_name="City of College Station Careers",
+                    ),
+                    {"TotalCount": 0, "Jobs": []},
+                ],
+            ),
+            board,
+            JobQuery(title="Missing Role"),
+        )
+
+        self.assertEqual(
+            result.board_employer_evidence.employer_name,
+            "City of College Station",
+        )
+        self.assertEqual(
+            result.board_employer_evidence.display_name,
+            "City of College Station Careers",
+        )
 
     def test_uses_declared_interaction_for_complete_title_filtered_inventory(self):
         fetcher = RecordingFetcher(
@@ -395,6 +457,82 @@ class GovernmentJobsAdapterTests(unittest.TestCase):
         self.assertEqual(result.candidates[0].provider, "governmentjobs")
         self.assertEqual(result.candidates[0].raw["tenant"], "cstx")
         self.assertEqual(result.trace["variant"], "governmentjobs_public_xhr_html")
+
+    def test_real_xhr_shape_deduplicates_list_and_table_views(self):
+        html = """
+        <div class="job-postings-number-container">
+          <span id="job-postings-number">1</span> Job Postings found
+        </div>
+        <ul class="job-listing-container">
+          <li class="list-item" data-job-id="5372109">
+            <a href="/careers/cstx/jobs/5372109/hr-operations-and-services-manager">
+              HR Operations and Services Manager
+            </a>
+          </li>
+        </ul>
+        <table><tbody><tr>
+          <th class="job-table-title" data-job-id="5372109">
+            <a href="/careers/cstx/jobs/5372109/hr-operations-and-services-manager">
+              HR Operations and Services Manager
+            </a>
+          </th>
+          <td class="job-table-location">College Station, TX</td>
+        </tr></tbody></table>
+        """
+        board = JobBoard(CSTX, "governmentjobs", "cstx", replay_safe=True)
+        result = self.adapter.list_jobs(
+            RecordingFetcher(
+                responses=[
+                    board_html(
+                        "cstx",
+                        agency_name="City of College Station Careers",
+                    ),
+                    html,
+                ]
+            ),
+            board,
+            JobQuery(title="HR Operations and Services Manager"),
+        )
+
+        self.assertTrue(result.inventory_complete)
+        self.assertEqual(len(result.candidates), 1)
+        self.assertEqual(result.trace["total"], 1)
+        self.assertEqual(
+            result.candidates[0].url,
+            CSTX + "/jobs/5372109/hr-operations-and-services-manager",
+        )
+        self.assertEqual(result.candidates[0].location, "College Station, TX")
+
+    def test_conflicting_table_locations_fail_closed(self):
+        html = """
+        <div>1 Job Posting found</div>
+        <table><tbody>
+          <tr><th data-job-id="5372109">
+            <a href="/careers/cstx/jobs/5372109/hr-manager">HR Manager</a>
+          </th><td class="job-table-location">College Station, TX</td></tr>
+          <tr><th data-job-id="5372109">
+            <a href="/careers/cstx/jobs/5372109/hr-manager">HR Manager</a>
+          </th><td class="job-table-location">Other City, TX</td></tr>
+        </tbody></table>
+        """
+        board = JobBoard(CSTX, "governmentjobs", "cstx", replay_safe=True)
+        result = self.adapter.list_jobs(
+            RecordingFetcher(
+                responses=[
+                    board_html(
+                        "cstx",
+                        agency_name="City of College Station Careers",
+                    ),
+                    html,
+                ]
+            ),
+            board,
+            JobQuery(title="HR Manager"),
+        )
+
+        self.assertFalse(result.inventory_complete)
+        self.assertEqual(result.reason_code, "INVALID_STRUCTURED_DATA")
+        self.assertEqual(result.trace["stop_reason"], "invalid_inventory_record")
 
     def test_verified_empty_inventory_is_complete(self):
         result = self.adapter.list_jobs(

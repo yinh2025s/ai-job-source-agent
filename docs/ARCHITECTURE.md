@@ -317,6 +317,22 @@ class ProviderAdapter:
 
 Registry 负责选择 adapter。原生 provider module 导出一个 `ADAPTER` 实例后会被自动发现；新增 provider 不需要修改中央 registry 或 stage 条件分支。
 
+`AdapterResult` 可以发布两种互补的 provider-owned identity evidence。Opening
+级 `ProviderPublishedEmployerEvidence` 把招聘主体绑定到一个 canonical opening；
+board 级 `ProviderPublishedBoardEmployerEvidence` 把 provider shell 明示的招聘
+主体绑定到 canonical board。S6 必须在 Exact 和完整空/过滤库存两条路径上检查
+board evidence；当前 provider 发布的 employer 与 hiring entity 冲突时，先前的
+route authorization 不能覆盖该冲突。该证据只允许拒绝错误关系或加强同一关系，
+不能凭名称相似创建 tenant、opening 或收购/母子公司关系。详见 ADR-0034。
+
+GovernmentJobs adapter 将 canonical `/careers/{tenant}` shell 的唯一 agency
+heading 作为 board-employer evidence，并使用官方前端声明的
+`/careers/home/index?agency={tenant}&keyword={title}` XHR。Response 必须保持
+固定 HTTPS host/path、唯一 agency/keyword query 和 same-tenant detail URLs；
+`Job Posting(s) found` 总数必须等于去重后的 job ID 数。Provider 同时渲染的
+list/table 视图按一致 job ID 去重，table-local location 绑定到 opening，任何
+重复 ID、URL/title/location 冲突或计数不一致都使 inventory incomplete。
+
 ApplicantStack adapter 只识别 public HTTPS `<tenant>.applicantstack.com/x/openings` 与同 tenant
 `/x/detail/<id>`。Board fetch 必须保留 canonical tenant/path 且页面同时具有 openings form、公开
 data table 和 branding fingerprint；跨 tenant/route redirect、malformed row、重复或非 canonical
