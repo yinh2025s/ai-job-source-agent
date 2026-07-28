@@ -25,6 +25,31 @@
 
 ## 当前架构进度（2026-07-28，replay semantics `.279`）
 
+### `.279` completion audit and causal-cluster stop
+
+四条独立只读审计对 `.278` 剩余最大标签重新做了可执行因果分类。17 条
+`search_results_filtered_to_zero` 的 1,042 个 raw result 中没有一个正确 ATS
+或已解析公司域候选；6 条 `transport_dispatch_budget_exhausted` 实际分别属于
+challenge、TLS、handoff 解析、库存语义和无候选；3 条
+`eligible_board_portfolio_incomplete` 则分别属于 first-party detail identity、
+职位缩写匹配和官方库存无目标岗位。
+
+因此没有标签同时满足同 trigger、同 production path、至少三家公司和至少三条
+预期 terminal recovery。当前不进入新的 Phase B，不提高预算、不放宽搜索过滤或
+身份门禁，也不实现 singleton 修复。
+
+Frozen100 历史 archive 完整保留 69 Exact 和历史 100/100 replay，但 `.279`
+隔离迁移 replay 被当前隐私校验拒绝：历史 snapshot 第 34 条 body 未完全脱敏。
+不能降低校验，也不能把历史 replay 当作 current-version 无回归。Fresh100
+`.278` 原始 capsule 的 Crawford Thomas trace/checkpoint/completion 仍有一个
+单公司 raw-link serialization 隐私 residual，因此不可分享。
+
+下一步必须通过新的串行证据门产生合法输入：运行 current-version Frozen100
+cold live/replay，或运行一个非 sealed diagnostic cohort 收集同根因的第三家公司；
+开发门通过后才能开启 sealed v2/v3。完整审计见：
+
+- `docs/BACKEND_RELEASE_COMPLETION_AUDIT_V279.md`
+
 ### `.278` Fresh100 measurement and `.279` replay budget closure
 
 用户批准的 `.278` Fresh100 cold live 已完成 100/100：90 Website、76 Career、

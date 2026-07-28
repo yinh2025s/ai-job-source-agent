@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-28 - `.279` completion and causal-cluster audit
+
+- Re-audited the `.278` Fresh100 unresolved ledger through four isolated,
+  read-only workstreams; no network, sealed cohort, plugin, coordinator-v2 or
+  LLM work was used.
+- Rejected the 17-company search-filter label after 1,042 raw results contained
+  zero correct ATS or resolved-company-domain candidates and two distinct
+  discovery producers.
+- Split the six-company Career budget label into challenge, TLS, handoff
+  parsing, inventory semantics and no-candidate roots; increasing or reordering
+  the budget has zero evidenced terminal recoveries.
+- Split the three-company portfolio label into distinct WalkMe first-party
+  detail identity, Heritage title-abbreviation and Crosby inventory-absence
+  causes; no shared change can recover all three safely.
+- Attempted an isolated current `.279` migration replay of the historical
+  Frozen100 archive. Current privacy validation rejected an incompletely
+  sanitized historical snapshot body, so the historical 100/100 replay is not
+  claimed as current-version no-regression evidence.
+- Confirmed the `.278` raw capsule remains non-shareable because one Crawford
+  Thomas raw-link value reaches trace/checkpoint/completion serialization.
+- Made no product behavior change. Fresh strict replay, full artifact privacy,
+  Frozen100 current-version no-regression and both unseen-cohort gates remain
+  open.
+
 ## 2026-07-28 - Fresh100 `.278` measurement and replay semantics `.279`
 
 - Ran the user-authorized `.278` Fresh100 cold measurement from new checkpoint,

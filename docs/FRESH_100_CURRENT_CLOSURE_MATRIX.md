@@ -31,6 +31,27 @@ one public Maps script, so it is not shareable. The gate and replay closure are
 documented in `docs/FRESH_100_CURRENT_V278_REPLAY_BUDGET_PHASE_A.md` and
 `docs/FRESH_100_CURRENT_V279_REPLAY_BUDGET_PHASE_C.md`.
 
+The post-gate `.279` causal audit rejected all three company-count labels as
+implementation clusters:
+
+| Apparent cluster | Companies | Evidenced recoveries from one shared fix |
+| --- | ---: | ---: |
+| Search results filtered to zero | 17 | 0 |
+| Career transport budget exhausted | 6 | 0 |
+| Eligible board portfolio incomplete | 3 | 0 |
+
+The search label contains no known-correct candidate before filtering. The
+budget label mixes challenge, TLS, parsing, inventory and no-candidate causes.
+The portfolio label mixes three different product contracts. Details and the
+per-record root causes are in
+`docs/BACKEND_RELEASE_COMPLETION_AUDIT_V279.md`.
+
+A current `.279` migration replay of the historical Frozen100 archive was also
+attempted in an isolated temporary root. The current privacy validator rejected
+historical snapshot line 34 as not fully sanitized. The archive remains valid
+historical `.228` evidence but cannot prove current-version no-regression, and
+the validator will not be weakened.
+
 ## Previous `.275` Reviewed Projection
 
 Before the `.277` measurement, the conservative development projection combined
