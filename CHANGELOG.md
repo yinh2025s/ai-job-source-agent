@@ -1,5 +1,30 @@
 # Changelog
 
+## 2026-07-28 - Frozen100 `.280` current-version regression gate
+
+- Ran the verified historical Frozen100 input once from new checkpoint,
+  completion, evidence and snapshot roots on frozen commit `73ce4ef` with the
+  same bounded configuration as the `.278` measurement.
+- Completed 100/100 with 96 Websites, 89 Career pages, 76 Job Lists and 39 S7
+  Exact openings. All 39 Exact outputs passed URL, company, title, location,
+  provider, tenant and opening-chain review with zero unsafe publication.
+- Compared the result with the immutable historical 69 Exact baseline: 38
+  historical Exact records remained Exact, 16 missing targets were absent from
+  complete or title-filtered official inventories, and 15 remain unresolved
+  current-version no-regression debt. Caudalie was one new Exact.
+- Strict replay failed. The accepted diagnostic accounting is 95 reproduced,
+  three outcome mismatches, two hard tape divergences, zero fixture gaps and
+  zero budget recoveries; a 98-record diagnostic replay is not reported as a
+  successful full-cohort replay.
+- Split the replay debt into Sony same-record provider-state reconstruction,
+  Stark downstream recovery, one-company Redlands outcome drift and BBVA
+  evidence-provenance drift. None satisfies the three-company and
+  three-expected-recovery Phase B rule.
+- Made no product behavior change and started no new cohort. Preserved the full
+  local capsule under
+  `/private/tmp/frozen100-current-v280-cold-20260728-run1`; sealed cohorts,
+  plugin, coordinator-v2 and the LLM branch remained isolated.
+
 ## 2026-07-28 - First-party visible detail identity `.280`
 
 - Qualified one four-company generic matcher defect: a verified first-party

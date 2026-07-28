@@ -23,7 +23,36 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，visible detail identity `.280`）
+## 当前架构进度（2026-07-28，Frozen100 `.280` current-version gate）
+
+### Frozen100 `.280` current-version cold gate
+
+历史 Frozen100 的 verified release archive 校验通过后，只提取 100 条输入，在
+冻结 commit `73ce4ef` 和全新 checkpoint、completion、evidence、snapshot root
+上执行 current-version cold live。运行完成 100/100：96 Website、89 Career、
+76 Job List、39 S7 Exact；39/39 Exact 通过 URL、company、title、location、
+provider、tenant 和 opening identity chain 审计，错误 URL、错误地点、跨公司和
+跨 tenant 均为 0。
+
+历史 `.188` 的 69 Exact 不被本次结果覆盖。当前只保留其中 38 条，另新增
+Caudalie 一条。丢失的 31 条中，16 条在当前完整或 title-filtered 官方库存中已
+不存在，兼容岗位关闭/下架解释但不能在缺少明确状态证据时标成
+`VERIFIED_CLOSED`；其余 15 条仍是 current-version unresolved regression debt。
+因此 Frozen100 的 69-Exact no-regression gate 未通过。
+
+Strict replay 也未通过。全量 replay 遇到 hard tape divergence 后停止；排除两条
+divergence 的 98-record diagnostic replay 为 95 reproduced / 3 mismatch /
+0 fixture gap / 0 budget recovery。完整保守计数为 95 reproduced、3 outcome
+mismatch、2 hard divergence。Sony 的同记录 provider state side effect、Stark
+的下游独立恢复、单公司 Redlands 的 outcome drift 和 BBVA evidence provenance
+drift 是不同根因，当前没有任何一个达到至少三家公司、至少三条预期恢复的
+Phase B 门槛。
+
+本轮只固化测量报告，不修改产品行为，也不启动新 cohort。下一步先收集
+non-sealed diagnostic evidence 或继续只读根因分析；只有形成合法通用 cluster
+才进入实现。完整报告：
+
+- `docs/FROZEN_100_V280_CURRENT_COLD_GATE_REPORT.md`
 
 ### `.280` first-party visible detail identity
 
