@@ -23,7 +23,41 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-29，`.281` replay boundary released）
+## 当前架构进度（2026-07-29，`.281` Fresh100 gate measured）
+
+### `.281` Fresh100 current-version cold gate
+
+当前 `.281` commit `e38be3d` 已使用全新 checkpoint、completion、evidence 和
+snapshot root 完成 Fresh100 100/100 cold live。Website / Career / Job List /
+S7 Exact 为 93 / 78 / 71 / 34，相对 `.278` 的 90 / 76 / 69 / 31 净增
+3 Exact。34/34 Exact 均通过 serialized company、title、location、provider、
+tenant、board 和 opening identity audit，错误 URL、错误地点、跨公司和跨 tenant
+发布为 0。
+
+Strict replay 读取同版本 capsule 并覆盖 100/100：99 reproduced、1 mismatch、
+0 fixture gap、0 budget recovery，record integrity 通过。Brown and Caldwell
+的 live UltiPro location 使用 object-valued `State.Name`；snapshot sanitizer
+把 `State` 对象误当成 OAuth state 整体脱敏，replay 丢失州信息后从 Exact 变成
+`OPENING_NOT_FOUND`。当前只有一条实际 outcome mismatch，不满足三条预期恢复
+门槛，因此记录但不借 singleton 立即修改。
+
+66 条非 Exact 已按因果根因而不是 stage label 重分。两簇达到 Phase B 门槛：
+
+1. City of Lubbock、WICHITA COMPANY LIMITED、City of College Station 在已验证
+   GovernmentJobs tenant 上共同出现交互请求和 fallback inventory 超时；
+2. Diamondback Energy、NDIT、ARUP Laboratories 的 Career 候选串行探测耗尽
+   outer company deadline，未保留后续 ATS/search route 的时间。
+
+下一阶段把两簇拆成独立 ownership，先做 adapter/fixture/focused live/scoped
+replay，不立刻重跑 Fresh100。五家官方 403、九家公司 generic
+`transport_not_declared` 和十二家完整库存无匹配不构成可直接实施的共同恢复簇。
+
+本 cohort 没有 terminal ground-truth annotation，eligible recall、人工 Exact
+precision 和五类产品终态继续标记 `not_reportable`，不能用 pipeline status
+替代。raw capsule 仍含一个公开 Google browser-key-shaped 值的重复序列化，不得
+打包分享。完整报告：
+
+- `docs/FRESH_100_V281_CURRENT_COLD_GATE_REPORT.md`
 
 ### `.281` recorded company-budget replay boundary
 

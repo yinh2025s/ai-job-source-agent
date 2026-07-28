@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-29 - Fresh100 `.281` current-version cold measurement
+
+- Ran the observed Fresh100 development cohort once from new checkpoint,
+  completion, evidence and snapshot roots on frozen commit `e38be3d`, with no
+  prior-state reuse or code changes during live/replay.
+- Completed 100/100 with 93 Websites, 78 Career pages, 71 Job Lists and 34 S7
+  Exact openings, compared with `.278` at 90 / 76 / 69 / 31.
+- Audited all 34 Exact outputs: verified company, hiring relationship, title,
+  location, provider, tenant, board and opening chains; unsafe, wrong-location,
+  cross-company and cross-tenant publications remained zero.
+- Strict replay covered 100/100 with 99 reproduced, one Brown and Caldwell
+  outcome mismatch, zero fixture gaps, zero budget recoveries and passed record
+  integrity. The mismatch is caused by object-valued UltiPro `State` location
+  evidence being redacted by snapshot sanitization.
+- Reclassified all 66 non-Exact records by causal root. GovernmentJobs
+  inventory timeout and Career candidate deadline starvation are the only two
+  clusters meeting the three-company/three-recovery implementation threshold.
+- Created no release archive: one public Google browser-key-shaped value is
+  still duplicated across raw trace, completion and checkpoint artifacts.
+- Made no product behavior change and did not access sealed cohorts, plugin or
+  the LLM branch.
+
 ## 2026-07-29 - Recorded company-budget replay boundary `.281`
 
 - Qualified one replay-only cluster across Fresh100 and many independent
