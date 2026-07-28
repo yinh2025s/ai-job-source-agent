@@ -3,13 +3,14 @@ from __future__ import annotations
 from html.parser import HTMLParser
 import json
 import re
-from urllib.parse import unquote, urlencode, urlparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse
 
 from ..job_search_actions import (
     discover_job_search_actions,
     verify_job_search_submission,
 )
 from ..reasons import reason_spec
+from ..rendered_fetcher import FORCE_RENDER_HEADER
 from ..web import FetchError
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery, provider_fetch_reason
 
@@ -27,6 +28,13 @@ _PAGE_TENANT = re.compile(
     r"<html\b[^>]*\bdata-agency-folder-name\s*=\s*(['\"])(?P<tenant>[a-z0-9-]+)\1",
     re.I,
 )
+_JOB_LIST_OVERLAY = re.compile(
+    r"<(?:div|section)\b"
+    r"(?=[^>]*\bid\s*=\s*(['\"])job-list-overlay\1)"
+    r"(?P<attrs>[^>]*)>",
+    re.I,
+)
+_STYLE = re.compile(r"\bstyle\s*=\s*(['\"])(?P<value>.*?)\1", re.I | re.S)
 _MAX_RESPONSE_CHARS = 5_000_000
 _MAX_JOBS = 2_000
 
@@ -134,20 +142,34 @@ class GovernmentJobsAdapter:
                             response_source=submission.page.source,
                             interaction_trace=interaction_trace,
                         )
+        fallback_kind = "unfiltered_inventory"
+        fallback_url = inventory_url
+        fallback_headers = {
+            "Accept": "application/json, text/html;q=0.9, */*;q=0.1",
+            "Referer": board_url,
+            "X-Requested-With": "XMLHttpRequest",
+        }
+        if query.title and query.title.strip():
+            fallback_kind = "canonical_keyword_route"
+            fallback_url = _keyword_route_url(tenant, query.title)
+            fallback_headers = {
+                "Accept": "text/html, application/json;q=0.9, */*;q=0.1",
+                FORCE_RENDER_HEADER: "force",
+                "Referer": board_url,
+            }
+        interaction_trace["fallback_kind"] = fallback_kind
+        interaction_trace["fallback_url"] = fallback_url
+
         try:
             page = fetcher.fetch(
-                inventory_url,
-                headers={
-                    "Accept": "application/json, text/html;q=0.9, */*;q=0.1",
-                    "Referer": board_url,
-                    "X-Requested-With": "XMLHttpRequest",
-                },
+                fallback_url,
+                headers=fallback_headers,
             )
         except (FetchError, OSError, TimeoutError) as error:
             return _fetch_failure(
                 board,
                 error,
-                inventory_url,
+                fallback_url,
                 interaction_trace=interaction_trace,
             )
 
@@ -157,13 +179,44 @@ class GovernmentJobsAdapter:
                 board,
                 "PROVIDER_VARIANT_UNSUPPORTED",
                 "cross_tenant_or_unsafe_response",
-                inventory_url=inventory_url,
+                inventory_url=fallback_url,
                 response_source=page.source,
                 rejected_final_url=final_url,
                 interaction_trace=interaction_trace,
             )
+        if fallback_kind == "canonical_keyword_route":
+            if not _keyword_route_matches(final_url, tenant, query.title):
+                return _failure(
+                    board,
+                    "PROVIDER_VARIANT_UNSUPPORTED",
+                    "keyword_route_identity_mismatch",
+                    inventory_url=fallback_url,
+                    response_source=page.source,
+                    rejected_final_url=final_url,
+                    interaction_trace=interaction_trace,
+                )
+            if (
+                not _is_json_inventory_document(page.html)
+                and _page_tenant(page.html) != tenant
+            ):
+                return _failure(
+                    board,
+                    "PROVIDER_VARIANT_UNSUPPORTED",
+                    "keyword_route_missing_or_cross_tenant_page_identity",
+                    inventory_url=fallback_url,
+                    response_source=page.source,
+                    rejected_final_url=final_url,
+                    interaction_trace=interaction_trace,
+                )
 
-        parsed = _parse_inventory(page.html, tenant)
+        parsed = _parse_inventory(
+            page.html,
+            tenant,
+            allow_job_list_container=(
+                fallback_kind == "canonical_keyword_route"
+                and _job_list_is_settled(page.html)
+            ),
+        )
         if isinstance(parsed, str):
             code = _inventory_parse_failure_code(parsed)
             return _failure(
@@ -171,7 +224,7 @@ class GovernmentJobsAdapter:
                 code,
                 parsed,
                 retryable=reason_spec(code).retryable,
-                inventory_url=inventory_url,
+                inventory_url=fallback_url,
                 response_source=page.source,
                 interaction_trace=interaction_trace,
             )
@@ -180,7 +233,7 @@ class GovernmentJobsAdapter:
             tenant,
             query,
             parsed,
-            inventory_url=inventory_url,
+            inventory_url=fallback_url,
             response_source=page.source,
             interaction_trace=interaction_trace,
         )
@@ -237,6 +290,19 @@ def _board_url(tenant: str) -> str:
     return f"https://{_HOST}/careers/{tenant}"
 
 
+def _keyword_route_url(tenant: str, title: str) -> str:
+    return _board_url(tenant) + "?" + urlencode({"keywords": title.strip()})
+
+
+def _keyword_route_matches(url: str, tenant: str, title: str) -> bool:
+    parsed = _safe_url(url)
+    if parsed is None or _response_tenant(url) != tenant:
+        return False
+    return parse_qsl(parsed.query, keep_blank_values=True) == [
+        ("keywords", title.strip())
+    ]
+
+
 def _job_board(tenant: str) -> JobBoard:
     return JobBoard(
         url=_board_url(tenant),
@@ -262,6 +328,33 @@ def _page_tenant(raw: str) -> str | None:
         return None
     tenants = {match.group("tenant").casefold() for match in _PAGE_TENANT.finditer(raw)}
     return tenants.pop() if len(tenants) == 1 else None
+
+
+def _is_json_inventory_document(raw: str) -> bool:
+    if not isinstance(raw, str) or len(raw) > _MAX_RESPONSE_CHARS:
+        return False
+    try:
+        return isinstance(json.loads(raw), dict)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return False
+
+
+def _job_list_is_settled(raw: str) -> bool:
+    if not isinstance(raw, str) or len(raw) > _MAX_RESPONSE_CHARS:
+        return False
+    overlay = _JOB_LIST_OVERLAY.search(raw)
+    if overlay is None:
+        return False
+    style = _STYLE.search(overlay.group("attrs"))
+    if style is None:
+        return False
+    declarations = {
+        name.strip().casefold(): value.strip().casefold()
+        for declaration in style.group("value").split(";")
+        if ":" in declaration
+        for name, value in [declaration.split(":", 1)]
+    }
+    return declarations.get("display") == "none"
 
 
 class _InventoryHTMLParser(HTMLParser):
