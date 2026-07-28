@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-07-28 - Rejected `.281` iCIMS card-location experiment
+
+- Tested one generic hosted-iCIMS parser change against Elderwood, Steampunk
+  and Great Day Improvements from isolated roots.
+- The parser correctly recovered card-local title, location and opening URLs
+  for all three, but only Elderwood and Great Day reached S7 Exact. Steampunk
+  was independently rejected by the existing multiple-opening ambiguity gate.
+- The focused live result was 2/3 Exact; strict replay reproduced 3/3 with zero
+  mismatch, fixture gap or budget recovery.
+- Reclassified the proposal as two demonstrated terminal recoveries, below the
+  three-company/three-recovery implementation threshold. Reverted the
+  uncommitted behavior and restored adapter `.280`; no Fresh100, Frozen100 or
+  sealed-cohort score changed.
+
 ## 2026-07-28 - Frozen100 `.280` current-version regression gate
 
 - Ran the verified historical Frozen100 input once from new checkpoint,

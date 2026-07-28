@@ -23,7 +23,29 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，Frozen100 `.280` current-version gate）
+## 当前架构进度（2026-07-28，`.281` iCIMS experiment rejected）
+
+### `.281` iCIMS card-location experiment
+
+传统 hosted iCIMS 页面把 title、location 和 opening link 放在同一
+`iCIMS_JobCardItem`，现有 adapter 只提取 title/link。Phase A 原先把 Elderwood、
+Steampunk 和 Great Day Improvements 归为三条预期 Exact recovery。
+
+局部 provider 测试和三份历史 snapshot 均证明 card-local parser 能正确恢复地点。
+但 code-frozen focused live 只有 Elderwood 和 Great Day 达到 Exact；Steampunk
+虽然产生了正确 opening `6317`、title `UI/UX Designer` 和
+`US-VA-McLean`，却因官方库存同时存在三个同地点 `UX/UI Designer` opening，被
+现有 multiple-candidate ambiguity gate 拒绝。该拒绝属于独立 matcher/identity
+contract，不能通过 provider parser 顺带放宽。
+
+Focused live 为 3/3 完成、3 Job List、2 Exact；strict replay 为 3 reproduced、
+0 mismatch、0 fixture gap、0 budget recovery。只读扩大现有 unsealed
+development captures 后仍没有第三家同根因 terminal recovery。因此 `.281`
+不满足至少三家公司、至少三条预期恢复的 Phase B 门槛：未提交实现已撤回，版本
+恢复 `.280`，Fresh100/Frozen100 和 sealed cohort 均未重跑或改分。详见：
+
+- `docs/COORDINATOR_V281_ICIMS_CARD_LOCATION_PHASE_A.md`
+- `docs/COORDINATOR_V281_ICIMS_CARD_LOCATION_PHASE_C.md`
 
 ### Frozen100 `.280` current-version cold gate
 
