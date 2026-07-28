@@ -1,5 +1,4 @@
 import unittest
-from contextlib import contextmanager
 from pathlib import Path
 
 from job_source_agent.content_probe import (
@@ -14,7 +13,6 @@ from job_source_agent.linkedin import load_company_inputs
 from job_source_agent.job_board import JobBoard
 from job_source_agent.models import CompanyInput, LinkCandidate, dataclass_to_dict
 from job_source_agent.pipeline import JobSourceAgent
-from job_source_agent.retrying_fetcher import RetryingFetcher
 from job_source_agent.web import FetchError, Fetcher, Page, RawLink
 
 
@@ -22,267 +20,6 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class OfflinePipelineTests(unittest.TestCase):
-    def test_candidate_probe_circuit_preserves_retryable_terminal_and_downstream_reserve(self):
-        homepage = "https://probe-circuit.example"
-
-        class CircuitFetcher(Fetcher):
-            def __init__(self):
-                super().__init__(offline=True)
-                self.calls = []
-                self.policies = []
-
-            def remaining_fetch_seconds(self):
-                return 50.0
-
-            @contextmanager
-            def retry_scope(self, **policy):
-                self.policies.append(policy)
-                yield
-
-            def fetch(self, url, data=None, headers=None):
-                self.calls.append(url)
-                if url.rstrip("/") == homepage:
-                    return Page(url=url, final_url=homepage, html="<html>Company</html>")
-                raise FetchError(
-                    "The read operation timed out",
-                    reason_code="NETWORK_TIMEOUT",
-                    retryable=True,
-                )
-
-        fetcher = CircuitFetcher()
-        agent = JobSourceAgent(
-            fetcher,
-            max_candidates=6,
-            max_career_candidate_fetches=5,
-            max_ats_board_fetches=0,
-            enable_sitemap_discovery=False,
-            enable_career_search=False,
-            provider_search_reserve_seconds=10.0,
-        )
-
-        with self.assertRaises(DiscoveryError) as raised:
-            agent.find_career_page(homepage)
-
-        self.assertEqual(raised.exception.code, "NETWORK_TIMEOUT")
-        self.assertEqual(len(fetcher.calls), 4)
-        terminal = raised.exception.trace["candidate_probe_terminal"]
-        self.assertEqual(terminal["action"], "open_transport_circuit")
-        self.assertEqual(terminal["remaining_bounded_candidates"], 2)
-        probe_policy = raised.exception.trace["candidate_schedule"]["probe_policy"]
-        self.assertEqual(probe_policy["downstream_reserve_seconds"], 10.0)
-        self.assertTrue(probe_policy["circuit_open"])
-        self.assertEqual(
-            [policy["max_elapsed_seconds"] for policy in fetcher.policies],
-            [3.0, 3.0, 3.0],
-        )
-        self.assertTrue(
-            all(policy["max_retries"] == 0 for policy in fetcher.policies)
-        )
-
-    def test_successful_candidate_after_transport_failures_is_not_skipped(self):
-        first = "https://success-after-failure.example/careers-a"
-        second = "https://success-after-failure.example/careers-b"
-        successful = "https://success-after-failure.example/careers-c"
-
-        class RecoveringFetcher(Fetcher):
-            def __init__(self):
-                super().__init__(offline=True)
-                self.calls = []
-
-            @contextmanager
-            def retry_scope(self, **_policy):
-                yield
-
-            def fetch(self, url, data=None, headers=None):
-                self.calls.append(url)
-                if url == successful:
-                    return Page(
-                        url=url,
-                        final_url=url,
-                        html="<html><h1>Careers</h1><p>Open roles</p></html>",
-                    )
-                raise FetchError(
-                    "temporary TLS failure",
-                    reason_code="FETCH_FAILED",
-                    retryable=True,
-                )
-
-        fetcher = RecoveringFetcher()
-        agent = JobSourceAgent(fetcher, max_career_candidate_fetches=3)
-        trace = {"candidate_fetch_errors": []}
-        candidates = [
-            LinkCandidate(
-                url,
-                "Careers",
-                "https://success-after-failure.example",
-                300 - index,
-                ["generated path probe"],
-                "path_probe",
-            )
-            for index, url in enumerate((first, second, successful))
-        ]
-
-        selected = agent._select_verified_career_candidate(
-            candidates,
-            trace,
-            schedule_source="homepage_and_common_paths",
-        )
-
-        self.assertEqual(selected, successful)
-        self.assertEqual(fetcher.calls, [first, second, successful])
-        self.assertNotIn("candidate_probe_terminal", trace)
-
-    def test_retryable_budget_terminal_stops_candidate_fanout_immediately(self):
-        class ExhaustedFetcher(Fetcher):
-            def __init__(self):
-                super().__init__(offline=True)
-                self.calls = []
-
-            def remaining_fetch_seconds(self):
-                return 0.0
-
-            @contextmanager
-            def retry_scope(self, **_policy):
-                yield
-
-            def fetch(self, url, data=None, headers=None):
-                self.calls.append(url)
-                raise FetchError(
-                    "company time budget exhausted at caller deadline",
-                    reason_code="COMPANY_TIME_BUDGET_EXHAUSTED",
-                    retryable=True,
-                )
-
-        fetcher = ExhaustedFetcher()
-        agent = JobSourceAgent(fetcher, max_career_candidate_fetches=5)
-        trace = {"candidate_fetch_errors": []}
-        candidates = [
-            LinkCandidate(
-                f"https://budget-terminal.example/careers-{index}",
-                "Careers",
-                "https://budget-terminal.example",
-                300 - index,
-                ["generated path probe"],
-                "path_probe",
-            )
-            for index in range(5)
-        ]
-
-        selected = agent._select_verified_career_candidate(candidates, trace)
-
-        self.assertIsNone(selected)
-        self.assertEqual(len(fetcher.calls), 1)
-        self.assertEqual(
-            trace["candidate_probe_terminal"]["action"],
-            "stop_retryable_terminal",
-        )
-        event = trace["candidate_schedule"]["probe_policy"]["events"][0]
-        self.assertTrue(event["reserve_limited"])
-        self.assertEqual(event["max_elapsed_seconds"], 0.05)
-
-    def test_speculative_probe_scope_disables_same_candidate_retry(self):
-        class TimeoutFetcher:
-            timeout = 8.0
-
-            def __init__(self):
-                self.calls = []
-
-            def fetch(self, url, data=None, headers=None):
-                self.calls.append(url)
-                raise FetchError(
-                    "The read operation timed out",
-                    reason_code="NETWORK_TIMEOUT",
-                    retryable=True,
-                )
-
-        base = TimeoutFetcher()
-        fetcher = RetryingFetcher(
-            base,
-            max_retries=2,
-            base_delay=0,
-        )
-        agent = JobSourceAgent(fetcher, max_career_candidate_fetches=5)
-        trace = {"candidate_fetch_errors": []}
-        candidates = [
-            LinkCandidate(
-                f"https://no-retry.example/careers-{index}",
-                "Careers",
-                "https://no-retry.example",
-                300 - index,
-                ["generated path probe"],
-                "path_probe",
-            )
-            for index in range(5)
-        ]
-
-        selected = agent._select_verified_career_candidate(candidates, trace)
-
-        self.assertIsNone(selected)
-        self.assertEqual(len(base.calls), 3)
-        self.assertEqual(
-            [event["policy"] for event in fetcher.retry_events],
-            ["career_candidate_probe_v1"] * 3,
-        )
-        self.assertEqual(
-            [event["outcome"] for event in fetcher.retry_events],
-            ["retry_budget_exhausted"] * 3,
-        )
-
-    def test_sitemap_transport_circuit_preserves_provider_search_reserve(self):
-        homepage = "https://sitemap-circuit.example"
-
-        class FailingSitemapFetcher(Fetcher):
-            def __init__(self):
-                super().__init__(offline=True)
-                self.calls = []
-                self.policies = []
-
-            def remaining_fetch_seconds(self):
-                return 50.0
-
-            @contextmanager
-            def retry_scope(self, **policy):
-                self.policies.append(policy)
-                yield
-
-            def fetch(self, url, data=None, headers=None):
-                self.calls.append(url)
-                raise FetchError(
-                    "temporary TLS failure",
-                    reason_code="FETCH_FAILED",
-                    retryable=True,
-                )
-
-        fetcher = FailingSitemapFetcher()
-        agent = JobSourceAgent(
-            fetcher,
-            provider_search_reserve_seconds=10.0,
-        )
-
-        candidates, trace = agent._sitemap_candidates(homepage)
-
-        self.assertEqual(candidates, [])
-        self.assertEqual(
-            fetcher.calls,
-            [
-                f"{homepage}/robots.txt",
-                f"{homepage}/sitemap.xml",
-                f"{homepage}/sitemap_index.xml",
-            ],
-        )
-        self.assertEqual(
-            trace["candidate_probe_terminal"]["action"],
-            "open_transport_circuit",
-        )
-        self.assertEqual(
-            trace["probe_policy"]["downstream_reserve_seconds"],
-            10.0,
-        )
-        self.assertEqual(
-            [policy["max_elapsed_seconds"] for policy in fetcher.policies],
-            [6.0, 6.0, 6.0],
-        )
-
     def test_same_site_page_evidenced_provider_is_a_career_surface(self):
         agent = JobSourceAgent(Fetcher(offline=True))
         candidate = LinkCandidate(
@@ -718,7 +455,7 @@ class OfflinePipelineTests(unittest.TestCase):
             0,
         )
 
-    def test_speculative_transport_circuit_remains_retryable(self):
+    def test_speculative_candidate_truncation_reports_career_page_not_found(self):
         homepage = "https://speculative.example"
 
         class SpeculativeFetcher(Fetcher):
@@ -739,12 +476,8 @@ class OfflinePipelineTests(unittest.TestCase):
         with self.assertRaises(DiscoveryError) as raised:
             agent.find_career_page(homepage)
 
-        self.assertEqual(raised.exception.code, "FETCH_FAILED")
+        self.assertEqual(raised.exception.code, "career_page_not_found")
         self.assertNotIn("candidate_fetch_budget_exhausted", raised.exception.trace)
-        self.assertEqual(
-            raised.exception.trace["candidate_probe_terminal"]["action"],
-            "open_transport_circuit",
-        )
 
     def test_official_career_forbidden_is_not_reported_as_not_found(self):
         homepage = "https://forbidden.example"

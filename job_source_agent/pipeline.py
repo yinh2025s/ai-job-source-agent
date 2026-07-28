@@ -12,8 +12,6 @@ from .career_search import CareerSearchResolver
 from .search_backend import SearchBackend
 from .checkpoint import execution_fingerprint
 from .career_candidate_scheduler import (
-    CareerCandidateProbeAdmission,
-    CareerCandidateProbeController,
     candidate_concrete_host,
     candidate_evidence_tier,
     candidate_host_family,
@@ -924,7 +922,6 @@ class JobSourceAgent:
             trace,
             homepage_url,
         )
-        candidate_probe_terminal = _candidate_probe_retryable_terminal(trace)
         retryable_candidate_failure = _retryable_evidence_candidate_failure(trace)
         if offline_fixture_failure is not None:
             reason_code = "OFFLINE_FIXTURE_MISSING"
@@ -941,12 +938,6 @@ class JobSourceAgent:
         elif retryable_candidate_failure is not None:
             reason_code = retryable_candidate_failure["reason_code"]
             detail = "An evidence-backed career candidate could not be verified because of a fetch failure."
-        elif candidate_probe_terminal is not None:
-            reason_code = candidate_probe_terminal["reason_code"]
-            detail = (
-                "Career candidate probing stopped after repeated retryable "
-                "transport failures."
-            )
         else:
             reason_code = "career_page_not_found"
             detail = "No reliable career page candidate found."
@@ -4658,15 +4649,6 @@ class JobSourceAgent:
             if candidate_evidence_tier(candidate) <= 2
         ]
         roles_by_url = schedule_trace.pop("roles_by_url")
-        preserve_provider_search_reserve = schedule_source != "search"
-        probe_controller = CareerCandidateProbeController(
-            source=schedule_source,
-            downstream_reserve_seconds=(
-                self.provider_search_reserve_seconds
-                if preserve_provider_search_reserve
-                else 0.0
-            ),
-        )
         original_positions = {
             candidate.url: position
             for position, candidate in enumerate(candidates)
@@ -4694,14 +4676,11 @@ class JobSourceAgent:
                 }
                 for schedule_position, candidate in enumerate(bounded_candidates)
             ],
-            "probe_policy": probe_controller.trace(),
         }
         trace["candidate_schedule"] = candidate_schedule
         trace.setdefault("candidate_schedules", []).append(candidate_schedule)
-        for candidate_position, candidate in enumerate(bounded_candidates):
+        for candidate in bounded_candidates:
             if fetch_attempts >= scheduled_fetch_limit:
-                break
-            if probe_controller.circuit_open:
                 break
             official_host_denial = (
                 _same_official_host_access_failure(trace, homepage_url)
@@ -4726,29 +4705,20 @@ class JobSourceAgent:
                     }
                 )
                 continue
-            probe_admission = probe_controller.admission(
-                candidate,
-                remaining_fetch_seconds=self._remaining_fetch_seconds(),
-            )
             fetch_attempts += 1
             if attempted_candidate_urls is not None:
                 attempted_candidate_urls.add(self._career_candidate_key(candidate.url))
             derived_reasons = [reason for reason in candidate.reasons if reason.startswith("derived ")]
             if derived_reasons:
-                with self._career_candidate_probe_scope(probe_admission):
-                    adapter_decision = self._verify_derived_provider_with_adapter(
-                        candidate.url,
-                        target_title=target_title,
-                        trusted_configuration="derived provider configuration" in derived_reasons,
-                    )
+                adapter_decision = self._verify_derived_provider_with_adapter(
+                    candidate.url,
+                    target_title=target_title,
+                    trusted_configuration="derived provider configuration" in derived_reasons,
+                )
                 if adapter_decision is not None:
                     verified_url, verification = adapter_decision
                     trace.setdefault("provider_board_verification", []).append(verification)
                     if verified_url:
-                        probe_controller.record_success(
-                            candidate,
-                            probe_admission,
-                        )
                         trace["selected"] = dataclass_to_dict(candidate)
                         trace["selected_page_source"] = "provider_adapter"
                         return verified_url
@@ -4766,34 +4736,18 @@ class JobSourceAgent:
                         # Preserve the adapter failure, then retain the existing
                         # page-evidence fallback for this candidate.
                     else:
-                        probe_controller.record_semantic_outcome(
-                            candidate,
-                            probe_admission,
-                            outcome="provider_adapter_rejected",
-                        )
                         trace["candidate_fetch_errors"].append(
                             {"url": candidate.url, "error": "derived provider adapter rejected tenant or title"}
                         )
                         continue
             try:
-                with self._career_candidate_probe_scope(probe_admission):
-                    page = self.fetcher.fetch(candidate.url)
+                page = self.fetcher.fetch(candidate.url)
             except FetchError as exc:
-                candidate_adapter = self.provider_registry.adapter_for(
-                    candidate.url
+                verified_provider = self._verify_provider_candidate_without_page(
+                    candidate.url,
+                    target_title,
                 )
-                if candidate_adapter is not None:
-                    with self._career_candidate_probe_scope(probe_admission):
-                        verified_provider = (
-                            self._verify_provider_candidate_without_page(
-                                candidate.url,
-                                target_title,
-                            )
-                        )
-                else:
-                    verified_provider = None
                 if verified_provider is not None:
-                    probe_controller.record_success(candidate, probe_admission)
                     trace.setdefault("provider_board_verification", []).append(
                         verified_provider[1]
                     )
@@ -4806,14 +4760,6 @@ class JobSourceAgent:
                     if exc.retryable is not None
                     else reason_spec(reason_code).retryable
                 )
-                probe_outcome = probe_controller.record_failure(
-                    candidate,
-                    probe_admission,
-                    reason_code=reason_code,
-                    retryable=retryable,
-                    owner=reason_spec(reason_code).owner,
-                )
-                candidate_schedule["probe_policy"] = probe_controller.trace()
                 trace["candidate_fetch_errors"].append(
                     {
                         "url": candidate.url,
@@ -4827,27 +4773,7 @@ class JobSourceAgent:
                         "evidence_tier": candidate_evidence_tier(candidate),
                     }
                 )
-                if probe_outcome.action in {
-                    "open_transport_circuit",
-                    "stop_retryable_terminal",
-                }:
-                    trace["candidate_probe_terminal"] = {
-                        "source": schedule_source,
-                        "action": probe_outcome.action,
-                        "reason_code": reason_code,
-                        "retryable": retryable,
-                        "owner": reason_spec(reason_code).owner,
-                        "consecutive_transport_failures": (
-                            probe_outcome.consecutive_transport_failures
-                        ),
-                        "remaining_bounded_candidates": max(
-                            0,
-                            len(bounded_candidates) - candidate_position - 1,
-                        ),
-                    }
-                    break
                 continue
-            probe_controller.record_success(candidate, probe_admission)
             actual_url = page.final_url or page.url
             if self._looks_like_error_page(actual_url, page.html):
                 trace["candidate_fetch_errors"].append({"url": candidate.url, "error": f"error page: {actual_url}"})
@@ -5052,23 +4978,6 @@ class JobSourceAgent:
                 "untried_evidence_backed_count": len(untried_evidence_backed),
             }
         return None
-
-    def _remaining_fetch_seconds(self) -> float | None:
-        remaining = getattr(self.fetcher, "remaining_fetch_seconds", None)
-        return remaining() if callable(remaining) else None
-
-    def _career_candidate_probe_scope(
-        self,
-        admission: CareerCandidateProbeAdmission,
-    ):
-        retry_scope = getattr(self.fetcher, "retry_scope", None)
-        if not callable(retry_scope):
-            return nullcontext()
-        return retry_scope(
-            max_retries=admission.max_retries,
-            max_elapsed_seconds=admission.next_scope_seconds(),
-            policy="career_candidate_probe_v1",
-        )
 
     def _career_candidate_key(self, url: str) -> str:
         return normalize_url(url).rstrip("/")
@@ -5495,77 +5404,20 @@ class JobSourceAgent:
             "sitemaps_not_scheduled": 0,
             "target_region": target_region,
         }
-        probe_controller = CareerCandidateProbeController(
-            source="sitemap_transport",
-            downstream_reserve_seconds=self.provider_search_reserve_seconds,
-        )
-        trace["probe_policy"] = probe_controller.trace()
-        links: list[RawLink] = []
 
-        def fetch_sitemap_probe(url: str) -> Page | None:
-            candidate = LinkCandidate(
-                url=url,
-                text="",
-                source_url=base,
-                score=100,
-                reasons=["sitemap discovery transport"],
-                origin="sitemap",
-            )
-            admission = probe_controller.admission(
-                candidate,
-                remaining_fetch_seconds=self._remaining_fetch_seconds(),
-            )
-            try:
-                with self._career_candidate_probe_scope(admission):
-                    page = self.fetcher.fetch(url)
-            except FetchError as exc:
-                reason_code = exc.reason_code or classify_fetch_error(str(exc))
-                retryable = (
-                    exc.retryable
-                    if exc.retryable is not None
-                    else reason_spec(reason_code).retryable
-                )
-                outcome = probe_controller.record_failure(
-                    candidate,
-                    admission,
-                    reason_code=reason_code,
-                    retryable=retryable,
-                    owner=reason_spec(reason_code).owner,
-                )
-                trace["probe_policy"] = probe_controller.trace()
-                if outcome.action in {
-                    "open_transport_circuit",
-                    "stop_retryable_terminal",
-                }:
-                    trace["candidate_probe_terminal"] = {
-                        "source": "sitemap_transport",
-                        "action": outcome.action,
-                        "reason_code": reason_code,
-                        "retryable": retryable,
-                        "owner": reason_spec(reason_code).owner,
-                        "consecutive_transport_failures": (
-                            outcome.consecutive_transport_failures
-                        ),
-                    }
-                return None
-            probe_controller.record_success(candidate, admission)
-            return page
-
-        robots_url = normalize_url("/robots.txt", base)
-        robots = fetch_sitemap_probe(robots_url)
-        if robots is not None:
+        try:
+            robots = self.fetcher.fetch(normalize_url("/robots.txt", base))
             for line in robots.html.splitlines():
                 if line.lower().startswith("sitemap:"):
                     sitemap_urls.append(normalize_url(line.split(":", 1)[1].strip()))
+        except FetchError:
+            pass
 
+        links: list[RawLink] = []
         seen_sitemaps: set[str] = set()
         pending_sitemaps = list(dict.fromkeys(sitemap_urls))
         queued_sitemaps = set(pending_sitemaps)
-        while (
-            pending_sitemaps
-            and len(seen_sitemaps) < MAX_SITEMAPS_PER_DISCOVERY
-            and "candidate_probe_terminal" not in trace
-        ):
+        while pending_sitemaps and len(seen_sitemaps) < MAX_SITEMAPS_PER_DISCOVERY:
             pending_sitemaps.sort(
                 key=lambda url: _sitemap_queue_priority(url, target_region)
             )
@@ -5574,17 +5426,10 @@ class JobSourceAgent:
             if sitemap_url in seen_sitemaps:
                 continue
             seen_sitemaps.add(sitemap_url)
-            page = fetch_sitemap_probe(sitemap_url)
-            if page is None:
-                event = probe_controller.events[-1]
-                trace["sitemaps_checked"].append(
-                    {
-                        "url": sitemap_url,
-                        "error": event.get("reason_code") or "fetch failed",
-                        "reason_code": event.get("reason_code"),
-                        "retryable": event.get("retryable"),
-                    }
-                )
+            try:
+                page = self.fetcher.fetch(sitemap_url)
+            except FetchError as exc:
+                trace["sitemaps_checked"].append({"url": sitemap_url, "error": str(exc)})
                 continue
 
             urls = self._extract_sitemap_locs(page.html)
@@ -6376,29 +6221,6 @@ def _trace_has_caller_deadline_exhaustion(value: object) -> bool:
     if isinstance(value, list):
         return any(_trace_has_caller_deadline_exhaustion(item) for item in value)
     return False
-
-
-def _candidate_probe_retryable_terminal(
-    value: object,
-) -> dict[str, object] | None:
-    if isinstance(value, dict):
-        terminal = value.get("candidate_probe_terminal")
-        if (
-            isinstance(terminal, dict)
-            and terminal.get("retryable") is True
-            and isinstance(terminal.get("reason_code"), str)
-        ):
-            return terminal
-        for item in value.values():
-            nested = _candidate_probe_retryable_terminal(item)
-            if nested is not None:
-                return nested
-    elif isinstance(value, list):
-        for item in value:
-            nested = _candidate_probe_retryable_terminal(item)
-            if nested is not None:
-                return nested
-    return None
 
 
 def _legacy_error(stage: str, reason_code: str | None) -> str:
