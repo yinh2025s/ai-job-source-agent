@@ -97,4 +97,6 @@ threshold.
 
 Accept `.278` as a capture-time privacy correction. It does not change the
 `.277` live score and does not authorize a new live batch. The integrated
-offline gate is complete; only grouped commit and push remain.
+offline gate, grouped commits and push are complete. The product-level
+completion decision is recorded in
+`docs/BACKEND_RELEASE_COMPLETION_AUDIT_V278.md`.

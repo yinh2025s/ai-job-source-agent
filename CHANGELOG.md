@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-28 - `.278` release completion audit
+
+- Reconciled the full product completion matrix with the code-frozen `.277`
+  Fresh100 measurement and the offline `.278` JWT privacy closure.
+- Confirmed 29/29 published `.277` Exact results are identity-safe, while 51
+  records remain unresolved and strict replay remains 98/100.
+- Independently re-audited all unresolved causal signatures. The 25-company
+  search-filter label, five-company portfolio label and three-company Career
+  budget label have zero proven terminal recoveries and do not authorize a
+  common implementation.
+- Confirmed no current evidence cluster satisfies one trigger, one production
+  path, three independent companies and three expected terminal recoveries.
+- Kept Frozen100 current-version regression, a privacy-clean full `.278`
+  capsule and both unseen-cohort gates explicitly open.
+- Started no live request and kept sealed v2/v3, plugin and LLM branches
+  isolated. The next gate requires explicit `.278` Fresh100 measurement
+  authorization.
+
 ## 2026-07-28 - Fresh100 `.277` measurement and JWT privacy `.278`
 
 - Ran the existing 100-record Fresh100 development cohort once from fresh

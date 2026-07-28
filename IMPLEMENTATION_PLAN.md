@@ -47,12 +47,16 @@ near miss 均保持不变。
 重新 capture，形成 7 个 replay fixture；capture/replay 两侧 JWT、Google 和 AWS
 shape 均为 0，privacy exclusion 0。版本升到 `2026-07-28.278`。Integrated gate
 为 2,846 tests（4 skipped）、provider 25/25、resolver 6/6、architecture 48/0，
-tracked credential-shape scan 0。下一步只做分组 commit 和 push，不自动启动新
-live。详见：
+tracked credential-shape scan 0。代码、测试、文档已经分组 commit 并 push。
+独立 completion audit 确认剩余 51 条 unresolved 没有满足同触发、同路径、
+三家公司和三条预期恢复的合法实现簇，因此不再从当前 observed cohort 追加
+behavior change。下一步必须由用户明确授权 `.278` Fresh100 cold live/strict
+replay；通过后才运行 Frozen100，再之后才可打开 sealed holdout。详见：
 
 - `docs/FRESH_100_CURRENT_V277_MEASUREMENT_GATE_PHASE_C.md`
 - `docs/COORDINATOR_V278_JWT_VALUE_REDACTION_PHASE_A.md`
 - `docs/COORDINATOR_V278_JWT_VALUE_REDACTION_PHASE_C.md`
+- `docs/BACKEND_RELEASE_COMPLETION_AUDIT_V278.md`
 
 ### `.277` release stop and goal audit
 
