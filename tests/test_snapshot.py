@@ -163,6 +163,40 @@ class SnapshotTests(unittest.TestCase):
         self.assertIn('"apiKeyEnabled":true', sanitized)
         self.assertEqual(sanitized.count("[REDACTED]"), 3)
 
+    def test_sanitize_snapshot_body_redacts_fixed_credential_value_shapes(self):
+        google_key = "AIza" + "A" * 35
+        aws_access_key = "AKIA" + "B" * 16
+        aws_session_key = "ASIA" + "C" * 16
+        raw = (
+            f'<input type="hidden" name="GoogleMapsKey" value="{google_key}">'
+            f'window.cfg = {{"google_key":"{google_key}",'
+            f'"aws":"{aws_access_key}","session":"{aws_session_key}",'
+            '"mapZoom":12};'
+            f'<script src="https://maps.example.test/api.js?key={google_key}"></script>'
+        )
+
+        sanitized = sanitize_snapshot_body(raw)
+
+        self.assertNotIn(google_key, sanitized)
+        self.assertNotIn(aws_access_key, sanitized)
+        self.assertNotIn(aws_session_key, sanitized)
+        self.assertIn('name="GoogleMapsKey"', sanitized)
+        self.assertIn('"google_key":"[REDACTED]"', sanitized)
+        self.assertIn('"mapZoom":12', sanitized)
+        self.assertEqual(sanitize_snapshot_body(sanitized), sanitized)
+
+    def test_sanitize_snapshot_body_preserves_credential_shape_near_misses(self):
+        near_misses = (
+            "AIza" + "A" * 34,
+            "AIza" + "A" * 36,
+            "AKIA" + "B" * 15,
+            "AKIA" + "B" * 17,
+            "asia" + "C" * 16,
+        )
+        raw = "|".join(near_misses)
+
+        self.assertEqual(sanitize_snapshot_body(raw), raw)
+
     def test_sanitize_snapshot_body_preserves_public_location_state(self):
         raw = json.dumps(
             {

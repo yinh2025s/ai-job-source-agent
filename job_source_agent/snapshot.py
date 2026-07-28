@@ -87,6 +87,12 @@ _HMG_TICKET_OBJECT = re.compile(
     r'(?is)("ticket"\s*:\s*\{)([^{}]{0,1024})(\})'
 )
 _API_KEY_FIELD_PATTERN = r"[A-Za-z0-9_$-]*api[_-]?key"
+_GOOGLE_BROWSER_API_KEY = re.compile(
+    r"(?<![A-Za-z0-9_-])AIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])"
+)
+_AWS_ACCESS_KEY_ID = re.compile(
+    r"(?<![A-Z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])"
+)
 
 
 @dataclass
@@ -484,6 +490,8 @@ def _sanitize_snapshot_text(body: str) -> str:
     redacted = re.sub(r"(?i)(Bearer\s+)[A-Za-z0-9._~+/=-]{12,}", r"\1[REDACTED]", redacted)
     for marker, original_key in protected_location_keys:
         redacted = redacted.replace(json.dumps(marker), json.dumps(original_key))
+    redacted = _GOOGLE_BROWSER_API_KEY.sub("[REDACTED]", redacted)
+    redacted = _AWS_ACCESS_KEY_ID.sub("[REDACTED]", redacted)
     return redacted
 
 
