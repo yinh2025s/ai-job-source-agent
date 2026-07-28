@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-28 - `.277` release stop and completion audit
+
+- Reconciled the product-goal audit with the current `.277` release instead of
+  leaving the authoritative completion summary at v273.
+- Confirmed `main` was clean, matched `origin/main`, and retained the accepted
+  `.277` offline gates: 2,841 tests (4 skipped), provider 25/25, resolver 6/6
+  and architecture 48/0.
+- Re-audited Fresh100 `.275` as 31 raw Exact and a separate 38 Exact / 19
+  Verified No Match / 1 External Blocked / 42 unresolved development
+  projection; the failed 97/100 replay remains explicit.
+- Confirmed that no remaining defect meets the shared-trigger, shared-path,
+  three-company and three-recovery implementation threshold.
+- Started no cohort or live request and made no behavior change. Fresh100
+  current-version replay, Frozen100 no-regression, complete artifact privacy
+  and two unseen-cohort gates remain open.
+- Kept sealed v2/v3, the authenticated plugin branch and the LLM branch
+  isolated pending their respective explicit decisions.
+
 ## 2026-07-28 - Value-shaped credential redaction `.277`
 
 - Qualified one six-company snapshot-body privacy cluster from the existing

@@ -25,6 +25,26 @@
 
 ## 当前架构进度（2026-07-28，snapshot privacy `.277`）
 
+### `.277` release stop and goal audit
+
+v273 后的 release-stop 约束继续有效：不再启动新 cohort，也不继续累积未提交的
+行为修改。`.275` 已对现有 Fresh100 development cohort 完成一次冷启动，但 replay
+只达到 97 reproduced / 2 budget recovery / 1 mismatch；`.277` 只关闭六家公司
+共享的 snapshot-body credential redaction contract，没有改变发现终态，也没有生成
+新的完整 live capsule。
+
+三条独立只读审计重新检查 current Fresh100 ledger、replay defect 和可用 validation
+asset。剩余候选中没有任何一项同时满足同 trigger、同 production path、至少三家
+公司和至少三条预期 terminal recovery，因此不选择新的 Phase B，也不追加 heuristic、
+provider 或单公司 serialization 修复。
+
+当前 release 已全量离线门禁通过、分组提交并推送。产品目标仍缺 `.277` Fresh100
+冷启动/strict replay、同版本 Frozen100 69-Exact 无回归，以及两批 unseen cohort
+验收。下一次 live 必须是用户明确选择的 measurement gate，不是新的开发批次；
+在此之前 sealed v2/v3、LLM branch 和 plugin branch 继续隔离。完整审计见：
+
+- `docs/BACKEND_RELEASE_COMPLETION_AUDIT_V277.md`
+
 ### `.277` value-shaped credential redaction
 
 `.275` artifact 的后续只读审计把 credential leak 分成两条真实代码路径。
