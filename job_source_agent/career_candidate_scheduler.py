@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+import math
+import time
+from typing import Callable
 from urllib.parse import urlparse
 
 from .models import LinkCandidate
@@ -7,12 +11,241 @@ from .scoring import ATS_DOMAINS, is_ats_url
 
 
 SCHEDULE_VERSION = "9"
+PROBE_POLICY_VERSION = "1"
+
+_EVIDENCE_PROBE_DEADLINE_SECONDS = 6.0
+_SPECULATIVE_PROBE_DEADLINE_SECONDS = 3.0
+_MINIMUM_PROBE_DEADLINE_SECONDS = 0.05
+_TRANSPORT_FAILURE_CIRCUIT_LIMIT = 3
 
 _LANGUAGE_SEGMENTS = {
     "ar", "cs", "da", "de", "en", "es", "fi", "fr", "he", "id", "it",
     "ja", "ko", "nl", "no", "pl", "pt", "sv", "th", "tr", "vi", "zh",
 }
 _REGION_SEGMENTS = {"au", "ca", "de", "es", "fr", "gb", "in", "jp", "uk", "us"}
+
+
+@dataclass
+class CareerCandidateProbeAdmission:
+    max_elapsed_seconds: float
+    max_retries: int | None
+    evidence_tier: int
+    reserve_limited: bool
+    _clock: Callable[[], float]
+    _started_at: float | None = None
+
+    def next_scope_seconds(self) -> float:
+        now = self._clock()
+        if self._started_at is None:
+            self._started_at = now
+            return self.max_elapsed_seconds
+        return max(
+            0.001,
+            self.max_elapsed_seconds - max(0.0, now - self._started_at),
+        )
+
+
+@dataclass(frozen=True)
+class CareerCandidateProbeOutcome:
+    action: str
+    consecutive_transport_failures: int
+
+
+class CareerCandidateProbeController:
+    """Bound candidate wall time and stop repeated transport-only fanout."""
+
+    def __init__(
+        self,
+        *,
+        source: str,
+        downstream_reserve_seconds: float = 0.0,
+        transport_failure_limit: int = _TRANSPORT_FAILURE_CIRCUIT_LIMIT,
+        clock: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if not isinstance(source, str) or not source:
+            raise ValueError("candidate probe source must be a nonempty string")
+        if (
+            isinstance(downstream_reserve_seconds, bool)
+            or not isinstance(downstream_reserve_seconds, (int, float))
+            or not math.isfinite(downstream_reserve_seconds)
+            or downstream_reserve_seconds < 0
+        ):
+            raise ValueError("downstream reserve must be a finite nonnegative number")
+        if (
+            isinstance(transport_failure_limit, bool)
+            or not isinstance(transport_failure_limit, int)
+            or transport_failure_limit < 1
+        ):
+            raise ValueError("transport failure limit must be a positive integer")
+        self.source = source
+        self.downstream_reserve_seconds = float(downstream_reserve_seconds)
+        self.transport_failure_limit = transport_failure_limit
+        self._clock = clock
+        self.consecutive_transport_failures = 0
+        self.circuit_open = False
+        self.events: list[dict[str, object]] = []
+
+    def admission(
+        self,
+        candidate: LinkCandidate,
+        *,
+        remaining_fetch_seconds: float | None,
+    ) -> CareerCandidateProbeAdmission:
+        tier = candidate_evidence_tier(candidate)
+        configured_deadline = (
+            _SPECULATIVE_PROBE_DEADLINE_SECONDS
+            if tier >= 3
+            else _EVIDENCE_PROBE_DEADLINE_SECONDS
+        )
+        usable_seconds = _usable_probe_seconds(
+            remaining_fetch_seconds,
+            reserve_seconds=self.downstream_reserve_seconds,
+        )
+        reserve_limited = (
+            usable_seconds is not None and usable_seconds < configured_deadline
+        )
+        max_elapsed_seconds = (
+            configured_deadline
+            if usable_seconds is None
+            else max(
+                _MINIMUM_PROBE_DEADLINE_SECONDS,
+                min(configured_deadline, usable_seconds),
+            )
+        )
+        return CareerCandidateProbeAdmission(
+            max_elapsed_seconds=max_elapsed_seconds,
+            max_retries=0 if tier >= 3 else None,
+            evidence_tier=tier,
+            reserve_limited=reserve_limited,
+            _clock=self._clock,
+        )
+
+    def record_success(
+        self,
+        candidate: LinkCandidate,
+        admission: CareerCandidateProbeAdmission,
+    ) -> CareerCandidateProbeOutcome:
+        self.consecutive_transport_failures = 0
+        self.events.append(
+            self._event(
+                candidate,
+                admission,
+                outcome="transport_success",
+            )
+        )
+        return CareerCandidateProbeOutcome("continue", 0)
+
+    def record_failure(
+        self,
+        candidate: LinkCandidate,
+        admission: CareerCandidateProbeAdmission,
+        *,
+        reason_code: str,
+        retryable: bool,
+        owner: str,
+    ) -> CareerCandidateProbeOutcome:
+        if retryable and owner == "budget":
+            action = "stop_retryable_terminal"
+        elif retryable and owner == "network":
+            self.consecutive_transport_failures += 1
+            if self.consecutive_transport_failures >= self.transport_failure_limit:
+                self.circuit_open = True
+                action = "open_transport_circuit"
+            else:
+                action = "continue"
+        else:
+            self.consecutive_transport_failures = 0
+            action = "continue"
+        self.events.append(
+            self._event(
+                candidate,
+                admission,
+                outcome="fetch_failure",
+                reason_code=reason_code,
+                retryable=retryable,
+                owner=owner,
+                action=action,
+            )
+        )
+        return CareerCandidateProbeOutcome(
+            action,
+            self.consecutive_transport_failures,
+        )
+
+    def record_semantic_outcome(
+        self,
+        candidate: LinkCandidate,
+        admission: CareerCandidateProbeAdmission,
+        *,
+        outcome: str,
+    ) -> None:
+        self.consecutive_transport_failures = 0
+        self.events.append(
+            self._event(candidate, admission, outcome=outcome)
+        )
+
+    def trace(self) -> dict[str, object]:
+        return {
+            "policy": "bounded_candidate_deadline_with_transport_circuit",
+            "version": PROBE_POLICY_VERSION,
+            "source": self.source,
+            "evidence_probe_deadline_seconds": _EVIDENCE_PROBE_DEADLINE_SECONDS,
+            "speculative_probe_deadline_seconds": (
+                _SPECULATIVE_PROBE_DEADLINE_SECONDS
+            ),
+            "minimum_probe_deadline_seconds": _MINIMUM_PROBE_DEADLINE_SECONDS,
+            "downstream_reserve_seconds": self.downstream_reserve_seconds,
+            "transport_failure_limit": self.transport_failure_limit,
+            "circuit_open": self.circuit_open,
+            "events": self.events,
+        }
+
+    def _event(
+        self,
+        candidate: LinkCandidate,
+        admission: CareerCandidateProbeAdmission,
+        *,
+        outcome: str,
+        reason_code: str | None = None,
+        retryable: bool | None = None,
+        owner: str | None = None,
+        action: str = "continue",
+    ) -> dict[str, object]:
+        event: dict[str, object] = {
+            "url": candidate.url,
+            "evidence_tier": admission.evidence_tier,
+            "max_elapsed_seconds": admission.max_elapsed_seconds,
+            "max_retries": admission.max_retries,
+            "reserve_limited": admission.reserve_limited,
+            "outcome": outcome,
+            "action": action,
+            "consecutive_transport_failures": (
+                self.consecutive_transport_failures
+            ),
+        }
+        if reason_code:
+            event["reason_code"] = reason_code
+        if retryable is not None:
+            event["retryable"] = retryable
+        if owner:
+            event["owner"] = owner
+        return event
+
+
+def _usable_probe_seconds(
+    remaining_fetch_seconds: float | None,
+    *,
+    reserve_seconds: float,
+) -> float | None:
+    if remaining_fetch_seconds is None:
+        return None
+    if (
+        isinstance(remaining_fetch_seconds, bool)
+        or not isinstance(remaining_fetch_seconds, (int, float))
+        or not math.isfinite(remaining_fetch_seconds)
+    ):
+        return None
+    return max(0.0, float(remaining_fetch_seconds) - reserve_seconds)
 
 
 def schedule_career_candidates(

@@ -1,6 +1,7 @@
 import unittest
 
 from job_source_agent.career_candidate_scheduler import (
+    CareerCandidateProbeController,
     candidate_concrete_host,
     candidate_evidence_tier,
     candidate_host_family,
@@ -50,6 +51,244 @@ def schedule(agent, candidates):
 
 
 class CareerCandidateSchedulerTests(unittest.TestCase):
+    def test_probe_deadline_is_bounded_by_evidence_tier_and_preserves_reserve(self):
+        controller = CareerCandidateProbeController(
+            source="homepage_and_common_paths",
+            downstream_reserve_seconds=10.0,
+        )
+        speculative = candidate(
+            "https://example.com/careers",
+            100,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+        evidence_backed = candidate(
+            "https://example.com/team",
+            100,
+            ["homepage team link requiring employment evidence"],
+            origin="page_link",
+        )
+
+        speculative_admission = controller.admission(
+            speculative,
+            remaining_fetch_seconds=30.0,
+        )
+        evidence_admission = controller.admission(
+            evidence_backed,
+            remaining_fetch_seconds=None,
+        )
+
+        self.assertEqual(speculative_admission.max_elapsed_seconds, 3.0)
+        self.assertEqual(speculative_admission.max_retries, 0)
+        self.assertFalse(speculative_admission.reserve_limited)
+        self.assertEqual(evidence_admission.max_elapsed_seconds, 6.0)
+        self.assertIsNone(evidence_admission.max_retries)
+
+    def test_probe_admission_uses_minimum_deadline_when_only_reserve_remains(self):
+        controller = CareerCandidateProbeController(
+            source="homepage_and_common_paths",
+            downstream_reserve_seconds=10.0,
+        )
+        speculative = candidate(
+            "https://example.com/careers",
+            100,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+
+        admission = controller.admission(
+            speculative,
+            remaining_fetch_seconds=8.0,
+        )
+
+        self.assertEqual(admission.max_elapsed_seconds, 0.05)
+        self.assertTrue(admission.reserve_limited)
+
+    def test_probe_suboperations_share_one_candidate_deadline(self):
+        now = [10.0]
+        controller = CareerCandidateProbeController(
+            source="blind_ats",
+            clock=lambda: now[0],
+        )
+        speculative = candidate(
+            "https://jobs.example.test/company",
+            100,
+            ["derived provider board candidate"],
+            origin="blind_ats_probe",
+        )
+        admission = controller.admission(
+            speculative,
+            remaining_fetch_seconds=None,
+        )
+
+        self.assertEqual(admission.next_scope_seconds(), 3.0)
+        now[0] = 11.25
+        self.assertEqual(admission.next_scope_seconds(), 1.75)
+        now[0] = 14.0
+        self.assertEqual(admission.next_scope_seconds(), 0.001)
+
+    def test_probe_circuit_opens_after_three_consecutive_transport_failures(self):
+        controller = CareerCandidateProbeController(source="candidate_selection")
+        candidates = [
+            candidate(
+                f"https://example.com/careers-{index}",
+                100,
+                ["generated path probe"],
+                origin="path_probe",
+            )
+            for index in range(3)
+        ]
+
+        outcomes = []
+        for item in candidates:
+            admission = controller.admission(
+                item,
+                remaining_fetch_seconds=None,
+            )
+            outcomes.append(
+                controller.record_failure(
+                    item,
+                    admission,
+                    reason_code="NETWORK_TIMEOUT",
+                    retryable=True,
+                    owner="network",
+                )
+            )
+
+        self.assertEqual(
+            [outcome.action for outcome in outcomes],
+            ["continue", "continue", "open_transport_circuit"],
+        )
+        self.assertTrue(controller.circuit_open)
+        self.assertEqual(
+            outcomes[-1].consecutive_transport_failures,
+            3,
+        )
+
+    def test_successful_probe_resets_consecutive_transport_failures(self):
+        controller = CareerCandidateProbeController(source="candidate_selection")
+        item = candidate(
+            "https://example.com/careers",
+            100,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+        admission = controller.admission(item, remaining_fetch_seconds=None)
+        for _ in range(2):
+            controller.record_failure(
+                item,
+                admission,
+                reason_code="FETCH_FAILED",
+                retryable=True,
+                owner="network",
+            )
+
+        controller.record_success(item, admission)
+        outcome = controller.record_failure(
+            item,
+            admission,
+            reason_code="FETCH_FAILED",
+            retryable=True,
+            owner="network",
+        )
+
+        self.assertEqual(outcome.action, "continue")
+        self.assertEqual(outcome.consecutive_transport_failures, 1)
+        self.assertFalse(controller.circuit_open)
+
+    def test_retryable_budget_failure_stops_without_opening_transport_circuit(self):
+        controller = CareerCandidateProbeController(source="candidate_selection")
+        item = candidate(
+            "https://example.com/careers",
+            100,
+            ["generated path probe"],
+            origin="path_probe",
+        )
+        admission = controller.admission(item, remaining_fetch_seconds=0.0)
+
+        outcome = controller.record_failure(
+            item,
+            admission,
+            reason_code="COMPANY_TIME_BUDGET_EXHAUSTED",
+            retryable=True,
+            owner="budget",
+        )
+
+        self.assertEqual(outcome.action, "stop_retryable_terminal")
+        self.assertEqual(outcome.consecutive_transport_failures, 0)
+        self.assertFalse(controller.circuit_open)
+
+    def test_probe_circuit_decisions_are_replay_deterministic(self):
+        live = CareerCandidateProbeController(
+            source="homepage_and_common_paths",
+            downstream_reserve_seconds=10.0,
+        )
+        replay = CareerCandidateProbeController(
+            source="homepage_and_common_paths",
+            downstream_reserve_seconds=10.0,
+        )
+        candidates = [
+            candidate(
+                f"https://example.com/careers-{index}",
+                100,
+                ["generated path probe"],
+                origin="path_probe",
+            )
+            for index in range(3)
+        ]
+
+        live_actions = []
+        replay_actions = []
+        for index, item in enumerate(candidates):
+            live_admission = live.admission(
+                item,
+                remaining_fetch_seconds=50.0 - index,
+            )
+            replay_admission = replay.admission(
+                item,
+                remaining_fetch_seconds=None,
+            )
+            live_actions.append(
+                live.record_failure(
+                    item,
+                    live_admission,
+                    reason_code="FETCH_FAILED",
+                    retryable=True,
+                    owner="network",
+                ).action
+            )
+            replay_actions.append(
+                replay.record_failure(
+                    item,
+                    replay_admission,
+                    reason_code="FETCH_FAILED",
+                    retryable=True,
+                    owner="network",
+                ).action
+            )
+
+        self.assertEqual(live_actions, replay_actions)
+        self.assertEqual(
+            [
+                (
+                    event["url"],
+                    event["reason_code"],
+                    event["action"],
+                    event["consecutive_transport_failures"],
+                )
+                for event in live.trace()["events"]
+            ],
+            [
+                (
+                    event["url"],
+                    event["reason_code"],
+                    event["action"],
+                    event["consecutive_transport_failures"],
+                )
+                for event in replay.trace()["events"]
+            ],
+        )
+
     def test_same_host_embedded_explicit_job_list_uses_first_party_evidence_rank(self):
         agent = JobSourceAgent(Fetcher(offline=True))
 
