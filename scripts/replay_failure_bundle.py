@@ -7,6 +7,7 @@ import os
 import shutil
 import sys
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, fields, replace
 from pathlib import Path
 from types import SimpleNamespace
@@ -139,6 +140,76 @@ class _RedactionHydratingScopedFetcher:
 
     def remaining_fetch_seconds(self) -> float | None:
         return self._controller.remaining_fetch_seconds()
+
+
+class _RecordedCareerTransportBudget:
+    def __init__(self, payload: dict) -> None:
+        self._payload = {
+            key: value
+            for key, value in payload.items()
+            if key not in {"policy", "cache_hits"}
+        }
+
+    def snapshot(self) -> dict:
+        return json.loads(json.dumps(self._payload))
+
+
+class _RecordedCareerTransportFetcher:
+    """Restore live budget diagnostics while the scoped tape owns outcomes."""
+
+    def __init__(self, fetcher, payload: dict) -> None:
+        self.fetcher = fetcher
+        self._payload = dict(payload)
+        self._scope_complete = False
+
+    @property
+    def cache_hits(self) -> int:
+        return int(self._payload.get("cache_hits") or 0) if self._scope_complete else 0
+
+    @contextmanager
+    def career_discovery_scope(
+        self,
+        limit: int | None,
+        *,
+        reserved_dispatches: int = 0,
+    ):
+        recorded_limit = self._payload.get("limit")
+        if recorded_limit != limit:
+            raise ValueError("Recorded Career transport limit does not match replay config")
+        reservation = self._payload.get("reservation")
+        recorded_reservation = (
+            int(reservation.get("dispatches") or 0)
+            if isinstance(reservation, dict)
+            else 0
+        )
+        if recorded_reservation != reserved_dispatches:
+            raise ValueError(
+                "Recorded Career transport reservation does not match replay config"
+            )
+        self._scope_complete = False
+        try:
+            yield _RecordedCareerTransportBudget(self._payload)
+        finally:
+            self._scope_complete = True
+
+    @contextmanager
+    def career_discovery_phase(self, name: str, *, speculative: bool = False):
+        del name, speculative
+        yield
+
+    def fetch(self, *args, **kwargs):
+        return self.fetcher.fetch(*args, **kwargs)
+
+    def __getattr__(self, name: str):
+        return getattr(self.fetcher, name)
+
+
+def _source_career_transport_budget(source_record: dict) -> dict | None:
+    trace = source_record.get("trace")
+    stages = trace.get("stages") if isinstance(trace, dict) else None
+    career = stages.get("career_discovery") if isinstance(stages, dict) else None
+    payload = career.get("transport_budget") if isinstance(career, dict) else None
+    return dict(payload) if isinstance(payload, dict) else None
 
 
 def _hydrate_redacted_json_credentials(body: str) -> str:
@@ -1191,8 +1262,15 @@ def _run_scoped_replay_records(
             },
             execution_fingerprint=execution_fingerprint_value,
         )
+        replay_fetcher = _RedactionHydratingScopedFetcher(controller)
+        recorded_transport_budget = _source_career_transport_budget(source_record)
+        if recorded_transport_budget is not None:
+            replay_fetcher = _RecordedCareerTransportFetcher(
+                replay_fetcher,
+                recorded_transport_budget,
+            )
         application = build_application_from_fetcher(
-            _RedactionHydratingScopedFetcher(controller),
+            replay_fetcher,
             checkpoint_dir=record_checkpoint_root,
             run_configuration=run_configuration,
             capture_coordinator=controller,

@@ -43,6 +43,7 @@ from job_source_agent.stages import OpeningMatchStage
 from job_source_agent.web import Page
 from scripts.replay_failure_bundle import (
     FailureReplayError,
+    _RecordedCareerTransportFetcher,
     _RedactionHydratingScopedFetcher,
     _build_outcome_gate,
     _build_record_integrity,
@@ -58,6 +59,7 @@ from scripts.replay_failure_bundle import (
     _replay_search_backend,
     _replay_resume_stage,
     _restore_stored_provider_inputs,
+    _source_career_transport_budget,
     _scoped_execution_boundary_errors,
     _scoped_execution_company,
     _scoped_record_company_discovery_evidence_path,
@@ -70,6 +72,53 @@ from scripts.replay_failure_bundle import (
 
 
 class FailureReplayBundleTests(unittest.TestCase):
+    def test_recorded_career_transport_budget_restores_live_snapshot(self):
+        class Fetcher:
+            def fetch(self, url, data=None, headers=None, *, interaction=None):
+                return Page(url=url, final_url=url, html="ok")
+
+        payload = {
+            "policy": "stage_transport_dispatch_budget",
+            "limit": 32,
+            "dispatched": 32,
+            "remaining": 0,
+            "exhausted": True,
+            "rejected": 1,
+            "by_phase": {"search_discovery": 6},
+            "reservation": {
+                "dispatches": 6,
+                "speculative_rejected": 0,
+                "rejected_by_phase": {},
+            },
+            "cache_hits": 2,
+        }
+        fetcher = _RecordedCareerTransportFetcher(Fetcher(), payload)
+
+        self.assertEqual(fetcher.cache_hits, 0)
+        with fetcher.career_discovery_scope(32, reserved_dispatches=6) as budget:
+            self.assertEqual(budget.snapshot()["dispatched"], 32)
+            self.assertNotIn("policy", budget.snapshot())
+            self.assertNotIn("cache_hits", budget.snapshot())
+        self.assertEqual(fetcher.cache_hits, 2)
+        self.assertEqual(fetcher.fetch("https://example.test").html, "ok")
+
+    def test_source_career_transport_budget_is_optional(self):
+        source = {
+            "trace": {
+                "stages": {
+                    "career_discovery": {
+                        "transport_budget": {"limit": 32, "dispatched": 9}
+                    }
+                }
+            }
+        }
+
+        self.assertEqual(
+            _source_career_transport_budget(source),
+            {"limit": 32, "dispatched": 9},
+        )
+        self.assertIsNone(_source_career_transport_budget({"trace": {"stages": {}}}))
+
     def test_replay_search_backend_requires_matching_runtime_profile(self):
         endpoint = "https://search.example/internal"
         from job_source_agent.searxng_search_backend import SearxngSearchBackend
