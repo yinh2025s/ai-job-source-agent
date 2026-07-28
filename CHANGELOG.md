@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-28 - Value-shaped credential redaction `.277`
+
+- Qualified one six-company snapshot-body privacy cluster from the existing
+  `.275` artifact; no new cohort or live traffic was used.
+- Added bounded value-level redaction for fixed-format Google browser API keys
+  and AWS access key IDs, independent of company, domain and framework field
+  names.
+- Preserved near-miss identifiers, surrounding HTML/JavaScript/URL structure
+  and all provider, tenant, title, location and S7 behavior.
+- Re-captured 18 historical snapshot records across 10 scopes and six hosts
+  through the production `.277` store. Replay conversion produced 14 verified
+  fixtures with zero privacy exclusions and zero remaining credential shapes.
+- Passed 286 focused tests, the full 2,841-test suite (4 skipped), provider
+  25/25, resolver 6/6 and architecture 48/0.
+- Kept Crawford Thomas's raw trace serialization as an explicit one-company
+  residual; `.277` does not broaden scope to trace/checkpoint/completion sinks.
+- Did not run live. The `.275` audit-only release remains historical evidence;
+  a future unmodified `.277` live capsule is still required for end-to-end
+  privacy/replay closure.
+- Preserved the six-host capture/replay corpus with tracked SHA-256
+  `2fa81c698d7cc82b4c5e5b95a3cff1dacd6cd6681b4a6cf558f8ecfbc3ce9c9b`.
+
 ## 2026-07-28 - Fresh100 current `.275` cold gate
 
 - Reused the existing Fresh100 development cohort; no new or sealed cohort was

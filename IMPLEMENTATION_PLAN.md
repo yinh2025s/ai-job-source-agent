@@ -23,7 +23,33 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，Fresh100 `.275` cold gate）
+## 当前架构进度（2026-07-28，snapshot privacy `.277`）
+
+### `.277` value-shaped credential redaction
+
+`.275` artifact 的后续只读审计把 credential leak 分成两条真实代码路径。
+Aperia、City of Lubbock、The Home Depot、QXO、Hays + Sons 和 Wolfe 共 6 家
+独立公司都在 `_sanitize_snapshot_text` 路径保留了固定格式 credential value；
+Crawford Thomas 则是 raw Page 被 link extractor 读取后进入 trace/checkpoint，
+只有 1 家，不能和 snapshot 路径合并包装。
+
+`.277` 只实现达到门槛的 snapshot-body 单簇：按固定 prefix 和长度删除 Google
+browser API key 与 AWS access key ID，不依赖 field/company/domain；near miss、
+周边 HTML/JS/URL 结构及业务语义保持不变。产品 adapter 升到
+`2026-07-28.277`，旧 checkpoint 自动失效。
+
+历史 `.275` key-bearing corpus 经 production SnapshotStore 重新 capture：
+18 records / 10 scopes / 6 hosts，`replay_snapshots.py` 生成 14 个验证 fixture，
+privacy exclusion 0，capture 与 replay conversion 的 credential-shape match
+均为 0。286 focused tests、全量 2,841 tests（4 skipped）、provider 25/25、
+resolver 6/6、architecture 48/0 全部通过。
+
+本轮没有启动 live，因此只接受离线 sanitizer contract，不宣布 end-to-end
+artifact closure。Crawford trace residual、Fresh100 100-record replay、
+Frozen100 current-version gate 和两批 unseen cohort 仍保持 open。详见：
+
+- `docs/COORDINATOR_V277_VALUE_SHAPED_CREDENTIAL_REDACTION_PHASE_A.md`
+- `docs/COORDINATOR_V277_VALUE_SHAPED_CREDENTIAL_REDACTION_PHASE_C.md`
 
 ### Fresh100 current `.275` cold gate
 
