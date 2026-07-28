@@ -6,8 +6,8 @@
   "expected_outcome_counts": {
     "exact": 38,
     "external_blocked": 1,
-    "unresolved": 43,
-    "verified_no_match": 18
+    "unresolved": 42,
+    "verified_no_match": 19
   },
   "accepted_terminals": {
     "4193245312": {
