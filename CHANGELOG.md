@@ -1,5 +1,39 @@
 # Changelog
 
+## 2026-07-28 - Fresh100 `.277` measurement and JWT privacy `.278`
+
+- Ran the existing 100-record Fresh100 development cohort once from fresh
+  checkpoint, completion, evidence, snapshot and replay roots with `.277`
+  code frozen throughout live and replay.
+- Completed 100/100 with 87 Websites, 73 Career pages, 69 verified Job Lists
+  and 29 S7 Exact openings. All 29 Exact records passed company, title,
+  location, provider, tenant and opening-URL review with zero unsafe
+  publication.
+- Full replay completed 100/100 but failed acceptance at 98 reproduced, one
+  Diamondback Energy budget recovery, one Brown and Caldwell mismatch and zero
+  fixture gaps.
+- Reclassified the apparent S2 network group by actual transport phase and
+  production path. No behavior cluster meets both the three-company and
+  three-expected-recovery thresholds, so no heuristic, provider or company
+  exception was added.
+- Qualified one four-host privacy cluster: signed JWT-shaped capability values
+  survived the common snapshot-body sanitizer for TreeHouse Foods, Tyler
+  Technologies, Pitch Aeronautics and QXO.
+- Added bounded JWT value redaction requiring decoded JSON objects, a non-empty
+  `alg` header and capability/time claims. Ordinary dotted strings and malformed
+  or claimless near misses remain unchanged; URL-encoded `%3d` assignment is
+  handled generically.
+- Re-captured nine historical records across four hosts through the production
+  `.278` store. Replay conversion produced seven fixtures with zero privacy
+  exclusions and zero JWT, Google or AWS shapes in capture or replay output.
+- Passed the integrated release gate: 2,846 tests (4 skipped), provider 25/25,
+  resolver 6/6, architecture 48/0, tracked credential-shape scan 0 and clean
+  `git diff --check`.
+- Preserved the privacy-clean focused corpus with tracked SHA-256
+  `59eec0f2e57a84dfb33e2d324ae3c9caa8606e3c3f9615cf8100349dadabb0c5`.
+- Did not archive the raw `.277` capsule because it retains credential-shaped
+  values. The `.277` score remains historical and is not rewritten by `.278`.
+
 ## 2026-07-28 - `.277` release stop and completion audit
 
 - Reconciled the product-goal audit with the current `.277` release instead of

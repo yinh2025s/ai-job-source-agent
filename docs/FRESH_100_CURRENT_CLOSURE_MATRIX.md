@@ -2,10 +2,38 @@
 
 ## Current Status
 
-The current conservative development projection is based on the code-frozen
-Fresh100 `.275` cold trace plus an explicit allowlist of reviewed focused
-terminals. The cold run itself is a complete 100-record current-version
-measurement, but the projection is not its raw score.
+The latest authoritative raw measurement is the code-frozen Fresh100 `.277`
+cold gate. It completed all 100 records and is kept separate from any
+cross-version focused projection.
+
+| State | `.277` raw |
+| --- | ---: |
+| S7 Exact | **29/100** |
+| Evidence-backed Verified No Match | **19/100** |
+| Evidence-backed External Blocked | **1/100** |
+| Unresolved / nonterminal | **51/100** |
+| Published wrong URL/company/tenant/location | **0** |
+
+The `.277` run reached 87 Websites, 73 Career pages, 69 verified Job Lists and
+29 S7 Exact openings. All 29 Exact records passed the opening URL, title,
+location, company, provider and tenant safety audit. Same-version replay
+exported and executed 100 records but failed acceptance at 98 reproduced, one
+budget recovery, one mismatch and zero fixture gaps.
+
+Relative to `.275`, IMG became Exact while Frost, Versana DevOps and ProMach
+lost Exact. The raw score moved from 31 to 29. Focused evidence remains useful
+for diagnosis, but it does not overwrite this measurement.
+
+The gate is documented in
+`docs/FRESH_100_CURRENT_V277_MEASUREMENT_GATE_PHASE_C.md`. `.278` only fixes the
+qualified four-host JWT snapshot privacy cluster; it does not change the
+`.277` live score, repair the Brown replay mismatch or close the product goal.
+
+## Previous `.275` Reviewed Projection
+
+Before the `.277` measurement, the conservative development projection combined
+the code-frozen `.275` trace with an explicit allowlist of reviewed focused
+terminals:
 
 | State | `.275` raw | Reviewed replacements | Projected current |
 | --- | ---: | ---: | ---: |
@@ -15,19 +43,7 @@ measurement, but the projection is not its raw score.
 | Unresolved / nonterminal | 47 | -5 accepted terminal replacements | **42/100** |
 | Published wrong URL/company/tenant | 0 | 0 | **0** |
 
-The raw `.275` run completed 100/100 with 91 Websites, 77 Career pages, 72
-verified Job Lists and 31 S7 Exact openings. All 31 Exact records passed the
-opening URL, title, location, company, provider and tenant safety audit.
-Same-version replay exported and executed 100 records but failed acceptance at
-97 reproduced, two budget recoveries, one mismatch and zero fixture gaps.
-
-City of Lubbock and City of College Station retain complete official
-GovernmentJobs no-match evidence from focused `.275`. Mayo Clinic independently
-reached complete official inventory with no matching posting in the cold run.
-
-The cold gate and projection update are documented in
-`docs/FRESH_100_CURRENT_V275_COLD_GATE_PHASE_C.md`. They do not repair the
-same-version replay gate or close the product goal.
+This projection remains historical context only and is not a `.277` result.
 
 ## Historical `.244` Projection
 

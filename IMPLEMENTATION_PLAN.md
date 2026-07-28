@@ -23,7 +23,36 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-28，snapshot privacy `.277`）
+## 当前架构进度（2026-07-28，snapshot privacy `.278`）
+
+### `.277` Fresh100 measurement and `.278` JWT privacy closure
+
+用户批准后，现有 Fresh100 development cohort 在代码冻结的 `.277` 上完成一次
+全新状态 measurement gate：100/100 live，87 Website、73 Career、69 verified
+Job List、29 S7 Exact。29/29 Exact 通过 company、title、location、provider、
+tenant 和 opening URL 安全审计，错误 URL、跨公司、跨 tenant 和错误地点均为 0。
+
+Full replay 执行 100/100，但结果为 98 reproduced、1 budget recovery、1 Brown
+and Caldwell mismatch、0 fixture gap，outcome gate 失败。剩余 transport、
+discovery 和 replay 问题按真实触发条件拆分后，没有行为修复同时满足至少三家公司
+和三条预期 terminal recovery，因此本轮不增加 heuristic、provider 或公司特例。
+
+原始 `.277` capsule 的页面/replay body 在 TreeHouse Foods、Tyler Technologies、
+Pitch Aeronautics 和 QXO 四个 host 保留 JWT-shaped capability value。这一簇共享
+同一个 snapshot sanitizer 路径并达到 4/4 门槛，`.278` 增加 bounded JWT value
+redaction；普通 dotted string、bad base64/JSON、缺少 `alg`/capability claim 的
+near miss 均保持不变。
+
+历史 9 条 JWT-bearing snapshot record 经过 production `.278` SnapshotStore
+重新 capture，形成 7 个 replay fixture；capture/replay 两侧 JWT、Google 和 AWS
+shape 均为 0，privacy exclusion 0。版本升到 `2026-07-28.278`。Integrated gate
+为 2,846 tests（4 skipped）、provider 25/25、resolver 6/6、architecture 48/0，
+tracked credential-shape scan 0。下一步只做分组 commit 和 push，不自动启动新
+live。详见：
+
+- `docs/FRESH_100_CURRENT_V277_MEASUREMENT_GATE_PHASE_C.md`
+- `docs/COORDINATOR_V278_JWT_VALUE_REDACTION_PHASE_A.md`
+- `docs/COORDINATOR_V278_JWT_VALUE_REDACTION_PHASE_C.md`
 
 ### `.277` release stop and goal audit
 
