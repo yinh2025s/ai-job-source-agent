@@ -1,5 +1,6 @@
-import json
+import base64
 import http.client
+import json
 import tempfile
 import unittest
 from concurrent.futures import ThreadPoolExecutor
@@ -16,6 +17,23 @@ from job_source_agent.snapshot import (
     snapshot_artifact_path_for_url,
 )
 from job_source_agent.web import FetchError, Fetcher, Page
+
+
+def _jwt_segment(value) -> str:
+    encoded = base64.urlsafe_b64encode(
+        json.dumps(value, separators=(",", ":")).encode("utf-8")
+    )
+    return encoded.rstrip(b"=").decode("ascii")
+
+
+def _jwt_token(header=None, payload=None, signature: str = "signature") -> str:
+    return ".".join(
+        (
+            _jwt_segment(header if header is not None else {"alg": "HS256", "typ": "JWT"}),
+            _jwt_segment(payload if payload is not None else {"sub": "user", "exp": 2000000000}),
+            signature,
+        )
+    )
 
 
 class SnapshotTests(unittest.TestCase):
@@ -196,6 +214,123 @@ class SnapshotTests(unittest.TestCase):
         raw = "|".join(near_misses)
 
         self.assertEqual(sanitize_snapshot_body(raw), raw)
+
+    def test_sanitize_snapshot_body_redacts_valid_jwt_in_html_javascript_and_json(self):
+        html_token = _jwt_token(payload={"sub": "html-user", "exp": 2000000000})
+        script_token = _jwt_token(payload={"sub": "script-user", "scope": "jobs:read"})
+        json_token = _jwt_token(payload={"sub": "json-user", "roles": ["public-reader"]})
+        html = f'<div data-capability="{html_token}">Jobs</div>'
+        script = f'window.publicCapability = "{script_token}";'
+        structured = json.dumps(
+            {"credential_value": json_token, "company": "Example", "count": 3}
+        )
+
+        sanitized_html = sanitize_snapshot_body(html)
+        sanitized_script = sanitize_snapshot_body(script)
+        sanitized_structured = json.loads(sanitize_snapshot_body(structured))
+
+        self.assertEqual(
+            sanitized_html,
+            '<div data-capability="[REDACTED]">Jobs</div>',
+        )
+        self.assertEqual(
+            sanitized_script,
+            'window.publicCapability = "[REDACTED]";',
+        )
+        self.assertEqual(sanitized_structured["credential_value"], "[REDACTED]")
+        self.assertEqual(sanitized_structured["company"], "Example")
+        self.assertEqual(sanitized_structured["count"], 3)
+
+    def test_sanitize_snapshot_body_redacts_multiple_jwts_and_is_idempotent(self):
+        first = _jwt_token(payload={"iat": 1700000000, "sub": "first"})
+        second = _jwt_token(payload={"permissions": ["jobs:search"], "sub": "second"})
+        raw = f"before={first}; middle text; after={second}"
+
+        sanitized = sanitize_snapshot_body(raw)
+
+        self.assertEqual(
+            sanitized,
+            "before=[REDACTED]; middle text; after=[REDACTED]",
+        )
+        self.assertEqual(sanitize_snapshot_body(sanitized), sanitized)
+
+    def test_sanitize_snapshot_body_redacts_jwt_after_encoded_assignment(self):
+        token = _jwt_token(payload={"iat": 1700000000, "scope": "jobs:read"})
+        raw = f'<input value="returnUrl%3d/jobs%26state%3d{token}" />'
+
+        sanitized = sanitize_snapshot_body(raw)
+
+        self.assertEqual(
+            sanitized,
+            '<input value="returnUrl%3d/jobs%26state%3d[REDACTED]" />',
+        )
+
+    def test_sanitize_snapshot_body_preserves_jwt_near_misses(self):
+        missing_alg = _jwt_token(
+            header={"typ": "JWT"},
+            payload={"exp": 2000000000},
+        )
+        missing_claim = _jwt_token(payload={"sub": "ordinary-user"})
+        non_object_header = _jwt_token(
+            header=["HS256"],
+            payload={"exp": 2000000000},
+        )
+        non_object_payload = _jwt_token(payload=["scope", "jobs:read"])
+        malformed_json = ".".join(
+            (
+                base64.urlsafe_b64encode(b"not-json").rstrip(b"=").decode("ascii"),
+                _jwt_segment({"exp": 2000000000}),
+                "signature",
+            )
+        )
+        malformed_base64_characters = "abc*.def.ghi"
+        malformed_base64_length = ".".join(
+            ("abcde", _jwt_segment({"exp": 2000000000}), "signature")
+        )
+        embedded_in_identifier = "prefix" + _jwt_token()
+        encoded_text_without_assignment = "%3f" + _jwt_token()
+        four_segments = _jwt_token() + ".extra"
+        ordinary_dotted = "release.2026.07"
+        near_misses = (
+            missing_alg,
+            missing_claim,
+            non_object_header,
+            non_object_payload,
+            malformed_json,
+            malformed_base64_characters,
+            malformed_base64_length,
+            embedded_in_identifier,
+            encoded_text_without_assignment,
+            four_segments,
+            ordinary_dotted,
+        )
+        raw = "|".join(near_misses)
+
+        self.assertEqual(sanitize_snapshot_body(raw), raw)
+
+    def test_sanitize_snapshot_body_jwt_redaction_preserves_existing_value_contracts(self):
+        token = _jwt_token(payload={"nbf": 1700000000, "scope": "jobs:read"})
+        google_key = "AIza" + "G" * 35
+        aws_access_key = "AKIA" + "H" * 16
+        raw = json.dumps(
+            {
+                "location": {
+                    "city": "Wailuku",
+                    "state": "HI",
+                    "country": "US",
+                },
+                "credential_value": token,
+                "map_value": google_key,
+                "cloud_value": aws_access_key,
+            }
+        )
+
+        parsed = json.loads(sanitize_snapshot_body(raw))
+
+        self.assertEqual(parsed["location"]["state"], "HI")
+        self.assertEqual(parsed["credential_value"], "[REDACTED]")
+        self.assertEqual(parsed["map_value"], "[REDACTED]")
+        self.assertEqual(parsed["cloud_value"], "[REDACTED]")
 
     def test_sanitize_snapshot_body_preserves_public_location_state(self):
         raw = json.dumps(

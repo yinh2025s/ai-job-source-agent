@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import csv
 import hashlib
 import io
@@ -93,6 +94,28 @@ _GOOGLE_BROWSER_API_KEY = re.compile(
 _AWS_ACCESS_KEY_ID = re.compile(
     r"(?<![A-Z0-9])(?:AKIA|ASIA)[A-Z0-9]{16}(?![A-Z0-9])"
 )
+_JWT_VALUE = re.compile(
+    r"(?P<prefix>(?<![A-Za-z0-9_.-])|%3[dD])"
+    r"(?P<header>[A-Za-z0-9_-]{2,1024}={0,2})\."
+    r"(?P<payload>[A-Za-z0-9_-]{2,16384}={0,2})\."
+    r"(?P<signature>[A-Za-z0-9_-]{1,8192}={0,2})"
+    r"(?![A-Za-z0-9_.=-])"
+)
+_JWT_CAPABILITY_OR_TIME_CLAIMS = {
+    "auth_time",
+    "capabilities",
+    "capability",
+    "exp",
+    "iat",
+    "nbf",
+    "permission",
+    "permissions",
+    "role",
+    "roles",
+    "scope",
+    "scopes",
+    "scp",
+}
 
 
 @dataclass
@@ -492,7 +515,35 @@ def _sanitize_snapshot_text(body: str) -> str:
         redacted = redacted.replace(json.dumps(marker), json.dumps(original_key))
     redacted = _GOOGLE_BROWSER_API_KEY.sub("[REDACTED]", redacted)
     redacted = _AWS_ACCESS_KEY_ID.sub("[REDACTED]", redacted)
-    return redacted
+    return _redact_jwt_values(redacted)
+
+
+def _redact_jwt_values(body: str) -> str:
+    def replace_if_valid(match: re.Match[str]) -> str:
+        header = _decode_base64url_json_object(match.group("header"))
+        payload = _decode_base64url_json_object(match.group("payload"))
+        if header is None or payload is None:
+            return match.group(0)
+        if not isinstance(header.get("alg"), str) or not header["alg"].strip():
+            return match.group(0)
+        if not _JWT_CAPABILITY_OR_TIME_CLAIMS.intersection(payload):
+            return match.group(0)
+        return f'{match.group("prefix")}[REDACTED]'
+
+    return _JWT_VALUE.sub(replace_if_valid, body)
+
+
+def _decode_base64url_json_object(segment: str) -> dict | None:
+    try:
+        decoded = base64.b64decode(
+            segment + "=" * (-len(segment) % 4),
+            altchars=b"-_",
+            validate=True,
+        )
+        value = json.loads(decoded)
+    except (UnicodeDecodeError, ValueError, TypeError):
+        return None
+    return value if isinstance(value, dict) else None
 
 
 def _redact_snapshot_text_field(body: str, key_pattern: str) -> str:
