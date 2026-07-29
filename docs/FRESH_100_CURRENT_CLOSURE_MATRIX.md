@@ -27,7 +27,12 @@ No Fresh100 terminal changes in this tooling phase. A new S1-only,
 zero-overlap, 80-record tranche contract is prepared to seek two additional
 companies for one of four known singleton paths. Cohort selection, cold-run
 preflight, Exact identity audit and strict replay audit are now reusable
-commands. Network collection and live S2-S7 have not started.
+commands. The 16 queries and their four technical-fingerprint lanes are frozen
+in a machine-readable collection contract whose digest is carried into the
+candidate-pool manifest. Execution-time Git/contract validation and one atomic
+live/route/Exact/replay/privacy finalizer now prevent partial or unrelated
+artifacts from being reported as accepted. Network collection and live S2-S7
+have not started.
 
 The authoritative `.283` score remains **36/100**. See
 `docs/COORDINATOR_V286_DIAGNOSTIC_FINGERPRINT_MEASUREMENT_PHASE_A.md`.

@@ -2,23 +2,37 @@
 
 ## 2026-07-29 - Diagnostic fingerprint measurement tooling
 
-- Added a neutral S1-only candidate-pool contract with an optional exact-target
-  guard.
+- Added a neutral S1-only candidate-pool collector with an optional exact-target
+  guard. The 16 queries, four technical-fingerprint lanes, location, pagination,
+  limits and minimum yield are now frozen in a machine-readable JSON contract;
+  the collector records its SHA-256 in the pool manifest and rejects conflicting
+  CLI overrides. The digest also travels in every S1 record; cohort preparation
+  records one common digest, and preflight rejects unbound or mixed inputs.
 - Added deterministic diagnostic cohort selection with role quotas, explicit
   exclusion digests, company/job-ID/LinkedIn-slug overlap rejection and direct
   answer-prefill rejection.
 - Added a non-executing CPython 3.12, clean-Git, manifest, run-config and
   fresh-root preflight that creates disjoint live/state/snapshot/replay paths
-  and freezes the exact command.
+  and freezes the exact command. The executable wrapper revalidates Git commit,
+  source tree, adapter, every contract digest and empty mutable root immediately
+  before live; it records running, live failure and unverified completion
+  atomically and forbids reuse.
 - Added reusable Exact identity-chain and strict replay audits. Strict replay
   rejects budget recovery and expected transition rather than counting them as
-  a pass.
+  a pass. Measurement mode now binds both audits to the frozen cohort, complete
+  live results/trace, LinkedIn job-ID order, run configuration and replay
+  artifacts. Exact title/location are recomputed through the production
+  validators; an unrelated all-green replay manifest fails.
+- Added one automatic finalizer for full live count, three-route report, Exact
+  identity, strict replay and whole-capsule privacy. Only all-green evidence
+  writes `accepted`; partial execution, audit exceptions and failed gates write
+  a non-accepted terminal status.
 - Added a fail-closed whole-artifact credential-shape scanner that reports only
   redacted paths, types and counts, never matched values.
 - Prepared an 80-record tranche configuration and four-fingerprint sampling
   contract. No network or product-code behavior ran; adapter `.286` is
   unchanged.
-- Passed 112 related tests. Artifact smoke gates pass `.283` Exact 36/36,
+- Passed 134 related tests. Artifact smoke gates pass `.283` Exact 36/36,
   `.278` Exact 33/33 and `.286` strict replay 6/6; the replay and privacy tools
   also correctly reject the known-dirty `.278` run4 evidence.
 

@@ -54,6 +54,18 @@ The selector must not recursively scan directories that may contain sealed
 holdouts. Candidate and exclusion file paths and SHA-256 digests are serialized
 in the manifest.
 
+The complete collection input is machine-readable and frozen at:
+
+`samples/evaluation/diagnostic_fingerprint_candidate_collection.json`
+
+It owns the 16 ordered queries, fingerprint lane labels, United States
+location, page and per-query limits, 480-record ceiling, 320-record minimum and
+fetch timeout. The collector is invoked with `--query-contract`; collection
+overrides are rejected, and the raw contract SHA-256 is serialized in the pool
+manifest and every S1 record. Cohort selection requires one common digest and
+preflight rejects unbound or mixed-contract inputs. Markdown text or an ad hoc
+shell command is not an authoritative query definition.
+
 ## Fingerprint Evidence
 
 ### CWS Effective Configuration
@@ -103,7 +115,9 @@ captures from one company count once.
 ## Measurement Tooling
 
 `scripts/collect_linkedin_candidate_pool.py` now emits neutral
-`development_candidate_pool` provenance and can require its exact target.
+`development_candidate_pool` provenance, can require its exact target and
+accepts the frozen machine-readable query contract without permitting
+conflicting CLI overrides.
 
 `scripts/prepare_diagnostic_cohort.py`:
 
@@ -122,6 +136,29 @@ captures from one company count once.
   and audit paths;
 - writes a `prepared_not_executed` preflight and the exact frozen command;
 - does not execute that command.
+
+`scripts/run_prepared_diagnostic_measurement.py`:
+
+- revalidates clean Git, commit, source tree, adapter and every frozen contract
+  digest immediately before execution;
+- reconstructs the live command from the frozen run config and rejects command
+  tampering;
+- requires all mutable roots to be empty and forbids resume or root reuse;
+- writes atomic `running`, `live_failed` and
+  `live_completed_unverified` states.
+
+`scripts/finalize_diagnostic_measurement.py` runs automatically after a
+zero-exit live:
+
+- requires complete live results, trace, summary and all-route evaluation;
+- binds every Exact audit to the frozen source job ID, company, title and
+  location and reruns the production identity/selection validators;
+- binds strict replay to the preflight, frozen cohort, live artifacts, run
+  configuration, adapter, ordered LinkedIn job IDs, replay input, record plans
+  and replay outcome records;
+- scans the complete artifact capsule for credential shapes;
+- writes `accepted` only when every gate passes. Any interruption, audit
+  exception or failed gate remains non-accepted.
 
 The frozen tranche configuration is:
 
@@ -153,9 +190,11 @@ configuration remain frozen through live, replay and audit.
 
 ## Acceptance
 
-1. Live writes exactly 80 results and 80 traces.
+1. Live writes exactly 80 results and 80 traces, and the all-route report
+   contains exactly 80 records bound to the same cohort and run configuration.
 2. Every Exact passes `scripts/audit_exact_identities.py`.
-3. `scripts/audit_strict_replay.py` requires 80/80 `reproduced`; budget
+3. Measurement-bound `scripts/audit_strict_replay.py` requires 80/80
+   `reproduced`; budget
    recovery, expected transition, mismatch, fixture gap and dropped records
    are all zero.
 4. The complete capsule passes `scripts/scan_artifact_privacy.py
@@ -168,6 +207,8 @@ configuration remain frozen through live, replay and audit.
    three expected evidence-terminal recoveries.
 8. If a generic change recovers fewer than three, the cluster is rejected and
    reclassified.
+9. `measurement-status.json` is `accepted`; a raw live exit, partial files or
+   standalone audit report is not a completed measurement.
 
 ## Execution Status
 
@@ -178,7 +219,8 @@ executed.
 
 ## Tooling Validation
 
-- 112 related collector, selector, preflight, audit, LinkedIn discovery and
+- 134 related collector, selector, execution guard, finalizer, audit, LinkedIn
+  discovery and
   live-runner tests pass.
 - Exact audit passes the existing `.283` 36/36 and historical `.278` run4
   33/33 serialized chains.

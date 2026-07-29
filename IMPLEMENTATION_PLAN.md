@@ -38,6 +38,20 @@ clean Git / manifest / fresh-root preflight、Exact identity-chain auditor 和 s
 replay auditor，以及不回显 secret 的完整 artifact privacy scanner。网络尚未运行，
 adapter 仍为 `.286`。
 
+16 个查询及四条 fingerprint lane 已冻结到
+`samples/evaluation/diagnostic_fingerprint_candidate_collection.json`。采集器必须
+通过 `--query-contract` 读取该文件，并把原始文件 SHA-256 写入 pool manifest；
+同一 digest 还必须进入每条 S1 record、cohort manifest 和 preflight gate。不得在
+live 前临时手敲或覆盖查询、地点、分页和数量参数；unbound 或 mixed-contract
+cohort 直接拒绝执行。
+
+Preflight 输出不再直接暴露为可误用的 raw live 命令：执行 wrapper 会在启动前
+重新核对 clean Git、commit、tree、adapter、cohort/config digest 和空的 mutable
+roots。live 成功后自动进入统一 finalizer，依次要求 80/80 live、完整三路 route
+report、measurement-bound Exact identity audit、同批次 strict replay 和全 capsule
+privacy scan；只有全部通过才写 `accepted`。中断、非零退出、伪造 replay、错误
+title/location 或隐私命中均写非 accepted 状态。
+
 进入 Phase B 仍要求已有 singleton 加至少两家新公司满足同 trigger、同 production
 path，并有至少三条 terminal recovery 预期。完整契约见：
 
