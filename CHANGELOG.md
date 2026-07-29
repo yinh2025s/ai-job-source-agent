@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-29 - Historical `.278` cold measurement run 4
+
+- Re-ran the observed Fresh100 development cohort from frozen commit
+  `d86a021e`, adapter `.278`, entirely new runtime roots and no resume.
+- Completed 100/100 with 91 Websites, 77 Career pages, 70 verified Job Lists
+  and 33 S7 Exact openings. All 33 Exact outputs passed serialized
+  company/title/location/provider/tenant/board/opening validation; unsafe,
+  wrong-location, cross-company and cross-tenant publications remained zero.
+- Strict replay passed 100-record integrity with zero fixture gaps, but failed
+  at 94 reproduced, three budget recoveries and three outcome mismatches. SDS
+  International changed budget reason, Brown and Caldwell lost Exact, and
+  Systematic Business Consulting changed failed to partial.
+- Scanned 937,988,704 serialized bytes. JWT and AWS credential shapes were
+  clean, but ten Google browser-key shapes remained across three files, so the
+  raw capsule stays local and no release archive was created.
+- Made no product, configuration or version change and did not rewrite `.278`
+  runs 1-3 or the authoritative current `.283` measurement.
+
 ## 2026-07-29 - Typed stage-v1 candidate route outcomes `.286`
 
 - Added immutable candidate producer and wave outcomes so source failure,

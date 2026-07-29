@@ -25,6 +25,30 @@
 
 ## 当前架构进度（2026-07-29，`.286` typed route outcome accepted）
 
+### Historical `.278` cold measurement run 4
+
+用户再次批准的历史 `.278` measurement 已从 detached commit `d86a021e`、
+adapter `.278` 和全新 runtime roots 完成。固定输入 100/100、SHA-256
+`fcf2ece1...6402`；启动时为 100 pending、0 restored、0 retryable resubmitted，
+没有恢复任何 checkpoint、completion、evidence 或 snapshot。
+
+Live 漏斗为 91 Website、77 Career、70 verified Job List、33 S7 Exact。33/33
+Exact 的 company、title、location、provider、tenant、board、opening 和 selection
+链均通过；错误 URL、错误地点、跨公司和跨 tenant 发布为 0。该变化来自公共网络
+和网页状态，不是产品提升，不改写 `.278` runs 1-3 或当前 `.283` 权威成绩。
+
+Full strict replay record integrity 为 100/100、fixture gap 为 0，但 outcome gate
+只有 94 reproduced、3 budget recovery、3 mismatch。NDIT、ARUP 和 HP 在无网络
+延迟 replay 中越过 live company budget boundary；SDS International 的预算原因
+从 company 变为 fetch，Brown and Caldwell 从 Exact 变成
+`OPENING_NOT_FOUND`，Systematic Business Consulting 从 failed 变为 partial。
+
+最终隐私扫描覆盖 937,988,704 bytes：JWT 0、AWS 0，但 Google browser-key shape
+仍为 10 matches / 3 files，因此不生成 release archive。本轮没有修改产品行为、
+配置或版本。报告：
+
+- `docs/FRESH_100_V278_COLD_RUN4_REPORT.md`
+
 ### `.286` stage-v1 candidate route outcome
 
 `.283` 的因果审计发现一个跨 producer 的状态丢失：Career search 的 TLS、403、
