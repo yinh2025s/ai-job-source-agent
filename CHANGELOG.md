@@ -1,5 +1,23 @@
 # Changelog
 
+## 2026-07-29 - Historical `.278` cold measurement run 3
+
+- Re-ran the observed Fresh100 development cohort from frozen commit
+  `d86a021e`, adapter `.278`, entirely new runtime roots and no resume.
+- Completed 100/100 with 92 Websites, 79 Career pages, 71 verified Job Lists
+  and 32 S7 Exact openings. All 32 Exact outputs passed serialized
+  company/title/location/provider/tenant/board/opening validation; wrong and
+  unsafe publications remained zero.
+- Strict replay passed 100-record integrity with zero fixture gaps, but failed
+  at 95 reproduced, three budget recoveries and two outcome mismatches. Brown
+  and Caldwell lost its Exact opening; Systematic Business Consulting changed
+  failed to partial.
+- Kept the raw capsule local because the same public Google browser-key-shaped
+  value appears in one checkpoint, one completion and the trace. JWT and AWS
+  key shape scans were clean.
+- Made no product, configuration or version change and did not rewrite `.278`
+  run1/run2 or the authoritative current `.283` measurement.
+
 ## 2026-07-29 - iCIMS custom-shell inventory and card location `.284`
 
 - Added a page-evidence probe for safe public iCIMS roots and `/jobs/intro`

@@ -25,6 +25,26 @@
 
 ## 当前架构进度（2026-07-29，`.284` iCIMS shell accepted）
 
+### Historical `.278` cold measurement run 3
+
+用户再次批准的历史 `.278` measurement 已从 detached commit `d86a021e`、
+adapter `.278` 和全新 runtime roots 完成。固定输入 100/100、SHA-256
+`fcf2ece1...6402`，没有恢复任何 checkpoint、completion、evidence 或 snapshot。
+
+Live 漏斗为 92 Website、79 Career、71 verified Job List、32 S7 Exact。32/32
+Exact 的 company、title、location、provider、tenant、board、opening 和 selection
+链均通过；错误 URL、错误地点、跨公司和跨 tenant 发布为 0。该变化来自公共网络
+和网页状态，不是产品提升，不改写 `.278` run1/run2 或当前 `.283` 权威成绩。
+
+Full strict replay record integrity 为 100/100、fixture gap 为 0，但 outcome gate
+只有 95 reproduced、3 budget recovery、2 mismatch。NDIT、ARUP 和 HP 在无网络
+延迟 replay 中越过了 live company budget boundary；Brown and Caldwell 从 Exact
+变成 `OPENING_NOT_FOUND`，Systematic Business Consulting 从 failed 变为 partial。
+Raw capsule 仍含一个 Google browser-key-shaped 公共值的三处序列化，因此不生成
+release archive。本轮没有修改产品行为、配置或版本。报告：
+
+- `docs/FRESH_100_V278_COLD_RUN3_REPORT.md`
+
 ### `.284` iCIMS custom-shell inventory and card location
 
 四个独立 development portal 证明同一 provider contract：公开 iCIMS 根页或
