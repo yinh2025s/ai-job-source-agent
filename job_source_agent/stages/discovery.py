@@ -61,7 +61,9 @@ from ..opening_selection_validation import validate_opening_selection
 from ..providers import DEFAULT_PROVIDER_REGISTRY, ProviderRegistry
 from ..provider_candidates import (
     MAX_PROVIDER_CANDIDATES,
+    CandidateDiscoveryOutcome,
     CandidateDiscoveryRequest,
+    CandidateDiscoveryStatus,
     ProviderCandidate,
     ProviderCandidatePool,
     STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
@@ -132,6 +134,62 @@ class OpeningMatchService(Protocol):
     ) -> tuple[str | None, str, dict]:
         ...
 
+
+def _aggregate_candidate_route_outcomes(
+    *outcomes: CandidateDiscoveryOutcome,
+) -> CandidateDiscoveryOutcome:
+    for status in (
+        CandidateDiscoveryStatus.BUDGET_EXHAUSTED,
+        CandidateDiscoveryStatus.SOURCE_FAILED,
+        CandidateDiscoveryStatus.SOURCE_REJECTED,
+        CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+        CandidateDiscoveryStatus.COMPLETED_EMPTY,
+    ):
+        selected = next(
+            (outcome for outcome in outcomes if outcome.status is status),
+            None,
+        )
+        if selected is not None:
+            return selected
+    return CandidateDiscoveryOutcome(CandidateDiscoveryStatus.NOT_APPLICABLE)
+
+
+def _candidate_discovery_terminal_execution(
+    stage_name: str,
+    outcome: CandidateDiscoveryOutcome,
+    *,
+    started: float,
+    input_count: int,
+    trace: dict,
+) -> StageExecution | None:
+    if outcome.status is CandidateDiscoveryStatus.NOT_APPLICABLE:
+        return None
+    reason_code = (
+        "JOB_BOARD_NOT_FOUND"
+        if outcome.status is CandidateDiscoveryStatus.COMPLETED_EMPTY
+        else "PROVIDER_UNKNOWN"
+        if outcome.status is CandidateDiscoveryStatus.CANDIDATE_REJECTED
+        else outcome.reason_code
+    )
+    terminal_trace = {
+        **trace,
+        "candidate_route_outcome": outcome.to_trace_payload(),
+    }
+    return StageExecution(
+        result=make_stage_result(
+            stage_name,
+            "failed",
+            reason_code=reason_code,
+            duration_ms=_elapsed_ms(started),
+            input_count=input_count,
+            output_count=0,
+            detail=(
+                "Candidate discovery executed but produced no adapter-verified "
+                "Job Board; its typed terminal outcome was retained."
+            ),
+        ),
+        trace=terminal_trace,
+    )
 
 class CareerDiscoveryStage:
     name = STAGE_CAREER_DISCOVERY
@@ -708,6 +766,16 @@ class JobBoardDiscoveryStage:
                         },
                     )
                 if legacy_execution is not None:
+                    if (
+                        legacy_execution.result.status == "success"
+                        and "job_board_portfolio"
+                        not in candidate_execution.updates
+                    ):
+                        return _attach_legacy_route_trace(
+                            legacy_execution,
+                            candidate_trace,
+                            self.provider_registry,
+                        )
                     return _merge_legacy_website_route(
                         context,
                         candidate_execution,
@@ -1230,10 +1298,13 @@ class JobBoardDiscoveryStage:
             external_apply_url=context.company.external_apply_url,
             linkedin_company_url=context.company.linkedin_company_url,
         )
-        direct_pool, direct_trace = self.candidate_discovery.discover_wave(
+        direct_wave = self.candidate_discovery.discover_wave(
             request,
             "direct",
         )
+        direct_pool = direct_wave.pool
+        direct_trace = direct_wave.trace
+        direct_outcome = direct_wave.outcome
         stored_provider_candidates = self._stored_provider_candidates(context)
         if stored_provider_candidates:
             direct_pool = ProviderCandidatePool.build(
@@ -1242,12 +1313,15 @@ class JobBoardDiscoveryStage:
             )
             direct_trace = {
                 **direct_trace,
+                "outcome": direct_outcome.to_trace_payload(),
                 "sources": [
                     *direct_trace.get("sources", []),
                     {
                         "source": "StoredProviderBoardDiscovery",
                         "wave": "direct",
-                        "status": "success",
+                        "status": "candidates_produced",
+                        "reason_code": None,
+                        "retryable": False,
                         "candidate_count": len(stored_provider_candidates),
                         "trace": {
                             "source": "stored_verified_provider_board",
@@ -1258,6 +1332,10 @@ class JobBoardDiscoveryStage:
                 ],
                 "pool": direct_pool.to_trace_payload(),
             }
+            direct_outcome = CandidateDiscoveryOutcome(
+                CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+            )
+            direct_trace["outcome"] = direct_outcome.to_trace_payload()
         builder = ProviderCandidatePortfolioBuilder(
             self.provider_registry,
             self.candidate_fetcher,
@@ -1301,6 +1379,7 @@ class JobBoardDiscoveryStage:
                 }
 
         search_trace: dict
+        search_outcome: CandidateDiscoveryOutcome
         search_built = None
         if (
             verified_direct
@@ -1337,11 +1416,17 @@ class JobBoardDiscoveryStage:
                     if source.get("wave") == "search"
                 ],
             }
+            search_outcome = CandidateDiscoveryOutcome(
+                CandidateDiscoveryStatus.NOT_APPLICABLE
+            )
         else:
-            search_pool, search_trace = self.candidate_discovery.discover_wave(
+            search_wave = self.candidate_discovery.discover_wave(
                 request,
                 "search",
             )
+            search_pool = search_wave.pool
+            search_trace = search_wave.trace
+            search_outcome = search_wave.outcome
             search_built = builder.build(search_pool)
             search_evaluated = tuple(
                 (item, relationship)
@@ -1433,7 +1518,7 @@ class JobBoardDiscoveryStage:
             else None
         )
         if built.portfolio is None:
-            return None, {
+            trace = {
                 "candidate_discovery": discovery_trace,
                 "candidate_verification": verification_trace,
                 "relationship_verification": relationship_trace,
@@ -1442,10 +1527,31 @@ class JobBoardDiscoveryStage:
                     if route_evaluation_trace is not None
                     else {}
                 ),
-            }, website_direct_execution
+            }
+            return (
+                _candidate_discovery_terminal_execution(
+                    self.name,
+                    (
+                        CandidateDiscoveryOutcome(
+                            CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+                            "PROVIDER_UNKNOWN",
+                        )
+                        if pool.candidates
+                        else _aggregate_candidate_route_outcomes(
+                            direct_outcome,
+                            search_outcome,
+                        )
+                    ),
+                    started=started,
+                    input_count=len(pool.candidates),
+                    trace=trace,
+                ),
+                trace,
+                website_direct_execution,
+            )
 
         if not evaluated:
-            return None, {
+            trace = {
                 "candidate_discovery": discovery_trace,
                 "candidate_verification": verification_trace,
                 "relationship_verification": {
@@ -1458,7 +1564,26 @@ class JobBoardDiscoveryStage:
                     if route_evaluation_trace is not None
                     else {}
                 ),
-            }, website_direct_execution
+            }
+            return (
+                StageExecution(
+                    result=make_stage_result(
+                        self.name,
+                        "partial",
+                        reason_code="COMPANY_IDENTITY_AMBIGUOUS",
+                        duration_ms=_elapsed_ms(started),
+                        input_count=len(pool.candidates),
+                        output_count=0,
+                        detail=(
+                            "Adapter-verified candidates were rejected because "
+                            "the hiring relationship was not continuous."
+                        ),
+                    ),
+                    trace=trace,
+                ),
+                trace,
+                website_direct_execution,
+            )
         evaluated = tuple(
             sorted(
                 evaluated,

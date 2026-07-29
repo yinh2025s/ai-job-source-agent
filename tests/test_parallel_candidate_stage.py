@@ -14,7 +14,9 @@ from job_source_agent.direct_candidate_discovery import (
     WebsiteCareerDiscovery,
 )
 from job_source_agent.provider_candidates import (
+    CandidateDiscoveryOutcome,
     CandidateDiscoveryResult,
+    CandidateDiscoveryStatus,
     ProviderCandidate,
     ProviderPublishedEmployerEvidence,
 )
@@ -1384,7 +1386,7 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             fallback["candidate_discovery"]["waves"]["search"]["sources"][0][
                 "status"
             ],
-            "success",
+            "completed_empty",
         )
 
     def test_non_exhaustive_mode_skips_search_after_official_provider_board(self):
@@ -2104,8 +2106,9 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             enable_parallel_candidate_discovery=True,
         ).run(context)
 
-        self.assertEqual(execution.result.status, "not_run")
-        fallback = execution.trace["parallel_candidate_fallback"]
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(execution.result.reason_code, "JOB_BOARD_NOT_FOUND")
+        fallback = execution.trace
         self.assertEqual(
             fallback["candidate_discovery"]["pool"]["candidate_count"],
             0,
@@ -2114,6 +2117,36 @@ class ParallelCandidateStageCharacterizationTests(unittest.TestCase):
             fallback["candidate_verification"]["verified_candidate_count"],
             0,
         )
+
+    def test_source_rejection_is_not_flattened_to_not_run(self):
+        class _RejectedDiscovery:
+            def discover(self, request):
+                return CandidateDiscoveryResult(
+                    (),
+                    {"source": "test"},
+                    CandidateDiscoveryOutcome(
+                        CandidateDiscoveryStatus.SOURCE_REJECTED,
+                        "HTTP_FORBIDDEN",
+                        False,
+                    ),
+                )
+
+        context = PipelineContext.from_company(
+            CompanyInput(company_name="Acme")
+        )
+        execution = JobBoardDiscoveryStage(
+            _NoNetworkService(),
+            DEFAULT_PROVIDER_REGISTRY,
+            candidate_discovery=CompositeCandidateDiscovery(
+                (_RejectedDiscovery(),),
+                limit=12,
+            ),
+            enable_parallel_candidate_discovery=True,
+        ).run(context)
+
+        self.assertEqual(execution.result.status, "failed")
+        self.assertEqual(execution.result.reason_code, "HTTP_FORBIDDEN")
+        self.assertFalse(execution.result.retryable)
 
     def test_search_rank_and_snippet_do_not_authorize_an_unrelated_tenant(self):
         board = DiscoveredJobBoard(

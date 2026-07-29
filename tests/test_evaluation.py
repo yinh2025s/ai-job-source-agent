@@ -379,6 +379,19 @@ class EvaluationTests(unittest.TestCase):
             {"stages": [stage("opening_match", "partial", "OPENING_IDENTITY_AMBIGUOUS")]},
             {"stages": [stage("career_discovery", "failed", "NETWORK_TIMEOUT", retryable=True)]},
             {"stages": [stage("job_board_discovery", "partial", "LINKEDIN_NATIVE_ONLY")]},
+            {
+                "identity_assertion": {
+                    "provider": {
+                        "provider": "greenhouse",
+                        "tenant": "acme",
+                        "canonical_board_url": "https://boards.greenhouse.io/acme",
+                        "relationship_verified": True,
+                    }
+                },
+                "stages": [
+                    stage("job_board_discovery", "failed", "BOT_PROTECTION")
+                ],
+            },
             {"stages": [stage("career_discovery", "failed", "BOT_PROTECTION")]},
             {"stages": [stage("career_discovery", "failed", "OFFLINE_FIXTURE_MISSING")]},
             {"stages": [stage("job_board_discovery", "unsupported", "PROVIDER_VARIANT_UNSUPPORTED")]},
@@ -405,7 +418,7 @@ class EvaluationTests(unittest.TestCase):
             "external_blocked": 1,
             "replay_infrastructure_failure": 1,
             "unsupported_capability": 1,
-            "discovery_unresolved": 1,
+            "discovery_unresolved": 2,
             "source_closed": 1,
             "other_non_success": 1,
         }

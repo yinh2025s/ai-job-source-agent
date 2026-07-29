@@ -601,7 +601,11 @@ def _terminal_outcome(result: dict) -> str:
     if reason_code == "LINKEDIN_NATIVE_ONLY":
         return "linkedin_native_only"
     if reason_code in _EXTERNAL_BLOCKED_REASONS:
-        return "external_blocked"
+        return (
+            "external_blocked"
+            if _verified_provider_relationship(result)
+            else "discovery_unresolved"
+        )
     if reason_code in _REPLAY_INFRASTRUCTURE_REASONS:
         return "replay_infrastructure_failure"
     if terminal_stage.get("status") == "unsupported" or reason_code in _UNSUPPORTED_REASONS:
@@ -611,6 +615,23 @@ def _terminal_outcome(result: dict) -> str:
     if reason_code == "OPENING_CLOSED":
         return "source_closed"
     return "other_non_success"
+
+
+def _verified_provider_relationship(result: dict) -> bool:
+    assertion = result.get("identity_assertion")
+    if not isinstance(assertion, dict):
+        return False
+    provider = assertion.get("provider")
+    return bool(
+        isinstance(provider, dict)
+        and provider.get("relationship_verified") is True
+        and isinstance(provider.get("provider"), str)
+        and provider["provider"]
+        and isinstance(provider.get("tenant"), str)
+        and provider["tenant"]
+        and isinstance(provider.get("canonical_board_url"), str)
+        and provider["canonical_board_url"]
+    )
 
 
 def _terminal_non_success_stage(stage_by_name: dict[str, dict]) -> dict | None:
