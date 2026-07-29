@@ -234,6 +234,18 @@ def prepare_diagnostic_cohort(
 
     identity_rows = _cohort_identity_rows(selected)
     cohort_bytes = _canonical_json_bytes(selected)
+    contract_digests = [
+        digest
+        for digest in (
+            _candidate_query_contract_sha256(record) for record in selected
+        )
+        if digest is not None
+    ]
+    unique_contract_digests = sorted(set(contract_digests))
+    if len(unique_contract_digests) > 1:
+        raise DiagnosticCohortError(
+            "selected candidates use different query collection contracts"
+        )
     rejection_counts = Counter(reason for reason, _job_id in rejection_events)
     overlap_reasons = {
         "historical_company",
@@ -254,6 +266,21 @@ def prepare_diagnostic_cohort(
             _canonical_json_bytes(identity_rows)
         ).hexdigest(),
         "candidate_sources": source_digests,
+        "candidate_collection_contract": {
+            "status": (
+                "bound"
+                if len(contract_digests) == len(selected)
+                and len(unique_contract_digests) == 1
+                else "unbound"
+            ),
+            "sha256": (
+                unique_contract_digests[0]
+                if len(contract_digests) == len(selected)
+                and len(unique_contract_digests) == 1
+                else None
+            ),
+            "bound_record_count": len(contract_digests),
+        },
         "exclusion_sources": exclusion_digests,
         "historical_identity_counts": {
             "company_count": len(excluded_companies),
@@ -336,6 +363,30 @@ def _matched_keywords(record: dict[str, Any]) -> tuple[str, ...]:
         if isinstance(first, str) and first.strip():
             return (" ".join(first.split()),)
     return ()
+
+
+def _candidate_query_contract_sha256(
+    record: dict[str, Any],
+) -> str | None:
+    trace = record.get("source_trace")
+    if not isinstance(trace, dict):
+        return None
+    for key in ("candidate_collection", "blind_candidate_collection"):
+        collection = trace.get(key)
+        if not isinstance(collection, dict):
+            continue
+        value = collection.get("query_contract_sha256")
+        if value is None:
+            return None
+        if (
+            isinstance(value, str)
+            and re.fullmatch(r"[0-9a-f]{64}", value)
+        ):
+            return value
+        raise DiagnosticCohortError(
+            "candidate query contract digest is invalid"
+        )
+    return None
 
 
 def _collect_identities(

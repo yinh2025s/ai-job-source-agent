@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import ipaddress
 import json
 import os
@@ -11,6 +12,15 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
+
+from job_source_agent.identity_continuity import (
+    HiringIdentityEvidence,
+    OpeningIdentity,
+    OpeningSelectionEvidence,
+    ProviderIdentity,
+    validate_opening_identity_chain,
+)
+from job_source_agent.opening_selection_validation import validate_opening_selection
 
 
 class ExactIdentityAuditError(ValueError):
@@ -28,6 +38,8 @@ def build_parser() -> argparse.ArgumentParser:
         description="Audit every published Exact opening through its serialized S7 chain."
     )
     parser.add_argument("--trace", required=True)
+    parser.add_argument("--cohort")
+    parser.add_argument("--results")
     parser.add_argument("--output", required=True)
     parser.add_argument("--require-exact-count", type=int)
     return parser
@@ -37,9 +49,21 @@ def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     try:
         payload = json.loads(Path(args.trace).read_text(encoding="utf-8"))
+        cohort = (
+            json.loads(Path(args.cohort).read_text(encoding="utf-8"))
+            if args.cohort
+            else None
+        )
+        results = (
+            json.loads(Path(args.results).read_text(encoding="utf-8"))
+            if args.results
+            else None
+        )
         report = audit_exact_identities(
             payload,
             require_exact_count=args.require_exact_count,
+            cohort_records=cohort,
+            result_records=results,
         )
     except (ExactIdentityAuditError, OSError, json.JSONDecodeError) as error:
         raise SystemExit(f"Exact identity audit failed: {error}") from error
@@ -62,9 +86,24 @@ def audit_exact_identities(
     records: Any,
     *,
     require_exact_count: int | None = None,
+    cohort_records: Any = None,
+    result_records: Any = None,
 ) -> dict[str, Any]:
     if not isinstance(records, list):
         raise ExactIdentityAuditError("trace must be a JSON array")
+    measurement_bound = cohort_records is not None or result_records is not None
+    source_by_job_id: dict[str, dict[str, Any]] = {}
+    if measurement_bound:
+        if cohort_records is None or result_records is None:
+            raise ExactIdentityAuditError(
+                "measurement audit requires both cohort and results"
+            )
+        source_by_job_id = _validate_measurement_binding(
+            cohort_records=cohort_records,
+            result_records=result_records,
+            trace_records=records,
+        )
+
     exact_records = [
         (index, record)
         for index, record in enumerate(records)
@@ -79,7 +118,12 @@ def audit_exact_identities(
     issue_counts: Counter[str] = Counter()
     passed_count = 0
     for index, record in exact_records:
-        issues = _record_issues(record)
+        source_record = (
+            source_by_job_id[_linkedin_job_id(record.get("linkedin_job_url"))]
+            if measurement_bound
+            else None
+        )
+        issues = _record_issues(record, source_record=source_record)
         issue_counts.update(issues)
         if not issues:
             passed_count += 1
@@ -101,9 +145,13 @@ def audit_exact_identities(
             }
         )
     failed_count = len(exact_records) - passed_count
-    return {
+    report = {
         "schema_version": "1.0",
         "status": "passed" if failed_count == 0 else "failed",
+        "audit_mode": (
+            "measurement_bound" if measurement_bound else "legacy_trace_only"
+        ),
+        "measurement_bound": measurement_bound,
         "trace_record_count": len(records),
         "exact_count": len(exact_records),
         "passed_count": passed_count,
@@ -111,9 +159,23 @@ def audit_exact_identities(
         "issue_counts": dict(sorted(issue_counts.items())),
         "records": audited,
     }
+    if measurement_bound:
+        report["measurement_binding"] = {
+            "cohort_record_count": len(cohort_records),
+            "result_record_count": len(result_records),
+            "trace_record_count": len(records),
+            "cohort_sha256": _payload_sha256(cohort_records),
+            "results_sha256": _payload_sha256(result_records),
+            "trace_sha256": _payload_sha256(records),
+        }
+    return report
 
 
-def _record_issues(record: dict[str, Any]) -> list[str]:
+def _record_issues(
+    record: dict[str, Any],
+    *,
+    source_record: dict[str, Any] | None = None,
+) -> list[str]:
     issues: list[str] = []
     opening_url = record.get("open_position_url")
     assertion = record.get("identity_assertion")
@@ -221,7 +283,193 @@ def _record_issues(record: dict[str, Any]) -> list[str]:
         "not_applicable",
     }:
         issues.append("location_not_verified")
+    if source_record is not None:
+        issues.extend(_production_contract_issues(record, source_record))
     return sorted(set(issues))
+
+
+def _production_contract_issues(
+    record: dict[str, Any],
+    source_record: dict[str, Any],
+) -> list[str]:
+    assertion = record.get("identity_assertion")
+    if not isinstance(assertion, dict):
+        return ["production_identity_contract_invalid"]
+    try:
+        hiring = HiringIdentityEvidence.from_checkpoint_payload(assertion.get("hiring"))
+        provider = ProviderIdentity.from_checkpoint_payload(assertion.get("provider"))
+        opening = OpeningIdentity.from_checkpoint_payload(assertion.get("opening"))
+        selection = OpeningSelectionEvidence.from_checkpoint_payload(
+            assertion.get("selection")
+        )
+    except (TypeError, ValueError):
+        return ["production_identity_contract_invalid"]
+
+    opening_url = record.get("open_position_url")
+    identity_failures = validate_opening_identity_chain(
+        hiring=hiring,
+        provider=provider,
+        opening=opening,
+        open_position_url=opening_url,
+    )
+    selection_failures, location_classification = validate_opening_selection(
+        selection=selection,
+        provider=provider,
+        opening=opening,
+        open_position_url=opening_url,
+        target_title=source_record["job_title"],
+        target_location=source_record["job_location"],
+    )
+    issues = [
+        failure.casefold()
+        for failure in (*identity_failures, *selection_failures)
+    ]
+    if assertion.get("location_classification") != location_classification:
+        issues.append("location_classification_mismatch")
+    return issues
+
+
+def _validate_measurement_binding(
+    *,
+    cohort_records: Any,
+    result_records: Any,
+    trace_records: list[Any],
+) -> dict[str, dict[str, Any]]:
+    if not isinstance(cohort_records, list) or not cohort_records:
+        raise ExactIdentityAuditError(
+            "measurement cohort must be a nonempty JSON array"
+        )
+    if not isinstance(result_records, list):
+        raise ExactIdentityAuditError("measurement results must be a JSON array")
+    if not (
+        len(cohort_records) == len(result_records) == len(trace_records)
+    ):
+        raise ExactIdentityAuditError(
+            "measurement cohort, results and trace counts do not match"
+        )
+
+    source_by_job_id: dict[str, dict[str, Any]] = {}
+    expected_job_ids: list[str] = []
+    for index, source in enumerate(cohort_records):
+        if not isinstance(source, dict):
+            raise ExactIdentityAuditError(
+                f"measurement cohort record {index} is not an object"
+            )
+        for field in (
+            "company_name",
+            "job_title",
+            "job_location",
+            "linkedin_job_url",
+        ):
+            if not isinstance(source.get(field), str) or not source[field].strip():
+                raise ExactIdentityAuditError(
+                    f"measurement cohort record {index} has invalid {field}"
+                )
+        job_id = _linkedin_job_id(source["linkedin_job_url"])
+        if job_id in source_by_job_id:
+            raise ExactIdentityAuditError(
+                f"measurement cohort contains duplicate LinkedIn job ID {job_id}"
+            )
+        source_by_job_id[job_id] = source
+        expected_job_ids.append(job_id)
+
+    for label, values in (
+        ("results", result_records),
+        ("trace", trace_records),
+    ):
+        observed_job_ids: list[str] = []
+        for index, value in enumerate(values):
+            if not isinstance(value, dict):
+                raise ExactIdentityAuditError(
+                    f"measurement {label} record {index} is not an object"
+                )
+            job_id = _linkedin_job_id(value.get("linkedin_job_url"))
+            observed_job_ids.append(job_id)
+            source = source_by_job_id.get(job_id)
+            if source is None:
+                raise ExactIdentityAuditError(
+                    f"measurement {label} record {index} is not in frozen cohort"
+                )
+            _validate_source_projection(
+                source=source,
+                live_record=value,
+                label=label,
+                index=index,
+            )
+        if observed_job_ids != expected_job_ids:
+            raise ExactIdentityAuditError(
+                f"measurement {label} order or LinkedIn job IDs do not match cohort"
+            )
+
+    for index, (result, trace) in enumerate(zip(result_records, trace_records)):
+        assert isinstance(result, dict)
+        assert isinstance(trace, dict)
+        trace_projection = {key: value for key, value in trace.items() if key != "trace"}
+        if trace_projection != result:
+            raise ExactIdentityAuditError(
+                f"measurement result and trace record {index} are not identical"
+            )
+        if not isinstance(trace.get("trace"), dict):
+            raise ExactIdentityAuditError(
+                f"measurement trace record {index} lacks full trace evidence"
+            )
+    return source_by_job_id
+
+
+def _validate_source_projection(
+    *,
+    source: dict[str, Any],
+    live_record: dict[str, Any],
+    label: str,
+    index: int,
+) -> None:
+    projections = (
+        ("company_name", "company_name"),
+        ("job_title", "linkedin_job_title"),
+        ("job_location", "linkedin_job_location"),
+    )
+    for source_key, live_key in projections:
+        source_value = _normalized_source_value(source[source_key])
+        live_value = live_record.get(live_key)
+        if (
+            not isinstance(live_value, str)
+            or _normalized_source_value(live_value) != source_value
+        ):
+            raise ExactIdentityAuditError(
+                f"measurement {label} record {index} does not preserve {source_key}"
+            )
+
+
+def _linkedin_job_id(value: Any) -> str:
+    if not isinstance(value, str):
+        raise ExactIdentityAuditError("LinkedIn job URL is missing")
+    try:
+        parsed = urlparse(value)
+    except ValueError as error:
+        raise ExactIdentityAuditError("LinkedIn job URL is invalid") from error
+    host = (parsed.hostname or "").casefold()
+    if parsed.scheme not in {"http", "https"} or not (
+        host == "linkedin.com" or host.endswith(".linkedin.com")
+    ):
+        raise ExactIdentityAuditError("LinkedIn job URL is invalid")
+    match = re.search(r"(?:^|[-/])(\d{6,})(?:/)?$", parsed.path)
+    if match is None:
+        raise ExactIdentityAuditError("LinkedIn job URL lacks a canonical job ID")
+    return match.group(1)
+
+
+def _normalized_source_value(value: str) -> str:
+    return " ".join(value.casefold().split())
+
+
+def _payload_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _safe_public_https_url(value: str) -> bool:

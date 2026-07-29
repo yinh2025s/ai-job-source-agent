@@ -1,0 +1,77 @@
+{
+  "schema_version": "1.0",
+  "collection_kind": "linkedin_public_search_cards_s1_only",
+  "location": "United States",
+  "per_keyword_limit": 30,
+  "pages": 2,
+  "target_job_count": 480,
+  "minimum_job_count": 320,
+  "target_required": false,
+  "fetch_timeout_seconds": 8,
+  "queries": [
+    {
+      "lane": "cws_effective_configuration",
+      "keyword": "Retail Operations Supervisor"
+    },
+    {
+      "lane": "cws_effective_configuration",
+      "keyword": "Distribution Center Supervisor"
+    },
+    {
+      "lane": "cws_effective_configuration",
+      "keyword": "Facilities Maintenance Technician"
+    },
+    {
+      "lane": "cws_effective_configuration",
+      "keyword": "Medical Assistant"
+    },
+    {
+      "lane": "repeated_static_cards",
+      "keyword": "Logistics Coordinator"
+    },
+    {
+      "lane": "repeated_static_cards",
+      "keyword": "Field Service Technician"
+    },
+    {
+      "lane": "repeated_static_cards",
+      "keyword": "Quality Inspector"
+    },
+    {
+      "lane": "repeated_static_cards",
+      "keyword": "Construction Estimator"
+    },
+    {
+      "lane": "safe_fragment_pagination",
+      "keyword": "Credit Risk Analyst"
+    },
+    {
+      "lane": "safe_fragment_pagination",
+      "keyword": "Compliance Specialist"
+    },
+    {
+      "lane": "safe_fragment_pagination",
+      "keyword": "Claims Examiner"
+    },
+    {
+      "lane": "safe_fragment_pagination",
+      "keyword": "Payroll Specialist"
+    },
+    {
+      "lane": "multi_field_get_title_search",
+      "keyword": "CAD Designer"
+    },
+    {
+      "lane": "multi_field_get_title_search",
+      "keyword": "Project Controls Specialist"
+    },
+    {
+      "lane": "multi_field_get_title_search",
+      "keyword": "Clinical Laboratory Technologist"
+    },
+    {
+      "lane": "multi_field_get_title_search",
+      "keyword": "Revenue Cycle Specialist"
+    }
+  ]
+}

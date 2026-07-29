@@ -8,6 +8,8 @@ from scripts.prepare_diagnostic_measurement import (
     DiagnosticMeasurementError,
     prepare_measurement,
 )
+from scripts.live_batch_eval import build_parser as build_live_parser
+from scripts.live_batch_eval import validate_artifact_args
 
 
 def candidate(index: int) -> dict:
@@ -24,6 +26,7 @@ def candidate(index: int) -> dict:
         "source_trace": {
             "candidate_collection": {
                 "matched_keywords": ["Software Engineer"],
+                "query_contract_sha256": "a" * 64,
             }
         },
     }
@@ -99,10 +102,21 @@ class PrepareDiagnosticMeasurementTests(unittest.TestCase):
             self.assertTrue((artifact_root / "state" / "checkpoints").is_dir())
             self.assertTrue((artifact_root / "replay" / "full").is_dir())
             command = prepared["command"]
-            self.assertIn("--require-full-cohort", command)
-            self.assertIn("--no-resume", command)
-            self.assertIn("--evaluate-all-candidate-routes", command)
-            self.assertEqual(command[command.index("--replay-bundle-limit") + 1], "2")
+            self.assertEqual(
+                command[1],
+                "scripts/run_prepared_diagnostic_measurement.py",
+            )
+            live_command = prepared["live_command"]
+            self.assertIn("--enable-parallel-candidate-discovery", live_command)
+            self.assertIn("--require-full-cohort", live_command)
+            self.assertIn("--no-resume", live_command)
+            self.assertIn("--evaluate-all-candidate-routes", live_command)
+            self.assertEqual(
+                live_command[live_command.index("--replay-bundle-limit") + 1],
+                "2",
+            )
+            live_args = build_live_parser().parse_args(live_command[2:])
+            validate_artifact_args(live_args)
 
     def test_rejects_existing_artifact_root(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -169,6 +183,30 @@ class PrepareDiagnosticMeasurementTests(unittest.TestCase):
             config.write_text(json.dumps(payload), encoding="utf-8")
             with self.assertRaisesRegex(
                 DiagnosticMeasurementError, "exceeds diagnostic bounds"
+            ):
+                prepare_measurement(
+                    cohort_path=cohort,
+                    cohort_manifest_path=manifest,
+                    run_config_path=config,
+                    artifact_root=root / "run",
+                    repo_root=root,
+                    runtime_version=(3, 12),
+                    git_identity=("abc123", "tree123"),
+                )
+
+    def test_rejects_unbound_query_collection_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            cohort, manifest, config = self._contract(root)
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+            payload["candidate_collection_contract"] = {
+                "status": "unbound",
+                "sha256": None,
+                "bound_record_count": 0,
+            }
+            manifest.write_text(json.dumps(payload), encoding="utf-8")
+            with self.assertRaisesRegex(
+                DiagnosticMeasurementError, "not bound"
             ):
                 prepare_measurement(
                     cohort_path=cohort,

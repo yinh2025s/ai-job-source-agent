@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from scripts.prepare_diagnostic_cohort import (
+    _candidate_query_contract_sha256,
     _canonical_json_bytes,
     _cohort_identity_rows,
     _company_key,
@@ -169,6 +170,12 @@ def prepare_measurement(
     shutil.copyfile(run_config_path, layout["run_config"])
 
     command = _live_command(config, layout)
+    execution_command = [
+        sys.executable,
+        "scripts/run_prepared_diagnostic_measurement.py",
+        "--preflight",
+        str(layout["preflight"]),
+    ]
     prepared = {
         "schema_version": SCHEMA_VERSION,
         "measurement_kind": "development_diagnostic_nonsealed",
@@ -185,11 +192,13 @@ def prepare_measurement(
         "runtime_python": ".".join(map(str, runtime)),
         "runtime_code_commit": head,
         "runtime_source_tree_sha256": tree,
+        "runtime_repo_root": str(repo_root.resolve()),
         "adapter_version": _adapter_version(repo_root),
         "mutable_roots_preexisting": False,
         "mutable_roots_are_disjoint": True,
         "resume_allowed": False,
-        "command": command,
+        "command": execution_command,
+        "live_command": command,
         "paths": {key: str(path) for key, path in layout.items()},
     }
     _write_json_atomic(layout["preflight"], prepared)
@@ -268,6 +277,30 @@ def _validate_cohort_manifest(
         raise DiagnosticMeasurementError("cohort overlap gate is not clean")
     if manifest.get("s2_s7_executed_during_selection") is not False:
         raise DiagnosticMeasurementError("selection must not execute S2-S7")
+    collection_contract = manifest.get("candidate_collection_contract")
+    if (
+        not isinstance(collection_contract, dict)
+        or collection_contract.get("status") != "bound"
+        or collection_contract.get("bound_record_count") != len(cohort)
+        or not isinstance(collection_contract.get("sha256"), str)
+    ):
+        raise DiagnosticMeasurementError(
+            "cohort is not bound to one frozen query collection contract"
+        )
+    contract_sha = collection_contract["sha256"]
+    try:
+        inconsistent_contract = any(
+            _candidate_query_contract_sha256(record) != contract_sha
+            for record in cohort
+        )
+    except ValueError as error:
+        raise DiagnosticMeasurementError(
+            "cohort query collection contract binding is invalid"
+        ) from error
+    if inconsistent_contract:
+        raise DiagnosticMeasurementError(
+            "cohort query collection contract binding is inconsistent"
+        )
 
 
 def _validate_run_config(config: dict[str, Any], record_count: int) -> None:
@@ -351,6 +384,7 @@ def _layout(root: Path) -> dict[str, Path]:
         "snapshots": root / "capture" / "snapshots",
         "replay": root / "replay" / "full",
         "audit": root / "audit",
+        "measurement_status": root / "measurement-status.json",
     }
 
 
@@ -391,6 +425,7 @@ def _live_command(config: dict[str, Any], paths: dict[str, Path]) -> list[str]:
     if config["evaluate_all_candidate_routes"]:
         command.extend(
             (
+                "--enable-parallel-candidate-discovery",
                 "--evaluate-all-candidate-routes",
                 "--route-evaluation-output",
                 str(paths["live"] / "route-evaluation.json"),
