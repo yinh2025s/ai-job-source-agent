@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-29 - Diagnostic fingerprint measurement tooling
+
+- Added a neutral S1-only candidate-pool contract with an optional exact-target
+  guard.
+- Added deterministic diagnostic cohort selection with role quotas, explicit
+  exclusion digests, company/job-ID/LinkedIn-slug overlap rejection and direct
+  answer-prefill rejection.
+- Added a non-executing CPython 3.12, clean-Git, manifest, run-config and
+  fresh-root preflight that creates disjoint live/state/snapshot/replay paths
+  and freezes the exact command.
+- Added reusable Exact identity-chain and strict replay audits. Strict replay
+  rejects budget recovery and expected transition rather than counting them as
+  a pass.
+- Added a fail-closed whole-artifact credential-shape scanner that reports only
+  redacted paths, types and counts, never matched values.
+- Prepared an 80-record tranche configuration and four-fingerprint sampling
+  contract. No network or product-code behavior ran; adapter `.286` is
+  unchanged.
+- Passed 112 related tests. Artifact smoke gates pass `.283` Exact 36/36,
+  `.278` Exact 33/33 and `.286` strict replay 6/6; the replay and privacy tools
+  also correctly reject the known-dirty `.278` run4 evidence.
+
 ## 2026-07-29 - `.286` post-measurement causal split
 
 - Split the declared-GET label into four executable singleton causes: DSV card

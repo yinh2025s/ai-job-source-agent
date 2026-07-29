@@ -25,6 +25,24 @@
 
 ## 当前架构进度（2026-07-29，`.286` typed route outcome accepted）
 
+### `.286` diagnostic fingerprint measurement readiness
+
+当前四个确定性 singleton 不能直接实现，下一步改为 provider/path fingerprint
+定向证据收集，而不是再随机跑 30 条。新的 S1-only pool 使用 16 个跨行业职位查询，
+先收集 480 个 public cards，再按每个 query 5 家冻结 80 条零重叠 tranche。最多四个
+tranche；每个 live 都必须独立授权、独立 roots、冻结代码，并与产品成绩分开。
+
+本轮已补 measurement-only tooling：neutral S1 collector、带 role quota 和
+company/job ID/LinkedIn slug overlap gate 的 diagnostic selector、CPython 3.12 /
+clean Git / manifest / fresh-root preflight、Exact identity-chain auditor 和 strict
+replay auditor，以及不回显 secret 的完整 artifact privacy scanner。网络尚未运行，
+adapter 仍为 `.286`。
+
+进入 Phase B 仍要求已有 singleton 加至少两家新公司满足同 trigger、同 production
+path，并有至少三条 terminal recovery 预期。完整契约见：
+
+- `docs/COORDINATOR_V286_DIAGNOSTIC_FINGERPRINT_MEASUREMENT_PHASE_A.md`
+
 ### `.286` post-measurement causal split
 
 对当前 non-Exact backlog 的三线只读审计没有找到可进入 Phase B 的通用修复簇。

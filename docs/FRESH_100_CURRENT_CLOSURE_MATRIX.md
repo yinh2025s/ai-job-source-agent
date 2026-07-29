@@ -21,6 +21,17 @@ fixture gaps and zero budget recoveries. The raw capsule remains local because
 one public browser-key-shaped value is serialized in its artifacts. See
 `docs/FRESH_100_V283_CURRENT_COLD_GATE_REPORT.md`.
 
+### `.286` Diagnostic Fingerprint Readiness
+
+No Fresh100 terminal changes in this tooling phase. A new S1-only,
+zero-overlap, 80-record tranche contract is prepared to seek two additional
+companies for one of four known singleton paths. Cohort selection, cold-run
+preflight, Exact identity audit and strict replay audit are now reusable
+commands. Network collection and live S2-S7 have not started.
+
+The authoritative `.283` score remains **36/100**. See
+`docs/COORDINATOR_V286_DIAGNOSTIC_FINGERPRINT_MEASUREMENT_PHASE_A.md`.
+
 ### `.286` Post-Measurement Causal Split
 
 The latest three-workstream read-only audit found no implementation-qualified
