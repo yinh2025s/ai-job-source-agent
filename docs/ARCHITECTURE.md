@@ -154,6 +154,15 @@ run-config schema 为 `1.7`，adapter 为 `.217`。
 排名或 job-list 成功都不能算 exact。该模式用于 route recall/overlap 测量，不改变默认产品成功
 语义。
 
+`.286` 为默认 `stage_v1` 补充 typed candidate-route outcome。Career search、
+各 candidate producer 和 composite wave 必须显式区分
+`candidates_produced`、`completed_empty`、`not_applicable`、`source_failed`、
+`source_rejected`、`budget_exhausted` 与 `candidate_rejected`；trace 只能序列化
+这些状态，不能重建或覆盖它们。S5 在没有 verified portfolio 时消费该 outcome：
+实际执行过的 route 不得再退化为 `not_run`，只有全部 producer 都不适用时才允许
+`not_run`。该 contract 不授权 URL。报告只有在 provider identity 已序列化且
+`relationship_verified=true` 时才可把拒绝称为 External Blocked。
+
 ADR-0030 在 `.214` 增加 feature-flagged `coordinator_v2`。它从 S1 冻结 immutable
 `CandidateDiscoveryInput`，串行但逻辑独立地执行 External Apply、provider search 和
 Website/Career producer，并为每路记录 completed、not-applicable、suppressed、budget-exhausted

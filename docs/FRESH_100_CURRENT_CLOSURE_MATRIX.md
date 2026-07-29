@@ -21,6 +21,28 @@ fixture gaps and zero budget recoveries. The raw capsule remains local because
 one public browser-key-shaped value is serialized in its artifacts. See
 `docs/FRESH_100_V283_CURRENT_COLD_GATE_REPORT.md`.
 
+### `.286` Focused Candidate Route Outcome Evidence
+
+The post-measurement `.286` contract corrects stage-v1 execution semantics; it
+does not claim a recall recovery. Career search, candidate producers,
+composite waves and S5 now preserve typed source failure, rejection, budget,
+empty and not-applicable outcomes.
+
+Six isolated development records that reported S5 `not_run` in `.283` now
+retain the route that actually executed: Caesars Entertainment, City of Pharr,
+Nisga'a Tek, Benefis and Systematic Business Consulting report
+`BOT_PROTECTION`; Sunwest Bank reports retryable
+`FETCH_BUDGET_EXHAUSTED`. No Job List or opening URL was published.
+
+Reporting no longer treats these pre-provider denials as verified External
+Blocks. The final diagnostic projection is five `discovery_unresolved` and one
+`retryable_failure`. Strict replay reproduced 6/6 with zero mismatch or fixture
+gap. Because the standard outcome gate compares the earlier S4 failure, a
+separate S5 typed projection audit compares status, reason, retryability and
+outcome and passes 6/6 with zero mismatch. The authoritative `.283` score
+remains **36/100**. See
+`docs/COORDINATOR_V286_TYPED_CANDIDATE_ROUTE_OUTCOME_PHASE_C.md`.
+
 ### `.285` Focused iCIMS Aggregate-to-Child Evidence
 
 The post-measurement `.285` contract represents an iCIMS aggregate board to

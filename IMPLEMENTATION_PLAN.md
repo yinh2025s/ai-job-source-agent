@@ -23,7 +23,41 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-29，`.285` iCIMS child route accepted）
+## 当前架构进度（2026-07-29，`.286` typed route outcome accepted）
+
+### `.286` stage-v1 candidate route outcome
+
+`.283` 的因果审计发现一个跨 producer 的状态丢失：Career search 的 TLS、403、
+timeout、budget exhaustion 和真实空结果最终都可能变成空 candidate list；
+composite 又把所有非抛异常调用标成 success，S5 最后甚至会把已经执行的路线写成
+`not_run`。这会破坏 failure cluster 分析，也会把未验证 provider relationship
+之前的 challenge 夸大成 External Blocked。
+
+`.286` 冻结 immutable `CandidateDiscoveryOutcome` 和 wave result，贯通 Career
+search、External Apply、Website/Career、Career-surface、Provider-search、
+composite 和 S5。执行过的 route 必须保留 typed terminal；只有全部不适用才允许
+`not_run`。该变化不新增候选、不改变排名，也不放宽 provider、tenant、招聘关系、
+title、location 或 S7。
+
+六条原 Fresh100 development records 使用新 root 做 focused live。它们在 `.283`
+的 S5 全是 `not_run`，现在五条为 `BOT_PROTECTION`、一条为
+`FETCH_BUDGET_EXHAUSTED`；0 Job List、0 opening URL 被新增。报告层只有在
+serialized provider identity 的 `relationship_verified=true` 时才允许
+External Blocked，因此最终是五条 discovery-unresolved 和一条 retryable。
+Strict replay 6/6 reproduced，0 mismatch、0 fixture gap。
+标准 outcome gate 比较最早失败的 S4，因此另有 S5 typed projection 自动审计，
+逐条比较 status、reason、retryable 和 outcome，结果 6/6 matched、0 mismatch。
+原 live summary 是 reporting gate 修复前的旧投影，保留但不作为最终分类；
+`final-reporting-summary.json` 是当前代码口径。
+
+Adapter 为 `2026-07-29.286`。门禁为 363 affected tests、2,907 full tests
+（4 skipped）、provider 25/25、resolver 6/6、architecture 48/0。该修复只提升
+因果正确性，权威 `.283` Fresh100 仍为 36/100。
+报告：
+
+- `docs/COORDINATOR_V286_TYPED_CANDIDATE_ROUTE_OUTCOME_PHASE_A.md`
+- `docs/COORDINATOR_V286_TYPED_CANDIDATE_ROUTE_OUTCOME_PHASE_C.md`
+- `docs/adr/0036-propagate-candidate-route-outcomes.md`
 
 ### `.285` iCIMS aggregate-to-child opening route
 

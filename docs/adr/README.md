@@ -45,3 +45,4 @@ NNNN-short-decision-title.md
 - [ADR-0033: Replay Recorded Company-Budget Boundaries](0033-replay-recorded-company-budget-boundaries.md)
 - [ADR-0034: Bind Provider Board Employer Evidence](0034-bind-provider-board-employer-evidence.md)
 - [ADR-0035: Bind Provider Aggregate-to-Child Opening Routes](0035-bind-provider-opening-routes.md)
+- [ADR-0036: Propagate Candidate Route Outcomes](0036-propagate-candidate-route-outcomes.md)

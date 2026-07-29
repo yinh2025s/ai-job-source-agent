@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-29 - Typed stage-v1 candidate route outcomes `.286`
+
+- Added immutable candidate producer and wave outcomes so source failure,
+  deterministic rejection, budget exhaustion, true empty work and
+  not-applicable routes cannot collapse into one empty candidate list.
+- Propagated the typed result through Career search, direct, Career-surface and
+  Provider-search discovery into S5. An executed route now retains a concrete
+  terminal; only an all-inapplicable route set may remain `not_run`.
+- Tightened summary classification so a 403/challenge is `external_blocked`
+  only after a serialized provider identity proves the hiring relationship.
+  Earlier denials remain `discovery_unresolved`.
+- In a new isolated six-record Fresh100 focused live, all six historical S5
+  `not_run` results became typed failures: five `BOT_PROTECTION` and one
+  `FETCH_BUDGET_EXHAUSTED`. No Job List or opening URL was published.
+- Strict scoped replay reproduced 6/6 with zero mismatch or fixture gap; a
+  separate S5 typed projection audit matched 6/6 because the standard outcome
+  gate compares the earlier S4 terminal. Passed 363 affected tests and 2,907
+  final full tests (4 skipped), provider 25/25, resolver 6/6 and architecture
+  48/0.
+- Advanced adapter version to `2026-07-29.286`. The authoritative Fresh100
+  `.283` score remains 36/100.
+
 ## 2026-07-29 - iCIMS aggregate-to-child opening routes `.285`
 
 - Added immutable `ProviderOpeningRouteEvidence` and first-class
