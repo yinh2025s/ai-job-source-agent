@@ -9,8 +9,10 @@ from .career_search import CareerSearchResolver
 from .provider_candidates import (
     MAX_PROVIDER_CANDIDATES,
     CandidateDiscovery,
+    CandidateDiscoveryOutcome,
     CandidateDiscoveryRequest,
     CandidateDiscoveryResult,
+    CandidateDiscoveryStatus,
     ProviderCandidate,
     ProviderCandidatePool,
     ProviderPublishedEmployerEvidence,
@@ -122,6 +124,17 @@ class ProviderSearchCandidateDiscovery(CandidateDiscovery):
             candidates.extend(probe_candidates)
 
         pool = ProviderCandidatePool.build(candidates, limit=self.max_candidates)
+        if pool.candidates:
+            outcome = CandidateDiscoveryOutcome(
+                CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+            )
+        elif search_result.candidates:
+            outcome = CandidateDiscoveryOutcome(
+                CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+                "PROVIDER_UNKNOWN",
+            )
+        else:
+            outcome = search_result.outcome
         return CandidateDiscoveryResult(
             candidates=pool.candidates,
             trace={
@@ -132,6 +145,7 @@ class ProviderSearchCandidateDiscovery(CandidateDiscovery):
                 "skipped_candidate_count": skipped_count,
                 "tenant_probe_fallback": probe_trace,
             },
+            outcome=outcome,
         )
 
 

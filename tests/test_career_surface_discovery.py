@@ -4,8 +4,11 @@ from job_source_agent.career_search import CareerSearchResult
 from job_source_agent.career_surface_discovery import CareerSurfaceCandidateDiscovery
 from job_source_agent.job_board import DiscoveredJobBoard, JobBoard, JobBoardPortfolio
 from job_source_agent.models import LinkCandidate
-from job_source_agent.provider_candidates import CandidateDiscoveryRequest
-from job_source_agent.web import Page
+from job_source_agent.provider_candidates import (
+    CandidateDiscoveryRequest,
+    CandidateDiscoveryStatus,
+)
+from job_source_agent.web import FetchError, Page
 
 
 class _Fetcher:
@@ -118,6 +121,39 @@ class CareerSurfaceCandidateDiscoveryTests(unittest.TestCase):
         )
         self.assertEqual(result.candidates, ())
         self.assertEqual(result.trace["attempts"][0]["reason"], "cross_site_redirect")
+
+    def test_surface_transport_failure_retains_retryable_outcome(self):
+        lead = LinkCandidate(
+            "https://careers.acme.example/openings",
+            180,
+            "https://www.bing.com/search?q=acme+careers",
+        )
+        resolver = _Resolver(
+            lead,
+            Page(lead.url, "", final_url=lead.url),
+        )
+
+        class _FailingFetcher:
+            def fetch(self, url):
+                raise FetchError(
+                    "timed out",
+                    reason_code="NETWORK_TIMEOUT",
+                    retryable=True,
+                )
+
+        resolver.fetcher = _FailingFetcher()
+        result = CareerSurfaceCandidateDiscovery(
+            resolver,
+            _Service(),
+        ).discover(CandidateDiscoveryRequest(company_name="Acme"))
+
+        self.assertEqual(result.candidates, ())
+        self.assertEqual(
+            result.outcome.status,
+            CandidateDiscoveryStatus.SOURCE_FAILED,
+        )
+        self.assertEqual(result.outcome.reason_code, "NETWORK_TIMEOUT")
+        self.assertTrue(result.outcome.retryable)
 
     def test_existing_verified_career_input_skips_search(self):
         lead = LinkCandidate(

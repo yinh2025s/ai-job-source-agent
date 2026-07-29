@@ -3,8 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from .provider_candidates import (
+    CandidateDiscoveryOutcome,
     CandidateDiscoveryRequest,
     CandidateDiscoveryResult,
+    CandidateDiscoveryStatus,
     ProviderCandidate,
     ProviderCandidatePool,
 )
@@ -28,7 +30,12 @@ class ExternalApplyDiscovery:
             target_location=request.target_location,
             registry=self._provider_registry,
         )
-        return _result("external_apply", [candidate] if candidate else [])
+        return _result(
+            "external_apply",
+            [candidate] if candidate else [],
+            applicable=bool(request.external_apply_url),
+            rejected_if_empty=bool(request.external_apply_url),
+        )
 
 
 class WebsiteCareerDiscovery:
@@ -53,7 +60,14 @@ class WebsiteCareerDiscovery:
             )
             if candidate is not None:
                 candidates.append(candidate)
-        return _result("website_career", candidates)
+        return _result(
+            "website_career",
+            candidates,
+            applicable=bool(
+                request.career_page_url or request.company_website_url
+            ),
+            rejected_if_empty=False,
+        )
 
 
 def _direct_candidate(
@@ -105,6 +119,9 @@ def _provider_hint(registry: ProviderRegistry, url: str) -> str | None:
 def _result(
     source: str,
     candidates: list[ProviderCandidate],
+    *,
+    applicable: bool,
+    rejected_if_empty: bool,
 ) -> CandidateDiscoveryResult:
     pool = ProviderCandidatePool.build(candidates)
     trace: dict[str, Any] = {
@@ -112,4 +129,18 @@ def _result(
         "candidate_count": len(pool.candidates),
         "candidates": [candidate.to_trace_payload() for candidate in pool.candidates],
     }
-    return CandidateDiscoveryResult(candidates=pool.candidates, trace=trace)
+    outcome = (
+        CandidateDiscoveryOutcome(CandidateDiscoveryStatus.CANDIDATES_PRODUCED)
+        if pool.candidates
+        else CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+            "PROVIDER_UNKNOWN",
+        )
+        if applicable and rejected_if_empty
+        else CandidateDiscoveryOutcome(CandidateDiscoveryStatus.NOT_APPLICABLE)
+    )
+    return CandidateDiscoveryResult(
+        candidates=pool.candidates,
+        trace=trace,
+        outcome=outcome,
+    )

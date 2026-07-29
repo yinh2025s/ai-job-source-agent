@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import Enum
 import ipaddress
 import re
 from typing import Any, Protocol, runtime_checkable
@@ -52,6 +53,62 @@ _SENSITIVE_QUERY_KEYS = {
     "signature",
     "token",
 }
+
+
+class CandidateDiscoveryStatus(str, Enum):
+    CANDIDATES_PRODUCED = "candidates_produced"
+    COMPLETED_EMPTY = "completed_empty"
+    NOT_APPLICABLE = "not_applicable"
+    SOURCE_FAILED = "source_failed"
+    SOURCE_REJECTED = "source_rejected"
+    BUDGET_EXHAUSTED = "budget_exhausted"
+    CANDIDATE_REJECTED = "candidate_rejected"
+
+
+@dataclass(frozen=True)
+class CandidateDiscoveryOutcome:
+    """Typed producer/wave completion; trace is never its authority."""
+
+    status: CandidateDiscoveryStatus
+    reason_code: str | None = None
+    retryable: bool = False
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.status, CandidateDiscoveryStatus):
+            raise TypeError("Candidate discovery status is invalid")
+        if not isinstance(self.retryable, bool):
+            raise TypeError("Candidate discovery retryability is invalid")
+        terminal_failure = self.status in {
+            CandidateDiscoveryStatus.SOURCE_FAILED,
+            CandidateDiscoveryStatus.SOURCE_REJECTED,
+            CandidateDiscoveryStatus.BUDGET_EXHAUSTED,
+            CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+        }
+        if terminal_failure:
+            if (
+                not isinstance(self.reason_code, str)
+                or not re.fullmatch(r"[A-Z][A-Z0-9_]{2,63}", self.reason_code)
+            ):
+                raise ValueError("Candidate discovery failure reason is invalid")
+        elif self.reason_code is not None:
+            raise ValueError("Successful candidate discovery cannot carry a reason")
+        if self.status in {
+            CandidateDiscoveryStatus.SOURCE_REJECTED,
+            CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+        } and self.retryable:
+            raise ValueError("Deterministic candidate rejection cannot be retryable")
+        if (
+            self.status is CandidateDiscoveryStatus.BUDGET_EXHAUSTED
+            and not self.retryable
+        ):
+            raise ValueError("Candidate discovery budget exhaustion must be retryable")
+
+    def to_trace_payload(self) -> dict[str, Any]:
+        return {
+            "status": self.status.value,
+            "reason_code": self.reason_code,
+            "retryable": self.retryable,
+        }
 
 
 @dataclass(frozen=True)
@@ -300,6 +357,27 @@ class CandidateDiscoveryRequest:
 class CandidateDiscoveryResult:
     candidates: tuple[ProviderCandidate, ...]
     trace: dict[str, Any]
+    outcome: CandidateDiscoveryOutcome | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.candidates, tuple):
+            raise TypeError("Candidate discovery results must be immutable")
+        if any(not isinstance(candidate, ProviderCandidate) for candidate in self.candidates):
+            raise TypeError("Candidate discovery emitted an invalid candidate")
+        if not isinstance(self.trace, dict):
+            raise TypeError("Candidate discovery trace must be a dictionary")
+        outcome = self.outcome or CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+            if self.candidates
+            else CandidateDiscoveryStatus.COMPLETED_EMPTY
+        )
+        if not isinstance(outcome, CandidateDiscoveryOutcome):
+            raise TypeError("Candidate discovery outcome is invalid")
+        if bool(self.candidates) != (
+            outcome.status is CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+        ):
+            raise ValueError("Candidate discovery outcome conflicts with candidates")
+        object.__setattr__(self, "outcome", outcome)
 
 
 @runtime_checkable

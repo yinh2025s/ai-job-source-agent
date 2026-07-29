@@ -5,12 +5,14 @@ from job_source_agent.candidate_portfolio import (
     ProviderCandidatePortfolioBuilder,
 )
 from job_source_agent.provider_candidates import (
+    CandidateDiscoveryOutcome,
     CandidateDiscoveryRequest,
     CandidateDiscoveryResult,
+    CandidateDiscoveryStatus,
     ProviderCandidate,
 )
 from job_source_agent.providers import DEFAULT_PROVIDER_REGISTRY
-from job_source_agent.web import Page
+from job_source_agent.web import FetchError, Page
 
 
 class _Discovery:
@@ -155,7 +157,65 @@ class CandidatePortfolioTests(unittest.TestCase):
         pool, trace = discovery.discover(CandidateDiscoveryRequest(company_name="Acme"))
 
         self.assertEqual(pool.candidates, (direct, search))
-        self.assertEqual([item["status"] for item in trace["sources"]], ["success", "failed", "success"])
+        self.assertEqual(
+            [item["status"] for item in trace["sources"]],
+            ["candidates_produced", "source_failed", "candidates_produced"],
+        )
+
+    def test_composite_retains_deterministic_source_rejection(self):
+        discovery = CompositeCandidateDiscovery(
+            (
+                _Discovery(
+                    error=FetchError(
+                        "HTTP 403",
+                        status=403,
+                        reason_code="HTTP_FORBIDDEN",
+                        retryable=False,
+                    )
+                ),
+            ),
+            limit=12,
+        )
+
+        result = discovery.discover(
+            CandidateDiscoveryRequest(company_name="Acme")
+        )
+
+        self.assertEqual(
+            result.outcome,
+            CandidateDiscoveryOutcome(
+                CandidateDiscoveryStatus.SOURCE_REJECTED,
+                "HTTP_FORBIDDEN",
+                False,
+            ),
+        )
+        self.assertEqual(
+            result.trace["sources"][0]["reason_code"],
+            "HTTP_FORBIDDEN",
+        )
+
+    def test_composite_retains_budget_exhaustion_over_empty_source(self):
+        class _BudgetDiscovery(_Discovery):
+            def discover(self, request):
+                return CandidateDiscoveryResult(
+                    (),
+                    {"source": "budget"},
+                    CandidateDiscoveryOutcome(
+                        CandidateDiscoveryStatus.BUDGET_EXHAUSTED,
+                        "FETCH_BUDGET_EXHAUSTED",
+                        True,
+                    ),
+                )
+
+        result = CompositeCandidateDiscovery(
+            (_Discovery(), _BudgetDiscovery()),
+            limit=12,
+        ).discover(CandidateDiscoveryRequest(company_name="Acme"))
+
+        self.assertEqual(
+            result.outcome.status,
+            CandidateDiscoveryStatus.BUDGET_EXHAUSTED,
+        )
 
     def test_adapter_verification_builds_bounded_typed_portfolio(self):
         direct = _candidate(

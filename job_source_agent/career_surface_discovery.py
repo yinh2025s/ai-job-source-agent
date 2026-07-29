@@ -7,10 +7,13 @@ from urllib.parse import urlparse
 
 from .career_search import CareerSearchResolver
 from .errors import DiscoveryError
+from .fetch_failure import project_fetch_error
 from .provider_candidates import (
     MAX_PROVIDER_CANDIDATES,
+    CandidateDiscoveryOutcome,
     CandidateDiscoveryRequest,
     CandidateDiscoveryResult,
+    CandidateDiscoveryStatus,
     ProviderCandidate,
     ProviderCandidatePool,
 )
@@ -46,12 +49,18 @@ class CareerSurfaceCandidateDiscovery:
     def discover(self, request: CandidateDiscoveryRequest) -> CandidateDiscoveryResult:
         # An already verified Career input is handled by the direct/legacy route.
         if request.career_page_url:
-            return CandidateDiscoveryResult((), {
-                "source": "verified_career_surface_search",
-                "status": "skipped",
-                "reason": "verified_career_input_available",
-                "candidate_count": 0,
-            })
+            return CandidateDiscoveryResult(
+                (),
+                {
+                    "source": "verified_career_surface_search",
+                    "status": "skipped",
+                    "reason": "verified_career_input_available",
+                    "candidate_count": 0,
+                },
+                CandidateDiscoveryOutcome(
+                    CandidateDiscoveryStatus.NOT_APPLICABLE
+                ),
+            )
 
         search = self.resolver.search(
             request.company_name,
@@ -65,6 +74,7 @@ class CareerSurfaceCandidateDiscovery:
         query_by_url = _query_by_url(search.trace)
         candidates: list[ProviderCandidate] = []
         attempts: list[dict[str, Any]] = []
+        attempt_outcomes: list[CandidateDiscoveryOutcome] = []
 
         for rank, lead in enumerate(
             search.candidates[: self.max_surface_candidates], start=1
@@ -77,6 +87,7 @@ class CareerSurfaceCandidateDiscovery:
             try:
                 page = self.resolver.fetcher.fetch(lead.url)
             except FetchError as exc:
+                attempt_outcomes.append(_fetch_outcome(exc))
                 attempt.update(
                     reason="surface_fetch_failed",
                     retryable=exc.retryable,
@@ -93,6 +104,12 @@ class CareerSurfaceCandidateDiscovery:
             )
             attempt["verification"] = verification
             if not verification["verified"]:
+                attempt_outcomes.append(
+                    CandidateDiscoveryOutcome(
+                        CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+                        "COMPANY_IDENTITY_AMBIGUOUS",
+                    )
+                )
                 attempt["reason"] = verification["reason"]
                 attempts.append(attempt)
                 continue
@@ -105,7 +122,15 @@ class CareerSurfaceCandidateDiscovery:
                         target_location=request.target_location,
                     )
                 )
-            except (DiscoveryError, FetchError, OSError, TimeoutError, TypeError, ValueError) as exc:
+            except (
+                DiscoveryError,
+                FetchError,
+                OSError,
+                TimeoutError,
+                TypeError,
+                ValueError,
+            ) as exc:
+                attempt_outcomes.append(_surface_exception_outcome(exc))
                 attempt.update(
                     reason="board_verification_failed",
                     error_type=type(exc).__name__,
@@ -113,6 +138,12 @@ class CareerSurfaceCandidateDiscovery:
                 attempts.append(attempt)
                 continue
             if portfolio is None:
+                attempt_outcomes.append(
+                    CandidateDiscoveryOutcome(
+                        CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+                        "PROVIDER_UNKNOWN",
+                    )
+                )
                 attempt["reason"] = "no_typed_provider_board"
                 attempts.append(attempt)
                 continue
@@ -164,8 +195,26 @@ class CareerSurfaceCandidateDiscovery:
             attempts.append(attempt)
             if emitted:
                 break
+            attempt_outcomes.append(
+                CandidateDiscoveryOutcome(
+                    CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+                    "PROVIDER_UNKNOWN",
+                )
+            )
 
         pool = ProviderCandidatePool.build(candidates, limit=self.max_candidates)
+        if pool.candidates:
+            outcome = CandidateDiscoveryOutcome(
+                CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+            )
+        elif attempt_outcomes:
+            outcome = _aggregate_surface_outcomes(attempt_outcomes)
+        elif search.candidates:
+            outcome = CandidateDiscoveryOutcome(
+                CandidateDiscoveryStatus.NOT_APPLICABLE
+            )
+        else:
+            outcome = search.outcome
         return CandidateDiscoveryResult(
             pool.candidates,
             {
@@ -175,7 +224,55 @@ class CareerSurfaceCandidateDiscovery:
                 "candidate_count": len(pool.candidates),
                 "truncated": pool.truncated,
             },
+            outcome,
         )
+
+
+def _fetch_outcome(error: FetchError) -> CandidateDiscoveryOutcome:
+    failure = project_fetch_error(error)
+    return CandidateDiscoveryOutcome(
+        (
+            CandidateDiscoveryStatus.SOURCE_FAILED
+            if failure["retryable"]
+            else CandidateDiscoveryStatus.SOURCE_REJECTED
+        ),
+        failure["reason_code"],
+        failure["retryable"],
+    )
+
+
+def _surface_exception_outcome(error: Exception) -> CandidateDiscoveryOutcome:
+    if isinstance(error, FetchError):
+        return _fetch_outcome(error)
+    if isinstance(error, (OSError, TimeoutError)):
+        return CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.SOURCE_FAILED,
+            "FETCH_FAILED",
+            True,
+        )
+    return CandidateDiscoveryOutcome(
+        CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+        "PARSING_FAILED",
+        False,
+    )
+
+
+def _aggregate_surface_outcomes(
+    outcomes: list[CandidateDiscoveryOutcome],
+) -> CandidateDiscoveryOutcome:
+    for status in (
+        CandidateDiscoveryStatus.BUDGET_EXHAUSTED,
+        CandidateDiscoveryStatus.SOURCE_FAILED,
+        CandidateDiscoveryStatus.SOURCE_REJECTED,
+        CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+    ):
+        selected = next(
+            (outcome for outcome in outcomes if outcome.status is status),
+            None,
+        )
+        if selected is not None:
+            return selected
+    return CandidateDiscoveryOutcome(CandidateDiscoveryStatus.COMPLETED_EMPTY)
 
 
 class _SurfaceMetadataParser(HTMLParser):

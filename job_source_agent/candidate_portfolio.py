@@ -7,13 +7,16 @@ from urllib.parse import urlsplit
 from .job_board import DiscoveredJobBoard, JobBoardPortfolio
 from .provider_candidates import (
     CandidateDiscovery,
+    CandidateDiscoveryOutcome,
     CandidateDiscoveryRequest,
+    CandidateDiscoveryStatus,
     ProviderCandidate,
     ProviderCandidatePool,
     STORED_PROVIDER_CANDIDATE_SOURCE_KINDS,
     VerifiedProviderCandidate,
 )
 from .contracts import FetchClient
+from .fetch_failure import project_fetch_error
 from .providers import (
     CandidateBootstrapProviderAdapter,
     JobQuery,
@@ -25,6 +28,56 @@ from .web import FetchError
 DIRECT_CANDIDATE_WAVE = "direct"
 SEARCH_CANDIDATE_WAVE = "search"
 _CANDIDATE_WAVES = (DIRECT_CANDIDATE_WAVE, SEARCH_CANDIDATE_WAVE)
+
+
+@dataclass(frozen=True)
+class CandidateDiscoverySourceOutcome:
+    source: str
+    wave: str
+    outcome: CandidateDiscoveryOutcome
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.source, str) or not self.source:
+            raise ValueError("Candidate discovery source is invalid")
+        if self.wave not in _CANDIDATE_WAVES:
+            raise ValueError("Candidate discovery source wave is invalid")
+        if not isinstance(self.outcome, CandidateDiscoveryOutcome):
+            raise TypeError("Candidate discovery source outcome is invalid")
+
+
+@dataclass(frozen=True)
+class CandidateDiscoveryWaveResult:
+    pool: ProviderCandidatePool
+    outcome: CandidateDiscoveryOutcome
+    source_outcomes: tuple[CandidateDiscoverySourceOutcome, ...]
+    trace: dict[str, Any]
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.pool, ProviderCandidatePool):
+            raise TypeError("Candidate discovery wave pool is invalid")
+        if not isinstance(self.outcome, CandidateDiscoveryOutcome):
+            raise TypeError("Candidate discovery wave outcome is invalid")
+        if not isinstance(self.source_outcomes, tuple):
+            raise TypeError("Candidate discovery source outcomes must be immutable")
+        if any(
+            not isinstance(item, CandidateDiscoverySourceOutcome)
+            for item in self.source_outcomes
+        ):
+            raise TypeError("Candidate discovery wave contains an invalid outcome")
+        if bool(self.pool.candidates) != (
+            self.outcome.status is CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+        ):
+            raise ValueError("Candidate discovery wave outcome conflicts with its pool")
+        if not isinstance(self.trace, dict):
+            raise TypeError("Candidate discovery wave trace is invalid")
+
+    def __iter__(self):
+        """Preserve the historical pool/trace unpacking API."""
+        yield self.pool
+        yield self.trace
+
+    def __getitem__(self, index: int):
+        return (self.pool, self.trace)[index]
 
 
 @dataclass(frozen=True)
@@ -47,14 +100,14 @@ class CompositeCandidateDiscovery:
         self._discoveries = tuple(discoveries)
         self._limit = limit
 
-    def discover(self, request: CandidateDiscoveryRequest) -> tuple[ProviderCandidatePool, dict]:
+    def discover(self, request: CandidateDiscoveryRequest) -> CandidateDiscoveryWaveResult:
         return self._discover(request, wave=None)
 
     def discover_wave(
         self,
         request: CandidateDiscoveryRequest,
         wave: str,
-    ) -> tuple[ProviderCandidatePool, dict]:
+    ) -> CandidateDiscoveryWaveResult:
         """Run one discovery wave while reporting every deferred/skipped source."""
         if wave not in _CANDIDATE_WAVES:
             raise ValueError("Candidate discovery wave is invalid")
@@ -65,9 +118,10 @@ class CompositeCandidateDiscovery:
         request: CandidateDiscoveryRequest,
         *,
         wave: str | None,
-    ) -> tuple[ProviderCandidatePool, dict]:
+    ) -> CandidateDiscoveryWaveResult:
         candidates: list[ProviderCandidate] = []
         source_traces: list[dict[str, Any]] = []
+        source_outcomes: list[CandidateDiscoverySourceOutcome] = []
         for discovery in self._discoveries:
             source_name = type(discovery).__name__
             source_wave = getattr(discovery, "candidate_wave", DIRECT_CANDIDATE_WAVE)
@@ -92,35 +146,127 @@ class CompositeCandidateDiscovery:
                         ),
                     }
                 )
+                source_outcomes.append(
+                    CandidateDiscoverySourceOutcome(
+                        source_name,
+                        source_wave,
+                        CandidateDiscoveryOutcome(
+                            CandidateDiscoveryStatus.NOT_APPLICABLE
+                        ),
+                    )
+                )
                 continue
             try:
                 result = discovery.discover(request)
             except Exception as exc:
+                outcome = _exception_outcome(exc)
                 source_traces.append(
                     {
                         "source": source_name,
                         "wave": source_wave,
-                        "status": "failed",
+                        **outcome.to_trace_payload(),
                         "error_type": type(exc).__name__,
                     }
                 )
+                source_outcomes.append(
+                    CandidateDiscoverySourceOutcome(
+                        source_name,
+                        source_wave,
+                        outcome,
+                    )
+                )
                 continue
             candidates.extend(result.candidates)
+            outcome = result.outcome
+            assert outcome is not None
             source_traces.append(
                 {
                     "source": source_name,
                     "wave": source_wave,
-                    "status": "success",
+                    **outcome.to_trace_payload(),
                     "candidate_count": len(result.candidates),
                     "trace": result.trace,
                 }
             )
+            source_outcomes.append(
+                CandidateDiscoverySourceOutcome(
+                    source_name,
+                    source_wave,
+                    outcome,
+                )
+            )
         pool = ProviderCandidatePool.build(candidates, limit=self._limit)
-        return pool, {
+        aggregate = _aggregate_wave_outcome(pool, source_outcomes)
+        trace = {
             "wave": wave or "all",
+            "outcome": aggregate.to_trace_payload(),
             "sources": source_traces,
             "pool": pool.to_trace_payload(),
         }
+        return CandidateDiscoveryWaveResult(
+            pool,
+            aggregate,
+            tuple(source_outcomes),
+            trace,
+        )
+
+
+def _exception_outcome(error: Exception) -> CandidateDiscoveryOutcome:
+    if isinstance(error, FetchError):
+        failure = project_fetch_error(error)
+        if failure["retryable"]:
+            return CandidateDiscoveryOutcome(
+                CandidateDiscoveryStatus.SOURCE_FAILED,
+                failure["reason_code"],
+                True,
+            )
+        return CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.SOURCE_REJECTED,
+            failure["reason_code"],
+            False,
+        )
+    if isinstance(error, (TimeoutError, OSError)):
+        return CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.SOURCE_FAILED,
+            "FETCH_FAILED",
+            True,
+        )
+    if isinstance(error, (TypeError, ValueError)):
+        return CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.SOURCE_REJECTED,
+            "PARSING_FAILED",
+            False,
+        )
+    return CandidateDiscoveryOutcome(
+        CandidateDiscoveryStatus.SOURCE_FAILED,
+        "FETCH_FAILED",
+        True,
+    )
+
+
+def _aggregate_wave_outcome(
+    pool: ProviderCandidatePool,
+    source_outcomes: list[CandidateDiscoverySourceOutcome],
+) -> CandidateDiscoveryOutcome:
+    if pool.candidates:
+        return CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+        )
+    outcomes = [item.outcome for item in source_outcomes]
+    for status in (
+        CandidateDiscoveryStatus.BUDGET_EXHAUSTED,
+        CandidateDiscoveryStatus.SOURCE_FAILED,
+        CandidateDiscoveryStatus.SOURCE_REJECTED,
+        CandidateDiscoveryStatus.CANDIDATE_REJECTED,
+        CandidateDiscoveryStatus.COMPLETED_EMPTY,
+    ):
+        selected = next(
+            (outcome for outcome in outcomes if outcome.status is status),
+            None,
+        )
+        if selected is not None:
+            return selected
+    return CandidateDiscoveryOutcome(CandidateDiscoveryStatus.NOT_APPLICABLE)
 
 
 class ProviderCandidatePortfolioBuilder:

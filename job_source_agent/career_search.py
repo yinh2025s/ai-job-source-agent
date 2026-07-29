@@ -11,7 +11,9 @@ from urllib.parse import parse_qs, unquote, urlencode, urlparse, urlunparse
 from xml.etree import ElementTree as ET
 
 from .contracts import FetchBudget
+from .fetch_failure import project_fetch_error
 from .models import LinkCandidate
+from .provider_candidates import CandidateDiscoveryOutcome, CandidateDiscoveryStatus
 from .scoring import is_ats_url, is_resource_url, score_career_link
 from .search_backend import SearchBackend, SearchQuery
 from .web import FetchError, Fetcher, RawLink, domain_of, safe_normalize_url
@@ -45,6 +47,19 @@ BLOCKED_SEARCH_DOMAINS = {
 class CareerSearchResult:
     candidates: list[LinkCandidate]
     trace: dict
+    outcome: CandidateDiscoveryOutcome | None = None
+
+    def __post_init__(self) -> None:
+        outcome = self.outcome or CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+            if self.candidates
+            else CandidateDiscoveryStatus.COMPLETED_EMPTY
+        )
+        if bool(self.candidates) != (
+            outcome.status is CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+        ):
+            raise ValueError("Career search outcome conflicts with candidates")
+        self.outcome = outcome
 
 
 @dataclass(frozen=True)
@@ -116,6 +131,7 @@ class CareerSearchResolver:
     ) -> CareerSearchResult:
         official_domain = domain_of(company_website_url)
         candidates: list[LinkCandidate] = []
+        source_outcomes: list[CandidateDiscoveryOutcome] = []
         seen: set[str] = set()
         fetch_budget = self.fetcher if isinstance(self.fetcher, FetchBudget) else None
         trace = {
@@ -216,6 +232,7 @@ class CareerSearchResolver:
                     continue
                 if source_fetches >= self.max_source_fetches:
                     trace["source_fetch_budget_exhausted"] = True
+                    source_outcomes.append(_budget_exhausted_outcome())
                     break
                 if fetch_budget is not None:
                     trace["fetch_budget_checks"] += 1
@@ -224,6 +241,7 @@ class CareerSearchResolver:
                         trace["fetch_budget_unavailable"] = True
                         trace["fetch_budget_invalid"] = invalid
                         trace["stopped_reason"] = "deadline_exhausted"
+                        source_outcomes.append(_budget_exhausted_outcome())
                         break
                 source_fetches += 1
                 query_trace = {
@@ -245,6 +263,7 @@ class CareerSearchResolver:
                         self.search_backend,
                     )
                 except FetchError as exc:
+                    source_outcomes.append(_fetch_error_outcome(exc))
                     error_trace = _search_fetch_error_trace(
                         exc,
                         self.search_backend,
@@ -266,6 +285,9 @@ class CareerSearchResolver:
                 if trace["query_url"] is None:
                     trace["query_url"] = execution.request_url
                 if execution.disposition != "ok":
+                    source_outcomes.append(
+                        _search_disposition_outcome(execution.disposition)
+                    )
                     query_trace["error"] = execution.reason or execution.disposition
                     query_trace["response_disposition"] = execution.disposition
                     disabled_sources.add(source.name)
@@ -276,6 +298,11 @@ class CareerSearchResolver:
                         }
                     )
                     continue
+                source_outcomes.append(
+                    CandidateDiscoveryOutcome(
+                        CandidateDiscoveryStatus.COMPLETED_EMPTY
+                    )
+                )
 
                 raw_urls = execution.results
                 query_trace["result_count"] = len(raw_urls)
@@ -342,6 +369,7 @@ class CareerSearchResolver:
                     continue
                 if source_fetches >= self.max_source_fetches:
                     trace["source_fetch_budget_exhausted"] = True
+                    source_outcomes.append(_budget_exhausted_outcome())
                     break
                 if fetch_budget is not None:
                     trace["fetch_budget_checks"] += 1
@@ -350,6 +378,7 @@ class CareerSearchResolver:
                         trace["fetch_budget_unavailable"] = True
                         trace["fetch_budget_invalid"] = invalid
                         trace["stopped_reason"] = "deadline_exhausted"
+                        source_outcomes.append(_budget_exhausted_outcome())
                         break
 
                 source = next(
@@ -387,6 +416,7 @@ class CareerSearchResolver:
                         self.search_backend,
                     )
                 except FetchError as exc:
+                    source_outcomes.append(_fetch_error_outcome(exc))
                     error_trace = _search_fetch_error_trace(
                         exc,
                         self.search_backend,
@@ -406,6 +436,9 @@ class CareerSearchResolver:
                 query_trace["query_url"] = execution.request_url
                 query_trace["final_url"] = execution.final_url
                 if execution.disposition != "ok":
+                    source_outcomes.append(
+                        _search_disposition_outcome(execution.disposition)
+                    )
                     query_trace["error"] = execution.reason or execution.disposition
                     query_trace["response_disposition"] = execution.disposition
                     disabled_sources.add(source.name)
@@ -416,6 +449,11 @@ class CareerSearchResolver:
                         }
                     )
                     continue
+                source_outcomes.append(
+                    CandidateDiscoveryOutcome(
+                        CandidateDiscoveryStatus.COMPLETED_EMPTY
+                    )
+                )
 
                 raw_urls = execution.results
                 query_trace["result_count"] = len(raw_urls)
@@ -462,7 +500,11 @@ class CareerSearchResolver:
             trace["stopped_reason"] = (
                 "query_plan_complete" if candidates else "no_valid_candidates"
             )
-        return CareerSearchResult(selected, trace)
+        return CareerSearchResult(
+            selected,
+            trace,
+            _aggregate_search_outcome(selected, source_outcomes),
+        )
 
     def _collect_search_candidates(
         self,
@@ -545,11 +587,16 @@ def search_site_openings(
         or max_source_fetches < 1
     ):
         trace["stopped_reason"] = "invalid_or_empty_request"
-        return CareerSearchResult([], trace)
+        return CareerSearchResult(
+            [],
+            trace,
+            CandidateDiscoveryOutcome(CandidateDiscoveryStatus.NOT_APPLICABLE),
+        )
 
     query_text = f'site:{official_site} "{normalized_title}"'
     trace["query"] = query_text
     candidates: list[LinkCandidate] = []
+    source_outcomes: list[CandidateDiscoveryOutcome] = []
     seen: set[str] = set()
     source_fetches = 0
     for source in _search_sources_for_backend(query_text, search_backend):
@@ -557,6 +604,7 @@ def search_site_openings(
             continue
         if source_fetches >= max_source_fetches:
             trace["source_fetch_budget_exhausted"] = True
+            source_outcomes.append(_budget_exhausted_outcome())
             break
         source_fetches += 1
         query_trace = {
@@ -575,6 +623,7 @@ def search_site_openings(
                 search_backend,
             )
         except FetchError as error:
+            source_outcomes.append(_fetch_error_outcome(error))
             query_trace["error"] = _search_fetch_error_trace(
                 error,
                 search_backend,
@@ -583,9 +632,15 @@ def search_site_openings(
         query_trace["query_url"] = execution.request_url
         query_trace["final_url"] = execution.final_url
         if execution.disposition != "ok":
+            source_outcomes.append(
+                _search_disposition_outcome(execution.disposition)
+            )
             query_trace["error"] = execution.reason or execution.disposition
             query_trace["response_disposition"] = execution.disposition
             continue
+        source_outcomes.append(
+            CandidateDiscoveryOutcome(CandidateDiscoveryStatus.COMPLETED_EMPTY)
+        )
         raw_results = execution.results
         query_trace["result_count"] = len(raw_results)
         for result in raw_results:
@@ -621,7 +676,68 @@ def search_site_openings(
         if candidates
         else "no_valid_candidates"
     )
-    return CareerSearchResult(candidates, trace)
+    return CareerSearchResult(
+        candidates,
+        trace,
+        _aggregate_search_outcome(candidates, source_outcomes),
+    )
+
+
+def _fetch_error_outcome(error: FetchError) -> CandidateDiscoveryOutcome:
+    failure = project_fetch_error(error)
+    return CandidateDiscoveryOutcome(
+        (
+            CandidateDiscoveryStatus.SOURCE_FAILED
+            if failure["retryable"]
+            else CandidateDiscoveryStatus.SOURCE_REJECTED
+        ),
+        failure["reason_code"],
+        failure["retryable"],
+    )
+
+
+def _budget_exhausted_outcome() -> CandidateDiscoveryOutcome:
+    return CandidateDiscoveryOutcome(
+        CandidateDiscoveryStatus.BUDGET_EXHAUSTED,
+        "FETCH_BUDGET_EXHAUSTED",
+        True,
+    )
+
+
+def _search_disposition_outcome(disposition: str) -> CandidateDiscoveryOutcome:
+    reason_code = (
+        "BOT_PROTECTION"
+        if disposition in {"challenge", "blocked"}
+        else "PARSING_FAILED"
+    )
+    return CandidateDiscoveryOutcome(
+        CandidateDiscoveryStatus.SOURCE_REJECTED,
+        reason_code,
+        False,
+    )
+
+
+def _aggregate_search_outcome(
+    candidates: list[LinkCandidate],
+    source_outcomes: list[CandidateDiscoveryOutcome],
+) -> CandidateDiscoveryOutcome:
+    if candidates:
+        return CandidateDiscoveryOutcome(
+            CandidateDiscoveryStatus.CANDIDATES_PRODUCED
+        )
+    for status in (
+        CandidateDiscoveryStatus.BUDGET_EXHAUSTED,
+        CandidateDiscoveryStatus.SOURCE_FAILED,
+        CandidateDiscoveryStatus.SOURCE_REJECTED,
+        CandidateDiscoveryStatus.COMPLETED_EMPTY,
+    ):
+        selected = next(
+            (outcome for outcome in source_outcomes if outcome.status is status),
+            None,
+        )
+        if selected is not None:
+            return selected
+    return CandidateDiscoveryOutcome(CandidateDiscoveryStatus.NOT_APPLICABLE)
 
 
 def _registrable_site(host: str) -> str:
