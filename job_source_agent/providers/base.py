@@ -5,6 +5,7 @@ import math
 from typing import Any, Protocol, runtime_checkable
 
 from ..contracts import FetchBudget, FetchClient
+from ..identity_continuity import ProviderOpeningRouteEvidence
 from ..job_board import JobBoard
 from ..provider_candidates import (
     ProviderPublishedBoardEmployerEvidence,
@@ -27,6 +28,14 @@ class JobCandidate:
     provider: str
     location: str | None = None
     raw: dict[str, Any] = field(default_factory=dict)
+    route_evidence: ProviderOpeningRouteEvidence | None = None
+
+    def __post_init__(self) -> None:
+        if self.route_evidence is not None and not isinstance(
+            self.route_evidence,
+            ProviderOpeningRouteEvidence,
+        ):
+            raise TypeError("Provider opening route evidence is invalid")
 
 
 @dataclass

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from html.parser import HTMLParser
 import json
 import re
 from typing import Any, Iterator
-from urllib.parse import parse_qsl, urlencode, urlparse, urlunparse
+from urllib.parse import parse_qsl, unquote, urlencode, urlparse, urlunparse
 
+from ..identity_continuity import ProviderOpeningRouteEvidence
 from ..web import FetchError, Page, safe_normalize_url
 from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
@@ -49,6 +51,13 @@ _ICIMS_INVENTORY_MARKERS = (
     'id="searchForm"',
     "iCIMS_JobSearchTable",
 )
+_ICIMS_CUSTOMER_RUNTIME_MARKER = re.compile(
+    r"(?<![a-z0-9-])"
+    r"(?P<customer>[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.icims\.com)"
+    r"/icims2/servlet/icims2(?=[/?#\"'\s<])",
+    re.IGNORECASE,
+)
+_ICIMS_AGGREGATE_EXTRACTION_METHOD = "icims_aggregate_job_card"
 
 
 class ICIMSAdapter:
@@ -185,6 +194,7 @@ class ICIMSAdapter:
             scripts = _ScriptParser()
             try:
                 scripts.feed(page.html)
+                scripts.close()
             except (TypeError, ValueError) as error:
                 page_errors.append({"url": final_url, "error": str(error)})
                 continue
@@ -200,6 +210,14 @@ class ICIMSAdapter:
                 )
                 if candidate is not None:
                     candidates.append(candidate)
+            candidates.extend(
+                self._aggregate_route_candidates(
+                    scripts.job_cards,
+                    page.html,
+                    final_url,
+                    board,
+                )
+            )
 
             discovered_urls = list(scripts.pagination_hrefs)
             for script_type, content in scripts.scripts:
@@ -223,6 +241,7 @@ class ICIMSAdapter:
                     queued.add(normalized)
                     pending.append(normalized)
 
+        candidates = _reject_duplicate_route_cards(candidates)
         candidates = _dedupe_candidates(candidates)
         if not page_urls and rejected_pagination_urls:
             reason_code = "PROVIDER_VARIANT_UNSUPPORTED"
@@ -249,6 +268,9 @@ class ICIMSAdapter:
                 "response_source": response_source,
                 "structured_script_count": structured_script_count,
                 "html_link_count": html_link_count,
+                "aggregate_route_count": sum(
+                    candidate.route_evidence is not None for candidate in candidates
+                ),
                 "candidate_count": len(candidates),
                 "page_count": len(page_urls),
                 "page_errors": page_errors,
@@ -256,6 +278,93 @@ class ICIMSAdapter:
                 "inventory_scope": inventory_scope,
                 "inventory_complete": inventory_complete,
             },
+        )
+
+    def _aggregate_route_candidates(
+        self,
+        cards: list[_ICIMSJobCard],
+        html: str,
+        source_response_url: str,
+        board: JobBoard,
+    ) -> list[JobCandidate]:
+        source_board = self.identify_board(board.url)
+        canonical_response = _canonical_icims_search_response(
+            source_response_url,
+            board.identifier,
+        )
+        customer_identity = _unique_icims_customer_identity(html)
+        if (
+            source_board is None
+            or source_board.identifier != board.identifier
+            or canonical_response is None
+            or customer_identity is None
+        ):
+            return []
+
+        candidates: list[JobCandidate] = []
+        for card in cards:
+            candidate = self._aggregate_route_candidate(
+                card,
+                source_board,
+                canonical_response,
+                customer_identity,
+            )
+            if candidate is not None:
+                candidates.append(candidate)
+        return _reject_duplicate_route_cards(candidates)
+
+    def _aggregate_route_candidate(
+        self,
+        card: _ICIMSJobCard,
+        source_board: JobBoard,
+        source_response_url: str,
+        customer_identity: str,
+    ) -> JobCandidate | None:
+        if not card.location or len(card.links) != 1:
+            return None
+        raw_url, raw_title = card.links[0]
+        detail = _icims_child_detail_route(
+            raw_url,
+            source_response_url,
+            source_board.identifier,
+        )
+        if detail is None:
+            return None
+        canonical_url, opening_id, hub = detail
+        target_board = self.identify_board(canonical_url)
+        if (
+            target_board is None
+            or target_board.identifier == source_board.identifier
+        ):
+            return None
+        title = _card_title_for_opening(raw_title, opening_id)
+        if not title:
+            return None
+        return JobCandidate(
+            title=title,
+            url=canonical_url,
+            provider=self.name,
+            location=card.location,
+            raw={
+                "id": opening_id,
+                "source": "aggregate_html_job_card",
+            },
+            route_evidence=ProviderOpeningRouteEvidence(
+                provider=self.name,
+                source_tenant=source_board.identifier,
+                source_canonical_board_url=source_board.url,
+                target_tenant=target_board.identifier,
+                target_canonical_board_url=target_board.url,
+                canonical_opening_url=canonical_url,
+                opening_id=opening_id,
+                source_response_url=source_response_url,
+                source_customer_identity=customer_identity,
+                target_customer_identity=None,
+                route_identity=f"hub:{hub}",
+                detail_evidence_url=None,
+                extraction_method=_ICIMS_AGGREGATE_EXTRACTION_METHOD,
+                detail_verified=False,
+            ),
         )
 
     def _list_jibe_jobs(self, fetcher, board: JobBoard, query: JobQuery) -> AdapterResult:
@@ -382,12 +491,19 @@ class ICIMSAdapter:
         )
 
 
+@dataclass(frozen=True)
+class _ICIMSJobCard:
+    links: tuple[tuple[str, str], ...]
+    location: str | None
+
+
 class _ScriptParser(HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.scripts: list[tuple[str, str]] = []
         self.pagination_hrefs: list[str] = []
         self.job_links: list[tuple[str, str, str | None]] = []
+        self.job_cards: list[_ICIMSJobCard] = []
         self._script_type: str | None = None
         self._content: list[str] = []
         self._job_href: str | None = None
@@ -411,7 +527,10 @@ class _ScriptParser(HTMLParser):
         if self._card_depth:
             if self._field_label_depth and tag_name not in _HTML_VOID_TAGS:
                 self._field_label_depth += 1
-            elif "field-label" in classes:
+            elif (
+                "field-label" in classes
+                or "icims_jobheaderfield" in classes
+            ):
                 self._field_label_depth = 1
         if tag_name == "a":
             href = attributes.get("href", "")
@@ -465,6 +584,12 @@ class _ScriptParser(HTMLParser):
             self._card_depth -= 1
             if self._card_depth == 0:
                 location = _card_location(self._card_fields)
+                self.job_cards.append(
+                    _ICIMSJobCard(
+                        links=tuple(self._card_links),
+                        location=location,
+                    )
+                )
                 self.job_links.extend(
                     (href, title, location)
                     for href, title in self._card_links
@@ -490,7 +615,12 @@ _HTML_VOID_TAGS = {
     "track",
     "wbr",
 }
-_CARD_LOCATION_LABELS = {"location", "job location", "job locations"}
+_CARD_LOCATION_LABELS = {
+    "campus location",
+    "location",
+    "job location",
+    "job locations",
+}
 
 
 def _card_location(fields: list[tuple[bool, str]]) -> str | None:
@@ -598,6 +728,128 @@ def _hosted_search_url(board_url: str, query: JobQuery) -> str:
         "in_iframe": "1",
     })
     return urlunparse(parsed._replace(query=urlencode(params), fragment=""))
+
+
+def _canonical_icims_search_response(
+    url: str,
+    expected_host: str | None,
+) -> str | None:
+    if not _is_icims_search_url(url, expected_host):
+        return None
+    try:
+        parsed = urlparse(url)
+    except (TypeError, ValueError):
+        return None
+    return urlunparse(parsed._replace(fragment=""))
+
+
+def _unique_icims_customer_identity(html: str) -> str | None:
+    if not isinstance(html, str):
+        return None
+    matches = [
+        match.group("customer").casefold()
+        for match in _ICIMS_CUSTOMER_RUNTIME_MARKER.finditer(html)
+    ]
+    if len(matches) != 1 or not _ICIMS_HOST.fullmatch(matches[0]):
+        return None
+    return matches[0]
+
+
+def _icims_child_detail_route(
+    raw_url: str,
+    page_url: str,
+    source_host: str,
+) -> tuple[str, str, int] | None:
+    try:
+        raw_parsed = urlparse(raw_url)
+    except (TypeError, ValueError):
+        return None
+    if raw_parsed.fragment:
+        return None
+    detail_url = safe_normalize_url(raw_url, page_url)
+    if not detail_url:
+        return None
+    try:
+        parsed = urlparse(detail_url)
+    except (TypeError, ValueError):
+        return None
+    if (
+        not _is_safe_icims_origin(parsed)
+        or (parsed.hostname or "").casefold() == source_host.casefold()
+        or parsed.fragment
+    ):
+        return None
+    path_match = re.fullmatch(
+        r"/jobs/(?P<opening_id>[1-9]\d*)/(?P<slug>[^/]+)/job/?",
+        parsed.path,
+        re.IGNORECASE,
+    )
+    if path_match is None:
+        return None
+    raw_slug = path_match.group("slug")
+    if re.search(r"%(?![0-9a-f]{2})", raw_slug, re.IGNORECASE):
+        return None
+    slug = unquote(raw_slug)
+    if not slug or slug in {".", ".."} or "/" in slug or "\\" in slug:
+        return None
+
+    try:
+        query_pairs = parse_qsl(
+            raw_parsed.query,
+            keep_blank_values=True,
+            strict_parsing=True,
+        )
+    except ValueError:
+        return None
+    if any(key.casefold() not in {"hub", "in_iframe"} for key, _ in query_pairs):
+        return None
+    lowered_pairs = [(key.casefold(), value) for key, value in query_pairs]
+    hub_values = [value for key, value in lowered_pairs if key == "hub"]
+    iframe_values = [value for key, value in lowered_pairs if key == "in_iframe"]
+    if (
+        len(hub_values) != 1
+        or not hub_values[0].isdigit()
+        or int(hub_values[0]) <= 0
+        or len(iframe_values) > 1
+        or (iframe_values and iframe_values[0] != "1")
+    ):
+        return None
+    canonical_url = urlunparse(
+        (parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", "")
+    )
+    return canonical_url, path_match.group("opening_id"), int(hub_values[0])
+
+
+def _card_title_for_opening(raw_title: str, opening_id: str) -> str:
+    title = (raw_title or "").strip()
+    prefixed = re.fullmatch(r"(\d+)\s+-\s+(.+)", title)
+    if prefixed is not None:
+        if prefixed.group(1) != opening_id:
+            return ""
+        title = prefixed.group(2).strip()
+    return title
+
+
+def _reject_duplicate_route_cards(
+    candidates: list[JobCandidate],
+) -> list[JobCandidate]:
+    url_counts: dict[str, int] = {}
+    id_counts: dict[str, int] = {}
+    for candidate in candidates:
+        evidence = candidate.route_evidence
+        if evidence is None:
+            continue
+        url_counts[candidate.url] = url_counts.get(candidate.url, 0) + 1
+        id_counts[evidence.opening_id] = id_counts.get(evidence.opening_id, 0) + 1
+    return [
+        candidate
+        for candidate in candidates
+        if candidate.route_evidence is None
+        or (
+            url_counts[candidate.url] == 1
+            and id_counts[candidate.route_evidence.opening_id] == 1
+        )
+    ]
 
 
 def _candidate_from_html_link(

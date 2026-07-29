@@ -24,7 +24,7 @@ from .content_probe import (
     probe_first_party_cms_payload,
     probe_first_party_provider_assets,
 )
-from .contracts import FetchClient, PipelineContext
+from .contracts import FetchClient, OpeningMatchOutcome, PipelineContext
 from .errors import DiscoveryError
 from .generic_opening_inventory import has_strong_generic_opening_inventory
 from .homepage_navigation import HomepageNavigationEvidence
@@ -1733,7 +1733,20 @@ class JobSourceAgent:
         target_title: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str | None, str, dict]:
-        return self._match_opening(
+        return self._match_opening_outcome(
+            job_list_url,
+            target_title,
+            target_location,
+            discovered_board=None,
+        ).legacy_tuple()
+
+    def match_opening_with_evidence(
+        self,
+        job_list_url: str,
+        target_title: str | None = None,
+        target_location: str | None = None,
+    ) -> OpeningMatchOutcome:
+        return self._match_opening_outcome(
             job_list_url,
             target_title,
             target_location,
@@ -1746,7 +1759,20 @@ class JobSourceAgent:
         target_title: str | None = None,
         target_location: str | None = None,
     ) -> tuple[str | None, str, dict]:
-        return self._match_opening(
+        return self._match_opening_outcome(
+            discovered_board.board.url,
+            target_title,
+            target_location,
+            discovered_board=discovered_board,
+        ).legacy_tuple()
+
+    def match_discovered_board_with_evidence(
+        self,
+        discovered_board: DiscoveredJobBoard,
+        target_title: str | None = None,
+        target_location: str | None = None,
+    ) -> OpeningMatchOutcome:
+        return self._match_opening_outcome(
             discovered_board.board.url,
             target_title,
             target_location,
@@ -1761,22 +1787,49 @@ class JobSourceAgent:
         *,
         discovered_board: DiscoveredJobBoard | None,
     ) -> tuple[str | None, str, dict]:
+        return self._match_opening_outcome(
+            job_list_url,
+            target_title,
+            target_location,
+            discovered_board=discovered_board,
+        ).legacy_tuple()
+
+    def _match_opening_outcome(
+        self,
+        job_list_url: str,
+        target_title: str | None,
+        target_location: str | None,
+        *,
+        discovered_board: DiscoveredJobBoard | None,
+    ) -> OpeningMatchOutcome:
         if self._looks_like_job_detail_url(job_list_url) and not target_title:
-            return job_list_url, job_list_url, {
-                "job_list_page_url": job_list_url,
-                "selected": {
-                    "url": job_list_url,
-                    "reason": "job board is already a job-detail URL",
+            return OpeningMatchOutcome(
+                opening_url=job_list_url,
+                job_list_url=job_list_url,
+                trace={
+                    "job_list_page_url": job_list_url,
+                    "selected": {
+                        "url": job_list_url,
+                        "reason": "job board is already a job-detail URL",
+                    },
                 },
-            }
+            )
         if not target_title:
             opening_url, resolved_job_list_url, trace, _board = self._discover_job_board_legacy(
                 job_list_url
             )
             if opening_url:
-                return opening_url, resolved_job_list_url or job_list_url, trace
+                return OpeningMatchOutcome(
+                    opening_url=opening_url,
+                    job_list_url=resolved_job_list_url or job_list_url,
+                    trace=trace,
+                )
             trace["opening_error"] = "open_position_not_found"
-            return None, resolved_job_list_url or job_list_url, trace
+            return OpeningMatchOutcome(
+                opening_url=None,
+                job_list_url=resolved_job_list_url or job_list_url,
+                trace=trace,
+            )
         match, trace = JobOpeningMatcher(
             self.fetcher,
             self.provider_registry,
@@ -1798,10 +1851,23 @@ class JobSourceAgent:
                 "hiring_organization_name": match.hiring_organization_name,
                 "reasons": match.reasons,
             }
-            return match.url, match.job_list_page_url or job_list_url, trace
+            if match.route_evidence is not None:
+                trace["selected"]["route_evidence"] = (
+                    match.route_evidence.to_trace_payload()
+                )
+            return OpeningMatchOutcome(
+                opening_url=match.url,
+                job_list_url=match.job_list_page_url or job_list_url,
+                trace=trace,
+                route_evidence=match.route_evidence,
+            )
 
         trace["opening_error"] = "specific_opening_not_found"
-        return None, job_list_url, trace
+        return OpeningMatchOutcome(
+            opening_url=None,
+            job_list_url=job_list_url,
+            trace=trace,
+        )
 
     def find_open_position(
         self,

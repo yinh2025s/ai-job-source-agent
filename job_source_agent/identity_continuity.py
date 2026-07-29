@@ -7,7 +7,7 @@ from typing import Any
 from .result_identity import canonicalize_identity_url
 
 
-IDENTITY_CONTRACT_VERSION = "1.1"
+IDENTITY_CONTRACT_VERSION = "1.2"
 
 _RELATIONSHIP_TYPES = {
     "same_entity",
@@ -133,12 +133,80 @@ class ProviderIdentity:
 
 
 @dataclass(frozen=True)
+class ProviderOpeningRouteEvidence:
+    """Candidate-scoped proof for a provider-owned board-to-opening route."""
+
+    provider: str
+    source_tenant: str
+    source_canonical_board_url: str
+    target_tenant: str
+    target_canonical_board_url: str
+    canonical_opening_url: str
+    opening_id: str
+    source_response_url: str
+    source_customer_identity: str
+    target_customer_identity: str | None
+    route_identity: str
+    detail_evidence_url: str | None
+    extraction_method: str
+    detail_verified: bool
+    schema_version: str = IDENTITY_CONTRACT_VERSION
+
+    def __post_init__(self) -> None:
+        _validate_provider(self.provider)
+        _validate_tenant(self.source_tenant)
+        _validate_url(self.source_canonical_board_url, "route source board")
+        _validate_tenant(self.target_tenant)
+        _validate_url(self.target_canonical_board_url, "route target board")
+        _validate_url(self.canonical_opening_url, "route opening")
+        _validate_bounded_text(self.opening_id, "route opening id", required=True)
+        _validate_url(self.source_response_url, "route source response")
+        _validate_bounded_text(
+            self.source_customer_identity,
+            "route source customer identity",
+            required=True,
+        )
+        _validate_bounded_text(
+            self.target_customer_identity,
+            "route target customer identity",
+        )
+        _validate_bounded_text(self.route_identity, "provider route identity", required=True)
+        _validate_optional_url(self.detail_evidence_url)
+        _validate_method(self.extraction_method)
+        if not isinstance(self.detail_verified, bool):
+            raise TypeError("Provider opening route verification must be boolean")
+        if self.detail_verified:
+            if (
+                self.target_customer_identity != self.source_customer_identity
+                or self.detail_evidence_url != self.canonical_opening_url
+            ):
+                raise ValueError("Verified provider opening route is discontinuous")
+        elif (
+            self.target_customer_identity is not None
+            or self.detail_evidence_url is not None
+        ):
+            raise ValueError("Unverified provider opening route contains detail evidence")
+        _validate_schema(self.schema_version)
+
+    def to_trace_payload(self) -> dict[str, Any]:
+        return _strict_payload(self)
+
+    def to_checkpoint_payload(self) -> dict[str, Any]:
+        return _strict_payload(self)
+
+    @classmethod
+    def from_checkpoint_payload(cls, payload: Any) -> ProviderOpeningRouteEvidence:
+        return cls(**_validated_payload(payload, cls))
+
+
+@dataclass(frozen=True)
 class OpeningIdentity:
     hiring_entity_name: str
     provider: str
     tenant: str
     canonical_board_url: str
     canonical_opening_url: str
+    route_evidence: ProviderOpeningRouteEvidence | None = None
     schema_version: str = IDENTITY_CONTRACT_VERSION
 
     def __post_init__(self) -> None:
@@ -147,14 +215,32 @@ class OpeningIdentity:
         _validate_tenant(self.tenant)
         _validate_url(self.canonical_board_url, "canonical board")
         _validate_url(self.canonical_opening_url, "canonical opening")
+        if self.route_evidence is not None and not isinstance(
+            self.route_evidence,
+            ProviderOpeningRouteEvidence,
+        ):
+            raise TypeError("Opening route evidence is invalid")
         _validate_schema(self.schema_version)
 
     def to_checkpoint_payload(self) -> dict[str, Any]:
-        return _strict_payload(self)
+        payload = _strict_payload(self)
+        payload["route_evidence"] = (
+            self.route_evidence.to_checkpoint_payload()
+            if self.route_evidence is not None
+            else None
+        )
+        return payload
 
     @classmethod
     def from_checkpoint_payload(cls, payload: Any) -> OpeningIdentity:
-        return cls(**_validated_payload(payload, cls))
+        values = _validated_payload(payload, cls)
+        route_payload = values.get("route_evidence")
+        values["route_evidence"] = (
+            ProviderOpeningRouteEvidence.from_checkpoint_payload(route_payload)
+            if route_payload is not None
+            else None
+        )
+        return cls(**values)
 
 
 @dataclass(frozen=True)
@@ -238,10 +324,17 @@ def validate_opening_identity_chain(
         failures.append("PROVIDER_OPENING_ENTITY_MISMATCH")
     if provider.provider != opening.provider:
         failures.append("OPENING_PROVIDER_MISMATCH")
-    if provider.tenant != opening.tenant:
-        failures.append("OPENING_TENANT_MISMATCH")
-    if provider.canonical_board_url != opening.canonical_board_url:
-        failures.append("OPENING_BOARD_MISMATCH")
+    route_failures = validate_provider_opening_route(
+        provider=provider,
+        opening=opening,
+    )
+    if opening.route_evidence is None:
+        if provider.tenant != opening.tenant:
+            failures.append("OPENING_TENANT_MISMATCH")
+        if provider.canonical_board_url != opening.canonical_board_url:
+            failures.append("OPENING_BOARD_MISMATCH")
+    else:
+        failures.extend(route_failures)
     try:
         canonical_output = canonicalize_identity_url(open_position_url)
     except ValueError:
@@ -249,6 +342,34 @@ def validate_opening_identity_chain(
     else:
         if canonical_output != opening.canonical_opening_url:
             failures.append("OPENING_URL_MISMATCH")
+    return failures
+
+
+def validate_provider_opening_route(
+    *,
+    provider: ProviderIdentity,
+    opening: OpeningIdentity,
+) -> list[str]:
+    route = opening.route_evidence
+    if route is None:
+        return []
+    failures: list[str] = []
+    if not route.detail_verified:
+        failures.append("OPENING_ROUTE_EVIDENCE_UNVERIFIED")
+    if (
+        route.provider != provider.provider
+        or route.source_tenant != provider.tenant
+        or route.source_canonical_board_url != provider.canonical_board_url
+    ):
+        failures.append("OPENING_ROUTE_SOURCE_MISMATCH")
+    if (
+        route.provider != opening.provider
+        or route.target_tenant != opening.tenant
+        or route.target_canonical_board_url != opening.canonical_board_url
+    ):
+        failures.append("OPENING_ROUTE_TARGET_MISMATCH")
+    if route.canonical_opening_url != opening.canonical_opening_url:
+        failures.append("OPENING_ROUTE_URL_MISMATCH")
     return failures
 
 

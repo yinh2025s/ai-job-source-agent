@@ -12,6 +12,7 @@ from .identity_continuity import (
     HiringIdentityEvidence,
     OpeningIdentity,
     OpeningSelectionEvidence,
+    ProviderOpeningRouteEvidence,
     ProviderIdentity,
 )
 from .web import Page
@@ -44,6 +45,39 @@ class FetchBudget(Protocol):
         """Return non-negative remaining time, or None when the client is unbounded."""
 
         ...
+
+
+@dataclass(frozen=True)
+class OpeningMatchOutcome:
+    """Typed S6 service output; route evidence never has to be rebuilt from trace."""
+
+    opening_url: str | None
+    job_list_url: str
+    trace: dict[str, Any]
+    route_evidence: ProviderOpeningRouteEvidence | None = None
+
+    def __post_init__(self) -> None:
+        if self.opening_url is not None and not isinstance(self.opening_url, str):
+            raise TypeError("Opening match URL must be text or None")
+        if not isinstance(self.job_list_url, str) or not self.job_list_url:
+            raise ValueError("Opening match job-list URL is invalid")
+        if not isinstance(self.trace, dict):
+            raise TypeError("Opening match trace must be an object")
+        if self.route_evidence is not None and not isinstance(
+            self.route_evidence,
+            ProviderOpeningRouteEvidence,
+        ):
+            raise TypeError("Opening match route evidence is invalid")
+        if self.route_evidence is not None:
+            if (
+                self.opening_url is None
+                or self.opening_url != self.route_evidence.canonical_opening_url
+                or not self.route_evidence.detail_verified
+            ):
+                raise ValueError("Opening match route evidence is discontinuous")
+
+    def legacy_tuple(self) -> tuple[str | None, str, dict[str, Any]]:
+        return self.opening_url, self.job_list_url, self.trace
 
 
 @runtime_checkable

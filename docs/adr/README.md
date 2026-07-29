@@ -44,3 +44,4 @@ NNNN-short-decision-title.md
 - [ADR-0032: Inject Versioned Search Backends](0032-inject-versioned-search-backends.md)
 - [ADR-0033: Replay Recorded Company-Budget Boundaries](0033-replay-recorded-company-budget-boundaries.md)
 - [ADR-0034: Bind Provider Board Employer Evidence](0034-bind-provider-board-employer-evidence.md)
+- [ADR-0035: Bind Provider Aggregate-to-Child Opening Routes](0035-bind-provider-opening-routes.md)

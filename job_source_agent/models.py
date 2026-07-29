@@ -4,7 +4,7 @@ from dataclasses import asdict, dataclass, field
 from typing import Any
 
 
-RESULT_SCHEMA_VERSION = "2.2"
+RESULT_SCHEMA_VERSION = "2.3"
 
 STAGE_LINKEDIN_DISCOVERY = "linkedin_discovery"
 STAGE_WEBSITE_RESOLUTION = "website_resolution"

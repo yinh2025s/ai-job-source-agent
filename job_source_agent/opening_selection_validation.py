@@ -7,6 +7,7 @@ from .identity_continuity import (
     OpeningIdentity,
     OpeningSelectionEvidence,
     ProviderIdentity,
+    validate_provider_opening_route,
 )
 from .opening_matcher import publication_title_identity_matches
 from .result_identity import canonicalize_identity_url
@@ -56,9 +57,22 @@ def validate_opening_selection(
     else:
         if selection.provider != provider.provider:
             failures.append("OPENING_SELECTION_PROVIDER_MISMATCH")
-        if selection.tenant != provider.tenant:
+        route_failures = validate_provider_opening_route(
+            provider=provider,
+            opening=opening,
+        )
+        route_is_valid = bool(opening.route_evidence is not None and not route_failures)
+        if opening.route_evidence is not None and route_failures:
+            failures.append("OPENING_SELECTION_ROUTE_INVALID")
+        expected_tenant = opening.tenant if route_is_valid else provider.tenant
+        expected_board = (
+            opening.canonical_board_url
+            if route_is_valid
+            else provider.canonical_board_url
+        )
+        if selection.tenant != expected_tenant:
             failures.append("OPENING_SELECTION_TENANT_MISMATCH")
-        if selection.canonical_board_url != provider.canonical_board_url:
+        if selection.canonical_board_url != expected_board:
             failures.append("OPENING_SELECTION_BOARD_MISMATCH")
         if selection.canonical_opening_url != opening.canonical_opening_url:
             failures.append("OPENING_SELECTION_URL_MISMATCH")

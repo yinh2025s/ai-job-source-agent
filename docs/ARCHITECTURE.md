@@ -333,6 +333,17 @@ heading 作为 board-employer evidence，并使用官方前端声明的
 list/table 视图按一致 job ID 去重，table-local location 绑定到 opening，任何
 重复 ID、URL/title/location 冲突或计数不一致都使 inventory incomplete。
 
+ADR-0035 允许 provider 明确声明 aggregate board 到 child opening 的跨 tenant
+路线，但只能通过 immutable `ProviderOpeningRouteEvidence`。Source provider、
+tenant、board 和 customer identity 必须绑定当前 aggregate response；target
+provider、tenant、board、opening ID、title、location、employer 和 customer
+identity 必须由 child detail 独立复核。Matcher 通过 `OpeningMatchOutcome` 直接
+传递 typed route，stage/S7 不从 trace 重建权限。iCIMS canonical detail 若只是
+外壳，只允许一次同 host、同 opening path、唯一 `in_iframe=1` payload；任意额外
+query、redirect、跨 host/path 或冲突 marker 均 fail closed。普通 opening 的
+same-tenant/same-board 规则保持不变；相同 canonical opening 的 generic/native
+别名只有在完整 typed route 存在时才能折叠，不同 verified opening 继续视为歧义。
+
 ApplicantStack adapter 只识别 public HTTPS `<tenant>.applicantstack.com/x/openings` 与同 tenant
 `/x/detail/<id>`。Board fetch 必须保留 canonical tenant/path 且页面同时具有 openings form、公开
 data table 和 branding fingerprint；跨 tenant/route redirect、malformed row、重复或非 canonical

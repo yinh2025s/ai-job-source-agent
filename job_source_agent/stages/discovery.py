@@ -6,7 +6,12 @@ import re
 from typing import Protocol
 from urllib.parse import parse_qsl, urlsplit
 
-from ..contracts import FetchClient, PipelineContext, StageExecution
+from ..contracts import (
+    FetchClient,
+    OpeningMatchOutcome,
+    PipelineContext,
+    StageExecution,
+)
 from ..company_discovery_evidence import (
     CompanyDiscoveryEvidenceStore,
     VerifiedCareerEvidence,
@@ -34,6 +39,7 @@ from ..identity_continuity import (
     HiringRelationshipEvidence,
     OpeningIdentity,
     OpeningSelectionEvidence,
+    ProviderOpeningRouteEvidence,
     ProviderIdentity,
     validate_opening_identity_chain,
 )
@@ -1808,13 +1814,47 @@ class OpeningMatchStage:
             return self._run_portfolio(context)
         started = time.perf_counter()
         try:
+            route_evidence = None
             match_discovered = getattr(self.service, "match_discovered_board", None)
-            if context.discovered_job_board is not None and callable(match_discovered):
+            match_discovered_with_evidence = getattr(
+                self.service,
+                "match_discovered_board_with_evidence",
+                None,
+            )
+            match_with_evidence = getattr(
+                self.service,
+                "match_opening_with_evidence",
+                None,
+            )
+            if (
+                context.discovered_job_board is not None
+                and callable(match_discovered_with_evidence)
+            ):
+                outcome = match_discovered_with_evidence(
+                    context.discovered_job_board,
+                    context.company.job_title,
+                    context.company.job_location,
+                )
+                if not isinstance(outcome, OpeningMatchOutcome):
+                    raise TypeError("Opening match service returned an invalid outcome")
+                opening_url, job_list_url, trace = outcome.legacy_tuple()
+                route_evidence = outcome.route_evidence
+            elif context.discovered_job_board is not None and callable(match_discovered):
                 opening_url, job_list_url, trace = match_discovered(
                     context.discovered_job_board,
                     context.company.job_title,
                     context.company.job_location,
                 )
+            elif callable(match_with_evidence):
+                outcome = match_with_evidence(
+                    context.job_list_page_url,
+                    context.company.job_title,
+                    context.company.job_location,
+                )
+                if not isinstance(outcome, OpeningMatchOutcome):
+                    raise TypeError("Opening match service returned an invalid outcome")
+                opening_url, job_list_url, trace = outcome.legacy_tuple()
+                route_evidence = outcome.route_evidence
             else:
                 opening_url, job_list_url, trace = self.service.match_opening(
                     context.job_list_page_url,
@@ -1911,6 +1951,7 @@ class OpeningMatchStage:
                 self.provider_registry,
                 trace,
                 provider_identity=provider_identity,
+                route_evidence=route_evidence,
             )
             if opening_identity is not None:
                 updates["opening_identity"] = opening_identity
@@ -1991,6 +2032,16 @@ class OpeningMatchStage:
         stored_identity_updates: dict[str, object] = {}
         stored_canonical_inventory_complete = False
         match_discovered = getattr(self.service, "match_discovered_board", None)
+        match_discovered_with_evidence = getattr(
+            self.service,
+            "match_discovered_board_with_evidence",
+            None,
+        )
+        match_with_evidence = getattr(
+            self.service,
+            "match_opening_with_evidence",
+            None,
+        )
         for position, discovered in enumerate(
             portfolio.boards[: self.max_job_board_attempts]
         ):
@@ -2004,12 +2055,37 @@ class OpeningMatchStage:
                 relationship,
             )
             try:
-                if callable(match_discovered):
+                route_evidence = None
+                if callable(match_discovered_with_evidence):
+                    outcome = match_discovered_with_evidence(
+                        discovered,
+                        context.company.job_title,
+                        context.company.job_location,
+                    )
+                    if not isinstance(outcome, OpeningMatchOutcome):
+                        raise TypeError(
+                            "Opening match service returned an invalid outcome"
+                        )
+                    opening_url, job_list_url, trace = outcome.legacy_tuple()
+                    route_evidence = outcome.route_evidence
+                elif callable(match_discovered):
                     opening_url, job_list_url, trace = match_discovered(
                         discovered,
                         context.company.job_title,
                         context.company.job_location,
                     )
+                elif callable(match_with_evidence):
+                    outcome = match_with_evidence(
+                        board.url,
+                        context.company.job_title,
+                        context.company.job_location,
+                    )
+                    if not isinstance(outcome, OpeningMatchOutcome):
+                        raise TypeError(
+                            "Opening match service returned an invalid outcome"
+                        )
+                    opening_url, job_list_url, trace = outcome.legacy_tuple()
+                    route_evidence = outcome.route_evidence
                 else:
                     opening_url, job_list_url, trace = self.service.match_opening(
                         board.url,
@@ -2103,6 +2179,7 @@ class OpeningMatchStage:
                     trace,
                     provider_identity=provider_identity,
                     discovered_board=discovered,
+                    route_evidence=route_evidence,
                 )
                 selection_evidence = (
                     _opening_selection_evidence(opening_identity, trace)
@@ -2129,7 +2206,7 @@ class OpeningMatchStage:
                 issues = list(dict.fromkeys([*identity_issues, *selection_issues]))
                 if board_employer_conflict:
                     issues.append("PROVIDER_EMPLOYER_IDENTITY_MISMATCH")
-                if not portfolio.route_evidence:
+                if not portfolio.route_evidence and route_evidence is None:
                     # Schema-v1 and legacy in-memory portfolios had no route-local
                     # authority contract. Preserve their S6 behavior and leave the
                     # final identity decision to S7; new portfolios are checked here.
@@ -2185,6 +2262,7 @@ class OpeningMatchStage:
                         "job_list_url": job_list_url,
                         "discovered": discovered,
                         "provider": board.provider,
+                        "route_evidence": route_evidence,
                         "updates": {
                         "job_list_page_url": job_list_url,
                         "discovered_job_board": discovered,
@@ -2272,6 +2350,19 @@ class OpeningMatchStage:
             )
 
         if accepted_exacts:
+            route_bound_urls = {
+                canonicalize_identity_url(str(item["opening_url"]))
+                for item in accepted_exacts
+                if _accepted_exact_matches_typed_route(item)
+            }
+            if route_bound_urls:
+                accepted_exacts = [
+                    item
+                    for item in accepted_exacts
+                    if _accepted_exact_matches_typed_route(item)
+                    or canonicalize_identity_url(str(item["opening_url"]))
+                    not in route_bound_urls
+                ]
             exact_identities = set()
             for item in accepted_exacts:
                 identity = item["updates"].get("provider_identity")
@@ -4830,6 +4921,31 @@ def _trace_has_complete_native_inventory(trace: object) -> bool:
     )
 
 
+def _accepted_exact_matches_typed_route(item: dict[str, object]) -> bool:
+    route = item.get("route_evidence")
+    updates = item.get("updates")
+    if not isinstance(route, ProviderOpeningRouteEvidence) or not isinstance(
+        updates,
+        dict,
+    ):
+        return False
+    provider = updates.get("provider_identity")
+    opening = updates.get("opening_identity")
+    return bool(
+        isinstance(provider, ProviderIdentity)
+        and isinstance(opening, OpeningIdentity)
+        and route.detail_verified
+        and provider.provider == route.provider
+        and provider.tenant == route.source_tenant
+        and provider.canonical_board_url == route.source_canonical_board_url
+        and opening.provider == route.provider
+        and opening.tenant == route.target_tenant
+        and opening.canonical_board_url == route.target_canonical_board_url
+        and opening.canonical_opening_url == route.canonical_opening_url
+        and opening.route_evidence == route
+    )
+
+
 def _provider_board_employer_conflicts(
     context: PipelineContext,
     trace: object,
@@ -5354,6 +5470,7 @@ def _opening_identity(
     *,
     provider_identity: ProviderIdentity | None = None,
     discovered_board: DiscoveredJobBoard | None = None,
+    route_evidence: ProviderOpeningRouteEvidence | None = None,
 ) -> OpeningIdentity | None:
     provider_identity = provider_identity or context.provider_identity
     discovered_board = discovered_board or context.discovered_job_board
@@ -5380,6 +5497,30 @@ def _opening_identity(
         )
     adapter = registry.adapter_named(provider_identity.provider)
     board = adapter.identify_board(opening_url) if adapter is not None else None
+    if route_evidence is not None:
+        if (
+            not route_evidence.detail_verified
+            or route_evidence.provider != provider_identity.provider
+            or route_evidence.source_tenant != provider_identity.tenant
+            or route_evidence.source_canonical_board_url
+            != provider_identity.canonical_board_url
+            or route_evidence.canonical_opening_url != canonical_opening
+            or board is None
+            or board.provider != provider_identity.provider
+            or not isinstance(board.identifier, str)
+            or board.identifier != route_evidence.target_tenant
+            or canonicalize_identity_url(board.url)
+            != route_evidence.target_canonical_board_url
+        ):
+            return None
+        return OpeningIdentity(
+            hiring_entity_name=provider_identity.hiring_entity_name,
+            provider=provider_identity.provider,
+            tenant=route_evidence.target_tenant,
+            canonical_board_url=route_evidence.target_canonical_board_url,
+            canonical_opening_url=canonical_opening,
+            route_evidence=route_evidence,
+        )
     if board is None:
         if not (
             _same_site(provider_identity.canonical_board_url, canonical_opening)

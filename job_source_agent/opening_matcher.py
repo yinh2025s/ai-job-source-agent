@@ -8,6 +8,7 @@ from html.parser import HTMLParser
 from urllib.parse import parse_qs, parse_qsl, quote_plus, urlencode, urlparse, urlunparse
 
 from .career_search import search_site_openings
+from .identity_continuity import ProviderOpeningRouteEvidence
 from .search_backend import SearchBackend
 from .job_board import DiscoveredJobBoard
 from .content_probe import probe_first_party_provider_assets
@@ -23,7 +24,7 @@ from .job_search_actions import (
     title_search_queries,
     verify_job_search_submission,
 )
-from .providers import DEFAULT_PROVIDER_REGISTRY, JobQuery, ProviderRegistry
+from .providers import DEFAULT_PROVIDER_REGISTRY, JobBoard, JobQuery, ProviderRegistry
 from .reasons import canonical_reason_code
 from .rendered_fetcher import FORCE_RENDER_HEADER
 from .listing_extraction import (
@@ -116,6 +117,7 @@ class OpeningMatch:
     location_score: int = 0
     location: str | None = None
     hiring_organization_name: str | None = None
+    route_evidence: ProviderOpeningRouteEvidence | None = None
 
 
 @dataclass
@@ -169,14 +171,7 @@ class JobOpeningMatcher:
         if api_trace.get("provider") and api_trace["provider"] != "generic":
             trace["provider"] = api_trace["provider"]
         if api_match:
-            trace["selected"] = {
-                "url": api_match.url,
-                "title": api_match.title,
-                "location": api_match.location,
-                "hiring_organization_name": api_match.hiring_organization_name,
-                "score": api_match.score,
-                "reasons": api_match.reasons,
-            }
+            trace["selected"] = _selected_candidate_trace(api_match)
             return api_match, trace
 
         inventory = api_trace.get("inventory")
@@ -1151,6 +1146,16 @@ class JobOpeningMatcher:
                         if acquired_brand_handoff:
                             trace["title_policy"] = "exact_for_acquired_brand_handoff"
                         for candidate in adapter_result.candidates:
+                            selected_title = candidate.title
+                            selected_location = candidate.location
+                            selected_employer = (
+                                candidate.raw.get("hiring_organization_name")
+                                if isinstance(
+                                    candidate.raw.get("hiring_organization_name"),
+                                    str,
+                                )
+                                else None
+                            )
                             title_score, title_reasons = score_title_match(candidate.title, target_title)
                             if (
                                 title_score < MIN_PROVIDER_TITLE_MATCH_SCORE
@@ -1192,14 +1197,55 @@ class JobOpeningMatcher:
                                     }
                                 )
                                 continue
+                            route_evidence = getattr(candidate, "route_evidence", None)
+                            if route_evidence is not None:
+                                if not isinstance(
+                                    route_evidence,
+                                    ProviderOpeningRouteEvidence,
+                                ):
+                                    trace.setdefault(
+                                        "provider_route_attestation", []
+                                    ).append(
+                                        {
+                                            "url": candidate.url,
+                                            "status": "invalid_typed_route_evidence",
+                                        }
+                                    )
+                                    continue
+                                if (
+                                    candidate.provider == "icims"
+                                    and not route_evidence.detail_verified
+                                ):
+                                    (
+                                        route_evidence,
+                                        route_attestation,
+                                        attested_posting,
+                                    ) = self._attest_icims_child_route(
+                                        candidate=candidate,
+                                        route=route_evidence,
+                                        board=adapter_result.board,
+                                        target_title=target_title,
+                                        target_location=target_location,
+                                    )
+                                    trace.setdefault(
+                                        "provider_route_attestation", []
+                                    ).append(route_attestation)
+                                    if route_evidence is None:
+                                        continue
+                                    assert attested_posting is not None
+                                    selected_title = str(attested_posting["title"])
+                                    selected_location = str(attested_posting["location"])
+                                    selected_employer = str(
+                                        attested_posting["hiring_organization_name"]
+                                    )
                             location_score, location_reasons = score_location_match(
-                                candidate.location,
+                                selected_location,
                                 target_location,
                             )
                             scored.append(
                                 OpeningMatch(
                                     url=candidate.url,
-                                    title=candidate.title,
+                                    title=selected_title,
                                     score=title_score + 100,
                                     provider=candidate.provider,
                                     reasons=(
@@ -1209,17 +1255,9 @@ class JobOpeningMatcher:
                                     ),
                                     job_list_page_url=job_list_url,
                                     location_score=location_score,
-                                    location=candidate.location,
-                                    hiring_organization_name=(
-                                        candidate.raw.get("hiring_organization_name")
-                                        if isinstance(
-                                            candidate.raw.get(
-                                                "hiring_organization_name"
-                                            ),
-                                            str,
-                                        )
-                                        else None
-                                    ),
+                                    location=selected_location,
+                                    hiring_organization_name=selected_employer,
+                                    route_evidence=route_evidence,
                                 )
                             )
                         scored.sort(
@@ -1326,6 +1364,161 @@ class JobOpeningMatcher:
                 "strongest_title_score": strongest_title_score,
             }
         return None, trace, landing_page
+
+    def _attest_icims_child_route(
+        self,
+        *,
+        candidate,
+        route: ProviderOpeningRouteEvidence,
+        board: JobBoard,
+        target_title: str,
+        target_location: str | None,
+    ) -> tuple[
+        ProviderOpeningRouteEvidence | None,
+        dict[str, object],
+        dict[str, str | None] | None,
+    ]:
+        attempt: dict[str, object] = {
+            "url": candidate.url,
+            "status": "route_evidence_rejected",
+        }
+        rejection = _validate_icims_route_claim(
+            self.provider_registry,
+            candidate_url=candidate.url,
+            route=route,
+            board=board,
+        )
+        if rejection is not None:
+            attempt["reason"] = rejection
+            return None, attempt, None
+
+        try:
+            page = self.fetcher.fetch(route.canonical_opening_url)
+        except FetchError as error:
+            attempt.update(
+                {
+                    "status": "detail_fetch_failed",
+                    "reason": str(error),
+                    "reason_code": error.reason_code,
+                    "retryable": error.retryable,
+                }
+            )
+            return None, attempt, None
+        except (OSError, TimeoutError) as error:
+            attempt.update(
+                {
+                    "status": "detail_fetch_failed",
+                    "reason": str(error),
+                }
+            )
+            return None, attempt, None
+
+        page_url = safe_normalize_url(page.final_url or page.url)
+        if page_url != route.canonical_opening_url:
+            attempt["reason"] = "detail_redirect_or_canonical_route_mismatch"
+            attempt["final_url"] = page_url
+            return None, attempt, None
+        if _page_indicates_closed_opening(page.html):
+            attempt["reason"] = "opening_closed_or_unavailable"
+            return None, attempt, None
+
+        customer_identity, marker_reason = _icims_customer_identity(page.html)
+        if marker_reason == "customer_marker_missing_or_invalid":
+            payload_url, payload_reason = _icims_detail_payload_url(
+                page.html,
+                route.canonical_opening_url,
+            )
+            if payload_url is not None:
+                try:
+                    page = self.fetcher.fetch(payload_url)
+                except FetchError as error:
+                    attempt.update(
+                        {
+                            "status": "detail_payload_fetch_failed",
+                            "reason": str(error),
+                            "reason_code": error.reason_code,
+                            "retryable": error.retryable,
+                        }
+                    )
+                    return None, attempt, None
+                except (OSError, TimeoutError) as error:
+                    attempt.update(
+                        {
+                            "status": "detail_payload_fetch_failed",
+                            "reason": str(error),
+                        }
+                    )
+                    return None, attempt, None
+                payload_final_url = safe_normalize_url(page.final_url or page.url)
+                if payload_final_url != payload_url:
+                    attempt["reason"] = "detail_payload_redirect_mismatch"
+                    attempt["final_url"] = payload_final_url
+                    return None, attempt, None
+                if _page_indicates_closed_opening(page.html):
+                    attempt["reason"] = "opening_closed_or_unavailable"
+                    return None, attempt, None
+                customer_identity, marker_reason = _icims_customer_identity(page.html)
+                attempt["detail_payload_url"] = payload_url
+            elif payload_reason is not None:
+                attempt["reason"] = payload_reason
+                return None, attempt, None
+        if marker_reason is not None:
+            attempt["reason"] = marker_reason
+            return None, attempt, None
+        if customer_identity != route.source_customer_identity:
+            attempt["reason"] = "customer_marker_mismatch"
+            return None, attempt, None
+
+        detail_hub, hub_reason = _icims_detail_hub_identity(page.html)
+        if hub_reason is not None:
+            attempt["reason"] = hub_reason
+            return None, attempt, None
+        expected_hub = _icims_route_hub(route.route_identity)
+        if expected_hub is None:
+            attempt["reason"] = "invalid_route_identity"
+            return None, attempt, None
+        if detail_hub is not None and detail_hub != expected_hub:
+            attempt["reason"] = "route_identity_mismatch"
+            return None, attempt, None
+
+        postings = _strict_json_ld_job_postings(page.html, page_url)
+        postings.extend(_strict_encoded_json_ld_job_postings(page.html, page_url))
+        posting, posting_reason = _verified_icims_detail_posting(
+            postings,
+            route=route,
+            candidate_title=candidate.title,
+            candidate_location=candidate.location,
+            target_title=target_title,
+            target_location=target_location,
+        )
+        if posting is None:
+            attempt["reason"] = posting_reason
+            return None, attempt, None
+
+        try:
+            verified_route = replace(
+                route,
+                target_customer_identity=customer_identity,
+                detail_evidence_url=route.canonical_opening_url,
+                detail_verified=True,
+            )
+        except (TypeError, ValueError):
+            attempt["reason"] = "verified_route_contract_rejected"
+            return None, attempt, None
+
+        attempt.update(
+            {
+                "status": "verified",
+                "opening_id": route.opening_id,
+                "target_tenant": route.target_tenant,
+                "customer_identity": customer_identity,
+                "route_identity": route.route_identity,
+                "title": posting["title"],
+                "location": posting["location"],
+                "hiring_organization_name": posting["hiring_organization_name"],
+            }
+        )
+        return verified_route, attempt, posting
 
     def _recognizes_listing_provider(self, url: str) -> bool:
         adapter = self.provider_registry.adapter_for(url)
@@ -1841,7 +2034,7 @@ def _record_candidates(trace: dict, candidates: list[OpeningMatch]) -> None:
 
 
 def _selected_candidate_trace(candidate: OpeningMatch) -> dict:
-    return {
+    payload = {
         "url": candidate.url,
         "title": candidate.title,
         "location": candidate.location,
@@ -1849,6 +2042,9 @@ def _selected_candidate_trace(candidate: OpeningMatch) -> dict:
         "reasons": candidate.reasons,
         "hiring_organization_name": candidate.hiring_organization_name,
     }
+    if candidate.route_evidence is not None:
+        payload["route_evidence"] = candidate.route_evidence.to_trace_payload()
+    return payload
 
 
 def structured_job_links(
@@ -2508,6 +2704,304 @@ def _provider_detail_matches_board(
         and board.provider == detail_board.provider == provider
         and board.identifier
         and board.identifier == detail_board.identifier
+    )
+
+
+_ICIMS_CUSTOMER_MARKER_RE = re.compile(
+    r"(?:https://|/)"
+    r"(?P<customer>[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.icims\.com)"
+    r"/icims2/servlet/icims2(?=[?/'\"<>\s])",
+    re.IGNORECASE,
+)
+_ICIMS_DETAIL_ROUTE_RE = re.compile(
+    r"^/jobs/(?P<opening_id>[1-9][0-9]*)/(?P<slug>[^/]+)/job$",
+    re.IGNORECASE,
+)
+_ICIMS_CUSTOMER_HOST_RE = re.compile(
+    r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.icims\.com$",
+    re.IGNORECASE,
+)
+_ICIMS_DETAIL_IFRAME_SRC_RE = re.compile(
+    r"<iframe\b[^>]*\bsrc\s*=\s*(['\"])(?P<url>.*?)\1",
+    re.IGNORECASE | re.DOTALL,
+)
+_ICIMS_DETAIL_SCRIPT_SRC_RE = re.compile(
+    r"\bicimsFrame\.src\s*=\s*(['\"])(?P<url>.*?)\1",
+    re.IGNORECASE,
+)
+
+
+def _validate_icims_route_claim(
+    registry: ProviderRegistry,
+    *,
+    candidate_url: str,
+    route: ProviderOpeningRouteEvidence,
+    board,
+) -> str | None:
+    if (
+        route.provider != "icims"
+        or route.detail_verified
+        or route.extraction_method != "icims_aggregate_job_card"
+    ):
+        return "unsupported_route_contract"
+    candidate_identity = _icims_detail_route_identity(candidate_url)
+    route_identity = _icims_detail_route_identity(route.canonical_opening_url)
+    if (
+        candidate_identity is None
+        or candidate_identity != route_identity
+        or safe_normalize_url(candidate_url) != route.canonical_opening_url
+    ):
+        return "candidate_route_mismatch"
+    target_host, opening_id = route_identity
+    if (
+        target_host != route.target_tenant.casefold()
+        or opening_id != route.opening_id
+    ):
+        return "target_tenant_or_opening_id_mismatch"
+    if not _is_icims_customer_identity(route.source_customer_identity):
+        return "invalid_source_customer_identity"
+    if _icims_route_hub(route.route_identity) is None:
+        return "invalid_route_identity"
+
+    board_url = safe_normalize_url(getattr(board, "url", None))
+    source_board_url = safe_normalize_url(route.source_canonical_board_url)
+    board_tenant = str(getattr(board, "identifier", "") or "").casefold()
+    if (
+        not board_url
+        or not source_board_url
+        or board_url.rstrip("/") != source_board_url.rstrip("/")
+        or not board_tenant
+        or board_tenant != route.source_tenant.casefold()
+    ):
+        return "source_board_identity_mismatch"
+
+    source_response = safe_normalize_url(route.source_response_url)
+    if (
+        not source_response
+        or domain_of(source_response) != route.source_tenant.casefold()
+        or urlparse(source_response).path.casefold().rstrip("/") != "/jobs/search"
+    ):
+        return "source_response_identity_mismatch"
+
+    adapter = registry.adapter_named("icims")
+    detail_board = adapter.identify_board(route.canonical_opening_url) if adapter else None
+    target_board_url = safe_normalize_url(route.target_canonical_board_url)
+    if (
+        detail_board is None
+        or detail_board.provider != "icims"
+        or str(detail_board.identifier or "").casefold() != route.target_tenant.casefold()
+        or not target_board_url
+        or (safe_normalize_url(detail_board.url) or "").rstrip("/")
+        != target_board_url.rstrip("/")
+    ):
+        return "target_board_identity_mismatch"
+    return None
+
+
+def _icims_detail_route_identity(url: object) -> tuple[str, str] | None:
+    if not isinstance(url, str) or not url:
+        return None
+    try:
+        parsed = urlparse(url)
+        port = parsed.port
+    except (TypeError, ValueError):
+        return None
+    host = (parsed.hostname or "").casefold().rstrip(".")
+    match = _ICIMS_DETAIL_ROUTE_RE.fullmatch(parsed.path)
+    if (
+        parsed.scheme.casefold() != "https"
+        or not _ICIMS_CUSTOMER_HOST_RE.fullmatch(host)
+        or parsed.username is not None
+        or parsed.password is not None
+        or port not in (None, 443)
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or match is None
+    ):
+        return None
+    return host, match.group("opening_id")
+
+
+def _icims_detail_payload_url(
+    html: object,
+    canonical_opening_url: str,
+) -> tuple[str | None, str | None]:
+    if not isinstance(html, str) or not html or len(html) > 2_000_000:
+        return None, None
+    candidates = {
+        normalized
+        for match in (
+            *_ICIMS_DETAIL_IFRAME_SRC_RE.finditer(html),
+            *_ICIMS_DETAIL_SCRIPT_SRC_RE.finditer(html),
+        )
+        if (
+            normalized := _validated_icims_detail_payload_url(
+                unescape(match.group("url")).replace("\\/", "/"),
+                canonical_opening_url,
+            )
+        )
+    }
+    if len(candidates) > 1:
+        return None, "detail_payload_route_conflict"
+    return (next(iter(candidates)), None) if candidates else (None, None)
+
+
+def _validated_icims_detail_payload_url(
+    raw_url: str,
+    canonical_opening_url: str,
+) -> str | None:
+    normalized = safe_normalize_url(raw_url, canonical_opening_url)
+    if not normalized:
+        return None
+    try:
+        parsed = urlparse(normalized)
+        canonical = urlparse(canonical_opening_url)
+        query = parse_qsl(parsed.query, keep_blank_values=True, strict_parsing=True)
+    except (TypeError, ValueError):
+        return None
+    if (
+        parsed.scheme.casefold() != "https"
+        or parsed.username is not None
+        or parsed.password is not None
+        or parsed.port not in (None, 443)
+        or parsed.fragment
+        or (parsed.hostname or "").casefold() != (canonical.hostname or "").casefold()
+        or parsed.path.rstrip("/") != canonical.path.rstrip("/")
+        or parsed.params
+        or query != [("in_iframe", "1")]
+    ):
+        return None
+    return urlunparse(parsed._replace(fragment=""))
+
+
+def _is_icims_customer_identity(value: object) -> bool:
+    if not isinstance(value, str) or not _ICIMS_CUSTOMER_HOST_RE.fullmatch(value):
+        return False
+    label = value.casefold().split(".", 1)[0]
+    return label not in {"cdn", "cdn01", "cdn02", "cdn03", "www"}
+
+
+def _icims_customer_identity(html: object) -> tuple[str | None, str | None]:
+    if not isinstance(html, str) or not html or len(html) > 2_000_000:
+        return None, "customer_marker_missing_or_invalid"
+    searchable = unescape(html).replace("\\/", "/")
+    identities = {
+        match.group("customer").casefold()
+        for match in _ICIMS_CUSTOMER_MARKER_RE.finditer(searchable)
+        if _is_icims_customer_identity(match.group("customer"))
+    }
+    if not identities:
+        return None, "customer_marker_missing_or_invalid"
+    if len(identities) != 1:
+        return None, "customer_marker_conflict"
+    return next(iter(identities)), None
+
+
+def _icims_route_hub(value: object) -> str | None:
+    if not isinstance(value, str):
+        return None
+    match = re.fullmatch(r"hub:([1-9][0-9]*)", value)
+    return match.group(1) if match else None
+
+
+def _icims_detail_hub_identity(html: object) -> tuple[str | None, str | None]:
+    if not isinstance(html, str) or len(html) > 2_000_000:
+        return None, "route_identity_invalid"
+    searchable = unescape(html).replace("\\/", "/")
+    values = set(
+        re.findall(r"(?:[?&])hub=([1-9][0-9]*)(?=[&#'\"\s<]|$)", searchable)
+    )
+    if len(values) > 1:
+        return None, "route_identity_conflict"
+    return (next(iter(values)) if values else None), None
+
+
+def _verified_icims_detail_posting(
+    postings: list[dict[str, str | None]],
+    *,
+    route: ProviderOpeningRouteEvidence,
+    candidate_title: str,
+    candidate_location: str | None,
+    target_title: str,
+    target_location: str | None,
+) -> tuple[dict[str, str | None] | None, str]:
+    exact_records: list[dict[str, str | None]] = []
+    for posting in postings:
+        posting_identity = _icims_detail_route_identity(posting.get("url"))
+        if posting_identity == (route.target_tenant.casefold(), route.opening_id):
+            exact_records.append(posting)
+    if not exact_records:
+        return None, "opening_id_or_detail_route_mismatch"
+
+    verified: list[dict[str, str | None]] = []
+    employer_identities: set[tuple[str, ...]] = set()
+    for posting in exact_records:
+        title = posting.get("title")
+        location = posting.get("location")
+        employer = posting.get("hiring_organization_name")
+        if (
+            not isinstance(title, str)
+            or not isinstance(location, str)
+            or not isinstance(employer, str)
+            or not title.strip()
+            or not location.strip()
+            or not employer.strip()
+        ):
+            return None, "detail_identity_evidence_missing"
+        if (
+            _title_token_sequence(title) != _title_token_sequence(candidate_title)
+            or not publication_title_identity_matches(
+                title,
+                target_title,
+                target_location=target_location,
+            )
+        ):
+            return None, "detail_title_identity_mismatch"
+        if (
+            not candidate_location
+            or not _strict_location_identity_matches(location, candidate_location)
+            or not _strict_location_identity_matches(candidate_location, location)
+            or _is_explicit_location_mismatch(location, candidate_location)
+            or _is_explicit_location_mismatch(candidate_location, location)
+            or (
+                target_location
+                and (
+                    not _strict_location_identity_matches(location, target_location)
+                    or _is_explicit_location_mismatch(location, target_location)
+                )
+            )
+        ):
+            return None, "detail_location_identity_mismatch"
+        employer_identity = _normalized_employer_identity(employer)
+        if not employer_identity:
+            return None, "detail_employer_identity_missing"
+        employer_identities.add(employer_identity)
+        verified.append(posting)
+
+    if len(employer_identities) != 1:
+        return None, "detail_employer_identity_conflict"
+    return verified[0], "verified"
+
+
+def _normalized_employer_identity(value: str) -> tuple[str, ...]:
+    ignored = {
+        "co",
+        "company",
+        "corp",
+        "corporation",
+        "inc",
+        "incorporated",
+        "limited",
+        "llc",
+        "ltd",
+        "plc",
+        "the",
+    }
+    return tuple(
+        token
+        for token in re.findall(r"[a-z0-9]+", value.casefold())
+        if token not in ignored
     )
 
 

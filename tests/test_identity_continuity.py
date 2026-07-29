@@ -7,6 +7,7 @@ from job_source_agent.identity_continuity import (
     OpeningIdentity,
     OpeningSelectionEvidence,
     ProviderIdentity,
+    ProviderOpeningRouteEvidence,
     validate_opening_identity_chain,
 )
 from job_source_agent.models import CompanyInput
@@ -112,6 +113,127 @@ class OpeningIdentityContinuityTests(unittest.TestCase):
 
         self.assertIn("OPENING_TENANT_MISMATCH", failures)
         self.assertIn("OPENING_BOARD_MISMATCH", failures)
+
+    def test_verified_provider_route_authorizes_exact_child_identity(self):
+        provider = ProviderIdentity(
+            hiring_entity_name="Acme",
+            provider="icims",
+            tenant="aggregate.icims.com",
+            canonical_board_url="https://aggregate.icims.com/jobs/search",
+            evidence_url="https://acme.example/careers",
+            verification_method="verified_first_party_handoff",
+            relationship_verified=True,
+        )
+        route = ProviderOpeningRouteEvidence(
+            provider="icims",
+            source_tenant="aggregate.icims.com",
+            source_canonical_board_url="https://aggregate.icims.com/jobs/search",
+            target_tenant="child.icims.com",
+            target_canonical_board_url="https://child.icims.com/jobs/search",
+            canonical_opening_url="https://child.icims.com/jobs/123/engineer/job",
+            opening_id="123",
+            source_response_url=(
+                "https://aggregate.icims.com/jobs/search?hub=15&ss=1"
+            ),
+            source_customer_identity="acme.icims.com",
+            target_customer_identity="acme.icims.com",
+            route_identity="hub:15",
+            detail_evidence_url="https://child.icims.com/jobs/123/engineer/job",
+            extraction_method="icims_aggregate_job_card",
+            detail_verified=True,
+        )
+        opening = OpeningIdentity(
+            hiring_entity_name="Acme",
+            provider="icims",
+            tenant="child.icims.com",
+            canonical_board_url="https://child.icims.com/jobs/search",
+            canonical_opening_url="https://child.icims.com/jobs/123/engineer/job",
+            route_evidence=route,
+        )
+
+        self.assertEqual(
+            validate_opening_identity_chain(
+                hiring=self.hiring,
+                provider=provider,
+                opening=opening,
+                open_position_url=opening.canonical_opening_url,
+            ),
+            [],
+        )
+        self.assertEqual(
+            OpeningIdentity.from_checkpoint_payload(
+                opening.to_checkpoint_payload()
+            ),
+            opening,
+        )
+
+    def test_provider_route_rejects_cross_tenant_and_tampered_evidence(self):
+        provider = ProviderIdentity(
+            hiring_entity_name="Acme",
+            provider="icims",
+            tenant="aggregate.icims.com",
+            canonical_board_url="https://aggregate.icims.com/jobs/search",
+            evidence_url="https://acme.example/careers",
+            verification_method="verified_first_party_handoff",
+            relationship_verified=True,
+        )
+        route = ProviderOpeningRouteEvidence(
+            provider="icims",
+            source_tenant="other.icims.com",
+            source_canonical_board_url="https://other.icims.com/jobs/search",
+            target_tenant="wrong-child.icims.com",
+            target_canonical_board_url="https://wrong-child.icims.com/jobs/search",
+            canonical_opening_url="https://wrong-child.icims.com/jobs/999/engineer/job",
+            opening_id="999",
+            source_response_url="https://other.icims.com/jobs/search?hub=26",
+            source_customer_identity="other.icims.com",
+            target_customer_identity="other.icims.com",
+            route_identity="hub:26",
+            detail_evidence_url="https://wrong-child.icims.com/jobs/999/engineer/job",
+            extraction_method="icims_aggregate_job_card",
+            detail_verified=True,
+        )
+        opening = OpeningIdentity(
+            hiring_entity_name="Acme",
+            provider="icims",
+            tenant="child.icims.com",
+            canonical_board_url="https://child.icims.com/jobs/search",
+            canonical_opening_url="https://child.icims.com/jobs/123/engineer/job",
+            route_evidence=route,
+        )
+
+        failures = validate_opening_identity_chain(
+            hiring=self.hiring,
+            provider=provider,
+            opening=opening,
+            open_position_url=opening.canonical_opening_url,
+        )
+
+        self.assertIn("OPENING_ROUTE_SOURCE_MISMATCH", failures)
+        self.assertIn("OPENING_ROUTE_TARGET_MISMATCH", failures)
+        self.assertIn("OPENING_ROUTE_URL_MISMATCH", failures)
+
+    def test_provider_route_payload_rejects_unknown_or_mutated_fields(self):
+        route = ProviderOpeningRouteEvidence(
+            provider="icims",
+            source_tenant="aggregate.icims.com",
+            source_canonical_board_url="https://aggregate.icims.com/jobs/search",
+            target_tenant="child.icims.com",
+            target_canonical_board_url="https://child.icims.com/jobs/search",
+            canonical_opening_url="https://child.icims.com/jobs/123/engineer/job",
+            opening_id="123",
+            source_response_url="https://aggregate.icims.com/jobs/search?hub=15",
+            source_customer_identity="acme.icims.com",
+            target_customer_identity="acme.icims.com",
+            route_identity="hub:15",
+            detail_evidence_url="https://child.icims.com/jobs/123/engineer/job",
+            extraction_method="icims_aggregate_job_card",
+            detail_verified=True,
+        )
+        payload = route.to_checkpoint_payload()
+        payload["unexpected"] = True
+        with self.assertRaisesRegex(ValueError, "unsupported fields"):
+            ProviderOpeningRouteEvidence.from_checkpoint_payload(payload)
 
     def test_fresh_ventures_cannot_authorize_notion_tenant(self):
         fresh_hiring = HiringIdentityEvidence(

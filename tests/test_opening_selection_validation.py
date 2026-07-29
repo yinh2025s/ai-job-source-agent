@@ -4,6 +4,7 @@ from job_source_agent.identity_continuity import (
     OpeningIdentity,
     OpeningSelectionEvidence,
     ProviderIdentity,
+    ProviderOpeningRouteEvidence,
 )
 from job_source_agent.opening_selection_validation import (
     classify_location,
@@ -65,6 +66,70 @@ class OpeningSelectionValidationTests(unittest.TestCase):
         )
 
         self.assertIn("OPENING_SELECTION_TENANT_MISMATCH", issues)
+
+    def test_verified_route_requires_selection_to_retain_child_identity(self):
+        provider = _provider(
+            provider="icims",
+            tenant="aggregate.icims.com",
+            canonical_board_url="https://aggregate.icims.com/jobs/search",
+        )
+        route = ProviderOpeningRouteEvidence(
+            provider="icims",
+            source_tenant="aggregate.icims.com",
+            source_canonical_board_url="https://aggregate.icims.com/jobs/search",
+            target_tenant="child.icims.com",
+            target_canonical_board_url="https://child.icims.com/jobs/search",
+            canonical_opening_url="https://child.icims.com/jobs/123/engineer/job",
+            opening_id="123",
+            source_response_url="https://aggregate.icims.com/jobs/search?hub=15",
+            source_customer_identity="acme.icims.com",
+            target_customer_identity="acme.icims.com",
+            route_identity="hub:15",
+            detail_evidence_url="https://child.icims.com/jobs/123/engineer/job",
+            extraction_method="icims_aggregate_job_card",
+            detail_verified=True,
+        )
+        opening = _opening(
+            provider="icims",
+            tenant="child.icims.com",
+            canonical_board_url="https://child.icims.com/jobs/search",
+            canonical_opening_url=route.canonical_opening_url,
+            route_evidence=route,
+        )
+        selection = _selection(
+            provider="icims",
+            tenant="child.icims.com",
+            canonical_board_url="https://child.icims.com/jobs/search",
+            canonical_opening_url=route.canonical_opening_url,
+        )
+
+        issues, _location = validate_opening_selection(
+            selection=selection,
+            provider=provider,
+            opening=opening,
+            open_position_url=route.canonical_opening_url,
+            target_title="AI Engineer",
+            target_location="New York, NY",
+        )
+
+        self.assertEqual(issues, [])
+
+        wrong_selection = _selection(
+            provider="icims",
+            tenant="aggregate.icims.com",
+            canonical_board_url="https://aggregate.icims.com/jobs/search",
+            canonical_opening_url=route.canonical_opening_url,
+        )
+        issues, _location = validate_opening_selection(
+            selection=wrong_selection,
+            provider=provider,
+            opening=opening,
+            open_position_url=route.canonical_opening_url,
+            target_title="AI Engineer",
+            target_location="New York, NY",
+        )
+        self.assertIn("OPENING_SELECTION_TENANT_MISMATCH", issues)
+        self.assertIn("OPENING_SELECTION_BOARD_MISMATCH", issues)
 
     def test_title_and_explicit_location_mismatch_reject_new_candidate_path(self):
         issues, location = validate_opening_selection(
