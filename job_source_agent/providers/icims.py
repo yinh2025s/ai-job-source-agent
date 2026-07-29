@@ -11,7 +11,7 @@ from .base import AdapterResult, JobBoard, JobCandidate, JobQuery
 
 
 _ICIMS_HOST = re.compile(
-    r"^careers-[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.icims\.com$",
+    r"^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?\.icims\.com$",
     re.IGNORECASE,
 )
 _JOB_CONTAINER_KEYS = {
@@ -36,6 +36,19 @@ _JIBE_SIGNATURES = (
     '"externalSearch":true',
 )
 _JIBE_PAGE_SIZE = 100
+_ICIMS_SHELL_SCRIPT_SRC = re.compile(
+    r"""\bicimsFrame\.src\s*=\s*(['"])(?P<url>.+?)\1""",
+    re.IGNORECASE,
+)
+_ICIMS_SHELL_MARKERS = (
+    "icims_content_iframe",
+    "icimsFrame.src",
+    "iCIMS Content iFrame",
+)
+_ICIMS_INVENTORY_MARKERS = (
+    'id="searchForm"',
+    "iCIMS_JobSearchTable",
+)
 
 
 class ICIMSAdapter:
@@ -85,6 +98,36 @@ class ICIMSAdapter:
             url=urlunparse((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", parsed.query, "")),
             provider=self.name,
             identifier=(parsed.hostname or "").casefold(),
+            replay_safe=True,
+        )
+
+    def probe_board(self, fetcher, page: Page) -> JobBoard | None:
+        page_url = page.final_url or page.url
+        if not _is_public_icims_shell_url(page_url):
+            return None
+        iframe_url = _declared_icims_iframe_url(page.html, page_url)
+        if iframe_url is None:
+            return None
+        try:
+            iframe_page = fetcher.fetch(iframe_url)
+        except (FetchError, OSError, TimeoutError):
+            return None
+        iframe_final_url = iframe_page.final_url or iframe_page.url
+        expected_host = (urlparse(page_url).hostname or "").casefold()
+        if not _is_same_icims_origin(iframe_final_url, expected_host):
+            return None
+        search_url = _declared_icims_search_url(
+            iframe_page.html,
+            iframe_final_url,
+            expected_host,
+        )
+        if search_url is None:
+            return None
+        parsed = urlparse(search_url)
+        return JobBoard(
+            url=urlunparse((parsed.scheme, parsed.netloc, parsed.path.rstrip("/"), "", "", "")),
+            provider=self.name,
+            identifier=expected_host,
             replay_safe=True,
         )
 
@@ -147,8 +190,14 @@ class ICIMSAdapter:
                 continue
 
             html_link_count += len(scripts.job_links)
-            for raw_url, raw_title in scripts.job_links:
-                candidate = _candidate_from_html_link(raw_url, raw_title, final_url, board)
+            for raw_url, raw_title, raw_location in scripts.job_links:
+                candidate = _candidate_from_html_link(
+                    raw_url,
+                    raw_title,
+                    raw_location,
+                    final_url,
+                    board,
+                )
                 if candidate is not None:
                     candidates.append(candidate)
 
@@ -338,16 +387,32 @@ class _ScriptParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.scripts: list[tuple[str, str]] = []
         self.pagination_hrefs: list[str] = []
-        self.job_links: list[tuple[str, str]] = []
+        self.job_links: list[tuple[str, str, str | None]] = []
         self._script_type: str | None = None
         self._content: list[str] = []
         self._job_href: str | None = None
         self._job_title: str = ""
         self._job_text: list[str] = []
+        self._card_depth = 0
+        self._card_fields: list[tuple[bool, str]] = []
+        self._card_links: list[tuple[str, str]] = []
+        self._field_label_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         tag_name = tag.lower()
         attributes = {key.lower(): (value or "") for key, value in attrs}
+        classes = attributes.get("class", "").casefold().split()
+        if self._card_depth == 0 and "icims_jobcarditem" in classes:
+            self._card_depth = 1
+            self._card_fields = []
+            self._card_links = []
+        elif self._card_depth and tag_name not in _HTML_VOID_TAGS:
+            self._card_depth += 1
+        if self._card_depth:
+            if self._field_label_depth and tag_name not in _HTML_VOID_TAGS:
+                self._field_label_depth += 1
+            elif "field-label" in classes:
+                self._field_label_depth = 1
         if tag_name == "a":
             href = attributes.get("href", "")
             if href and "/jobs/" in href.casefold():
@@ -355,7 +420,6 @@ class _ScriptParser(HTMLParser):
                 self._job_title = attributes.get("title", "")
                 self._job_text = []
             rel = attributes.get("rel", "").casefold().split()
-            classes = attributes.get("class", "").casefold().split()
             if href and (
                 "next" in rel
                 or any("paging" in class_name or "pagination" in class_name for class_name in classes)
@@ -371,23 +435,92 @@ class _ScriptParser(HTMLParser):
             self._content = []
 
     def handle_data(self, data: str) -> None:
+        if self._card_depth:
+            text = " ".join(data.split())
+            if text:
+                self._card_fields.append((bool(self._field_label_depth), text))
         if self._job_href is not None:
             self._job_text.append(data)
         if self._script_type is not None:
             self._content.append(data)
 
     def handle_endtag(self, tag: str) -> None:
-        if tag.lower() == "a" and self._job_href is not None:
+        tag_name = tag.lower()
+        if tag_name == "a" and self._job_href is not None:
             title = self._job_title or " ".join("".join(self._job_text).split())
-            self.job_links.append((self._job_href, title))
+            if self._card_depth:
+                self._card_links.append((self._job_href, title))
+            else:
+                self.job_links.append((self._job_href, title, None))
             self._job_href = None
             self._job_title = ""
             self._job_text = []
-        if tag.lower() != "script" or self._script_type is None:
-            return
-        self.scripts.append((self._script_type, "".join(self._content)))
-        self._script_type = None
-        self._content = []
+        if tag_name == "script" and self._script_type is not None:
+            self.scripts.append((self._script_type, "".join(self._content)))
+            self._script_type = None
+            self._content = []
+        if self._field_label_depth:
+            self._field_label_depth -= 1
+        if self._card_depth:
+            self._card_depth -= 1
+            if self._card_depth == 0:
+                location = _card_location(self._card_fields)
+                self.job_links.extend(
+                    (href, title, location)
+                    for href, title in self._card_links
+                )
+                self._card_fields = []
+                self._card_links = []
+                self._field_label_depth = 0
+
+
+_HTML_VOID_TAGS = {
+    "area",
+    "base",
+    "br",
+    "col",
+    "embed",
+    "hr",
+    "img",
+    "input",
+    "link",
+    "meta",
+    "param",
+    "source",
+    "track",
+    "wbr",
+}
+_CARD_LOCATION_LABELS = {"location", "job location", "job locations"}
+
+
+def _card_location(fields: list[tuple[bool, str]]) -> str | None:
+    for index, (is_label, value) in enumerate(fields[:-1]):
+        if (
+            not is_label
+            or value.casefold().rstrip(":") not in _CARD_LOCATION_LABELS
+        ):
+            continue
+        for candidate_is_label, candidate in fields[index + 1 :]:
+            if candidate_is_label:
+                break
+            text = candidate.strip()
+            if not text:
+                continue
+            return _normalize_icims_card_location(text)
+    return None
+
+
+def _normalize_icims_card_location(value: str) -> str:
+    match = re.fullmatch(
+        r"US-([A-Z]{2})-(.*)",
+        value.strip(),
+        re.IGNORECASE,
+    )
+    if match is None:
+        return value.strip()
+    state = match.group(1).upper()
+    city = " ".join(part for part in match.group(2).split("-") if part).strip()
+    return f"{city + ', ' if city else ''}{state}, United States"
 
 
 def _decode_script_json(content: str) -> Any | None:
@@ -470,6 +603,7 @@ def _hosted_search_url(board_url: str, query: JobQuery) -> str:
 def _candidate_from_html_link(
     raw_url: str,
     raw_title: str,
+    raw_location: str | None,
     page_url: str,
     board: JobBoard,
 ) -> JobCandidate | None:
@@ -486,6 +620,7 @@ def _candidate_from_html_link(
         title=title,
         url=canonical_url,
         provider="icims",
+        location=(raw_location or "").strip() or None,
         raw={"id": parts[1], "source": "html_link"},
     )
 
@@ -605,6 +740,89 @@ def _is_icims_search_url(url: str, expected_host: str | None) -> bool:
     )
 
 
+def _is_public_icims_shell_url(url: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except (TypeError, ValueError):
+        return False
+    if not _is_safe_icims_origin(parsed):
+        return False
+    parts = [part.casefold() for part in parsed.path.split("/") if part]
+    return not parts or parts == ["jobs", "intro"]
+
+
+def _declared_icims_iframe_url(html: str, page_url: str) -> str | None:
+    if not isinstance(html, str) or not all(
+        marker.casefold() in html.casefold() for marker in _ICIMS_SHELL_MARKERS
+    ):
+        return None
+    parser = _ICIMSShellParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    raw_urls = list(parser.iframe_urls)
+    raw_urls.extend(
+        match.group("url").replace("\\/", "/")
+        for match in _ICIMS_SHELL_SCRIPT_SRC.finditer(html)
+    )
+    normalized: list[str] = []
+    expected_host = (urlparse(page_url).hostname or "").casefold()
+    for raw_url in raw_urls:
+        candidate = safe_normalize_url(raw_url, page_url)
+        if (
+            candidate
+            and _is_same_icims_origin(candidate, expected_host)
+            and _has_iframe_flag(candidate)
+        ):
+            normalized.append(candidate)
+    unique = list(dict.fromkeys(normalized))
+    return unique[0] if len(unique) == 1 else None
+
+
+def _declared_icims_search_url(
+    html: str,
+    page_url: str,
+    expected_host: str,
+) -> str | None:
+    if not isinstance(html, str) or not all(
+        marker.casefold() in html.casefold() for marker in _ICIMS_INVENTORY_MARKERS
+    ):
+        return None
+    parser = _ICIMSSearchFormParser()
+    try:
+        parser.feed(html)
+        parser.close()
+    except (TypeError, ValueError):
+        return None
+    normalized: list[str] = []
+    for raw_url in parser.search_actions:
+        candidate = safe_normalize_url(raw_url, page_url)
+        if candidate and _is_icims_search_url(candidate, expected_host):
+            normalized.append(candidate)
+    unique = list(dict.fromkeys(normalized))
+    return unique[0] if len(unique) == 1 else None
+
+
+def _has_iframe_flag(url: str) -> bool:
+    try:
+        return any(
+            key.casefold() == "in_iframe" and value == "1"
+            for key, value in parse_qsl(urlparse(url).query, keep_blank_values=True)
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def _is_same_icims_origin(url: str, expected_host: str) -> bool:
+    try:
+        parsed = urlparse(url)
+    except (TypeError, ValueError):
+        return False
+    return _is_safe_icims_origin(parsed, expected_host)
+
+
 def _has_pagination_query(url: str) -> bool:
     try:
         return any(key.casefold() in _PAGINATION_QUERY_KEYS for key, _ in parse_qsl(urlparse(url).query))
@@ -627,6 +845,39 @@ def _is_safe_icims_origin(parsed, expected_host: str | None = None) -> bool:
         and bool(_ICIMS_HOST.fullmatch(host))
         and (expected_host is None or host == expected_host.casefold())
     )
+
+
+class _ICIMSShellParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.iframe_urls: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.casefold() != "iframe":
+            return
+        values = {str(key).casefold(): str(value or "") for key, value in attrs}
+        identity = " ".join(
+            values.get(key, "") for key in ("id", "name", "title")
+        ).casefold()
+        source = values.get("src", "").strip()
+        if source and "icims" in identity and "iframe" in identity:
+            self.iframe_urls.append(source)
+
+
+class _ICIMSSearchFormParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.search_actions: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs) -> None:
+        if tag.casefold() != "form":
+            return
+        values = {str(key).casefold(): str(value or "") for key, value in attrs}
+        if values.get("id", "").casefold() != "searchform":
+            return
+        action = values.get("action", "").strip()
+        if action:
+            self.search_actions.append(action)
 
 
 def _is_safe_web_origin(url: str) -> bool:

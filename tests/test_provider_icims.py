@@ -43,22 +43,77 @@ class FixtureMappingFetcher:
         )
 
 
+class InlineMappingFetcher:
+    def __init__(self, pages: dict[str, str | Page]):
+        self.pages = pages
+        self.requested_urls = []
+
+    def fetch(self, url, data=None, headers=None):
+        self.requested_urls.append(url)
+        if url not in self.pages:
+            raise AssertionError(f"Unexpected fixture URL: {url}")
+        response = self.pages[url]
+        if isinstance(response, Page):
+            return response
+        return Page(
+            url=url,
+            final_url=url,
+            html=response,
+            source="icims-inline-fixture",
+        )
+
+
+def custom_shell_html(*iframe_urls: str) -> str:
+    runtime_html = (
+        '<script src="https://cdn.icims.com/a/images.icims.com/content/platform_'
+        '153.0.0.0/script/icims.js"></script>'
+    )
+    declarations = "".join(
+        (
+            "<script>"
+            "var icimsFrame = document.createElement('iframe');"
+            "icimsFrame.id = 'icims_content_iframe';"
+            f"icimsFrame.src = '{url}';"
+            "icimsFrame.title = 'iCIMS Content iFrame';"
+            "</script>"
+            f'<noscript><iframe id="noscript_icims_content_iframe" '
+            f'title="Noscript iCIMS Content iFrame" src="{url}">'
+            "</iframe></noscript>"
+        )
+        for url in iframe_urls
+    )
+    return runtime_html + declarations + '<span id="icims_iframe_span"></span>'
+
+
+def custom_shell_inventory_html(action: str) -> str:
+    return (
+        '<main id="iCIMS_MainWrapper">'
+        f'<form id="searchForm" action="{action}" method="get">'
+        '<input name="searchKeyword">'
+        '<table id="iCIMS_JobSearchTable"></table>'
+        "</form>"
+        "</main>"
+    )
+
+
 class ICIMSAdapterTests(unittest.TestCase):
     def setUp(self):
         self.adapter = ICIMSAdapter()
 
-    def test_recognizes_only_icims_careers_job_search_and_detail_urls(self):
+    def test_recognizes_only_safe_icims_job_search_and_detail_urls(self):
         self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs"))
         self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs/"))
         self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs/search"))
+        self.assertTrue(self.adapter.recognizes("https://jobs-acme.icims.com/jobs/search"))
+        self.assertTrue(self.adapter.recognizes("https://jobs-acme.icims.com/jobs/123/data-analyst/job"))
         self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs/search?ss=1"))
         self.assertTrue(self.adapter.recognizes("https://careers-acme.icims.com/jobs/123/data-analyst/job"))
         rejected = (
             "https://careers-acme.icims.com/",
+            "https://careers-acme.icims.com/jobs/intro",
             "https://careers-acme.icims.com/jobsfoo",
             "https://careers-acme.icims.com/jobs/login",
             "https://careers-acme.icims.com/jobs/brand",
-            "https://jobs-acme.icims.com/jobs/search",
             "https://careers-acme.evil.icims.com/jobs/search",
             "https://careers-acme.icims.com.evil.example/jobs/search",
             "https://example.com/jobs/careers-acme.icims.com/jobs/search",
@@ -71,6 +126,163 @@ class ICIMSAdapterTests(unittest.TestCase):
         for url in rejected:
             with self.subTest(url=url):
                 self.assertFalse(self.adapter.recognizes(url))
+
+    def test_probes_safe_custom_shell_and_returns_replay_safe_canonical_board(self):
+        outer_url = "https://jobs-acme.icims.com/jobs/intro"
+        iframe_url = (
+            "https://jobs-acme.icims.com/jobs/intro?"
+            "hashed=opaque&in_iframe=1&mobile=false"
+        )
+        search_url = "https://jobs-acme.icims.com/jobs/search"
+        outer_html = custom_shell_html(iframe_url, iframe_url)
+        fetcher = InlineMappingFetcher({
+            iframe_url: custom_shell_inventory_html(
+                "/jobs/search?ss=1&in_iframe=1"
+            ),
+        })
+
+        board = self.adapter.probe_board(
+            fetcher,
+            Page(url=outer_url, final_url=outer_url, html=outer_html),
+        )
+
+        self.assertEqual(fetcher.requested_urls, [iframe_url])
+        self.assertEqual(board, JobBoard(
+            url=search_url,
+            provider="icims",
+            identifier="jobs-acme.icims.com",
+            replay_safe=True,
+        ))
+
+    def test_custom_shell_probe_requires_strong_runtime_and_public_inventory(self):
+        outer_url = "https://jobs-acme.icims.com/"
+        iframe_url = "https://jobs-acme.icims.com/?in_iframe=1"
+        cases = (
+            (
+                "weak-text-only",
+                '<p>Powered by iCIMS</p><a href="/jobs/search">Jobs</a>',
+                {},
+            ),
+            (
+                "missing-runtime",
+                (
+                    f'<iframe id="icims_content_iframe" '
+                    f'title="iCIMS Content iFrame" src="{iframe_url}"></iframe>'
+                ),
+                {
+                    iframe_url: custom_shell_inventory_html("/jobs/search"),
+                },
+            ),
+            (
+                "frame-without-search-form",
+                custom_shell_html(iframe_url),
+                {iframe_url: "<main>No public inventory here</main>"},
+            ),
+            (
+                "cross-origin-search-action",
+                custom_shell_html(iframe_url),
+                {
+                    iframe_url: custom_shell_inventory_html(
+                        "https://jobs-other.icims.com/jobs/search"
+                    ),
+                },
+            ),
+        )
+
+        for name, outer_html, pages in cases:
+            with self.subTest(name=name):
+                self.assertIsNone(
+                    self.adapter.probe_board(
+                        InlineMappingFetcher(pages),
+                        Page(url=outer_url, final_url=outer_url, html=outer_html),
+                    )
+                )
+
+    def test_custom_shell_probe_rejects_unsafe_or_ambiguous_iframe_urls(self):
+        outer_url = "https://jobs-acme.icims.com/"
+        cases = {
+            "cross-origin": (
+                "https://jobs-other.icims.com/?in_iframe=1",
+            ),
+            "http": (
+                "http://jobs-acme.icims.com/?in_iframe=1",
+            ),
+            "credentials": (
+                "https://user@jobs-acme.icims.com/?in_iframe=1",
+            ),
+            "nonstandard-port": (
+                "https://jobs-acme.icims.com:8443/?in_iframe=1",
+            ),
+            "missing-iframe-flag": (
+                "https://jobs-acme.icims.com/",
+            ),
+            "multiple-distinct": (
+                "https://jobs-acme.icims.com/?in_iframe=1",
+                "https://jobs-acme.icims.com/jobs/intro?in_iframe=1",
+            ),
+        }
+
+        for name, iframe_urls in cases.items():
+            with self.subTest(name=name):
+                fetcher = InlineMappingFetcher({})
+                self.assertIsNone(
+                    self.adapter.probe_board(
+                        fetcher,
+                        Page(
+                            url=outer_url,
+                            final_url=outer_url,
+                            html=custom_shell_html(*iframe_urls),
+                        ),
+                    )
+                )
+                self.assertEqual(fetcher.requested_urls, [])
+
+    def test_custom_shell_probe_rejects_non_public_outer_paths(self):
+        iframe_url = "https://jobs-acme.icims.com/?in_iframe=1"
+        inventory = custom_shell_inventory_html("/jobs/search")
+
+        for path in ("/login", "/profile", "/onboarding", "/employee"):
+            with self.subTest(path=path):
+                outer_url = f"https://jobs-acme.icims.com{path}"
+                fetcher = InlineMappingFetcher({iframe_url: inventory})
+                self.assertIsNone(
+                    self.adapter.probe_board(
+                        fetcher,
+                        Page(
+                            url=outer_url,
+                            final_url=outer_url,
+                            html=custom_shell_html(iframe_url),
+                        ),
+                    )
+                )
+                self.assertEqual(fetcher.requested_urls, [])
+
+    def test_custom_shell_probe_rejects_hrsmart_handoff_without_icims_inventory(self):
+        outer_url = "https://jobs-acme.icims.com/jobs/intro"
+        iframe_url = (
+            "https://jobs-acme.icims.com/jobs/intro?"
+            "hashed=opaque&in_iframe=1"
+        )
+        iframe_html = (
+            '<main id="iCIMS_MainWrapper">'
+            '<a href="https://example.hua.hrsmart.com/hr/ats/JobSearch/viewAll">'
+            "Search openings"
+            "</a>"
+            "</main>"
+        )
+        fetcher = InlineMappingFetcher({iframe_url: iframe_html})
+
+        self.assertIsNone(
+            self.adapter.probe_board(
+                fetcher,
+                Page(
+                    url=outer_url,
+                    final_url=outer_url,
+                    html=custom_shell_html(iframe_url),
+                ),
+            )
+        )
+        self.assertEqual(fetcher.requested_urls, [iframe_url])
 
     def test_identifies_search_page_and_canonicalizes_detail_to_board(self):
         root = self.adapter.identify_board(
@@ -281,6 +493,57 @@ class ICIMSAdapterTests(unittest.TestCase):
         self.assertIsNone(result.reason_code)
         self.assertEqual(result.trace["structured_script_count"], 1)
         self.assertEqual(result.trace["candidate_count"], 1)
+
+    def test_binds_location_only_within_the_same_icims_job_card(self):
+        fetcher = StubFetcher("""
+            <span class="sr-only field-label">Job Locations</span>
+            <span>US-CA-Wrong-Global</span>
+            <ul class="iCIMS_JobsTable">
+              <li class="iCIMS_JobCardItem">
+                <span class="field-label">Job Locations</span>
+                <span>US-HI-</span>
+                <a href="/jobs/2779/data-scientist---mid-level/job">
+                  <h3>Data Scientist - Mid-Level</h3>
+                </a>
+              </li>
+              <li class="iCIMS_JobCardItem">
+                <a href="/jobs/5009/safety-and-compliance-manager/job"
+                   title="5009 - Safety and Compliance Manager"></a>
+                <span class="sr-only field-label">Location</span>
+                <span>US-MN-Golden Valley</span>
+              </li>
+              <li class="iCIMS_JobCardItem">
+                <span class="field-label">Location</span>
+                <a href="/jobs/6000/location-missing/job"
+                   title="6000 - Location Missing">
+                  <span class="field-label">Job Title</span>
+                  <h3>Location Missing</h3>
+                </a>
+              </li>
+            </ul>
+            <a href="/jobs/9999/standalone/job">Standalone</a>
+        """)
+        board = self.adapter.identify_board(
+            "https://careers-acme.icims.com/jobs/search"
+        )
+
+        result = self.adapter.list_jobs(
+            fetcher,
+            board,
+            JobQuery(title=""),
+        )
+
+        by_title = {candidate.title: candidate for candidate in result.candidates}
+        self.assertEqual(
+            by_title["Data Scientist - Mid-Level"].location,
+            "HI, United States",
+        )
+        self.assertEqual(
+            by_title["Safety and Compliance Manager"].location,
+            "Golden Valley, MN, United States",
+        )
+        self.assertIsNone(by_title["Location Missing"].location)
+        self.assertIsNone(by_title["Standalone"].location)
 
     def test_lists_traditional_hosted_search_html_links_with_keyword_iframe(self):
         fetcher = StubFetcher("""

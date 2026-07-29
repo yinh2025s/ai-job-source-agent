@@ -15,6 +15,23 @@ from job_source_agent.web import Fetcher, Page
 ROOT = Path(__file__).resolve().parents[1]
 
 
+class InlineMappingFetcher:
+    def __init__(self, pages: dict[str, str]):
+        self.pages = pages
+        self.requested_urls = []
+
+    def fetch(self, url, data=None, headers=None):
+        self.requested_urls.append(url)
+        if url not in self.pages:
+            raise AssertionError(f"Unexpected fixture URL: {url}")
+        return Page(
+            url=url,
+            final_url=url,
+            html=self.pages[url],
+            source="registry-inline-fixture",
+        )
+
+
 class ProviderRegistryTests(unittest.TestCase):
     def test_native_adapters_are_discovered_without_central_registration(self):
         adapters = discover_native_adapters()
@@ -75,6 +92,46 @@ class ProviderRegistryTests(unittest.TestCase):
 
         self.assertEqual(adapter.name, "icims")
         self.assertEqual(board.identifier, "jobs.example.org")
+
+    def test_registry_routes_icims_custom_shell_through_page_probe(self):
+        outer_url = "https://jobs-acme.icims.com/jobs/intro"
+        iframe_url = (
+            "https://jobs-acme.icims.com/jobs/intro?"
+            "hashed=opaque&in_iframe=1"
+        )
+        outer_html = (
+            '<script src="https://cdn.icims.com/platform/icims.js"></script>'
+            "<script>"
+            "var icimsFrame = document.createElement('iframe');"
+            "icimsFrame.id = 'icims_content_iframe';"
+            f"icimsFrame.src = '{iframe_url}';"
+            "icimsFrame.title = 'iCIMS Content iFrame';"
+            "</script>"
+            '<span id="icims_iframe_span"></span>'
+        )
+        inventory_html = (
+            '<main id="iCIMS_MainWrapper">'
+            '<form id="searchForm" action="/jobs/search" method="get">'
+            '<input name="searchKeyword">'
+            '<table id="iCIMS_JobSearchTable"></table>'
+            "</form>"
+            "</main>"
+        )
+        fetcher = InlineMappingFetcher({iframe_url: inventory_html})
+        registry = build_default_provider_registry()
+
+        selected = registry.board_for_page(
+            Page(url=outer_url, final_url=outer_url, html=outer_html),
+            fetcher,
+        )
+
+        self.assertIsNotNone(selected)
+        adapter, board = selected
+        self.assertEqual(adapter.name, "icims")
+        self.assertEqual(board.url, "https://jobs-acme.icims.com/jobs/search")
+        self.assertEqual(board.identifier, "jobs-acme.icims.com")
+        self.assertTrue(board.replay_safe)
+        self.assertEqual(fetcher.requested_urls, [iframe_url])
 
     def test_greenhouse_adapter_lists_normalized_candidates(self):
         adapter = GreenhouseAdapter()
