@@ -23,6 +23,12 @@ def main() -> None:
     parser.add_argument("--per-keyword-limit", type=int, default=30)
     parser.add_argument("--pages", type=int, default=2)
     parser.add_argument("--target", type=int, default=120)
+    parser.add_argument("--minimum-records", type=int, default=50)
+    parser.add_argument(
+        "--require-target",
+        action="store_true",
+        help="Fail unless the collector freezes exactly --target unique job cards.",
+    )
     parser.add_argument("--fetch-timeout", type=float, default=8)
     parser.add_argument("--output", required=True)
     parser.add_argument("--manifest", required=True)
@@ -43,7 +49,8 @@ def main() -> None:
             record = dataclass_to_dict(linkedin_postings_to_company_inputs([posting])[0])
             existing = records_by_id.get(posting.job_id)
             if existing is None:
-                record["source_trace"]["blind_candidate_collection"] = {
+                record["source_trace"]["candidate_collection"] = {
+                    "provenance": "development_candidate_pool",
                     "first_seen_keyword": keyword,
                     "matched_keywords": [keyword],
                     "observed_at": datetime.now(timezone.utc).isoformat(),
@@ -51,7 +58,7 @@ def main() -> None:
                 }
                 records_by_id[posting.job_id] = record
             else:
-                collection = existing["source_trace"]["blind_candidate_collection"]
+                collection = existing["source_trace"]["candidate_collection"]
                 if keyword not in collection["matched_keywords"]:
                     collection["matched_keywords"].append(keyword)
                 if (
@@ -64,21 +71,48 @@ def main() -> None:
         if len(records_by_id) >= args.target:
             break
     records = list(records_by_id.values())
-    if len(records) < 50:
-        raise SystemExit(f"only {len(records)} unique public job cards collected; at least 50 required")
+    validate_collection_count(
+        len(records),
+        target=args.target,
+        minimum=args.minimum_records,
+        require_target=args.require_target,
+    )
     manifest = {
         "schema_version": "1.0",
         "collection_kind": "linkedin_public_search_cards_s1_only",
+        "cohort_provenance": "development_candidate_pool",
         "collected_at": datetime.now(timezone.utc).isoformat(),
         "location": args.location,
         "queries": query_counts,
         "unique_job_count": len(records),
+        "target_job_count": args.target,
+        "minimum_job_count": args.minimum_records,
+        "target_required": args.require_target,
         "pipeline_stages_executed": ["linkedin_public_search_collection"],
         "s2_s7_executed": False,
     }
     _write_json_atomic(Path(args.output), records)
     _write_json_atomic(Path(args.manifest), manifest)
     print(json.dumps({"unique_job_count": len(records), "queries": query_counts}))
+
+
+def validate_collection_count(
+    actual: int,
+    *,
+    target: int,
+    minimum: int,
+    require_target: bool,
+) -> None:
+    if target <= 0 or minimum <= 0 or minimum > target:
+        raise SystemExit("target and minimum must be positive, with minimum <= target")
+    if require_target and actual != target:
+        raise SystemExit(
+            f"only {actual} unique public job cards collected; exactly {target} required"
+        )
+    if actual < minimum:
+        raise SystemExit(
+            f"only {actual} unique public job cards collected; at least {minimum} required"
+        )
 
 
 def _write_json_atomic(path: Path, value) -> None:
