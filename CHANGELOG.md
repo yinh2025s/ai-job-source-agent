@@ -1,5 +1,31 @@
 # Changelog
 
+## 2026-07-29 - Fresh100 `.283` cold measurement and causal audit
+
+- Ran the observed Fresh100 development cohort from frozen commit `d76cfdd`,
+  adapter `.283`, new runtime roots and `--no-resume`; the valid 100-record run
+  completed with 92 Websites, 79 Career pages, 71 verified Job Lists and 36 raw
+  S7 Exact openings.
+- Discarded an initial startup that accidentally used the CLI's 30-record
+  default. It was interrupted immediately and contributes no measurement.
+- Audited all 36 published URLs: no unsafe, wrong-location, cross-company or
+  cross-tenant URL was found. Diamondback's stale Workday URL slug is backed by
+  an official API record titled `Cybersecurity Analyst`.
+- Held Slant CRM and Team Royal as provisional identity claims because S2
+  failed and S3 did not run even though S7 reported success. The conservative
+  artifact count is 34 clean Exact claims plus two provisional claims; formal
+  precision remains unreportable without annotations.
+- Strict replay passed 100-record integrity and had 99 reproduced, one Brown
+  and Caldwell outcome mismatch, zero fixture gaps and zero budget recoveries.
+  Snapshot sanitization redacts UltiPro's nested public `State` object, changing
+  replay location evidence from Wailuku to Maui.
+- Reclassified all 64 non-Exact records by executable cause. No unresolved
+  group currently satisfies one shared trigger, one code path and at least
+  three expected evidence-terminal recoveries, so no product behavior changed.
+- Kept raw artifacts local: one public Google browser-key-shaped value remains
+  serialized in trace, checkpoint and completion output. Created no release
+  archive and started no new cohort.
+
 ## 2026-07-29 - GovernmentJobs provider identity and XHR inventory `.283`
 
 - Reclassified the three-company GovernmentJobs cluster by terminal recovery,

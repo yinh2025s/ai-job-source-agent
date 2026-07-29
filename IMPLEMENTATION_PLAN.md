@@ -23,7 +23,47 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-29，`.283` GovernmentJobs cluster accepted）
+## 当前架构进度（2026-07-29，`.283` Fresh100 measurement audited）
+
+### `.283` Fresh100 cold measurement
+
+冻结 commit `d76cfdd`、adapter `.283` 已使用全新的 checkpoint、completion、
+evidence、snapshot 和 output root 完成 observed Fresh100 development cohort
+100/100 cold live。有效 run 明确使用 `--limit 100 --require-full-cohort` 且
+`--no-resume`；一个误用 CLI 30-record 默认值的早期启动已立即停止，不进入成绩。
+
+Website / Career / verified Job List / raw S7 Exact 为
+92 / 79 / 71 / 36，相对 `.281` 为 -1 / +1 / 0 / +2。36 条 opening URL 均为
+public HTTPS，serialized evidence 未发现错误地点、跨公司或跨 tenant 发布。
+Diamondback 的 Workday URL 保留旧 `Systems-Administrator` slug，但官方 API
+payload 的 title/location 是目标 `Cybersecurity Analyst / Oklahoma City, OK`。
+
+该 36 不能直接写成 release-clean precision：
+
+- Slant CRM 和 Team Royal 的 S2 失败、S3 未运行，S7 却把 provisional handoff
+  提升为 verified success；保守 artifact count 为 34 clean Exact claims 加
+  2 provisional claims；
+- Brown and Caldwell live Exact 正确，但 strict replay 变为
+  `OPENING_NOT_FOUND`；
+- 没有 terminal ground-truth annotation，eligible recall 和 formal Exact
+  precision 继续为 not reportable。
+
+Strict replay 覆盖 100/100 且 record integrity 通过：99 reproduced、1 mismatch、
+0 fixture gap、0 budget recovery。Brown 的 UltiPro `Address.State` 是公开嵌套
+对象，却被 sanitizer 按 OAuth state 整体脱敏；replay 因而从
+`Wailuku, Hawaii` 退化为 `Maui, HI`。相同触发器出现在三家公司，但只改变一条
+终态，不满足三条 expected recovery 的实现门槛。
+
+64 条 non-Exact 的真实因果分类为：17 complete inventory no-match、2 no public
+openings、1 verified external block、5 relationship-unverified block、3 identity
+rejection、1 candidate-known transport failure、11 budget starvation、22
+candidate-not-produced、2 unrecognized inventory integration。大标签中没有一组同时
+满足共同 trigger、共同 production path 和至少三条预期 evidence-terminal
+recovery，因此本轮不改产品行为、不加 heuristic、不提高预算，也不启动新 cohort。
+
+报告：
+
+- `docs/FRESH_100_V283_CURRENT_COLD_GATE_REPORT.md`
 
 ### `.283` GovernmentJobs board-employer and XHR contract
 
