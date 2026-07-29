@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-29 - iCIMS aggregate-to-child opening routes `.285`
+
+- Added immutable `ProviderOpeningRouteEvidence` and first-class
+  `OpeningMatchOutcome` so a provider-declared source tenant to child tenant
+  route cannot be reconstructed from diagnostic trace.
+- Added strict iCIMS aggregate-card extraction and child-detail attestation for
+  Cretex, Emory Healthcare and Ho-Chunk. Customer marker, hub, opening ID,
+  title, location, employer, redirect and tenant continuity all fail closed.
+- Followed one same-host, same-opening iCIMS `in_iframe=1` detail payload when
+  the canonical opening is a shell; extra query parameters, cross-host routes
+  and conflicting identity evidence remain rejected.
+- Made a fully typed route-bound Exact supersede a generic-shell alias only
+  when both resolve to the same canonical opening. Different verified openings
+  still return `OPENING_IDENTITY_AMBIGUOUS`.
+- Cretex focused cold run4 reached S7 Exact at the child opening and reproduced
+  1/1 from empty-checkpoint strict replay. URL, title, location, company and
+  source/target tenant audit passed with zero safety error. The 240-second
+  focused budget isolates this provider contract and does not change the
+  authoritative Fresh100 `.283` score.
+- Advanced identity/result/checkpoint/adapter versions to
+  `1.2` / `2.3` / `1.9` / `2026-07-29.285`. Passed 2,903 tests (4 skipped),
+  provider benchmark 25/25, resolver 6/6, architecture 48/0 and
+  `git diff --check`.
+
 ## 2026-07-29 - Historical `.278` cold measurement run 3
 
 - Re-ran the observed Fresh100 development cohort from frozen commit

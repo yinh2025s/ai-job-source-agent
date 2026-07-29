@@ -23,7 +23,45 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-29，`.284` iCIMS shell accepted）
+## 当前架构进度（2026-07-29，`.285` iCIMS child route accepted）
+
+### `.285` iCIMS aggregate-to-child opening route
+
+Cretex、Emory Healthcare、Ho-Chunk 三个独立公开 development control 证明了同一
+iCIMS provider contract：官方 aggregate tenant 的 title-filtered job card 会把
+具体 opening 发布到 child tenant。过去 S7 只能接受 source board 与 opening 同
+tenant，因此这些真实岗位被安全拒绝。
+
+`.285` 不放宽 `*.icims.com`。Adapter 只从当前 aggregate response 的同一 job card
+提取 title、location、numeric opening ID、唯一正整数 `hub` 和安全 child detail；
+source/detail 必须暴露同一 customer runtime marker。Child detail 还重新验证
+canonical route、opening ID、title、location 和 provider-published employer。
+Canonical detail 若只是外壳，只允许再跟随一次同 host、同 opening path、唯一
+`in_iframe=1` payload；额外 query、redirect、跨 host/path 和冲突证据全部拒绝。
+
+共享 identity contract 新增 immutable `ProviderOpeningRouteEvidence`，并通过
+`OpeningMatchOutcome` 作为 typed data 从 matcher 传到 S7；trace 只用于诊断，不能
+建立权限。普通 opening 继续要求 provider/tenant/board 完全相等；route opening
+必须同时绑定 aggregate source identity、child target identity 和 exact URL。若
+generic shell 与 native route 命中同一 URL，只有完整 typed route 可消除别名；
+不同 Exact 仍 fail closed。
+
+Cretex 的 focused cold run1 暴露 120 秒预算边界，run2 暴露 child shell，run3
+暴露 generic/native 同 URL 重复，均保留为失败诊断。修复后的全新 run4 使用 240
+秒 focused budget，从原 Fresh100 LinkedIn 输入完成 S1-S7 Exact：
+`cretex-companies.icims.com` source tenant 到
+`careers-cretex.icims.com/jobs/5219/.../job` child opening。Strict replay 1/1
+reproduced、0 mismatch、0 fixture gap；company/title/location/source tenant/target
+tenant/URL 审计全部通过，credential-shape scan 为 0。
+
+该 focused recovery 不改写 `.283` Fresh100 的 36/100；全量 current-version
+Fresh100 仍需单独授权、冻结代码和全新 roots。版本为 identity `1.2`、result
+`2.3`、checkpoint `1.9`、adapter `2026-07-29.285`。门禁为 2,903 tests
+（4 skipped）、provider 25/25、resolver 6/6、architecture 48/0。报告：
+
+- `docs/COORDINATOR_V285_ICIMS_AGGREGATE_CHILD_ROUTE_PHASE_A.md`
+- `docs/COORDINATOR_V285_ICIMS_AGGREGATE_CHILD_ROUTE_PHASE_C.md`
+- `docs/adr/0035-bind-provider-opening-routes.md`
 
 ### Historical `.278` cold measurement run 3
 

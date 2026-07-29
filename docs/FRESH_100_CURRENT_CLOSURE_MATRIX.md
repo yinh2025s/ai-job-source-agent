@@ -21,6 +21,30 @@ fixture gaps and zero budget recoveries. The raw capsule remains local because
 one public browser-key-shaped value is serialized in its artifacts. See
 `docs/FRESH_100_V283_CURRENT_COLD_GATE_REPORT.md`.
 
+### `.285` Focused iCIMS Aggregate-to-Child Evidence
+
+The post-measurement `.285` contract represents an iCIMS aggregate board to
+child opening as typed, candidate-scoped route evidence. Cretex, Emory
+Healthcare and Ho-Chunk independently satisfy the provider-level trigger and
+negative safety matrix.
+
+Cretex is the only affected Fresh100 record. A new isolated run4, using the
+original LinkedIn input and a 240-second focused company budget, reached S7
+Exact at
+`https://careers-cretex.icims.com/jobs/5219/it-cyber-security-risk-analyst/job`.
+The identity assertion retains source tenant
+`cretex-companies.icims.com`, target tenant `careers-cretex.icims.com`, exact
+title `IT Cyber Security Risk Analyst` and location `Elk River, MN`. Strict
+replay reproduced 1/1 with zero mismatch or fixture gap; URL, company,
+location and cross-tenant safety errors were zero.
+
+Run1 stopped at the 120-second company budget, run2 exposed the child detail
+shell, and run3 exposed a generic/native alias of the same opening. These are
+diagnostics, not separate score contributions. The authoritative `.283`
+Fresh100 measurement remains **36/100** until a new code-frozen full cohort is
+explicitly run. See
+`docs/COORDINATOR_V285_ICIMS_AGGREGATE_CHILD_ROUTE_PHASE_C.md`.
+
 ### `.284` Focused iCIMS Evidence
 
 The post-measurement `.284` iCIMS contract recognizes public root/intro shells
