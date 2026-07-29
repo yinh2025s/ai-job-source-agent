@@ -2,34 +2,38 @@
 
 ## Current Status
 
-The latest authoritative raw measurement is the code-frozen Fresh100 `.278`
+The latest authoritative raw measurement is the code-frozen Fresh100 `.283`
 cold gate. It completed all 100 records and is kept separate from any
 cross-version focused projection.
 
-| State | `.278` raw |
+| State | `.283` raw |
 | --- | ---: |
-| S7 Exact | **31/100** |
-| Evidence-backed Verified No Match | **21/100** |
-| Evidence-backed External Blocked | **2/100** |
-| Unresolved / nonterminal | **46/100** |
+| S7 Exact | **36/100** |
+| Non-Exact | **64/100** |
 | Published wrong URL/company/tenant/location | **0** |
 
-The `.278` run reached 90 Websites, 76 Career pages, 69 verified Job Lists and
-31 S7 Exact openings. All 31 Exact records passed the opening URL, title,
-location, company, provider and tenant safety audit. Same-version replay
-exported and executed 100 records but initially failed acceptance at 93
-reproduced, two budget recoveries, five mismatches and zero fixture gaps.
+The `.283` run reached 92 Websites, 79 Career pages, 71 verified Job Lists and
+36 raw S7 Exact openings. Serialized URL audit found zero wrong location,
+cross-company or cross-tenant publication. Formal precision and eligible
+recall remain unreportable without terminal annotations. Same-version replay
+covered 100/100 with 99 reproduced, one Brown and Caldwell mismatch, zero
+fixture gaps and zero budget recoveries. The raw capsule remains local because
+one public browser-key-shaped value is serialized in its artifacts. See
+`docs/FRESH_100_V283_CURRENT_COLD_GATE_REPORT.md`.
 
-`.279` restores the recorded Career transport-budget snapshot during scoped
-replay. The unchanged `.278` capsule then reaches 96 reproduced, two budget
-recoveries, two mismatches and zero fixture gaps. This does not overwrite the
-immutable `.278` live measurement.
+### `.284` Focused iCIMS Evidence
 
-The remaining replay mismatches are Versana and Brown and Caldwell. The raw
-capsule also retains ten Google browser-key-shaped serialization values from
-one public Maps script, so it is not shareable. The gate and replay closure are
-documented in `docs/FRESH_100_CURRENT_V278_REPLAY_BUDGET_PHASE_A.md` and
-`docs/FRESH_100_CURRENT_V279_REPLAY_BUDGET_PHASE_C.md`.
+The post-measurement `.284` iCIMS contract recognizes public root/intro shells
+only through a same-origin iframe and declared search-form chain. Bluehawk,
+Hyland, Wheels Up and Room & Board produce 4/4 exact provider results with
+card-local locations; Bluehawk also reaches S7 Exact in snapshot-backed live
+and empty-checkpoint replay.
+
+Cretex is the only affected current Fresh100 record. Its aggregate shell
+publishes openings on multiple child iCIMS hosts, so `.284` deliberately keeps
+the same-tenant rejection and does not claim a Fresh recovery. The
+authoritative `.283` row remains 36/100. See
+`docs/COORDINATOR_V284_ICIMS_CUSTOM_SHELL_PHASE_C.md`.
 
 ### `.280` Focused Recovery Evidence
 

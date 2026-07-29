@@ -23,7 +23,38 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## 当前架构进度（2026-07-29，`.283` Fresh100 measurement audited）
+## 当前架构进度（2026-07-29，`.284` iCIMS shell accepted）
+
+### `.284` iCIMS custom-shell inventory and card location
+
+四个独立 development portal 证明同一 provider contract：公开 iCIMS 根页或
+`/jobs/intro` 外壳通过唯一、同源、显式 `in_iframe=1` iframe 声明真实库存，
+iframe 再通过同源 `searchForm` 声明 canonical `/jobs/search`。旧 adapter 只认
+直接 search/detail URL，page-aware 路径只认 Jibe，因此这些入口在 S5/S6 被当成
+generic。
+
+`.284` 增加严格 page probe，不按 hostname 单独信任根页。HTTP、credential、
+非标准端口、后缀混淆、多个不同 iframe、跨 origin、login/profile/onboarding 和
+HRSmart-only 页面全部拒绝。直接 hosted URL 仅在自身是标准 search/detail path
+时支持安全 single-label `*.icims.com` host。
+
+第一次 focused provider live 已 4/4 找到正确 board/opening，但暴露所有 HTML
+candidate 的 location 为空。`.281` card-location 实验曾因只有两条 terminal
+recovery 被回退；本次 Bluehawk、Hyland、Wheels Up、Room & Board 四家以同一
+`iCIMS_JobCardItem` trigger 重新满足门槛。Parser 只绑定同一卡片内精确 location
+label，并把 `US-STATE-CITY` 规范为可验证地点，不改变 S7。
+
+最终 provider live/replay 为 4/4；Bluehawk 的独立 S1-S7 snapshot-backed live
+和空 checkpoint replay 均 Exact。错误 URL、地点、公司和 tenant 为 0。Cretex
+仍是不同的 multi-portal child-tenant 问题，本轮只发现 shell，不接受跨 host
+opening。Fresh100 `.283` 的 36/100 raw Exact 不被 focused 结果改写。
+
+门禁：181 related tests、25/25 provider、6/6 resolver、48 adapters / 0 issues；
+全量 2,870 tests 仅受 sandbox loopback bind 限制，相关模块在允许本地 socket 后
+5/5 通过。报告：
+
+- `docs/COORDINATOR_V284_ICIMS_CUSTOM_SHELL_PHASE_A.md`
+- `docs/COORDINATOR_V284_ICIMS_CUSTOM_SHELL_PHASE_C.md`
 
 ### `.283` Fresh100 cold measurement
 

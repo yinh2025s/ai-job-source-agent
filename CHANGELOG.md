@@ -1,5 +1,27 @@
 # Changelog
 
+## 2026-07-29 - iCIMS custom-shell inventory and card location `.284`
+
+- Added a page-evidence probe for safe public iCIMS roots and `/jobs/intro`
+  shells. It requires strong iframe runtime evidence, one same-origin
+  `in_iframe=1` target and a same-origin public `/jobs/search` form before
+  publishing a replay-safe typed board.
+- Expanded direct hosted URL recognition to safe single-label `*.icims.com`
+  portals only when the URL itself is a standard job search/detail route;
+  roots and intro pages remain page-evidence-only.
+- Restored card-local iCIMS location binding after four new independent
+  development controls met the three-company terminal-recovery threshold.
+  `US-STATE-CITY` values are normalized without using page-global text.
+- Focused provider live/replay resolved Bluehawk, Hyland, Wheels Up and Room &
+  Board 4/4 with exact title, location and same-tenant opening URL. Bluehawk
+  separately passed snapshot-backed S1-S7 live and empty-checkpoint replay.
+- Preserved Cretex as an unresolved multi-portal tenant case and Highgate/
+  HRSmart as a negative control; no cross-host opening was accepted.
+- Passed 181 related tests, provider 25/25, resolver 6/6, architecture 48/0
+  and `git diff --check`. The 2,870-test full suite had only the sandbox
+  loopback-bind restriction; that affected HTTP module passed 5/5 with local
+  socket permission.
+
 ## 2026-07-29 - Fresh100 `.283` cold measurement and causal audit
 
 - Ran the observed Fresh100 development cohort from frozen commit `d76cfdd`,
