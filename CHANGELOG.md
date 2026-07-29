@@ -1,5 +1,16 @@
 # Changelog
 
+## 2026-07-29 - `.286` post-measurement causal split
+
+- Split the declared-GET label into four executable singleton causes: DSV card
+  binding, Equifax fragment pagination, System One query-field selection and
+  Home Depot CWS optional-reset parsing.
+- Rejected three other apparent large clusters because their expected terminal
+  recoveries are zero, at most one and zero. Shared budget or filtered-result
+  exits are not treated as shared causes.
+- Made no product, version, budget or safety-gate change. Adapter `.286` and the
+  authoritative Fresh100 `.283` score remain unchanged.
+
 ## 2026-07-29 - Historical `.278` cold measurement run 4
 
 - Re-ran the observed Fresh100 development cohort from frozen commit

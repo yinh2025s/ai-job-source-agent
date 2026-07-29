@@ -25,6 +25,26 @@
 
 ## 当前架构进度（2026-07-29，`.286` typed route outcome accepted）
 
+### `.286` post-measurement causal split
+
+对当前 non-Exact backlog 的三线只读审计没有找到可进入 Phase B 的通用修复簇。
+DSV、Equifax、System One 和 Home Depot 虽然都表现为“已经到 Job List，只差继续
+搜索”，但分别是 card sibling binding、safe fragment pagination、multi-field
+query selection 和 CWS optional reset parsing 四条不同代码路径，每条只有 1 家
+预计恢复。
+
+另外三个达到数量表象的分组也不合格：18 家 search filtered-to-zero 没有观察到
+被过滤的正确候选，预计恢复 0；4 家 Career transport budget 实际分裂为 TLS、
+iCIMS relationship、inventory no-match 和 candidate absent，最多预计恢复 1；
+3 家 opening company budget 的 snapshots 均未捕获目标 opening，预计恢复 0。
+
+因此不修改产品代码、不提高预算、不放宽 URL/provider/tenant/title/location
+验证，adapter 保持 `.286`。继续实现需要新的非 sealed diagnostic evidence 为某个
+singleton 补足另外两家同路径样本；这属于新的 measurement，而不是历史 `.278`
+gate 的自动延伸。审计见：
+
+- `docs/COORDINATOR_V286_POST_MEASUREMENT_CAUSAL_SPLIT_PHASE_A.md`
+
 ### Historical `.278` cold measurement run 4
 
 用户再次批准的历史 `.278` measurement 已从 detached commit `d86a021e`、

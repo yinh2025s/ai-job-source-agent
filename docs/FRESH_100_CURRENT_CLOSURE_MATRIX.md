@@ -21,6 +21,21 @@ fixture gaps and zero budget recoveries. The raw capsule remains local because
 one public browser-key-shaped value is serialized in its artifacts. See
 `docs/FRESH_100_V283_CURRENT_COLD_GATE_REPORT.md`.
 
+### `.286` Post-Measurement Causal Split
+
+The latest three-workstream read-only audit found no implementation-qualified
+cluster. DSV, Equifax, System One and Home Depot split into four singleton code
+paths: card sibling binding, fragment pagination safety, multi-field query
+selection and CWS optional-reset parsing. The apparent search-filter,
+Career-budget and opening-budget groups have expected recoveries of zero, at
+most one and zero respectively.
+
+No product code, version, budget or safety gate changed. The authoritative
+`.283` score remains **36/100**. Additional implementation requires new
+non-sealed diagnostic evidence that contributes two more independent companies
+to one shared executable path. See
+`docs/COORDINATOR_V286_POST_MEASUREMENT_CAUSAL_SPLIT_PHASE_A.md`.
+
 ### `.286` Focused Candidate Route Outcome Evidence
 
 The post-measurement `.286` contract corrects stage-v1 execution semantics; it
