@@ -241,6 +241,19 @@
       identity: candidate.explicitJobId ? "detail_root_job_id" : "detail_job_link"
     };
   };
+  const EXTERNAL_MODE_CONTROL_SELECTOR = [
+    "button[aria-label*='on company website']",
+    "button[aria-label*='company site']",
+    "button[role='link'][data-live-test-job-apply-button]"
+  ].join(", ");
+  const hasExternalApplyControl = (root) => visibleMatches(
+    root,
+    EXTERNAL_MODE_CONTROL_SELECTOR
+  ).some((control) => {
+    if (!isEnabled(control)) return false;
+    const label = `${text(control)} ${control.getAttribute("aria-label") || ""}`.toLowerCase();
+    return label.includes("apply") && /(?:company website|company site)/.test(label);
+  });
   const hasNativeApply = (root) => visibleMatches(root, [
     "button.jobs-apply-button",
     "button[data-control-name='jobdetails_topcard_inapply']",
@@ -250,7 +263,9 @@
   ].join(", ")).some((button) => {
     if (!isEnabled(button)) return false;
     const label = `${text(button)} ${button.getAttribute("aria-label") || ""}`.toLowerCase();
-    return label.includes("apply");
+    if (/(?:company website|company site)/.test(label)) return false;
+    return label.includes("easy apply")
+      || button.getAttribute("data-control-name") === "jobdetails_topcard_inapply";
   });
   const hasClosedBanner = (root) => visibleMatches(root, [
     ".jobs-details-top-card__apply-error",
@@ -268,7 +283,7 @@
     let applyMode = "unknown";
     if (hasClosedBanner(root)) {
       availability = "closed";
-    } else if (externalUrl) {
+    } else if (externalUrl || hasExternalApplyControl(root)) {
       availability = "active";
       applyMode = "external";
     } else if (hasNativeApply(root)) {
@@ -370,7 +385,8 @@
             availability: "listed",
             apply_mode: "unknown",
             evidence_source: "public_search_card",
-            job_url: jobUrl
+            job_url: jobUrl,
+            observation_state: "detail_not_observed"
           },
           dom: {
             scope: "public_search_card",
@@ -408,18 +424,32 @@
     }).slice(0, 30);
   };
 
-  const PAGE_CARD_SELECTOR = "[data-testid='lazy-column'] [role='button'][tabindex='0']";
+  const PAGE_CARD_SELECTOR = [
+    "[data-occludable-job-id]",
+    "[data-testid='lazy-column'] [role='button'][tabindex='0']"
+  ].join(", ");
   const PAGE_SCAN_LIMIT = 30;
   const PAGE_NAVIGATION_POLLS = 12;
+  const PAGE_CARD_POLLS = 24;
   const PAGE_DETAIL_POLLS = 24;
+  const SELECTED_DETAIL_POLLS = 24;
   const PAGE_POLL_INTERVAL_MS = 50;
   let activePageScan = null;
 
   const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
-  const pageCards = () => visibleMatches(document, PAGE_CARD_SELECTOR).filter((card) => (
-    isEnabled(card) && visibleMatches(card, "p").filter((paragraph) => text(paragraph)).length >= 3
-  ));
+  const pageCards = () => {
+    const seen = new Set();
+    return visibleMatches(document, PAGE_CARD_SELECTOR).filter((card) => {
+      if (!isEnabled(card)) return false;
+      const jobId = explicitRootJobId(card)
+        || jobIdFromValue(canonicalJobUrl(firstHref(card, ["a[href*='/jobs/view/']"])).split("/").pop());
+      if (!jobId || seen.has(jobId)) return false;
+      seen.add(jobId);
+      return true;
+    });
+  };
   const firstDescendantText = (root, selectors) => {
+    if (!root) return "";
     for (const selector of selectors) {
       for (const node of Array.from(root.querySelectorAll(selector))) {
         const value = text(node);
@@ -431,14 +461,33 @@
   const frozenCardMetadata = (card) => {
     const paragraphs = visibleMatches(card, "p").filter((paragraph) => text(paragraph));
     const titleParagraph = paragraphs[0];
-    const title = firstDescendantText(titleParagraph, ["[aria-hidden='true']", "span"])
+    const jobId = explicitRootJobId(card)
+      || jobIdFromValue(canonicalJobUrl(firstHref(card, ["a[href*='/jobs/view/']"])).split("/").pop());
+    const title = firstText(card, [
+      ".job-card-list__title--link",
+      ".artdeco-entity-lockup__title",
+      "a[href*='/jobs/view/']"
+    ]) || firstDescendantText(titleParagraph, ["[aria-hidden='true']", "span"])
       || text(titleParagraph);
+    const company = firstText(card, [
+      ".artdeco-entity-lockup__subtitle",
+      ".job-card-container__primary-description",
+      ".job-card-container__company-name"
+    ]) || text(paragraphs[1]);
+    const locationValue = firstText(card, [
+      ".artdeco-entity-lockup__caption",
+      ".job-card-container__metadata-item"
+    ]) || text(paragraphs[2]);
     return {
-      card,
-      selected: /^selected\s*,/i.test(text(titleParagraph)),
+      root: card,
+      card: card.querySelector(".job-card-container--clickable, a[href*='/jobs/view/']") || card,
+      job_id: jobId,
+      selected: jobId === selectedJobId()
+        || /^selected\s*,/i.test(text(titleParagraph))
+        || (card.getAttribute?.("aria-selected") || "").toLowerCase() === "true",
       job_title: title,
-      company_name: text(paragraphs[1]),
-      job_location: text(paragraphs[2])
+      company_name: company,
+      job_location: locationValue
     };
   };
   const listedPageRecord = (metadata, jobUrl) => ({
@@ -454,11 +503,12 @@
         availability: "listed",
         apply_mode: "unknown",
         evidence_source: "authenticated_search_card",
-        job_url: jobUrl
+        job_url: jobUrl,
+        observation_state: "detail_not_observed"
       },
       dom: {
         scope: "authenticated_search_card",
-        root_selector: "linkedin_lazy_column_card",
+        root_selector: "linkedin_job_card",
         identity_source: "selected_current_job_id"
       }
     }
@@ -471,16 +521,34 @@
     Boolean(record)
     && record.source_trace?.linkedin_posting?.availability !== "unknown"
   );
+  const observationState = (record, detailObserved = true) => {
+    if (!detailObserved) return "detail_not_observed";
+    const posting = record?.source_trace?.linkedin_posting || {};
+    if (posting.availability === "closed") return "closed_observed";
+    if (posting.apply_mode === "external") return "external_apply_observed";
+    if (posting.apply_mode === "linkedin_native") return "linkedin_native_observed";
+    return "detail_observed_but_apply_absent";
+  };
+  const withObservationState = (record, detailObserved = true) => ({
+    ...record,
+    source_trace: {
+      ...record.source_trace,
+      linkedin_posting: {
+        ...record.source_trace?.linkedin_posting,
+        observation_state: observationState(record, detailObserved)
+      }
+    }
+  });
   const mergeRecord = (record, detail) => Object.fromEntries(
     Object.entries({ ...record, ...detail }).map(([key, value]) => [
       key,
       value || record[key] || null
     ])
   );
-  const waitForSelectedJob = async (expectedId, previousId, polls = PAGE_NAVIGATION_POLLS) => {
+  const waitForSelectedJob = async (expectedId, _previousId, polls = PAGE_NAVIGATION_POLLS) => {
     for (let attempt = 0; attempt < polls; attempt += 1) {
       const currentId = selectedJobId();
-      if (currentId === expectedId && currentId !== previousId) return true;
+      if (currentId === expectedId) return true;
       await pause(PAGE_POLL_INTERVAL_MS);
     }
     return false;
@@ -493,15 +561,41 @@
     }
     return "";
   };
-  const settleDetailFor = async (jobUrl, scan) => {
+  const completeCardMetadata = (metadata) => (
+    Boolean(metadata?.job_id && metadata.job_title && metadata.company_name)
+  );
+  const settleCardMetadata = async (card, scan, polls = PAGE_CARD_POLLS) => {
+    let metadata = frozenCardMetadata(card);
+    if (completeCardMetadata(metadata)) return metadata;
+    try {
+      card.scrollIntoView?.({ block: "center", inline: "nearest" });
+    } catch {
+      // A detached virtualized card becomes one partial failure, not a batch failure.
+    }
+    for (let attempt = 0; attempt < polls; attempt += 1) {
+      if (scan.cancelled) return metadata;
+      await pause(PAGE_POLL_INTERVAL_MS);
+      metadata = frozenCardMetadata(card);
+      if (completeCardMetadata(metadata)) return metadata;
+    }
+    return metadata;
+  };
+  const settleDetailFor = async (jobUrl, scan, polls = PAGE_DETAIL_POLLS) => {
     let latestDetail = null;
-    for (let attempt = 0; attempt < PAGE_DETAIL_POLLS; attempt += 1) {
+    for (let attempt = 0; attempt < polls; attempt += 1) {
       const detail = completeDetailFor(jobUrl);
       if (detail) latestDetail = detail;
-      if (detailApplyResolved(detail) || scan.cancelled) return detail;
+      if (detailApplyResolved(detail) || scan.cancelled) {
+        return detail ? withObservationState(detail) : detail;
+      }
       await pause(PAGE_POLL_INTERVAL_MS);
     }
-    return latestDetail;
+    return latestDetail ? withObservationState(latestDetail) : null;
+  };
+  const settleSelectedDetail = async (polls = SELECTED_DETAIL_POLLS) => {
+    const expectedId = selectedJobId();
+    if (!expectedId) return null;
+    return settleDetailFor(`https://www.linkedin.com/jobs/view/${expectedId}`, { cancelled: false }, polls);
   };
   const pageScanResponse = (scan, state) => ({
     ok: true,
@@ -511,48 +605,75 @@
     state,
     scanned_count: scan.scannedCount,
     candidate_count: scan.candidateCount,
-    failure_count: scan.failureCount
+    failure_count: scan.failureCount,
+    detail_observed_count: scan.detailObservedCount,
+    detail_not_observed_count: scan.detailNotObservedCount,
+    apply_observed_count: scan.applyObservedCount
   });
   const collectPage = async () => {
     const originalJobId = selectedJobId();
-    const candidates = pageCards().slice(0, PAGE_SCAN_LIMIT).map(frozenCardMetadata);
+    const candidates = pageCards()
+      .map(frozenCardMetadata)
+      .filter((candidate) => candidate.job_id)
+      .slice(0, PAGE_SCAN_LIMIT);
     const scan = {
       cancelled: false,
       candidateCount: candidates.length,
       failureCount: 0,
+      detailNotObservedCount: 0,
+      detailObservedCount: 0,
+      applyObservedCount: 0,
       records: [],
       scannedCount: 0
     };
     activePageScan = scan;
     const cardsByJobId = new Map();
-    const originalCandidate = candidates.find((candidate) => candidate.selected);
-    if (originalJobId && originalCandidate) cardsByJobId.set(originalJobId, originalCandidate.card);
+    for (const candidate of candidates) cardsByJobId.set(candidate.job_id, candidate.root);
     try {
-      for (const candidate of candidates) {
+      for (const initialCandidate of candidates) {
         if (scan.cancelled) break;
+        const candidate = await settleCardMetadata(initialCandidate.root, scan);
         const previousId = selectedJobId();
         scan.scannedCount += 1;
         let currentId = "";
-        try {
-          if (candidate.selected && previousId) {
-            currentId = previousId;
-          } else {
-            candidate.card.click();
-            currentId = await waitForChangedJob(previousId);
-          }
-        } catch {
-          currentId = "";
-        }
-        if (!currentId) {
+        if (!completeCardMetadata(candidate)) {
           scan.failureCount += 1;
         } else {
-          cardsByJobId.set(currentId, candidate.card);
-          const jobUrl = `https://www.linkedin.com/jobs/view/${currentId}`;
-          let record = listedPageRecord(candidate, jobUrl);
-          const detail = await settleDetailFor(jobUrl, scan);
-          if (detail) record = mergeRecord(record, detail);
-          if (!scan.records.some((existing) => existing.linkedin_job_url === jobUrl)) {
-            scan.records.push(record);
+          try {
+            if (candidate.selected && previousId
+              && (!candidate.job_id || candidate.job_id === previousId)) {
+              currentId = previousId;
+            } else {
+              candidate.card.click();
+              if (candidate.job_id) {
+                const selected = await waitForSelectedJob(candidate.job_id, previousId);
+                currentId = selected ? candidate.job_id : "";
+              } else {
+                currentId = await waitForChangedJob(previousId);
+              }
+            }
+          } catch {
+            currentId = "";
+          }
+          if (!currentId) {
+            scan.failureCount += 1;
+          } else {
+            cardsByJobId.set(currentId, candidate.root);
+            const jobUrl = `https://www.linkedin.com/jobs/view/${currentId}`;
+            let record = listedPageRecord(candidate, jobUrl);
+            const detail = await settleDetailFor(jobUrl, scan);
+            if (detail) {
+              record = mergeRecord(record, detail);
+              scan.detailObservedCount += 1;
+              if (["external_apply_observed", "linkedin_native_observed"].includes(
+                detail.source_trace?.linkedin_posting?.observation_state
+              )) scan.applyObservedCount += 1;
+            } else {
+              scan.detailNotObservedCount += 1;
+            }
+            if (!scan.records.some((existing) => existing.linkedin_job_url === jobUrl)) {
+              scan.records.push(record);
+            }
           }
         }
         try {
@@ -567,16 +688,20 @@
         }
       }
       if (originalJobId && selectedJobId() !== originalJobId) {
-        const originalCard = cardsByJobId.get(originalJobId);
-        if (originalCard) {
+        const originalRoot = cardsByJobId.get(originalJobId);
+        if (originalRoot) {
+          const originalCard = await settleCardMetadata(originalRoot, { cancelled: false });
           const previousId = selectedJobId();
-          originalCard.click();
+          originalCard.card.click();
           await waitForSelectedJob(originalJobId, previousId);
         }
       }
       if (scan.cancelled) return pageScanResponse(scan, "cancelled");
       if (!scan.candidateCount) return pageScanResponse(scan, "not_ready");
-      return pageScanResponse(scan, scan.failureCount ? "partial" : "ready");
+      return pageScanResponse(
+        scan,
+        scan.failureCount || scan.detailNotObservedCount ? "partial" : "ready"
+      );
     } finally {
       if (activePageScan === scan) activePageScan = null;
     }
@@ -629,22 +754,39 @@
       return true;
     }
     if (message?.type !== "collect_job_source_records") return false;
-    try {
-      const records = collect();
+    const respondWithRecords = async () => {
+      let records = collect();
+      const selectedId = isLinkedinJobsRoute() ? selectedJobId() : "";
+      let selectedDetail = null;
+      if (selectedId) {
+        const detail = await settleSelectedDetail();
+        if (detail) {
+          selectedDetail = detail;
+          records = [detail];
+        } else {
+          records = records.filter((record) => (
+            record.linkedin_job_url === `https://www.linkedin.com/jobs/view/${selectedId}`
+          )).slice(0, 1);
+        }
+      }
       const completeDetail = records.some((record) => (
         record.source_trace?.dom?.scope === "authenticated_detail_dom"
         && record.linkedin_job_url && record.company_name && record.job_title
       ));
+      let state = "ready";
+      if (selectedId && !selectedDetail) state = records.length ? "partial" : "not_ready";
+      else if (isLinkedinJobsRoute() && !records.length && !completeDetail) state = "not_ready";
       sendResponse({
         ok: true,
         records,
         page_url: location.href,
         scan_version: "2",
-        state: isLinkedinJobsRoute() && !records.length && !completeDetail ? "not_ready" : "ready"
+        state
       });
-    } catch (error) {
+    };
+    respondWithRecords().catch((error) => {
       sendResponse({ ok: false, error: String(error) });
-    }
-    return false;
+    });
+    return true;
   });
 })();

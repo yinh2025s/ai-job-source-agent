@@ -36,6 +36,16 @@ python3.12 -m job_source_agent \
 The live cohort is presentation evidence only. It is deliberately small and is
 not reported as a generalization benchmark.
 
+## Authenticated Extension
+
+Extension `0.4.1` in `extension/` is the accepted logged-in LinkedIn input
+client. Start the token-authenticated loopback bridge as documented in
+`README.md`, load the directory as an unpacked Chrome extension, then use
+**Scan selected**, **Scan page**, and **Verify source**. The 2026-08-01 manual
+gate covered 1/1 selected scan, 25/25 page scan, async submission, popup reopen
+recovery, and typed result rendering. It did not claim an External Apply URL
+when LinkedIn exposed only the button without a safe target.
+
 ## Review Path
 
 1. Run `make beta-demo`.
@@ -44,6 +54,8 @@ not reported as a generalization benchmark.
 4. Read [the project summary](docs/BETA_PROJECT_SUMMARY.md).
 5. Use [the demo script](docs/BETA_DEMO_SCRIPT.md) for a 3-5 minute walkthrough.
 6. Check [demo evidence](docs/BETA_DEMO_EVIDENCE.md) for current URL validation.
+7. Check [extension acceptance](docs/EXTENSION_ACCEPTANCE.md) for the logged-in
+   Chrome gate and privacy boundary.
 
 ## Release Package
 

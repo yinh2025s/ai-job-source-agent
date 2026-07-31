@@ -7,7 +7,7 @@ logged-in Chrome session.
 ## Preconditions
 
 - Chrome is logged into LinkedIn and the AI Job Source Agent unpacked extension is installed.
-- The extension card in `chrome://extensions` shows version `0.3.1` after **Reload**.
+- The extension card in `chrome://extensions` shows version `0.4.1` after **Reload**.
 - The local bridge is running with an explicit token:
 
 ```bash
@@ -23,9 +23,10 @@ artifact.
 1. Open a LinkedIn Jobs search page with a visible selected job detail.
 2. Open the extension, expand **Connection**, enter `http://127.0.0.1:8765` and the matching token,
    then select **Save connection**. The state must become **Online**.
-3. Select **Scan page** once. The popup must remain responsive, report at least one job, and must
-   not duplicate the selected job. A DOM-observed **LinkedIn Apply** link must be immediately usable
-   without waiting for backend verification. If LinkedIn is still hydrating, one bounded retry may occur.
+3. Select **Scan selected** once. The popup must remain responsive, report exactly one job, and must
+   not merge other search cards into the selected job. A DOM-observed External Apply link must be
+   immediately usable without waiting for backend verification. If LinkedIn exposes only an external
+   Apply button without its destination, the popup must report that observation without inventing a URL.
 4. Compare the first scanned selected job with the visible LinkedIn detail: company, title and job
    identity must refer to the same posting. An External Apply count may be zero.
 5. Select **Scan page**. Progress must advance over the current loaded batch, footer/filter controls
@@ -80,3 +81,14 @@ submissions between polls. Version `0.2.2` displays the Apply target immediately
 optional, and prevents another submission while the current run is active. The user confirmed the
 v0.2.2 immediate Scan/Apply UI. Reopening the popup during a v0.2.2 in-flight run was not repeated
 manually; its state restoration and duplicate-run lock remain covered by the popup harness.
+
+On 2026-08-01, extension `0.4.0` completed a fresh logged-in Chrome acceptance on a LinkedIn Jobs
+search. **Scan selected** returned exactly the selected Medtronic posting and classified its visible
+button as `external_apply_observed` without inventing a target URL. **Scan page** hydrated and bound
+25/25 identity-bearing cards, distinguished external and LinkedIn-native Apply states, and restored
+the original `currentJobId`. **Verify source** immediately rendered `Running`; closing and reopening
+the popup restored that run, which then rendered `Complete` with the honest typed backend result
+`CAREER_PAGE_NOT_FOUND`, zero Job Lists, and zero verified openings. Acceptance run
+`43490fdb72864fa0b3eaf8fb88ba1f24` wrote only local temporary artifacts, which are excluded from
+the repository and release package. Version `0.4.1` contains the same accepted behavior and only
+advances release metadata.

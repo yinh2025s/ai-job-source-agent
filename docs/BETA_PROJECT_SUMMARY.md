@@ -107,6 +107,21 @@ did not pass record integrity, so the project does not claim 7/7 replay for this
 set. The deterministic offline fixture demo remains the stable presentation
 path.
 
+### Authenticated Extension Acceptance
+
+Chrome extension `0.4.0` completed a logged-in LinkedIn acceptance on 2026-08-01.
+The selected scan returned exactly one identity-bound posting; the page scan
+hydrated and processed 25/25 job cards; External Apply and LinkedIn-native Apply
+states remained distinct. A one-record backend submission immediately displayed
+`Running`, survived popup close/reopen without losing its run, and completed with
+the honest typed result `CAREER_PAGE_NOT_FOUND`. The visible External Apply button
+did not expose a safe target URL, so the client reported
+`external_apply_observed; target unavailable` instead of fabricating one.
+
+This proves the plugin workflow and current DOM contract, not broad External
+Apply URL coverage or an Exact-rate claim. Extension `0.4.1` promotes the same
+accepted behavior with release metadata only.
+
 ### Current Development Measurement
 
 最新权威完整 Fresh100 测量使用 adapter `.283`，在 100 条 development cohort
@@ -149,6 +164,7 @@ Blocked、3 Input Identity Invalid、0 System Gap，并通过同版本 100/100 r
 - 公司、招聘主体、provider、tenant、title、location 的最终 S7 安全门；
 - 对 partial、blocked、not-found、retryable 和 identity conflict 的结构化表达；
 - snapshot-backed replay、阶段 evidence 和可追踪决策；
+- 真实登录态 LinkedIn 插件的单岗位/整页扫描、异步提交、重开恢复和结果渲染；
 - 找不到可靠答案时不编造 URL。
 
 ## Known Limitations
@@ -161,8 +177,9 @@ Blocked、3 Input Identity Invalid、0 System Gap，并通过同版本 100/100 r
    ground-truth 标注，不能支持正式泛化结论。
 4. **一条 replay mismatch 尚未关闭。** 当前严格 replay 是 99/100，而非
    100/100。
-5. **浏览器插件验收暂停。** Extension 与 loopback bridge 已实现，但真实登录态
-   LinkedIn 的完整人工 acceptance 尚未完成；本次不将插件列为已接受产品能力。
+5. **External Apply 目标覆盖仍有限。** 插件工作流已经通过真实登录态验收，但
+   LinkedIn 可能只暴露站外 Apply 按钮而不在 DOM 提供目标 URL；此时系统会明确
+   报告 target unavailable，并继续使用普通后端路径，不能宣称 External Apply 命中。
 6. **开放网页天然不稳定。** 限流、bot protection、页面改版和地区网络会影响
    latency 与 coverage；离线 demo 证明确定性 contract，不代表实时覆盖率。
 
@@ -170,7 +187,7 @@ Blocked、3 Input Identity Invalid、0 System Gap，并通过同版本 100/100 r
 
 如继续产品化，优先级应是：
 
-1. 完成真实登录态 LinkedIn 插件的 External Apply input-parity 验收；
+1. 在独立的 20-30 条登录态样本上测量 External Apply 目标 URL 覆盖与净新增 Exact；
 2. 在未参与实现的新 cohort 上测量净新增 Exact，而不是继续调 Fresh100；
 3. 只修复至少跨三家公司复现的 provider-family 或 transport contract；
 4. 将 live 抓取放到稳定、合规的运行环境并增加速率控制和观测；
@@ -191,3 +208,7 @@ benchmark 25/25, resolver benchmark 6/6, and architecture validation with 48
 native adapters / 0 issues. A tracked/new-file credential-shape scan found zero
 matches, and the release archive uses a narrower source allowlist plus its own
 fail-closed privacy scan.
+
+The `0.1.0-beta.2` extension gate adds 47 focused content, popup, bridge, and
+loopback HTTP tests plus the logged-in acceptance above. It does not rerun or
+rewrite the Fresh100 measurement.

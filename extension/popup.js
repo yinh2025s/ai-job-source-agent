@@ -144,9 +144,9 @@ function clearScanOutput() {
   syncBusyUi();
 }
 
-async function clearStaleRun() {
+async function clearStaleRun({ preserveInFlight = false } = {}) {
   state.runId = null;
-  state.runInFlight = false;
+  if (!preserveInFlight) state.runInFlight = false;
   state.pollRetries = 0;
   if (state.pollTimer !== null) clearTimeout(state.pollTimer);
   state.pollTimer = null;
@@ -159,10 +159,11 @@ function isObject(value) {
 }
 
 function validScanResponse(payload) {
+  const states = new Set(["ready", "partial", "not_ready"]);
   return isObject(payload) && typeof payload.ok === "boolean" && Array.isArray(payload.records)
     && typeof payload.page_url === "string" && payload.page_url.length > 0
     && (payload.scan_version === undefined || payload.scan_version === "2")
-    && (payload.state === undefined || payload.state === "ready" || payload.state === "not_ready")
+    && (payload.state === undefined || states.has(payload.state))
     && payload.records.every(isObject);
 }
 
@@ -232,7 +233,7 @@ async function requestSelectedScan(tabId, attempt = 0) {
     throw new Error("LinkedIn Jobs is still loading. Wait a moment and scan again.");
   }
   if (!response.ok) throw new Error(payloadMessage(response, "Page scan failed."));
-  return response.records;
+  return response;
 }
 
 async function scanSelected() {
@@ -246,11 +247,16 @@ async function scanSelected() {
     if (!tab?.id || !tab.url?.startsWith("https://www.linkedin.com/jobs/")) {
       throw new Error("Open a LinkedIn Jobs page first.");
     }
-    state.records = await requestSelectedScan(tab.id);
+    const response = await requestSelectedScan(tab.id);
+    state.records = response.records;
     $("recordCount").textContent = String(state.records.length);
     $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} Apply URLs`;
     renderScannedRecords();
-    if (state.records.length === 0) setMessage("No eligible jobs were found on this page.");
+    if (response.state === "partial") {
+      setMessage("Selected job found, but its detail panel was not fully observed.");
+    } else if (state.records.length === 0) {
+      setMessage("No eligible jobs were found on this page.");
+    }
   } catch (error) {
     setMessage(error.message || "Selected scan failed.");
   } finally {
@@ -297,13 +303,19 @@ function renderPageScan(response) {
   $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} Apply URLs`;
   renderScannedRecords();
   if (response.state === "partial") {
-    setMessage(`Partial results: ${response.failure_count} failures.`);
+    const missingDetails = Number.isInteger(response.detail_not_observed_count)
+      ? response.detail_not_observed_count : 0;
+    setMessage(missingDetails
+      ? `Partial scan: ${missingDetails} job detail panels were not observed.`
+      : `Partial results: ${response.failure_count} failures.`);
   } else if (response.state === "cancelled") {
     setMessage("Scan cancelled.");
   } else if (response.state === "not_ready") {
     setMessage("Page is not ready.");
   } else if (state.records.length === 0) {
     setMessage("No eligible jobs were found on this page.");
+  } else {
+    setMessage();
   }
 }
 
@@ -351,18 +363,23 @@ function handlePageScanProgress(message, sender) {
 }
 
 function validSubmission(payload) {
+  const statuses = new Set(["queued", "running", "complete", "failed"]);
   return isObject(payload) && typeof payload.run_id === "string" && payload.run_id.length > 0
-    && payload.status === "queued";
+    && statuses.has(payload.status)
+    && (payload.status !== "failed" || payload.error === undefined || typeof payload.error === "string");
 }
 
 async function runDiscovery() {
   if (hasBusyOperation() || state.records.length === 0) return;
+  state.runInFlight = true;
   setMessage();
   setBusy("run", true);
   setBridgeState("Submitting", "busy");
+  clearRunOutput();
+  $("runPanel").hidden = false;
+  $("runStatus").textContent = "Submitting";
   try {
-    clearRunOutput();
-    await clearStaleRun();
+    await clearStaleRun({ preserveInFlight: true });
     const payload = await bridgeFetch("/v1/runs", {
       method: "POST",
       body: JSON.stringify({ records: state.records }),
@@ -373,8 +390,10 @@ async function runDiscovery() {
     state.pollRetries = 0;
     await chrome.storage.local.set({ runId: state.runId });
     $("runPanel").hidden = false;
-    $("runStatus").textContent = "Queued";
+    $("runStatus").textContent = payload.status.charAt(0).toUpperCase() + payload.status.slice(1);
   } catch (error) {
+    state.runInFlight = false;
+    $("runStatus").textContent = "Submission failed";
     setBridgeState("Error", "error");
     setMessage(error.message || "Run submission failed.");
   } finally {
@@ -508,9 +527,16 @@ function renderScannedRecords() {
     const title = document.createElement("strong");
     title.textContent = resultTitle(record);
     item.append(title);
-    if (!appendOutcome(item, "LinkedIn Apply", record.external_apply_url)) {
+    if (!appendOutcome(item, "External Apply", record.external_apply_url)) {
       const source = document.createElement("span");
-      source.textContent = "LinkedIn job selected";
+      const observation = record.source_trace?.linkedin_posting?.observation_state;
+      source.textContent = {
+        external_apply_observed: "External Apply observed; target unavailable",
+        linkedin_native_observed: "LinkedIn native apply",
+        closed_observed: "Posting closed",
+        detail_observed_but_apply_absent: "Apply control not observed",
+        detail_not_observed: "Detail panel not observed",
+      }[observation] || "LinkedIn job selected";
       item.append(source);
     }
     return item;

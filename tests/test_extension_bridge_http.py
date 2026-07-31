@@ -4,6 +4,7 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from job_source_agent.composition import FetcherConfig
 from job_source_agent.extension_bridge import (
@@ -75,7 +76,7 @@ class ExtensionBridgeHttpTests(unittest.TestCase):
         )
 
         self.assertEqual(status, 202)
-        self.assertEqual(payload["status"], "queued")
+        self.assertIn(payload["status"], {"running", "complete", "failed"})
         self.assertTrue(payload["run_id"])
         self._assert_response_headers(headers)
 
@@ -83,12 +84,38 @@ class ExtensionBridgeHttpTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(run["run_id"], payload["run_id"])
         self.assertEqual(run["submitted"], 1)
-        self.assertIn(run["status"], {"queued", "running", "complete", "failed"})
+        self.assertIn(run["status"], {"running", "complete", "failed"})
         self._assert_response_headers(headers)
 
         status, headers, payload = self._request("GET", "/v1/runs/unknown-run")
         self.assertEqual(status, 404)
         self.assertEqual(payload, {"error": "run_not_found"})
+        self._assert_response_headers(headers)
+
+    def test_executor_rejection_returns_queryable_failed_run(self):
+        record = {
+            "company_name": "Example Robotics",
+            "linkedin_job_url": "https://www.linkedin.com/jobs/view/999",
+        }
+        with patch.object(
+            self.manager._executor,
+            "submit",
+            side_effect=RuntimeError("cannot schedule new futures after shutdown"),
+        ):
+            status, headers, payload = self._request(
+                "POST",
+                "/v1/runs",
+                body=json.dumps({"records": [record]}).encode("utf-8"),
+            )
+
+        self.assertEqual(status, 202)
+        self.assertEqual(payload["status"], "failed")
+        self.assertEqual(payload["error"], "bridge_executor_unavailable")
+        self._assert_response_headers(headers)
+
+        status, headers, run = self._request("GET", f"/v1/runs/{payload['run_id']}")
+        self.assertEqual(status, 200)
+        self.assertEqual(run, payload)
         self._assert_response_headers(headers)
 
     def test_wrong_token_returns_401(self):

@@ -203,8 +203,49 @@ async function duplicateSubmission() {
   h.elements.runButton.click();
   await h.settle();
   assert.equal(h.fetchCalls.filter((call) => call.options.method === "POST").length, 1);
+  assert.equal(h.elements.runPanel.hidden, false);
+  assert.equal(h.elements.runStatus.textContent, "Submitting");
+  assert.equal(h.elements.runButton.textContent, "Verifying...");
+  assert.equal(h.elements.runButton.disabled, true);
+  assert.equal(h.elements.bridgeState.textContent, "Submitting");
   submission.resolve(response(202, { run_id: "run-1", status: "queued" }));
   await h.settle();
+  assert.equal(h.elements.runButton.disabled, false);
+}
+
+async function submissionFailureIsVisible() {
+  const h = createHarness({
+    fetchQueue: [health(), response(503, { error: "bridge_busy" })],
+    scanQueue: [readyScan()],
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  h.elements.runButton.click();
+  await h.settle();
+  assert.equal(h.elements.runPanel.hidden, false);
+  assert.equal(h.elements.runStatus.textContent, "Submission failed");
+  assert.equal(h.elements.message.textContent, "bridge_busy");
+  assert.equal(h.elements.bridgeState.textContent, "Error");
+  assert.equal(h.elements.runButton.textContent, "Verify source");
+  assert.equal(h.elements.runButton.disabled, false);
+}
+
+async function executorFailureIsQueryable() {
+  const failed = { run_id: "failed-run", status: "failed", error: "bridge_executor_unavailable" };
+  const h = createHarness({
+    fetchQueue: [health(), response(202, failed), response(200, failed)],
+    scanQueue: [readyScan()],
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  h.elements.runButton.click();
+  await h.settle();
+  assert.equal(h.elements.runPanel.hidden, false);
+  assert.equal(h.elements.runStatus.textContent, "Failed");
+  assert.equal(h.elements.message.textContent, "bridge_executor_unavailable");
+  assert.equal(h.storage.runId, "failed-run");
   assert.equal(h.elements.runButton.disabled, false);
 }
 
@@ -212,7 +253,7 @@ async function duplicateWhilePolling() {
   const h = createHarness({
     fetchQueue: [
       health(),
-      response(202, { run_id: "run-polling", status: "queued" }),
+      response(202, { run_id: "run-polling", status: "running" }),
       response(200, { run_id: "run-polling", status: "running" }),
     ],
     scanQueue: [readyScan()],
@@ -258,9 +299,10 @@ async function pageSuccessAndProgress() {
   pendingPage.resolve(pageScan());
   await h.settle();
   assert.equal(h.elements.recordCount.textContent, "1");
-  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "LinkedIn Apply");
+  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "External Apply");
   assert.equal(h.elements.scanPageButton.textContent, "Scan page");
   assert.equal(h.elements.scanSelectedButton.disabled, false);
+  assert.equal(h.elements.message.textContent, "");
 }
 
 async function pagePartialKeepsRecords() {
@@ -277,6 +319,19 @@ async function pagePartialKeepsRecords() {
   assert.equal(h.elements.recordCount.textContent, "1");
   assert.equal(h.elements.scanPanel.hidden, false);
   assert.equal(h.elements.message.textContent, "Partial results: 1 failures.");
+}
+
+async function pageMissingDetailsIsExplicit() {
+  const h = createHarness({ fetchQueue: [health()], pageQueue: [pageScan({
+    state: "partial",
+    failure_count: 0,
+    detail_not_observed_count: 2,
+  })] });
+  await h.settle();
+  h.elements.scanPageButton.click();
+  await h.settle();
+  assert.equal(h.elements.recordCount.textContent, "1");
+  assert.equal(h.elements.message.textContent, "Partial scan: 2 job detail panels were not observed.");
 }
 
 async function pageNotReadyDoesNotRetry() {
@@ -371,6 +426,58 @@ async function scanNotReadyRetry() {
   assert.equal(h.elements.scanButton.disabled, false);
 }
 
+async function selectedPartialKeepsBoundRecord() {
+  const h = createHarness({
+    fetchQueue: [health()],
+    scanQueue: [{
+      ok: true,
+      scan_version: "2",
+      state: "partial",
+      page_url: "https://www.linkedin.com/jobs/search/?currentJobId=902",
+      records: [{
+        company_name: "Selected Card",
+        job_title: "Selected Card Role",
+        linkedin_job_url: "https://www.linkedin.com/jobs/view/902",
+        source_trace: { linkedin_posting: { observation_state: "detail_not_observed" } },
+      }],
+    }],
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  assert.equal(h.elements.recordCount.textContent, "1");
+  assert.equal(h.elements.runButton.disabled, false);
+  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "Detail panel not observed");
+  assert.equal(h.elements.message.textContent, "Selected job found, but its detail panel was not fully observed.");
+}
+
+async function externalApplyWithoutTargetIsExplicit() {
+  const h = createHarness({
+    fetchQueue: [health()],
+    scanQueue: [{
+      ok: true,
+      scan_version: "2",
+      state: "ready",
+      page_url: "https://www.linkedin.com/jobs/search/?currentJobId=904",
+      records: [{
+        company_name: "External Systems",
+        job_title: "Platform Engineer",
+        linkedin_job_url: "https://www.linkedin.com/jobs/view/904",
+        external_apply_url: null,
+        source_trace: { linkedin_posting: { observation_state: "external_apply_observed" } },
+      }],
+    }],
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  assert.equal(
+    h.elements.scanResults.children[0].children[1].textContent,
+    "External Apply observed; target unavailable",
+  );
+  assert.equal(h.elements.applyCount.textContent, "0 Apply URLs");
+}
+
 async function staleRunClear() {
   const h = createHarness({ fetchQueue: [health(), response(404, { error: "run_not_found" })], runId: "gone" });
   await h.settle();
@@ -387,6 +494,19 @@ async function transientPollingRetry() {
   await h.runNextTimer();
   assert.equal(h.elements.runStatus.textContent, "Complete");
   assert.equal(h.elements.refreshButton.disabled, false);
+}
+
+async function restoredRunningRunIsVisible() {
+  const h = createHarness({
+    fetchQueue: [health(), response(200, { run_id: "active-run", status: "running" })],
+    runId: "active-run",
+  });
+  await h.settle();
+  assert.equal(h.elements.runPanel.hidden, false);
+  assert.equal(h.elements.runStatus.textContent, "Running");
+  assert.equal(h.elements.bridgeState.textContent, "Running");
+  assert.equal(h.elements.runButton.textContent, "Verifying...");
+  assert.equal(h.elements.runButton.disabled, true);
 }
 
 async function malformedResponse() {
@@ -445,7 +565,7 @@ async function scannedApplyRemainsAvailableWithoutVerifiedOpening() {
   h.elements.scanButton.click();
   await h.settle();
   assert.equal(h.elements.scanPanel.hidden, false);
-  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "LinkedIn Apply");
+  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "External Apply");
   h.elements.runButton.click();
   await h.settle();
   assert.equal(h.elements.results.children[0].children[1].textContent, "Job list");
@@ -471,17 +591,23 @@ async function buttonRecovery() {
 const scenarios = {
   invalid_endpoint_no_fetch: invalidEndpointNoFetch,
   duplicate_submission: duplicateSubmission,
+  submission_failure_visible: submissionFailureIsVisible,
+  executor_failure_queryable: executorFailureIsQueryable,
   duplicate_while_polling: duplicateWhilePolling,
   duplicate_scan: duplicateScan,
   page_success_progress: pageSuccessAndProgress,
   page_partial: pagePartialKeepsRecords,
+  page_missing_details: pageMissingDetailsIsExplicit,
   page_not_ready_no_retry: pageNotReadyDoesNotRetry,
   page_cancellation: pageCancellationRecoversButtons,
   page_watchdog: pageWatchdogRecoversButtons,
   stale_output_reset: staleOutputReset,
   scan_not_ready_retry: scanNotReadyRetry,
+  selected_partial: selectedPartialKeepsBoundRecord,
+  external_without_target: externalApplyWithoutTargetIsExplicit,
   stale_run_clear: staleRunClear,
   transient_polling_retry: transientPollingRetry,
+  restored_running_visible: restoredRunningRunIsVisible,
   malformed_response: malformedResponse,
   clickable_safe_links: clickableSafeLinks,
   scanned_apply_fallback: scannedApplyRemainsAvailableWithoutVerifiedOpening,

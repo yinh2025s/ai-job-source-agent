@@ -41,6 +41,25 @@ ai-job-source-agent --help
 
 `python -m job_source_agent` is an equivalent source-checkout entry point.
 
+### Authenticated LinkedIn Extension
+
+The `extension/` directory contains the accepted Chrome Manifest V3 client.
+Start the loopback bridge with a local token, load `extension/` as an unpacked
+extension, and save the same URL/token under **Connection**:
+
+```bash
+JOB_SOURCE_BRIDGE_TOKEN="replace-with-a-local-secret" \
+  python3.12 -m scripts.extension_bridge --port 8765 --workers 2 --fetch-timeout 8
+```
+
+On a logged-in LinkedIn Jobs page, **Scan selected** reads only the selected
+posting, **Scan page** visits at most 30 identity-bearing cards, and **Verify
+source** submits the observed records to the same backend pipeline. The plugin
+never treats an Apply button without a safe DOM-visible destination as a URL;
+it reports that state explicitly. See
+[`docs/EXTENSION_ACCEPTANCE.md`](docs/EXTENSION_ACCEPTANCE.md) for the manual
+release gate and privacy boundary.
+
 The command is deterministic and uses only checked-in fixtures. It produces:
 
 - `results.json`: concise product results.
@@ -287,15 +306,17 @@ make offline-gates PYTHON=python3.12
 git diff --check
 ```
 
-Network benchmarks, authenticated LinkedIn extension acceptance, and sealed
-holdouts are separate serial gates. They are not required to run the deterministic
-offline demo and are not replaced by fixtures.
+Network benchmarks, repeat authenticated LinkedIn extension acceptance, and
+sealed holdouts are separate serial gates. They are not required to run the
+deterministic offline demo and are not replaced by fixtures. Extension `0.4.0`
+completed its logged-in Chrome acceptance on 2026-08-01; `0.4.1` promotes the
+same accepted behavior with release metadata only.
 
 ## Beta Boundary
 
 This delivery freezes provider and discovery behavior at `.286`. Known work for
 a future iteration includes higher recall on unfamiliar company identities,
 better anonymous access to dynamic inventories, authenticated External Apply
-input parity, and a separately measured scheduler redesign. Those are explicitly
+destination coverage across a larger cohort, and a separately measured scheduler redesign. Those are explicitly
 outside this Beta handoff; the current product favors traceable refusal over an
 unverified answer.

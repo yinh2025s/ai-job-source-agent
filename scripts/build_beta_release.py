@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from scripts.scan_artifact_privacy import scan_artifact_root
 
 
-PRODUCT_VERSION = "0.1.0-beta.1"
+PRODUCT_VERSION = "0.1.0-beta.2"
 ROOT_FILES = frozenset(
     {
         ".gitignore",

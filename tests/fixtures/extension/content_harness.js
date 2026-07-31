@@ -17,6 +17,7 @@ class FakeElement {
     this.children = [];
     this.matchesBySelector = new Map();
     this.onClick = null;
+    this.onScroll = null;
     if (parent) parent.children.push(this);
   }
 
@@ -55,12 +56,19 @@ class FakeElement {
   click() {
     if (this.onClick) this.onClick();
   }
+
+  scrollIntoView() {
+    if (this.onScroll) this.onScroll();
+  }
 }
 
 const CARD_SELECTOR = (
   "li.jobs-search-results__list-item, [data-occludable-job-id], .job-card-container, .base-card"
 );
-const PAGE_CARD_SELECTOR = "[data-testid='lazy-column'] [role='button'][tabindex='0']";
+const PAGE_CARD_SELECTOR = [
+  "[data-occludable-job-id]",
+  "[data-testid='lazy-column'] [role='button'][tabindex='0']",
+].join(", ");
 const DETAIL_ROOT_SELECTORS = [
   ".jobs-search__job-details--container",
   ".job-view-layout",
@@ -74,6 +82,11 @@ const NATIVE_APPLY_SELECTOR = [
   "button[data-live-test-job-apply-button]",
   "button[aria-label*='Easy Apply']",
   "button[aria-label^='Apply']",
+].join(", ");
+const EXTERNAL_MODE_CONTROL_SELECTOR = [
+  "button[aria-label*='on company website']",
+  "button[aria-label*='company site']",
+  "button[role='link'][data-live-test-job-apply-button]",
 ].join(", ");
 const CLOSED_BANNER_SELECTOR = [
   ".jobs-details-top-card__apply-error",
@@ -260,6 +273,16 @@ function evidenceScenario(kind) {
       text: "Apply on company website",
       href: "https://careers.evidence.example/jobs/808",
     }, root)]);
+  } else if (kind === "external_button") {
+    root.setMatches(EXTERNAL_MODE_CONTROL_SELECTOR, [leaf({
+      text: "Apply",
+      attrs: {
+        "aria-label": "Apply to Principal Evidence Engineer on company website",
+        "data-live-test-job-apply-button": "",
+        role: "link",
+      },
+      tagName: "BUTTON",
+    }, root)]);
   } else if (kind === "closed") {
     root.setMatches(CLOSED_BANNER_SELECTOR, [leaf({
       text: "This job is no longer accepting applications",
@@ -402,7 +425,12 @@ function emptyScenario(href) {
 
 function pageCard(id, company, title, location, properties = {}) {
   const root = new FakeElement({
-    attrs: { role: "button", tabindex: "0", ...properties.attrs },
+    attrs: {
+      role: "button",
+      tabindex: "0",
+      "data-occludable-job-id": String(id),
+      ...properties.attrs,
+    },
     hidden: properties.hidden,
     disabled: properties.disabled,
     style: properties.style,
@@ -428,23 +456,62 @@ function pageFooterControl() {
   return root;
 }
 
+function modernPageCard(id, company, title, location) {
+  const root = new FakeElement({ attrs: { "data-occludable-job-id": String(id) }, tagName: "LI" });
+  const titleLink = leaf({
+    text: title,
+    href: `https://www.linkedin.com/jobs/view/${id}/?tracking=ignored`,
+    tagName: "A",
+  }, root);
+  const companyNode = leaf({ text: company }, root);
+  const locationNode = leaf({ text: location }, root);
+  root.setMatches("a[href*='/jobs/view/']", [titleLink]);
+  root.setMatches(".job-card-list__title--link", [titleLink]);
+  root.setMatches(".artdeco-entity-lockup__title", [titleLink]);
+  root.setMatches(".artdeco-entity-lockup__subtitle", [companyNode]);
+  root.setMatches(".artdeco-entity-lockup__caption", [locationNode]);
+  root.pageJobId = String(id);
+  return root;
+}
+
+function lazyModernPageCard(id, company, title, location) {
+  const root = new FakeElement({ attrs: { "data-occludable-job-id": String(id) }, tagName: "LI" });
+  root.pageJobId = String(id);
+  root.onScroll = () => {
+    const hydrated = modernPageCard(id, company, title, location);
+    root.matchesBySelector = hydrated.matchesBySelector;
+    for (const nodes of root.matchesBySelector.values()) {
+      for (const node of nodes) node.parentElement = root;
+    }
+    root.onScroll = null;
+  };
+  return root;
+}
+
 function pageScanScenario({
   ids = [101, 102, 103], startId = "", timeoutIds = [], cancelAfterProgress = 0,
-  externalApplyIds = [], detailDelayTicks = 0,
+  externalApplyIds = [], detailDelayTicks = 0, missingDetailIds = [],
+  transientSwitchIds = [], modernCards = false, lazyModernIds = [],
 } = {}) {
   const document = new FakeElement();
-  const cards = ids.map((id, index) => pageCard(
-    id,
-    `Company ${id}`,
-    `Role ${id}`,
-    `Location ${id}`,
-    { selected: Boolean(startId && String(id) === String(startId)) },
-  ));
+  const cards = ids.map((id) => {
+    const factory = lazyModernIds.map(String).includes(String(id))
+      ? lazyModernPageCard
+      : (modernCards ? modernPageCard : pageCard);
+    return factory(
+      id,
+      `Company ${id}`,
+      `Role ${id}`,
+      `Location ${id}`,
+      { selected: Boolean(startId && String(id) === String(startId)) },
+    );
+  });
   const footerControls = [pageFooterControl(), pageFooterControl()];
   document.setMatches(PAGE_CARD_SELECTOR, [...cards, ...footerControls]);
   document.setMatches(CARD_SELECTOR, []);
   setDetailRoots(document, {});
   let pendingDetail = null;
+  let pendingNavigation = null;
   const showDetail = (id) => {
     const root = detailRoot(id, `Company ${id}`, `Role ${id}`, { location: `Location ${id}` });
     if (externalApplyIds.map(String).includes(String(id))) {
@@ -461,10 +528,20 @@ function pageScanScenario({
     messageType: "collect_job_source_page",
     cancelAfterProgress,
     bindLocation(location) {
+      if (startId && !missingDetailIds.map(String).includes(String(startId))) showDetail(startId);
       for (const cardNode of cards) {
         cardNode.onClick = () => {
           if (!timeoutIds.map(String).includes(cardNode.pageJobId)) {
-            location.href = `https://www.linkedin.com/jobs/search/?currentJobId=${cardNode.pageJobId}`;
+            if (transientSwitchIds.map(String).includes(cardNode.pageJobId)) {
+              location.href = "https://www.linkedin.com/jobs/search/?currentJobId=999999";
+              pendingNavigation = { id: cardNode.pageJobId, remaining: 2 };
+            } else {
+              location.href = `https://www.linkedin.com/jobs/search/?currentJobId=${cardNode.pageJobId}`;
+            }
+            if (missingDetailIds.map(String).includes(cardNode.pageJobId)) {
+              setDetailRoots(document, {});
+              return;
+            }
             if (detailDelayTicks > 0) {
               pendingDetail = { id: cardNode.pageJobId, remaining: detailDelayTicks };
               setDetailRoots(document, {});
@@ -476,6 +553,13 @@ function pageScanScenario({
       }
     },
     onTimer() {
+      if (pendingNavigation) {
+        pendingNavigation.remaining -= 1;
+        if (pendingNavigation.remaining <= 0) {
+          this.location.href = `https://www.linkedin.com/jobs/search/?currentJobId=${pendingNavigation.id}`;
+          pendingNavigation = null;
+        }
+      }
       if (!pendingDetail) return;
       pendingDetail.remaining -= 1;
       if (pendingDetail.remaining <= 0) {
@@ -486,12 +570,47 @@ function pageScanScenario({
   };
 }
 
+function delayedSelectedDetailScenario() {
+  const document = new FakeElement();
+  document.setMatches(CARD_SELECTOR, []);
+  setDetailRoots(document, {});
+  let remaining = 3;
+  return {
+    document,
+    href: "https://www.linkedin.com/jobs/search/?currentJobId=901",
+    onTimer() {
+      remaining -= 1;
+      if (remaining !== 0) return;
+      const root = detailRoot(901, "Slow Detail", "Distributed Systems Engineer");
+      root.setMatches(EXTERNAL_APPLY_SELECTOR, [leaf({
+        text: "Apply on company website",
+        href: "https://careers.slow-detail.example/jobs/901",
+      }, root)]);
+      setDetailRoots(document, { ".jobs-search__job-details--container": [root] });
+    },
+  };
+}
+
+function selectedCardMissingDetailScenario() {
+  const document = new FakeElement();
+  document.setMatches(CARD_SELECTOR, [
+    card(902, "Selected Card", "Selected Card Role"),
+    card(903, "Competing Card", "Competing Card Role"),
+  ]);
+  setDetailRoots(document, {});
+  return {
+    document,
+    href: "https://www.linkedin.com/jobs/search/?currentJobId=902",
+  };
+}
+
 const scenarios = {
   hidden_cards: hiddenCardsScenario,
   selector_fallback: selectorFallbackScenario,
   visible_detail: detailScenario,
   evidence_native: () => evidenceScenario("native"),
   evidence_external: () => evidenceScenario("external"),
+  evidence_external_button: () => evidenceScenario("external_button"),
   evidence_closed: () => evidenceScenario("closed"),
   evidence_missing: () => evidenceScenario("missing"),
   evidence_hidden_disabled: () => evidenceScenario("hidden_disabled"),
@@ -510,6 +629,21 @@ const scenarios = {
   page_restore: () => pageScanScenario({ ids: [501, 502, 503], startId: "502" }),
   page_delayed_external: () => pageScanScenario({
     ids: [701, 702], externalApplyIds: [701, 702], detailDelayTicks: 2,
+  }),
+  selected_delayed_detail: delayedSelectedDetailScenario,
+  selected_card_missing_detail: selectedCardMissingDetailScenario,
+  page_transient_wrong_id: () => pageScanScenario({
+    ids: [801], transientSwitchIds: [801], externalApplyIds: [801], detailDelayTicks: 3,
+  }),
+  page_detail_not_observed: () => pageScanScenario({
+    ids: [811], missingDetailIds: [811],
+  }),
+  page_modern_cards: () => pageScanScenario({
+    ids: [821, 822], modernCards: true, externalApplyIds: [821, 822],
+  }),
+  page_lazy_modern_cards: () => pageScanScenario({
+    ids: [831, 832, 833], modernCards: true, lazyModernIds: [832, 833],
+    externalApplyIds: [831, 832, 833],
   }),
 };
 
@@ -552,6 +686,7 @@ const sandbox = {
     },
   },
 };
+scenario.location = sandbox.location;
 sandbox.globalThis = sandbox;
 vm.runInNewContext(fs.readFileSync(contentPath, "utf8"), sandbox, { filename: contentPath });
 scenario.bindLocation?.(sandbox.location);

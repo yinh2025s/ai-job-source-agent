@@ -23,10 +23,10 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
-## Beta 交付冻结（2026-07-31）
+## Beta 交付冻结（2026-08-01）
 
 当前执行目标已经从“继续提高陌生样本召回”切换为
-`0.1.0-beta.1` reviewer handoff。下文保留的 diagnostic tranche、provider backlog
+`0.1.0-beta.2` reviewer handoff。下文保留的 diagnostic tranche、provider backlog
 和历史 Phase A-C 计划是研发记录，不再是本次交付的待办。
 
 本次冻结边界：
@@ -42,12 +42,21 @@
    cohort、sealed holdout、cache、checkpoint、snapshot、cookie 和登录态数据。
 6. 完成 README、离线门禁、隐私扫描、release commit/tag/push 和源码包后立即
    停止，不继续进入下一轮 failure-cluster 修复。
+7. Chrome extension `0.4.1` 作为已验收输入客户端交付；插件只读取登录态页面
+   可见 DOM、提交 loopback bridge 并展示结果，provider/tenant/S7 规则仍全部留在
+   Python 后端。
 
 七条 `.286` focused live 在全新 state roots 完成 7/7：3 个 S7 Exact、1 个
 verified no-match、1 个 external inventory failure 和 2 个 discovery failure；
 Exact identity audit 为 3/3 passed，credential-shape scan 为 0。该小集合的完整
 replay record-integrity 未通过，已经写入 `docs/BETA_DEMO_EVIDENCE.md`，不会被
 描述为 7/7 replay。最新完整 Fresh100 成绩仍是 `.283` 的 36/100 raw Exact。
+
+插件 `0.4.0` 于 2026-08-01 完成真实登录态 acceptance：selected scan 1/1、page
+scan 25/25、External/LinkedIn-native Apply 状态区分、异步提交即时 Running、popup
+重开恢复和 Complete 结果渲染均通过。当前 Medtronic 样本没有 DOM-visible 的安全
+External Apply URL，系统明确显示 target unavailable，后端诚实返回
+`CAREER_PAGE_NOT_FOUND`。`0.4.1` 只推进发布元数据，不改变已验收行为。
 
 ## 当前架构进度（2026-07-29，`.286` typed route outcome accepted）
 
@@ -2040,7 +2049,14 @@ replay reproduced、0 mismatch、0 fixture gap。S5 independent coordinator 后�
 硬预算 reservation，以及 CLI/library/插件相同输入下的完整 entry parity。它们必须在
 逻辑协调器 live 证明有效后继续，不得把当前 serial coordinator 宣称为物理并行。
 
-### Authenticated External Apply input-parity gate（插件 `0.3.2`，暂停）
+### Authenticated External Apply input-parity gate（历史）与 `0.4.1` acceptance
+
+该 gate 已于 2026-08-01 收口，不再暂停。当前 accepted contract 是：selected scan
+只返回当前 `currentJobId`；page scan 对最多 30 个 identity-bearing card 逐个懒加载、
+绑定详情并恢复原选中项；每条必须归入 external、native、closed、detail observed but
+apply absent 或 detail not observed；Verify 提交后立即可见 Running，同一 run ID 在
+popup 重开后继续轮询。真实验收结果与隐私边界见 `docs/EXTENSION_ACCEPTANCE.md`。
+下面保留的是此前 input-parity 调查和架构历史，不再表示当前发布状态。
 
 该插件 gate 执行时 `coordinator-v2` 仍为 proposed，尚未实现行为迁移。已先在登录态 Chrome 中用
 page-scan v3 采集 24 条当前 LinkedIn Jobs：24/24 绑定 canonical job ID，18/24 明确

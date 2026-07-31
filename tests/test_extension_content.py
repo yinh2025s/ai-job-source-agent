@@ -58,6 +58,7 @@ class ExtensionContentTests(unittest.TestCase):
                 "apply_mode": "linkedin_native",
                 "evidence_source": "authenticated_detail_dom",
                 "job_url": "https://www.linkedin.com/jobs/view/808",
+                "observation_state": "linkedin_native_observed",
             },
         )
 
@@ -70,6 +71,19 @@ class ExtensionContentTests(unittest.TestCase):
         )
         self.assertEqual(record["source_trace"]["linkedin_posting"]["availability"], "active")
         self.assertEqual(record["source_trace"]["linkedin_posting"]["apply_mode"], "external")
+        self.assertEqual(
+            record["source_trace"]["linkedin_posting"]["observation_state"],
+            "external_apply_observed",
+        )
+
+    def test_external_apply_button_without_href_is_not_misclassified_as_native(self):
+        record = self._collect("evidence_external_button")["records"][0]
+        posting = record["source_trace"]["linkedin_posting"]
+
+        self.assertIsNone(record["external_apply_url"])
+        self.assertEqual(posting["availability"], "active")
+        self.assertEqual(posting["apply_mode"], "external")
+        self.assertEqual(posting["observation_state"], "external_apply_observed")
 
     def test_explicit_closed_banner_emits_closed_evidence(self):
         posting = self._collect("evidence_closed")["records"][0]["source_trace"][
@@ -78,6 +92,7 @@ class ExtensionContentTests(unittest.TestCase):
 
         self.assertEqual(posting["availability"], "closed")
         self.assertEqual(posting["apply_mode"], "unknown")
+        self.assertEqual(posting["observation_state"], "closed_observed")
 
     def test_missing_apply_controls_do_not_infer_native_apply(self):
         posting = self._collect("evidence_missing")["records"][0]["source_trace"][
@@ -86,6 +101,7 @@ class ExtensionContentTests(unittest.TestCase):
 
         self.assertEqual(posting["availability"], "unknown")
         self.assertEqual(posting["apply_mode"], "unknown")
+        self.assertEqual(posting["observation_state"], "detail_observed_but_apply_absent")
 
     def test_hidden_and_disabled_apply_controls_do_not_infer_native_apply(self):
         record = self._collect("evidence_hidden_disabled")["records"][0]
@@ -110,6 +126,7 @@ class ExtensionContentTests(unittest.TestCase):
     def test_current_job_id_selects_matching_detail_root_not_competing_card(self):
         records = self._collect("selected_detail")["records"]
 
+        self.assertEqual(len(records), 1)
         self.assertEqual(records[0]["linkedin_job_url"], "https://www.linkedin.com/jobs/view/300")
         self.assertEqual(records[0]["company_name"], "Selected Systems")
         self.assertEqual(records[0]["job_title"], "Selected Detail")
@@ -117,8 +134,6 @@ class ExtensionContentTests(unittest.TestCase):
             records[0]["source_trace"]["dom"]["identity_source"],
             "selected_detail_root",
         )
-        self.assertEqual(records[1]["linkedin_job_url"], "https://www.linkedin.com/jobs/view/301")
-        self.assertEqual(records[1]["company_name"], "Competing Systems")
 
     def test_obfuscated_search_ui_uses_selected_semantic_detail_and_unwraps_apply(self):
         record = self._collect("semantic_search_detail")["records"][0]
@@ -166,10 +181,10 @@ class ExtensionContentTests(unittest.TestCase):
         self.assertTrue(response["ok"])
         self.assertEqual(response["scan_version"], "3")
         self.assertEqual(response["state"], "ready")
-        self.assertEqual(response["candidate_count"], 3)
-        self.assertEqual(response["scanned_count"], 3)
+        self.assertEqual(response["candidate_count"], 2)
+        self.assertEqual(response["scanned_count"], 2)
         self.assertEqual(response["failure_count"], 0)
-        self.assertEqual(response["progress_count"], 3)
+        self.assertEqual(response["progress_count"], 2)
         self.assertEqual(
             [record["linkedin_job_url"] for record in response["records"]],
             [
@@ -238,6 +253,98 @@ class ExtensionContentTests(unittest.TestCase):
             record["source_trace"]["linkedin_posting"]["apply_mode"] == "external"
             for record in response["records"]
         ))
+
+    def test_selected_scan_waits_for_detail_bound_to_current_job_id(self):
+        response = self._collect("selected_delayed_detail")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(len(response["records"]), 1)
+        record = response["records"][0]
+        self.assertEqual(record["linkedin_job_url"], "https://www.linkedin.com/jobs/view/901")
+        self.assertEqual(record["company_name"], "Slow Detail")
+        self.assertEqual(
+            record["external_apply_url"],
+            "https://careers.slow-detail.example/jobs/901",
+        )
+        self.assertEqual(
+            record["source_trace"]["linkedin_posting"]["observation_state"],
+            "external_apply_observed",
+        )
+
+    def test_selected_scan_returns_only_selected_card_while_detail_is_unobserved(self):
+        response = self._collect("selected_card_missing_detail")
+
+        self.assertEqual(response["state"], "partial")
+        self.assertEqual(len(response["records"]), 1)
+        self.assertEqual(
+            response["records"][0]["linkedin_job_url"],
+            "https://www.linkedin.com/jobs/view/902",
+        )
+        self.assertEqual(
+            response["records"][0]["source_trace"]["linkedin_posting"]["observation_state"],
+            "detail_not_observed",
+        )
+
+    def test_page_scan_ignores_transient_wrong_job_id_and_waits_for_card_identity(self):
+        response = self._collect("page_transient_wrong_id")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(response["failure_count"], 0)
+        self.assertEqual(response["detail_observed_count"], 1)
+        self.assertEqual(response["apply_observed_count"], 1)
+        self.assertEqual(
+            response["records"][0]["linkedin_job_url"],
+            "https://www.linkedin.com/jobs/view/801",
+        )
+        self.assertEqual(
+            response["records"][0]["external_apply_url"],
+            "https://careers.example/jobs/801",
+        )
+
+    def test_page_scan_classifies_missing_detail_without_inventing_apply_absence(self):
+        response = self._collect("page_detail_not_observed")
+
+        self.assertEqual(response["state"], "partial")
+        self.assertEqual(response["failure_count"], 0)
+        self.assertEqual(response["detail_observed_count"], 0)
+        self.assertEqual(response["detail_not_observed_count"], 1)
+        self.assertEqual(response["apply_observed_count"], 0)
+        posting = response["records"][0]["source_trace"]["linkedin_posting"]
+        self.assertEqual(posting["observation_state"], "detail_not_observed")
+        self.assertEqual(posting["apply_mode"], "unknown")
+
+    def test_page_scan_supports_current_occludable_cards_without_paragraphs(self):
+        response = self._collect("page_modern_cards")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(response["candidate_count"], 2)
+        self.assertEqual(response["scanned_count"], 2)
+        self.assertEqual(
+            [record["linkedin_job_url"] for record in response["records"]],
+            [
+                "https://www.linkedin.com/jobs/view/821",
+                "https://www.linkedin.com/jobs/view/822",
+            ],
+        )
+        self.assertEqual(response["records"][0]["company_name"], "Company 821")
+        self.assertEqual(response["records"][0]["job_location"], "Location 821")
+
+    def test_page_scan_hydrates_lazy_occludable_cards_instead_of_aborting_batch(self):
+        response = self._collect("page_lazy_modern_cards")
+
+        self.assertEqual(response["state"], "ready")
+        self.assertEqual(response["candidate_count"], 3)
+        self.assertEqual(response["scanned_count"], 3)
+        self.assertEqual(response["failure_count"], 0)
+        self.assertEqual(len(response["records"]), 3)
+        self.assertEqual(
+            [record["linkedin_job_url"] for record in response["records"]],
+            [
+                "https://www.linkedin.com/jobs/view/831",
+                "https://www.linkedin.com/jobs/view/832",
+                "https://www.linkedin.com/jobs/view/833",
+            ],
+        )
 
     def _collect(self, scenario: str) -> dict:
         completed = subprocess.run(

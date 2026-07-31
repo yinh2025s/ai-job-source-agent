@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-08-01 - `0.1.0-beta.2` authenticated extension acceptance
+
+- Promoted the Chrome input client to extension `0.4.1`. **Scan selected** now
+  returns only the current LinkedIn `currentJobId`, waits for the matching detail,
+  and reports explicit external, LinkedIn-native, closed, apply-absent, or
+  detail-not-observed evidence without inventing an Apply URL.
+- Updated **Scan page** for LinkedIn's current `data-occludable-job-id` cards and
+  metadata markup. It hydrates lazy empty card shells by bounded scrolling,
+  isolates one malformed or timed-out card as a partial failure, binds each
+  detail to its job ID, deduplicates records, and restores the original posting.
+- Made **Verify source** immediately render Submitting/Running, persist the run
+  across popup close/reopen, reject duplicate in-flight submissions, and display
+  queryable bridge executor failures instead of appearing idle.
+- Completed logged-in Chrome acceptance on 2026-08-01: selected scan 1/1, page
+  scan 25/25, async Running, popup reopen recovery, and Complete rendering. The
+  observed External Apply button had no safe DOM-visible target, so the plugin
+  correctly displayed target unavailable; backend run
+  `43490fdb72864fa0b3eaf8fb88ba1f24` completed with typed
+  `CAREER_PAGE_NOT_FOUND` and no fabricated URL.
+- Added 47 focused content, popup, bridge, and loopback HTTP tests. This release
+  does not change provider/discovery behavior, rerun Fresh100, or revise its
+  existing measurement.
+
 ## 2026-07-31 - `0.1.0-beta.1` reviewer handoff
 
 - Froze product discovery and provider behavior at adapter `.286`; no provider,

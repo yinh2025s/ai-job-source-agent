@@ -54,10 +54,17 @@ class ExtensionRunManager:
         with self._lock:
             self._runs[run_id] = {
                 "run_id": run_id,
-                "status": "queued",
+                "status": "running",
                 "submitted": len(companies),
             }
-        self._executor.submit(self._execute, run_id, companies)
+        try:
+            self._executor.submit(self._execute, run_id, companies)
+        except RuntimeError:
+            self._update(
+                run_id,
+                status="failed",
+                error="bridge_executor_unavailable",
+            )
         return run_id
 
     def get(self, run_id: str) -> dict[str, Any] | None:
@@ -184,7 +191,13 @@ class ExtensionBridgeHandler(BaseHTTPRequestHandler):
         except (json.JSONDecodeError, TypeError, ValueError) as exc:
             self._json_response(400, {"error": "invalid_request", "detail": str(exc)})
             return
-        self._json_response(202, {"run_id": run_id, "status": "queued"})
+        run = self.server.manager.get(run_id)
+        response = {
+            key: run[key]
+            for key in ("run_id", "status", "submitted", "error")
+            if run is not None and key in run
+        }
+        self._json_response(202, response)
 
     def log_message(self, format: str, *args) -> None:
         return

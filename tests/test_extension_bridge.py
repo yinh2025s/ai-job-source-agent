@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import time
 import unittest
 from pathlib import Path
@@ -72,6 +73,89 @@ class ExtensionBridgeTests(unittest.TestCase):
             self.assertEqual(run["summary"]["with_opening"], 1)
             self.assertTrue((Path(directory) / run_id / "results.json").is_file())
             self.assertTrue((Path(directory) / run_id / "trace.json").is_file())
+
+    def test_manager_exposes_running_before_background_work_completes(self):
+        started = threading.Event()
+        release = threading.Event()
+        manager = ExtensionRunManager(
+            ExtensionBridgeConfig(fetcher=FetcherConfig(offline=True), workers=1)
+        )
+
+        def blocking_execute(run_id, companies):
+            started.set()
+            release.wait(timeout=3)
+            manager._replace(
+                run_id,
+                {
+                    "run_id": run_id,
+                    "status": "complete",
+                    "submitted": len(companies),
+                    "summary": {},
+                    "results": [],
+                },
+            )
+
+        try:
+            with patch.object(manager, "_execute", side_effect=blocking_execute):
+                run_id = manager.submit([
+                    {
+                        "company_name": "Example Robotics",
+                        "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
+                    }
+                ])
+                self.assertTrue(started.wait(timeout=1))
+                self.assertEqual(manager.get(run_id)["status"], "running")
+                release.set()
+                self._wait_for_run(manager, run_id)
+        finally:
+            release.set()
+            manager.close()
+
+    def test_manager_background_exception_becomes_queryable_failed_run(self):
+        manager = ExtensionRunManager(
+            ExtensionBridgeConfig(fetcher=FetcherConfig(offline=True), workers=1)
+        )
+        try:
+            with patch(
+                "job_source_agent.extension_bridge.build_application",
+                side_effect=RuntimeError("pipeline unavailable"),
+            ):
+                run_id = manager.submit([
+                    {
+                        "company_name": "Example Robotics",
+                        "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
+                    }
+                ])
+                run = self._wait_for_run(manager, run_id)
+
+            self.assertEqual(run["status"], "failed")
+            self.assertEqual(run["error"], "RuntimeError: pipeline unavailable")
+            self.assertEqual(manager.get(run_id), run)
+        finally:
+            manager.close()
+
+    def test_manager_executor_rejection_becomes_queryable_failed_run(self):
+        manager = ExtensionRunManager(
+            ExtensionBridgeConfig(fetcher=FetcherConfig(offline=True), workers=1)
+        )
+        try:
+            with patch.object(
+                manager._executor,
+                "submit",
+                side_effect=RuntimeError("cannot schedule new futures after shutdown"),
+            ):
+                run_id = manager.submit([
+                    {
+                        "company_name": "Example Robotics",
+                        "linkedin_job_url": "https://www.linkedin.com/jobs/view/123",
+                    }
+                ])
+
+            run = manager.get(run_id)
+            self.assertEqual(run["status"], "failed")
+            self.assertEqual(run["error"], "bridge_executor_unavailable")
+        finally:
+            manager.close()
 
     def test_manager_rejects_oversized_batch(self):
         manager = ExtensionRunManager(

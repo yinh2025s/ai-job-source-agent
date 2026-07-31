@@ -36,9 +36,9 @@ Show the README and say:
 > 我把产品边界设成 fail closed：证据链不完整时返回结构化 partial、blocked 或 rejected，不猜测岗位 URL。
 
 Point out that the backend accepts either LinkedIn discovery or pre-extracted
-company/job records. The browser extension is not part of this demo: its
-authenticated LinkedIn acceptance is paused and must not be described as fully
-accepted.
+company/job records. The authenticated Chrome extension is an accepted input
+client, but keep the deterministic backend as the primary presentation path so
+the demo does not depend on LinkedIn DOM or network state.
 
 ## 0:35-1:25 - Architecture
 
@@ -109,7 +109,7 @@ Say:
 
 > 这项工作的主要工程难点不是写更多 selector，而是处理招聘主体变化、ATS tenant 隔离、动态库存、网络失败分类以及可回放性。我也意识到前期在提高覆盖率上投入过多，没有足够早地冻结 Beta 边界。
 >
-> 如果继续产品化，我会优先做两件事：第一，在真实登录态 LinkedIn 插件中完成 External Apply 的人工验收；第二，基于新的陌生样本按共同根因补 provider family，而不是针对单家公司增加 heuristic。当前交付先停在一个能运行、能审计、不会编造 URL 的 Beta。
+> 如果继续产品化，我会优先做两件事：第一，在更大的登录态样本上测量 External Apply 目标 URL 覆盖和净新增 Exact；第二，基于新的陌生样本按共同根因补 provider family，而不是针对单家公司增加 heuristic。当前交付先停在一个能运行、能审计、不会编造 URL 的 Beta。
 
 ## Closing Line
 
@@ -127,4 +127,4 @@ Say:
 它证明同一产品 pipeline、adapter、identity gate 和输出 contract 可以确定性运行；它不证明实时网页覆盖率，真实覆盖由独立 live measurement 报告。
 
 **插件现在能用吗？**
-插件和本地 bridge 已实现，但真实登录态 LinkedIn 的完整验收暂停，因此本次只提交为尚未完成验收的可选入口，不把它列为已接受能力。
+可以。`0.4.0` 已在真实登录态 LinkedIn 完成单岗位扫描、25/25 整页扫描、提交、运行态、弹窗重开恢复和结果渲染验收；`0.4.1` 只推进发布元数据。当前样本的 External Apply 按钮没有暴露安全目标 URL，因此插件诚实显示 target unavailable，后端返回 typed failure；这证明工作流可用，不代表 External Apply URL 覆盖率或 Exact 成功率。
