@@ -1,6 +1,6 @@
 PYTHON ?= python3.12
 
-.PHONY: runtime test offline-gates live-gate
+.PHONY: runtime test offline-gates beta-demo beta-package live-gate
 
 runtime:
 	$(PYTHON) scripts/check_runtime.py --release
@@ -12,6 +12,18 @@ offline-gates: test
 	$(PYTHON) scripts/benchmark_eval.py
 	$(PYTHON) scripts/resolver_benchmark.py
 	$(PYTHON) scripts/validate_architecture.py
+
+beta-demo: runtime
+	mkdir -p /tmp/ai-job-source-agent-beta-demo
+	$(PYTHON) -m job_source_agent \
+		--input samples/linkedin_jobs.json \
+		--fixtures-dir samples/sites \
+		--offline \
+		--output /tmp/ai-job-source-agent-beta-demo/results.json \
+		--trace-output /tmp/ai-job-source-agent-beta-demo/trace.json
+
+beta-package: runtime
+	$(PYTHON) scripts/build_beta_release.py --output-dir dist
 
 live-gate: runtime
 	$(PYTHON) scripts/live_batch_eval.py \

@@ -1,5 +1,29 @@
 # Changelog
 
+## 2026-07-31 - `0.1.0-beta.1` reviewer handoff
+
+- Froze product discovery and provider behavior at adapter `.286`; no provider,
+  company heuristic, scheduler, identity, or S7 publication rule changed.
+- Replaced the research-oriented README with a one-command deterministic Beta
+  demo, concise architecture, result semantics, measured limits, and honest
+  Fresh100/Frozen100 version attribution.
+- Added seven public demonstration inputs plus a 3-5 minute walkthrough, current
+  evidence ledger, reviewer summary, submission notes, and a message to Li Kai.
+- Ran the seven-record `.286` focused live check from fresh state: 3 S7 Exact,
+  one verified no-match, one external inventory failure, and two discovery
+  failures. The measurement-bound Exact identity audit passed 3/3; the artifact
+  privacy scan found zero credential shapes. The focused replay limitation is
+  documented rather than hidden.
+- Added a deterministic source-only release builder and tests. The tracked-file
+  allowlist excludes historical artifacts, runtime state, evaluation cohorts,
+  sealed holdouts, cookies, snapshots, caches, and local environments; the
+  staged package must pass a fail-closed credential-shape scan.
+- Added the `ai-job-source-agent` console entry point and set package metadata to
+  `0.1.0b1`.
+- Passed the final CPython 3.12 release gate: 2,964 tests (4 skipped), provider
+  benchmark 25/25, resolver benchmark 6/6, architecture validation 48 adapters /
+  0 issues, and `git diff --check`.
+
 ## 2026-07-29 - Diagnostic fingerprint measurement tooling
 
 - Added a neutral S1-only candidate-pool collector with an optional exact-target

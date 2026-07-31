@@ -1,53 +1,58 @@
-# Submission Notes
+# Beta Submission
 
-## Demo Command
+This repository is submitted as a bounded beta, not as a claim of universal
+job-source coverage. It publishes an opening only after the S7 identity gate
+verifies company/hiring relationship, provider, tenant, board, title, location
+and opening continuity. Missing evidence remains partial, retryable, blocked or
+rejected instead of producing a guessed URL.
 
-```bash
-python3 -m job_source_agent \
-  --input samples/linkedin_jobs.json \
-  --fixtures-dir samples/sites \
-  --offline \
-  --output results.json \
-  --trace-output trace.json
-```
-
-## Live Command
+## One-Command Demo
 
 ```bash
-python3 -m job_source_agent \
-  --input samples/live_examples.json \
-  --output live-results.json \
-  --trace-output live-trace.json
+make beta-demo
 ```
 
-## LinkedIn Discovery Command
+The deterministic offline demo writes:
+
+- `/tmp/ai-job-source-agent-beta-demo/results.json`
+- `/tmp/ai-job-source-agent-beta-demo/trace.json`
+
+It demonstrates one S7-verified Exact result and one fail-closed identity
+rejection without requiring network access.
+
+## Focused Live Demo
+
+The public demo cohort was revalidated on 2026-07-31. To intentionally repeat
+that focused live check outside the presentation, run:
 
 ```bash
-python3 -m job_source_agent \
-  --linkedin-keywords "AI Engineer" \
-  --linkedin-location "United States" \
-  --limit 3 \
-  --linkedin-pages 1 \
-  --fetch-timeout 5 \
-  --output linkedin-results.json \
-  --trace-output linkedin-trace.json
+python3.12 -m job_source_agent \
+  --input samples/beta_demo_input.json \
+  --fetch-timeout 8 \
+  --output /tmp/beta-live-results.json \
+  --trace-output /tmp/beta-live-trace.json
 ```
 
-## Video Walkthrough Outline
+The live cohort is presentation evidence only. It is deliberately small and is
+not reported as a generalization benchmark.
 
-1. State the upgraded goal: discover hiring companies from LinkedIn, resolve their official websites, and navigate to the official career/job-list page.
-2. Run the deterministic demo command to show the stable fixture-based flow.
-3. Run the LinkedIn discovery command to show end-to-end discovery from public LinkedIn job results.
-4. Open `linkedin-results.json` and point to `linkedin_job_url`, `company_website_url`, `career_page_url`, and `job_list_page_url`.
-5. Open `linkedin-trace.json` and show the stages: LinkedIn job card, website resolution, career-page scoring, and job-list/opening traversal.
-6. Mention production next steps: Playwright for JavaScript-heavy job lists, parallel website resolution, and an LLM reranker for ambiguous pages.
+## Review Path
 
-## Key Talking Points
+1. Run `make beta-demo`.
+2. Inspect the concise result and the seven-stage trace.
+3. Read [README.md](README.md) for setup, architecture and measured limits.
+4. Read [the project summary](docs/BETA_PROJECT_SUMMARY.md).
+5. Use [the demo script](docs/BETA_DEMO_SCRIPT.md) for a 3-5 minute walkthrough.
+6. Check [demo evidence](docs/BETA_DEMO_EVIDENCE.md) for current URL validation.
 
-- The agent is controlled and explainable rather than a free-form browser clicker.
-- It now starts from LinkedIn public job-search cards, not only from pre-known company websites.
-- The official website resolver uses LinkedIn company-page website signals first, then fallback strategies.
-- Rules and ATS patterns handle common cases cheaply and reliably.
-- The live examples prove the LinkedIn-to-official-careers pipeline works beyond fixtures.
-- Trace output makes failures debuggable.
-- Offline fixtures keep the demo stable while the same fetcher can run against live websites.
+## Release Package
+
+```bash
+make offline-gates
+make beta-package
+```
+
+The package builder uses a tracked-file allowlist and excludes historical
+artifacts, caches, checkpoints, snapshots, cookies, local environments, sealed
+holdouts and Git metadata. It also runs the credential-shape scanner before
+creating the archive.

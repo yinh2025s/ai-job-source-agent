@@ -23,6 +23,32 @@
 - 已完成的关卡可以复用，修复后不必每次从头运行
 - 用固定 benchmark 和失败分布决定开发优先级，而不是按遇到公司的先后顺序打补丁
 
+## Beta 交付冻结（2026-07-31）
+
+当前执行目标已经从“继续提高陌生样本召回”切换为
+`0.1.0-beta.1` reviewer handoff。下文保留的 diagnostic tranche、provider backlog
+和历史 Phase A-C 计划是研发记录，不再是本次交付的待办。
+
+本次冻结边界：
+
+1. 产品行为保持 adapter `.286`，不新增 ATS、provider、公司规则、heuristic 或
+   coordinator scheduler。
+2. 不再运行 Fresh100、80-company 或其他大型 live benchmark。
+3. 稳定演示使用 `make beta-demo`；七条公开 focused live 只作为当前证据快照，
+   不包装成泛化成绩，也不在汇报现场重跑。
+4. S7 公司、招聘主体、provider、tenant、title、location 和 opening 连续性保持
+   fail closed；不能用提高召回率作为放宽理由。
+5. 发布只包含源代码、离线 fixture 和审查文档，排除 runtime artifacts、评测
+   cohort、sealed holdout、cache、checkpoint、snapshot、cookie 和登录态数据。
+6. 完成 README、离线门禁、隐私扫描、release commit/tag/push 和源码包后立即
+   停止，不继续进入下一轮 failure-cluster 修复。
+
+七条 `.286` focused live 在全新 state roots 完成 7/7：3 个 S7 Exact、1 个
+verified no-match、1 个 external inventory failure 和 2 个 discovery failure；
+Exact identity audit 为 3/3 passed，credential-shape scan 为 0。该小集合的完整
+replay record-integrity 未通过，已经写入 `docs/BETA_DEMO_EVIDENCE.md`，不会被
+描述为 7/7 replay。最新完整 Fresh100 成绩仍是 `.283` 的 36/100 raw Exact。
+
 ## 当前架构进度（2026-07-29，`.286` typed route outcome accepted）
 
 ### `.286` diagnostic fingerprint measurement readiness

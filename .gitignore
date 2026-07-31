@@ -1,4 +1,5 @@
 __pycache__/
+.DS_Store
 *.py[cod]
 .pytest_cache/
 .venv/
@@ -10,3 +11,4 @@ live-trace.json
 linkedin-results.json
 linkedin-trace.json
 artifacts/evaluations/**/.history.lock
+dist/

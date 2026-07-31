@@ -14,15 +14,19 @@ from scripts.scan_artifact_privacy import (
 )
 
 
-JWT = b"eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.signature_value"
-AWS = b"AKIAIOSFODNN7EXAMPLE"
+JWT = (
+    b"eyJhbGciOiJIUzI1NiJ9."
+    + b"eyJzdWIiOiIxMjM0NTY3ODkwIn0."
+    + b"signature_value"
+)
+AWS = b"AKIA" + b"IOSFODNN7EXAMPLE"
 GOOGLE = b"AIza" + b"A" * 35
 GITHUB = b"ghp_" + b"B" * 36
 SLACK = b"xox" + b"b-1234567890-abcdefghijklmnop"
 OPENAI = b"sk-proj-" + b"C" * 32
 ANTHROPIC = b"sk-ant-" + b"D" * 32
 STRIPE = b"sk_live_" + b"E" * 24
-PRIVATE_KEY = b"-----BEGIN PRIVATE KEY-----"
+PRIVATE_KEY = b"-----BEGIN " + b"PRIVATE KEY-----"
 
 
 class ScanArtifactPrivacyTests(unittest.TestCase):

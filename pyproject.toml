@@ -1,9 +1,12 @@
 [project]
 name = "ai-job-source-agent"
-version = "0.1.0"
-description = "Take-home demo for discovering company career pages and one open role from job-source inputs."
+version = "0.1.0b1"
+description = "Evidence-gated beta for resolving LinkedIn jobs to verified official openings."
 requires-python = ">=3.10,<3.14"
 dependencies = []
+
+[project.scripts]
+ai-job-source-agent = "job_source_agent.cli:main"
 
 [project.optional-dependencies]
 browser = ["playwright>=1.45"]
