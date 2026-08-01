@@ -283,6 +283,40 @@ function evidenceScenario(kind) {
       },
       tagName: "BUTTON",
     }, root)]);
+  } else if (kind === "external_button_target") {
+    root.setMatches(EXTERNAL_MODE_CONTROL_SELECTOR, [leaf({
+      text: "Apply",
+      attrs: {
+        "aria-label": "Apply to Principal Evidence Engineer on company website",
+        "data-live-test-job-apply-button": "",
+        "data-apply-url": "https://careers.evidence.example/jobs/808?source=linkedin",
+        role: "link",
+      },
+      tagName: "BUTTON",
+    }, root)]);
+  } else if (kind === "external_button_unsafe_target") {
+    root.setMatches(EXTERNAL_MODE_CONTROL_SELECTOR, [
+      leaf({
+        text: "Apply",
+        attrs: {
+          "aria-label": "Apply to Principal Evidence Engineer on company website",
+          "data-live-test-job-apply-button": "",
+          "data-redirect-url": "http://127.0.0.1/jobs/808",
+          role: "link",
+        },
+        tagName: "BUTTON",
+      }, root),
+      leaf({
+        text: "Apply",
+        attrs: {
+          "aria-label": "Apply to Principal Evidence Engineer on company website",
+          "data-live-test-job-apply-button": "",
+          "data-url": "https://careers.evidence.example/jobs/808?access_token=secret",
+          role: "link",
+        },
+        tagName: "BUTTON",
+      }, root),
+    ]);
   } else if (kind === "closed") {
     root.setMatches(CLOSED_BANNER_SELECTOR, [leaf({
       text: "This job is no longer accepting applications",
@@ -611,6 +645,8 @@ const scenarios = {
   evidence_native: () => evidenceScenario("native"),
   evidence_external: () => evidenceScenario("external"),
   evidence_external_button: () => evidenceScenario("external_button"),
+  evidence_external_button_target: () => evidenceScenario("external_button_target"),
+  evidence_external_button_unsafe_target: () => evidenceScenario("external_button_unsafe_target"),
   evidence_closed: () => evidenceScenario("closed"),
   evidence_missing: () => evidenceScenario("missing"),
   evidence_hidden_disabled: () => evidenceScenario("hidden_disabled"),
@@ -645,6 +681,24 @@ const scenarios = {
     ids: [831, 832, 833], modernCards: true, lazyModernIds: [832, 833],
     externalApplyIds: [831, 832, 833],
   }),
+  installation_legacy_upgrade: () => ({
+    ...emptyScenario("https://www.linkedin.com/jobs/search/"),
+    legacyInstalled: true,
+    messageType: "job_source_agent_content_status",
+  }),
+  installation_reinject: () => ({
+    ...emptyScenario("https://www.linkedin.com/jobs/search/"),
+    messageType: "job_source_agent_content_status",
+    scriptLoads: 2,
+  }),
+  versioned_selected_message: () => ({
+    ...hiddenCardsScenario(),
+    messageType: "collect_job_source_records_v1",
+  }),
+  versioned_page_message: () => ({
+    ...pageScanScenario({ ids: [841] }),
+    messageType: "collect_job_source_page_v1",
+  }),
 };
 
 const contentPath = process.argv[2];
@@ -652,6 +706,7 @@ const scenarioName = process.argv[3];
 const scenario = scenarios[scenarioName]?.();
 if (!scenario) throw new Error(`Unknown scenario: ${scenarioName}`);
 
+const listeners = new Set();
 let listener;
 let progressCount = 0;
 let response;
@@ -680,7 +735,12 @@ const sandbox = {
       },
       onMessage: {
         addListener: (callback) => {
+          listeners.add(callback);
           listener = callback;
+        },
+        removeListener: (callback) => {
+          listeners.delete(callback);
+          if (listener === callback) listener = Array.from(listeners).at(-1);
         },
       },
     },
@@ -688,7 +748,11 @@ const sandbox = {
 };
 scenario.location = sandbox.location;
 sandbox.globalThis = sandbox;
-vm.runInNewContext(fs.readFileSync(contentPath, "utf8"), sandbox, { filename: contentPath });
+if (scenario.legacyInstalled) sandbox.__jobSourceAgentInstalled = true;
+const contentSource = fs.readFileSync(contentPath, "utf8");
+for (let load = 0; load < (scenario.scriptLoads || 1); load += 1) {
+  vm.runInNewContext(contentSource, sandbox, { filename: contentPath });
+}
 scenario.bindLocation?.(sandbox.location);
 
 listener({ type: scenario.messageType || "collect_job_source_records" }, {}, (value) => {
@@ -702,6 +766,7 @@ async function finish() {
         ...response,
         progress_count: progressCount,
         cancel_response: cancelResponse,
+        listener_count: listeners.size,
       }));
       return;
     }

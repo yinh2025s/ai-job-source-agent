@@ -18,6 +18,8 @@ class BuildBetaReleaseTests(unittest.TestCase):
                 "samples/evaluation/blind_v3/sealed-input.bin",
                 "samples/evaluation/live100_fresh_cohort_20260718.json",
                 "docs/BETA_DEMO_SCRIPT.md",
+                "docs/adr/0037-auto-pair-local-extension.md",
+                "docs/adr/0038-bound-extension-run-concurrency.md",
                 "docs/adr/0025-merge-provider-candidate-discovery.md",
                 "artifacts/evaluations/run/results.json",
                 "capture/snapshots/page.html",
@@ -29,6 +31,9 @@ class BuildBetaReleaseTests(unittest.TestCase):
         self.assertIn("job_source_agent/pipeline.py", selected)
         self.assertIn("samples/beta_demo_input.json", selected)
         self.assertIn("samples/sites/aurora-data.example/index.html", selected)
+        self.assertIn("docs/adr/0037-auto-pair-local-extension.md", selected)
+        self.assertIn("docs/adr/0038-bound-extension-run-concurrency.md", selected)
+        self.assertIn("docs/adr/0025-merge-provider-candidate-discovery.md", selected)
         self.assertNotIn("samples/evaluation/blind_v3/sealed-input.bin", selected)
         self.assertNotIn(
             "samples/evaluation/live100_fresh_cohort_20260718.json", selected

@@ -26,7 +26,7 @@
 ## Beta 交付冻结（2026-08-01）
 
 当前执行目标已经从“继续提高陌生样本召回”切换为
-`0.1.0-beta.2` reviewer handoff。下文保留的 diagnostic tranche、provider backlog
+`0.1.0-beta.3` reviewer handoff。下文保留的 diagnostic tranche、provider backlog
 和历史 Phase A-C 计划是研发记录，不再是本次交付的待办。
 
 本次冻结边界：
@@ -42,9 +42,10 @@
    cohort、sealed holdout、cache、checkpoint、snapshot、cookie 和登录态数据。
 6. 完成 README、离线门禁、隐私扫描、release commit/tag/push 和源码包后立即
    停止，不继续进入下一轮 failure-cluster 修复。
-7. Chrome extension `0.4.1` 作为已验收输入客户端交付；插件只读取登录态页面
+7. Chrome extension `0.6.2` 作为输入客户端交付；插件只读取登录态页面
    可见 DOM、提交 loopback bridge 并展示结果，provider/tenant/S7 规则仍全部留在
-   Python 后端。
+   Python 后端。默认自动配对、恢复 tab-scoped scan snapshot，并显示 bounded
+   company execution 的 `completed/submitted` 进度。
 
 七条 `.286` focused live 在全新 state roots 完成 7/7：3 个 S7 Exact、1 个
 verified no-match、1 个 external inventory failure 和 2 个 discovery failure；
@@ -56,7 +57,8 @@ replay record-integrity 未通过，已经写入 `docs/BETA_DEMO_EVIDENCE.md`，
 scan 25/25、External/LinkedIn-native Apply 状态区分、异步提交即时 Running、popup
 重开恢复和 Complete 结果渲染均通过。当前 Medtronic 样本没有 DOM-visible 的安全
 External Apply URL，系统明确显示 target unavailable，后端诚实返回
-`CAREER_PAGE_NOT_FOUND`。`0.4.1` 只推进发布元数据，不改变已验收行为。
+`CAREER_PAGE_NOT_FOUND`。`0.6.2` 在不改变 provider/S7 行为的前提下增加自动配对、
+扫描记录恢复、安全 Apply target 属性提取，以及单 run 四 company worker 与可见进度。
 
 ## 当前架构进度（2026-07-29，`.286` typed route outcome accepted）
 

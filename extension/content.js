@@ -1,6 +1,13 @@
 (() => {
-  if (globalThis.__jobSourceAgentInstalled) return;
-  globalThis.__jobSourceAgentInstalled = true;
+  const CONTENT_SCRIPT_VERSION = "2";
+  const INSTALLATION_KEY = "__jobSourceAgentContentScript";
+  const previousInstallation = globalThis[INSTALLATION_KEY];
+  try {
+    previousInstallation?.dispose?.();
+  } catch {
+    // A stale extension context must not prevent the replacement listener from installing.
+  }
+  globalThis.__jobSourceAgentInstalled = CONTENT_SCRIPT_VERSION;
 
   const text = (node) => (node?.textContent || "").replace(/\s+/g, " ").trim();
   const isVisible = (node) => {
@@ -117,17 +124,59 @@
     ".jobs-unified-top-card__apply-button a[href]",
     ".jobs-apply-button--top-card a[href]",
     "a.jobs-apply-button[href]",
-    "a[aria-label*='Apply on company website'][href]"
+    "a[aria-label*='Apply on company website'][href]",
+    "a[aria-label*='on company website'][href]",
+    "a[aria-label*='company site'][href]"
   ];
+  const EXTERNAL_MODE_CONTROL_SELECTOR = [
+    "button[aria-label*='on company website']",
+    "button[aria-label*='company site']",
+    "button[role='link'][data-live-test-job-apply-button]"
+  ].join(", ");
+  const EXTERNAL_APPLY_TARGET_ATTRIBUTES = [
+    "data-apply-url",
+    "data-redirect-url",
+    "data-url",
+    "data-href"
+  ];
+  const externalApplyTargetValues = (control) => {
+    const values = [
+      control.href,
+      control.getAttribute("href"),
+      control.hasAttribute("formaction") ? control.formAction : "",
+      control.getAttribute("formaction")
+    ];
+    for (const attribute of EXTERNAL_APPLY_TARGET_ATTRIBUTES) {
+      values.push(control.getAttribute(attribute));
+    }
+    return values;
+  };
+  const safeExternalApplyTarget = (control) => {
+    for (const value of externalApplyTargetValues(control)) {
+      const target = isSafeExternalApplyUrl(value);
+      if (target) return target;
+    }
+    return "";
+  };
+  const isExternalApplyControl = (control) => {
+    if (!isEnabled(control)) return false;
+    const label = `${text(control)} ${control.getAttribute("aria-label") || ""}`.toLowerCase();
+    return label.includes("apply") && /(?:company website|company site)/.test(label);
+  };
   const externalApplyUrl = (root) => {
     for (const selector of EXTERNAL_APPLY_SELECTORS) {
       for (const anchor of visibleMatches(root, selector)) {
         if (!isEnabled(anchor)) continue;
         const label = `${text(anchor)} ${anchor.getAttribute("aria-label") || ""}`.toLowerCase();
         if (!label.includes("apply")) continue;
-        const externalUrl = isSafeExternalApplyUrl(anchor.href);
+        const externalUrl = safeExternalApplyTarget(anchor);
         if (externalUrl) return externalUrl;
       }
+    }
+    for (const control of visibleMatches(root, EXTERNAL_MODE_CONTROL_SELECTOR)) {
+      if (!isExternalApplyControl(control)) continue;
+      const externalUrl = safeExternalApplyTarget(control);
+      if (externalUrl) return externalUrl;
     }
     return "";
   };
@@ -241,19 +290,10 @@
       identity: candidate.explicitJobId ? "detail_root_job_id" : "detail_job_link"
     };
   };
-  const EXTERNAL_MODE_CONTROL_SELECTOR = [
-    "button[aria-label*='on company website']",
-    "button[aria-label*='company site']",
-    "button[role='link'][data-live-test-job-apply-button]"
-  ].join(", ");
   const hasExternalApplyControl = (root) => visibleMatches(
     root,
     EXTERNAL_MODE_CONTROL_SELECTOR
-  ).some((control) => {
-    if (!isEnabled(control)) return false;
-    const label = `${text(control)} ${control.getAttribute("aria-label") || ""}`.toLowerCase();
-    return label.includes("apply") && /(?:company website|company site)/.test(label);
-  });
+  ).some(isExternalApplyControl);
   const hasNativeApply = (root) => visibleMatches(root, [
     "button.jobs-apply-button",
     "button[data-control-name='jobdetails_topcard_inapply']",
@@ -717,14 +757,22 @@
     }
   };
 
-  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-    if (message?.type === "cancel_job_source_page") {
+  const messageListener = (message, _sender, sendResponse) => {
+    if (message?.type === "job_source_agent_content_status") {
+      sendResponse({
+        ok: true,
+        content_script_version: CONTENT_SCRIPT_VERSION,
+        scan_versions: ["2", "3"]
+      });
+      return false;
+    }
+    if (["cancel_job_source_page", "cancel_job_source_page_v1"].includes(message?.type)) {
       const cancelled = Boolean(activePageScan && !activePageScan.cancelled);
       if (activePageScan) activePageScan.cancelled = true;
       sendResponse({ ok: true, cancelled });
       return false;
     }
-    if (message?.type === "collect_job_source_page") {
+    if (["collect_job_source_page", "collect_job_source_page_v1"].includes(message?.type)) {
       if (activePageScan) {
         sendResponse({
           ok: false,
@@ -753,7 +801,9 @@
       });
       return true;
     }
-    if (message?.type !== "collect_job_source_records") return false;
+    if (!["collect_job_source_records", "collect_job_source_records_v1"].includes(message?.type)) {
+      return false;
+    }
     const respondWithRecords = async () => {
       let records = collect();
       const selectedId = isLinkedinJobsRoute() ? selectedJobId() : "";
@@ -788,5 +838,14 @@
       sendResponse({ ok: false, error: String(error) });
     });
     return true;
-  });
+  };
+  chrome.runtime.onMessage.addListener(messageListener);
+  globalThis[INSTALLATION_KEY] = {
+    version: CONTENT_SCRIPT_VERSION,
+    listener: messageListener,
+    dispose: () => {
+      if (activePageScan) activePageScan.cancelled = true;
+      chrome.runtime.onMessage.removeListener?.(messageListener);
+    }
+  };
 })();

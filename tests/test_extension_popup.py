@@ -12,6 +12,14 @@ HARNESS = ROOT / "tests" / "fixtures" / "extension" / "popup_harness.js"
 class ExtensionPopupTests(unittest.TestCase):
     def test_popup_behaviors(self):
         scenarios = [
+            "fresh_auto_pair",
+            "saved_token_no_pair",
+            "stale_token_repair",
+            "unavailable_bridge",
+            "malformed_pair_response",
+            "server_error_no_pair",
+            "pairing_terminal_messages",
+            "manual_fallback",
             "invalid_endpoint_no_fetch",
             "duplicate_submission",
             "submission_failure_visible",
@@ -27,6 +35,8 @@ class ExtensionPopupTests(unittest.TestCase):
             "stale_output_reset",
             "scan_not_ready_retry",
             "selected_partial",
+            "restored_scan_visible",
+            "stale_scan_not_restored",
             "external_without_target",
             "stale_run_clear",
             "transient_polling_retry",
@@ -35,6 +45,7 @@ class ExtensionPopupTests(unittest.TestCase):
             "clickable_safe_links",
             "scanned_apply_fallback",
             "button_recovery",
+            "stale_content_upgrade",
         ]
         for scenario in scenarios:
             with self.subTest(scenario=scenario):

@@ -10,6 +10,30 @@ HARNESS = ROOT / "tests" / "fixtures" / "extension" / "content_harness.js"
 
 
 class ExtensionContentTests(unittest.TestCase):
+    def test_legacy_install_marker_does_not_block_versioned_listener_upgrade(self):
+        response = self._collect("installation_legacy_upgrade")
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["content_script_version"], "2")
+        self.assertEqual(response["scan_versions"], ["2", "3"])
+        self.assertEqual(response["listener_count"], 1)
+
+    def test_same_content_script_version_replaces_listener_without_duplication(self):
+        response = self._collect("installation_reinject")
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["content_script_version"], "2")
+        self.assertEqual(response["listener_count"], 1)
+
+    def test_versioned_scan_messages_ignore_legacy_listener_contracts(self):
+        selected = self._collect("versioned_selected_message")
+        page = self._collect("versioned_page_message")
+
+        self.assertEqual(selected["scan_version"], "2")
+        self.assertEqual(len(selected["records"]), 1)
+        self.assertEqual(page["scan_version"], "3")
+        self.assertEqual(page["candidate_count"], 1)
+
     def test_hidden_cards_are_ignored_without_viewport_filtering(self):
         response = self._collect("hidden_cards")
 
@@ -84,6 +108,24 @@ class ExtensionContentTests(unittest.TestCase):
         self.assertEqual(posting["availability"], "active")
         self.assertEqual(posting["apply_mode"], "external")
         self.assertEqual(posting["observation_state"], "external_apply_observed")
+
+    def test_external_apply_button_reads_sanitized_data_target(self):
+        record = self._collect("evidence_external_button_target")["records"][0]
+
+        self.assertEqual(
+            record["external_apply_url"],
+            "https://careers.evidence.example/jobs/808?source=linkedin",
+        )
+        self.assertEqual(
+            record["source_trace"]["linkedin_posting"]["observation_state"],
+            "external_apply_observed",
+        )
+
+    def test_external_apply_button_rejects_private_and_sensitive_data_targets(self):
+        record = self._collect("evidence_external_button_unsafe_target")["records"][0]
+
+        self.assertIsNone(record["external_apply_url"])
+        self.assertEqual(record["source_trace"]["linkedin_posting"]["apply_mode"], "external")
 
     def test_explicit_closed_banner_emits_closed_evidence(self):
         posting = self._collect("evidence_closed")["records"][0]["source_trace"][

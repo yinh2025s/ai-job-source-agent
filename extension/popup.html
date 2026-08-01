@@ -12,7 +12,7 @@
         <p class="eyebrow">LinkedIn pipeline</p>
         <h1>Job Source Agent</h1>
       </div>
-      <span id="bridgeState" class="state" data-state="idle">Offline</span>
+      <span id="bridgeState" class="state" data-state="busy">Connecting</span>
     </header>
 
     <main id="popupRoot" aria-busy="false">
@@ -25,7 +25,7 @@
       <section class="scan-summary" aria-live="polite">
         <strong id="recordCount">0</strong>
         <span>jobs ready</span>
-        <span id="applyCount" class="muted">0 Apply URLs</span>
+        <span id="applyCount" class="muted">0 direct Apply URLs</span>
       </section>
 
       <section id="scanPanel" class="scan-panel" aria-live="polite" hidden>
@@ -54,7 +54,7 @@
       <p id="message" class="message" role="status" aria-live="polite"></p>
 
       <details>
-        <summary>Connection</summary>
+        <summary>Advanced connection</summary>
         <label>
           Bridge URL
           <input id="bridgeUrl" type="url" value="http://127.0.0.1:8765" spellcheck="false">

@@ -7,41 +7,56 @@ logged-in Chrome session.
 ## Preconditions
 
 - Chrome is logged into LinkedIn and the AI Job Source Agent unpacked extension is installed.
-- The extension card in `chrome://extensions` shows version `0.4.1` after **Reload**.
-- The local bridge is running with an explicit token:
+- The extension card in `chrome://extensions` shows version `0.6.2` after **Reload**.
+- The unpacked extension is loaded before the local bridge starts.
+- Start the local bridge without supplying or copying a token:
 
 ```bash
-JOB_SOURCE_BRIDGE_TOKEN="replace-with-a-local-secret" \
-  python3.12 -m scripts.extension_bridge --port 8765 --workers 2 --fetch-timeout 8
+make extension-bridge PYTHON=python3.12
 ```
 
 Do not paste cookies, LinkedIn HTML, access tokens, or the bridge token into an issue or committed
 artifact.
 
+Automatic pairing is process-local and first-Origin-wins. An unclaimed bridge may wait for the
+reviewer, but generated credentials must not appear in terminal output, popup messages, backend
+artifacts, or the release archive. After the first claim, another extension Origin must fail closed;
+the bridge must never fall back to a shared token.
+
 ## Acceptance Run
 
 1. Open a LinkedIn Jobs search page with a visible selected job detail.
-2. Open the extension, expand **Connection**, enter `http://127.0.0.1:8765` and the matching token,
-   then select **Save connection**. The state must become **Online**.
-3. Select **Scan selected** once. The popup must remain responsive, report exactly one job, and must
+2. Open the extension at any time while the bridge is running. It must move from **Connecting** to
+   **Online** without opening Advanced connection or entering a URL/token.
+3. Close and reopen the popup. It must reuse the saved credential and must not call the pairing
+   endpoint again while health succeeds.
+4. Restart the bridge, then reopen the popup during the new window. A stale credential must produce
+   one automatic re-pair followed by successful health; no stale run may be submitted.
+5. Select **Scan selected** once. The popup must remain responsive, report exactly one job, and must
    not merge other search cards into the selected job. A DOM-observed External Apply link must be
    immediately usable without waiting for backend verification. If LinkedIn exposes only an external
    Apply button without its destination, the popup must report that observation without inventing a URL.
-4. Compare the first scanned selected job with the visible LinkedIn detail: company, title and job
+6. Compare the first scanned selected job with the visible LinkedIn detail: company, title and job
    identity must refer to the same posting. An External Apply count may be zero.
-5. Select **Scan page**. Progress must advance over the current loaded batch, footer/filter controls
+7. Close and reopen the popup after the selected scan. The same identity-bound record and Apply count
+   must reappear, and **Verify source** must remain enabled. Changing the active LinkedIn tab or selected
+   `currentJobId` must not restore an unrelated saved record.
+8. Select **Scan page**. Progress must advance over the current loaded batch, footer/filter controls
    must not become jobs, cancellation must recover the controls, and completion must restore the
    originally selected job. Jobs whose matching detail exposes an external Apply must each retain their
    own URL; native Apply and bounded hydration timeouts may honestly have none. The result count is
    bounded at 30 and is not the total LinkedIn search count.
-6. Select optional **Verify source** once. A run must be queued without duplicate submissions; the
+9. Select optional **Verify source** once. A run must be queued without duplicate submissions; the
    immediate Apply link remains the primary path and verification may continue in the background.
-7. Close and reopen the popup while the run is queued or running. The saved run must resume polling
+   A multi-record run must display monotonic progress such as `Running 7/25`, not only an unchanging
+   `Running` label. Both scan controls must remain disabled until the run reaches a terminal state so
+   a new scan cannot discard the active run identity.
+10. Close and reopen the popup while the run is queued or running. The saved run must resume polling
    or allow **Refresh**; it must not create a new run.
-8. When complete, verify rates are between 0% and 100%. Open one displayed **Exact opening** or
+11. When complete, verify rates are between 0% and 100%. Open one displayed **Exact opening** or
    **Job list** link and confirm it is a public HTTPS page for the same company or verified hiring
    entity. A reason code instead of a link is an acceptable typed failure.
-9. Record only the run ID, final status, counts, and artifact directory. Do not commit the generated
+12. Record only the run ID, final status, counts, and artifact directory. Do not commit the generated
    run directory, cache, token, authenticated page, or browser storage.
 
 ## Pass Criteria
@@ -51,6 +66,8 @@ artifact.
 - The selected detail record has one coherent LinkedIn job identity; no competing card is merged
   into it.
 - No duplicate POST is created by repeated clicks, and no unsafe/private URL is rendered as a link.
+- Whole runs remain serialized and one run uses no more than four company workers; displayed progress
+  never exceeds the submitted count.
 - A successful result link is manually confirmed against the company/hiring-entity identity. A
   normal typed no-match or partial result does not fail the plugin workflow.
 
@@ -64,6 +81,8 @@ page. Classify the failure before changing code:
 - `dom_selector`: visible fields or Apply state missing.
 - `readiness`: LinkedIn content still loading after the bounded retry.
 - `bridge_connection`: offline, timeout, rejected token, or stale run.
+- `pairing`: invalid client contract, claimed Origin conflict, malformed response, or a configured
+  finite pairing window that expired.
 - `response_contract`: malformed or incompatible bridge payload.
 - `rendering`: valid result not displayed or unsafe result displayed as a link.
 
@@ -92,3 +111,14 @@ the popup restored that run, which then rendered `Complete` with the honest type
 `43490fdb72864fa0b3eaf8fb88ba1f24` wrote only local temporary artifacts, which are excluded from
 the repository and release package. Version `0.4.1` contains the same accepted behavior and only
 advances release metadata.
+
+Later on 2026-08-01, the zero-config bootstrap was exercised against extension `0.6.1`: the popup
+auto-paired without an entered URL or token, and the already-open LinkedIn tab completed a 25-record
+page scan after the versioned content-script upgrade. A real 25-record Verify run
+`853117ab8a544235b19abc3883b39e08` reached a terminal backend artifact with 16 verified Job Lists
+and 9 verified openings. This acceptance exposed one presentation-state race: starting another scan
+while Verify was active discarded popup tracking even though the backend completed. Extension
+`0.6.2` locks both scan controls for the lifetime of an active run; the regression is covered by the
+focused popup gate. After the final Reload, the user visually confirmed `0.6.2` as **Online** with all
+25 tab-scoped records restored and no stale `Running` state. This closes the manual extension gate;
+the 9/25 opening result describes this one visible LinkedIn page, not generalization performance.

@@ -43,14 +43,20 @@ ai-job-source-agent --help
 
 ### Authenticated LinkedIn Extension
 
-The `extension/` directory contains the accepted Chrome Manifest V3 client.
-Start the loopback bridge with a local token, load `extension/` as an unpacked
-extension, and save the same URL/token under **Connection**:
+The `extension/` directory contains the Chrome Manifest V3 client. Load
+`extension/` as an unpacked extension, then start the local agent from the
+repository root:
 
 ```bash
-JOB_SOURCE_BRIDGE_TOKEN="replace-with-a-local-secret" \
-  python3.12 -m scripts.extension_bridge --port 8765 --workers 2 --fetch-timeout 8
+make extension-bridge PYTHON=python3.12
 ```
+
+Open the popup at any time while the bridge is running. The extension finds
+`http://127.0.0.1:8765`, claims the unpaired local process, receives a random
+process-local credential, verifies health, and becomes **Online** without asking
+for a URL or token. The first valid extension Origin remains pinned for that
+process. Custom ports and explicit tokens remain available under **Advanced
+connection**.
 
 On a logged-in LinkedIn Jobs page, **Scan selected** reads only the selected
 posting, **Scan page** visits at most 30 identity-bearing cards, and **Verify
@@ -306,11 +312,14 @@ make offline-gates PYTHON=python3.12
 git diff --check
 ```
 
-Network benchmarks, repeat authenticated LinkedIn extension acceptance, and
+Network benchmarks, authenticated LinkedIn extension acceptance, and
 sealed holdouts are separate serial gates. They are not required to run the
 deterministic offline demo and are not replaced by fixtures. Extension `0.4.0`
-completed its logged-in Chrome acceptance on 2026-08-01; `0.4.1` promotes the
-same accepted behavior with release metadata only.
+completed the scan/run logged-in gate on 2026-08-01; extension `0.5.1` adds
+automatic local pairing and restores a bounded, tab-scoped scan snapshot when
+the popup is reopened. Extension `0.6.2` adds bounded company-level execution
+and visible `completed/submitted` progress. It has its own focused acceptance
+checklist.
 
 ## Beta Boundary
 

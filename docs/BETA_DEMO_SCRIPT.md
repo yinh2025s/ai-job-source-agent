@@ -127,4 +127,4 @@ Say:
 它证明同一产品 pipeline、adapter、identity gate 和输出 contract 可以确定性运行；它不证明实时网页覆盖率，真实覆盖由独立 live measurement 报告。
 
 **插件现在能用吗？**
-可以。`0.4.0` 已在真实登录态 LinkedIn 完成单岗位扫描、25/25 整页扫描、提交、运行态、弹窗重开恢复和结果渲染验收；`0.4.1` 只推进发布元数据。当前样本的 External Apply 按钮没有暴露安全目标 URL，因此插件诚实显示 target unavailable，后端返回 typed failure；这证明工作流可用，不代表 External Apply URL 覆盖率或 Exact 成功率。
+可以。`0.4.0` 已在真实登录态 LinkedIn 完成单岗位扫描、25/25 整页扫描、提交、运行态、弹窗重开恢复和结果渲染验收。当前 `0.6.2` 进一步自动连接本地 bridge、恢复已扫描记录，并把多岗位验证显示成 `Running 7/25` 这类真实进度；同一批最多四家公司并发。DOM 暴露安全 External Apply 目标时插件直接显示超链接；只有按钮而没有 URL 时会明确说明 LinkedIn 未暴露目标，不会猜链接。这证明工作流可用，不代表 External Apply URL 覆盖率或 Exact 成功率。

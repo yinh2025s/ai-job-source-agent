@@ -273,12 +273,31 @@ navigation 和显式 same-site job portal 放在 speculative route family 之前
 
 `extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。Search SPA 的详情证据必须绑定当前 `currentJobId` 或 detail root 的明确 job identity，不能把竞争 card 或 stale root 的 company/title/apply 组合到当前职位。Content response 使用 scan contract v2 的 `ready/not_ready`，popup 只进行有界 readiness retry。
 
-`scripts/extension_bridge.py` 只绑定 loopback，使用 bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。Popup 只接受无 path/query/fragment/credential 的 `http://127.0.0.1:<port>`，请求有超时、重复操作保护、有限 polling recovery 和 stale-run 清理；展示层只链接 public HTTPS 结果。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
+`scripts/extension_bridge.py` 只绑定 loopback，使用 process-local bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。ADR-0037 的默认 bootstrap 会持续等待首个合法 extension Origin 领取随机 token，随后把 CORS 与 extension 请求绑定到该 Origin；token 不打印、不进入 artifact，其他 Origin 不能重新 claim。普通网页 Origin 不能配对；需要更严格本地安装边界时仍可使用 explicit token。Popup 只探测无 path/query/fragment/credential 的 `http://127.0.0.1:8765`，严格验证 pairing/health response，并把 custom port/explicit token 留作 Advanced fallback。请求有超时、重复操作保护、有限 polling recovery 和 stale-run 清理；展示层只链接 public HTTPS 结果。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
+
+Popup 关闭会销毁其 JavaScript context，因此成功扫描后会把至多 30 条结构化 S1 record
+保存为带 schema version 和 6 小时 TTL 的本地 scan snapshot。恢复时必须同时匹配 Chrome tab ID
+与 LinkedIn Jobs context；selected scan 在 URL 可见 `currentJobId` 时还必须匹配同一 job ID，page scan
+只允许同一搜索 context。无效、过期或同 tab 已导航的 snapshot 会被删除，其他 tab 的 snapshot 不会
+被渲染。Snapshot 不包含 cookie、authenticated HTML 或 bridge token，不能成为新的 provider 或身份
+证据来源。
+
+Extension bridge 只允许一个完整 run 进入执行器；同一 run 内按 ADR-0038 使用至多四个
+company worker，每个 worker 构建隔离的 `PipelineApplication`，共享 evidence store 继续依赖
+进程锁和原子写。Run contract 区分 `queued/running/complete/failed`，并返回单调递增的
+`completed/submitted`，popup 据此显示真实批次进度。该并发只服务本地插件，不改变 live benchmark
+的串行规则，也不改变任何 provider、tenant 或 S7 gate。
+
+External Apply 目标仍是被动证据：可见且 enabled 的外链控件只有在 DOM 明确暴露 `href`、
+`formaction` 或受限 data target 属性，并通过 public URL、credential、private-host、LinkedIn redirect
+与 sensitive-query 清洗后，才会成为 popup 超链接。仅有 `button role=link` 和 company-website label
+时只报告控件存在，不编造目标 URL。
 
 Extension scan v3 将即时 selected-detail 与当前批次 page scan 分开。Page scan 只消费
-`data-testid=lazy-column` 内 visible/enabled、具有至少三项可见 card metadata 的 job-card，先冻结
-title/company/location，再串行触发站内选择并观察新的 `currentJobId`；没有 observed job ID 就不生成
-record。每轮最多 30 条，支持 progress/cancel、去重与原选择恢复。它不读取 cookie、LinkedIn API、
+具有 `data-occludable-job-id` 或受限 lazy-column identity 的 visible/enabled job-card；空的虚拟滚动
+shell 会先做有界 scroll hydration，再冻结 title/company/location，串行触发站内选择并观察新的
+`currentJobId`；没有 observed job ID 就不生成 record。每轮最多 30 条，支持 progress/cancel、去重与
+原选择恢复；单张 malformed/timeout card 只形成 partial failure，不得清空整批。它不读取 cookie、LinkedIn API、
 React internals、raw HTML 或 browser storage，也不翻页并声称覆盖全部搜索结果。Detail 已在小预算内
 完成时可以合并同 identity Apply evidence。每个 identity 最多等待约 1.2 秒，直到 external、native 或
 closed 状态明确；超时保留 listed/unknown，由 Selected scan 或后端继续处理。

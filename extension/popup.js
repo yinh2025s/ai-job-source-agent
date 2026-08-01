@@ -4,6 +4,19 @@ const SCAN_RETRY_DELAY_MS = 350;
 const MAX_SCAN_RETRIES = 2;
 const MAX_POLL_RETRIES = 2;
 const PAGE_SCAN_WATCHDOG_MS = 60000;
+const DEFAULT_BRIDGE_URL = "http://127.0.0.1:8765";
+const PAIR_CLIENT = "ai-job-source-agent-extension";
+const PAIR_PROTOCOL_VERSION = "1";
+const MIN_PAIR_TOKEN_LENGTH = 32;
+const SCAN_SNAPSHOT_KEY = "scanSnapshot";
+const SCAN_SNAPSHOT_VERSION = "1";
+const SCAN_SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
+const MAX_STORED_RECORDS = 30;
+const CONTENT_SCRIPT_VERSION = "2";
+const CONTENT_STATUS_MESSAGE = "job_source_agent_content_status";
+const SELECTED_SCAN_MESSAGE = "collect_job_source_records_v1";
+const PAGE_SCAN_MESSAGE = "collect_job_source_page_v1";
+const CANCEL_PAGE_SCAN_MESSAGE = "cancel_job_source_page_v1";
 
 const state = {
   records: [],
@@ -32,8 +45,8 @@ function syncBusyUi() {
   const busy = hasBusyOperation();
   const pageScanActive = Boolean(state.pageScan);
   $("popupRoot").setAttribute("aria-busy", String(busy));
-  $("scanSelectedButton").disabled = busy;
-  $("scanPageButton").disabled = busy && !pageScanActive;
+  $("scanSelectedButton").disabled = busy || state.runInFlight;
+  $("scanPageButton").disabled = state.runInFlight || (busy && !pageScanActive);
   $("scanPageButton").textContent = pageScanActive ? "Cancel scan" : "Scan page";
   $("runButton").disabled = busy || state.records.length === 0 || state.runInFlight;
   $("runButton").textContent = state.runInFlight ? "Verifying..." : "Verify source";
@@ -71,10 +84,10 @@ function normalizeBridgeUrl(rawUrl) {
   return `http://127.0.0.1:${port}`;
 }
 
-function bridgeConnection() {
+function bridgeConnection({ requireToken = true } = {}) {
   const url = normalizeBridgeUrl($("bridgeUrl").value);
   const token = $("bridgeToken").value.trim();
-  if (!token) throw new Error("Enter a bridge token before connecting.");
+  if (requireToken && !token) throw new Error("Enter a bridge token before connecting.");
   return { url, token, key: `${url}\n${token}` };
 }
 
@@ -94,8 +107,8 @@ class BridgeRequestError extends Error {
   }
 }
 
-async function bridgeFetch(path, options = {}) {
-  const { url, token } = bridgeConnection();
+async function bridgeRequest(path, options = {}, { authenticated = true } = {}) {
+  const { url, token } = bridgeConnection({ requireToken: authenticated });
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), BRIDGE_TIMEOUT_MS);
   let response;
@@ -104,7 +117,7 @@ async function bridgeFetch(path, options = {}) {
       ...options,
       signal: controller.signal,
       headers: {
-        Authorization: `Bearer ${token}`,
+        ...(authenticated ? { Authorization: `Bearer ${token}` } : {}),
         "Content-Type": "application/json",
         ...(options.headers || {}),
       },
@@ -126,6 +139,36 @@ async function bridgeFetch(path, options = {}) {
   return payload;
 }
 
+async function bridgeFetch(path, options = {}) {
+  return bridgeRequest(path, options, { authenticated: true });
+}
+
+function validPairResponse(payload) {
+  const expectedKeys = ["protocol_version", "status", "token"];
+  if (!isObject(payload)
+    || JSON.stringify(Object.keys(payload).sort()) !== JSON.stringify(expectedKeys)
+    || payload.status !== "paired"
+    || payload.protocol_version !== PAIR_PROTOCOL_VERSION
+    || typeof payload.token !== "string") return false;
+  return payload.token.length >= MIN_PAIR_TOKEN_LENGTH
+    && payload.token.length <= 128
+    && /^[A-Za-z0-9_-]+$/.test(payload.token);
+}
+
+async function pairBridge() {
+  const payload = await bridgeRequest("/v1/pair", {
+    method: "POST",
+    body: JSON.stringify({ client: PAIR_CLIENT, protocol_version: PAIR_PROTOCOL_VERSION }),
+  }, { authenticated: false });
+  if (!validPairResponse(payload)) throw new Error("Bridge pairing response was invalid.");
+  const connection = bridgeConnection({ requireToken: false });
+  const token = payload.token.trim();
+  $("bridgeUrl").value = connection.url;
+  $("bridgeToken").value = token;
+  await chrome.storage.local.set({ bridgeUrl: connection.url, bridgeToken: token });
+  state.connectionKey = `${connection.url}\n${token}`;
+}
+
 function clearRunOutput() {
   $("runPanel").hidden = true;
   $("runStatus").textContent = "Queued";
@@ -137,11 +180,15 @@ function clearRunOutput() {
 function clearScanOutput() {
   state.records = [];
   $("recordCount").textContent = "0";
-  $("applyCount").textContent = "0 Apply URLs";
+  $("applyCount").textContent = "0 direct Apply URLs";
   $("scanPanel").hidden = true;
   $("scanResults").replaceChildren();
   clearRunOutput();
   syncBusyUi();
+}
+
+async function forgetScanSnapshot() {
+  await chrome.storage.local.remove(SCAN_SNAPSHOT_KEY);
 }
 
 async function clearStaleRun({ preserveInFlight = false } = {}) {
@@ -156,6 +203,103 @@ async function clearStaleRun({ preserveInFlight = false } = {}) {
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function linkedInJobsUrl(value) {
+  try {
+    const parsed = new URL(value);
+    if (parsed.protocol !== "https:" || parsed.hostname !== "www.linkedin.com"
+      || !parsed.pathname.startsWith("/jobs/")) return null;
+    parsed.hash = "";
+    parsed.searchParams.sort();
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function linkedInJobId(value) {
+  const parsed = linkedInJobsUrl(value);
+  if (!parsed) return null;
+  const queryId = parsed.searchParams.get("currentJobId");
+  if (/^\d+$/.test(queryId || "")) return queryId;
+  const pathMatch = parsed.pathname.match(/^\/jobs\/view\/(\d+)(?:\/|$)/);
+  return pathMatch ? pathMatch[1] : null;
+}
+
+function pageScanContext(value) {
+  const parsed = linkedInJobsUrl(value);
+  if (!parsed) return null;
+  parsed.searchParams.delete("currentJobId");
+  parsed.searchParams.sort();
+  return parsed.href;
+}
+
+function selectedSnapshotJobId(snapshot) {
+  for (const record of snapshot.records) {
+    const jobId = linkedInJobId(record.linkedin_job_url);
+    if (jobId) return jobId;
+  }
+  return linkedInJobId(snapshot.page_url);
+}
+
+function validScanSnapshot(snapshot) {
+  if (!isObject(snapshot) || snapshot.schema_version !== SCAN_SNAPSHOT_VERSION
+    || !["selected", "page"].includes(snapshot.mode)
+    || !Number.isInteger(snapshot.tab_id) || snapshot.tab_id <= 0
+    || !linkedInJobsUrl(snapshot.page_url)
+    || !Number.isFinite(snapshot.saved_at)
+    || !Array.isArray(snapshot.records) || snapshot.records.length === 0
+    || snapshot.records.length > MAX_STORED_RECORDS
+    || !snapshot.records.every(isObject)) return false;
+  const age = Date.now() - snapshot.saved_at;
+  return age >= 0 && age <= SCAN_SNAPSHOT_TTL_MS;
+}
+
+function scanSnapshotMatchesTab(snapshot, tab) {
+  if (!tab?.id || snapshot.tab_id !== tab.id) return false;
+  if (snapshot.mode === "page") {
+    return pageScanContext(snapshot.page_url) === pageScanContext(tab.url);
+  }
+  const snapshotJobId = selectedSnapshotJobId(snapshot);
+  const activeJobId = linkedInJobId(tab.url);
+  if (activeJobId) return Boolean(snapshotJobId && activeJobId === snapshotJobId);
+  return linkedInJobsUrl(snapshot.page_url)?.href === linkedInJobsUrl(tab.url)?.href;
+}
+
+async function saveScanSnapshot(tab, pageUrl, mode) {
+  if (state.records.length === 0) {
+    await forgetScanSnapshot();
+    return;
+  }
+  await chrome.storage.local.set({
+    [SCAN_SNAPSHOT_KEY]: {
+      schema_version: SCAN_SNAPSHOT_VERSION,
+      mode,
+      tab_id: tab.id,
+      page_url: pageUrl,
+      saved_at: Date.now(),
+      records: state.records,
+    },
+  });
+}
+
+async function restoreScanSnapshot(snapshot) {
+  if (snapshot === undefined) return;
+  if (!validScanSnapshot(snapshot)) {
+    await forgetScanSnapshot();
+    return;
+  }
+  const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+  if (!scanSnapshotMatchesTab(snapshot, tab)) {
+    if (tab?.id === snapshot.tab_id) await forgetScanSnapshot();
+    return;
+  }
+  state.records = snapshot.records;
+  $("recordCount").textContent = String(state.records.length);
+  $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} direct Apply URLs`;
+  renderScannedRecords();
+  syncBusyUi();
 }
 
 function validScanResponse(payload) {
@@ -179,51 +323,110 @@ function validPageScanResponse(payload) {
 }
 
 async function loadSettings() {
-  const saved = await chrome.storage.local.get(["bridgeUrl", "bridgeToken", "runId"]);
-  if (saved.bridgeUrl) $("bridgeUrl").value = saved.bridgeUrl;
+  const saved = await chrome.storage.local.get(["bridgeUrl", "bridgeToken", "runId", SCAN_SNAPSHOT_KEY]);
+  $("bridgeUrl").value = saved.bridgeUrl || DEFAULT_BRIDGE_URL;
   if (saved.bridgeToken) $("bridgeToken").value = saved.bridgeToken;
   state.runId = typeof saved.runId === "string" && saved.runId ? saved.runId : null;
   state.runInFlight = Boolean(state.runId);
+  await restoreScanSnapshot(saved[SCAN_SNAPSHOT_KEY]);
   try {
     state.connectionKey = bridgeConnection().key;
   } catch {
     state.connectionKey = null;
   }
   syncBusyUi();
-  await checkHealth();
-  if (state.runId) await pollRun();
+  const connected = await connectOnStartup();
+  if (connected && state.runId) await pollRun();
 }
 
-async function checkHealth() {
+async function requestHealth() {
+  const payload = await bridgeFetch("/v1/health");
+  if (!isObject(payload) || payload.status !== "ok") {
+    throw new BridgeRequestError("Bridge health response was invalid.");
+  }
+  return true;
+}
+
+async function connectOnStartup() {
+  setBridgeState("Connecting", "busy");
+  setMessage();
   try {
-    const payload = await bridgeFetch("/v1/health");
-    if (!isObject(payload) || payload.status !== "ok") throw new Error("Bridge health response was invalid.");
+    const hasSavedToken = Boolean($("bridgeToken").value.trim());
+    if (hasSavedToken) {
+      try {
+        await requestHealth();
+      } catch (error) {
+        if (!(error instanceof BridgeRequestError) || ![401, 403].includes(error.status)) throw error;
+        await pairBridge();
+        await requestHealth();
+      }
+    } else {
+      await pairBridge();
+      await requestHealth();
+    }
     setBridgeState("Online", "online");
     return true;
   } catch (error) {
     setBridgeState("Offline", "error");
-    setMessage(error.message);
+    if (error instanceof BridgeRequestError && error.status === 0) {
+      setMessage("Bridge unavailable.");
+    } else if (error instanceof BridgeRequestError && error.status === 410) {
+      setMessage("Restart the local agent to pair again.");
+    } else if (error instanceof BridgeRequestError && error.status === 409) {
+      setMessage("Local agent is paired with another extension.");
+    } else if (error instanceof BridgeRequestError && error.status === 403
+      && error.message === "pairing_disabled") {
+      setMessage("Enter the explicit token under Advanced connection.");
+    } else {
+      setMessage(error.message || "Bridge unavailable.");
+    }
     return false;
   }
 }
 
-async function sendContentMessage(tabId, message) {
-  let response;
+async function checkHealth() {
   try {
-    response = await chrome.tabs.sendMessage(tabId, message);
-  } catch {
-    try {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
-      response = await chrome.tabs.sendMessage(tabId, message);
-    } catch (error) {
-      throw new Error(`Page scan failed: ${error?.message || "content script injection failed."}`);
-    }
+    await requestHealth();
+    setBridgeState("Online", "online");
+    return true;
+  } catch (error) {
+    setBridgeState("Offline", "error");
+    setMessage(error.message || "Bridge unavailable.");
+    return false;
   }
-  return response;
+}
+
+function validContentStatus(payload, requiredScanVersion) {
+  return isObject(payload) && payload.ok === true
+    && payload.content_script_version === CONTENT_SCRIPT_VERSION
+    && Array.isArray(payload.scan_versions)
+    && payload.scan_versions.includes(requiredScanVersion);
+}
+
+async function readContentStatus(tabId) {
+  try {
+    return await chrome.tabs.sendMessage(tabId, { type: CONTENT_STATUS_MESSAGE });
+  } catch {
+    return null;
+  }
+}
+
+async function ensureContentScript(tabId, requiredScanVersion) {
+  const current = await readContentStatus(tabId);
+  if (validContentStatus(current, requiredScanVersion)) return;
+  try {
+    await chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] });
+  } catch (error) {
+    throw new Error(`Page scan failed: ${error?.message || "content script injection failed."}`);
+  }
+  const upgraded = await readContentStatus(tabId);
+  if (!validContentStatus(upgraded, requiredScanVersion)) {
+    throw new Error("LinkedIn page scanner could not be updated. Reload the page and try again.");
+  }
 }
 
 async function requestSelectedScan(tabId, attempt = 0) {
-  const response = await sendContentMessage(tabId, { type: "collect_job_source_records" });
+  const response = await chrome.tabs.sendMessage(tabId, { type: SELECTED_SCAN_MESSAGE });
   if (!validScanResponse(response)) throw new Error("Page scan returned an invalid response.");
   if (response.state === "not_ready") {
     if (attempt < MAX_SCAN_RETRIES) {
@@ -237,20 +440,23 @@ async function requestSelectedScan(tabId, attempt = 0) {
 }
 
 async function scanSelected() {
-  if (hasBusyOperation()) return;
+  if (hasBusyOperation() || state.runInFlight) return;
   setBusy("selectedScan", true);
   clearScanOutput();
   setMessage();
   try {
+    await forgetScanSnapshot();
     await clearStaleRun();
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
     if (!tab?.id || !tab.url?.startsWith("https://www.linkedin.com/jobs/")) {
       throw new Error("Open a LinkedIn Jobs page first.");
     }
+    await ensureContentScript(tab.id, "2");
     const response = await requestSelectedScan(tab.id);
     state.records = response.records;
+    await saveScanSnapshot(tab, response.page_url, "selected");
     $("recordCount").textContent = String(state.records.length);
-    $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} Apply URLs`;
+    $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} direct Apply URLs`;
     renderScannedRecords();
     if (response.state === "partial") {
       setMessage("Selected job found, but its detail panel was not fully observed.");
@@ -285,7 +491,7 @@ async function cancelPageScan({ watchdog = false } = {}) {
       setMessage(watchdog ? "Page scan timed out and was cancelled." : "Scan cancelled.");
       return;
     }
-    const response = await chrome.tabs.sendMessage(pageScan.tabId, { type: "cancel_job_source_page" });
+    const response = await chrome.tabs.sendMessage(pageScan.tabId, { type: CANCEL_PAGE_SCAN_MESSAGE });
     if (!isObject(response) || response.ok !== true || typeof response.cancelled !== "boolean") {
       throw new Error("Page scan cancellation returned an invalid response.");
     }
@@ -300,7 +506,7 @@ async function cancelPageScan({ watchdog = false } = {}) {
 function renderPageScan(response) {
   state.records = response.records;
   $("recordCount").textContent = String(state.records.length);
-  $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} Apply URLs`;
+  $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} direct Apply URLs`;
   renderScannedRecords();
   if (response.state === "partial") {
     const missingDetails = Number.isInteger(response.detail_not_observed_count)
@@ -324,13 +530,14 @@ async function scanLoadedPage() {
     await cancelPageScan();
     return;
   }
-  if (hasBusyOperation()) return;
+  if (hasBusyOperation() || state.runInFlight) return;
   const pageScan = { id: state.nextPageScanId++, tabId: null, watchdogTimer: null, cancelling: false };
   state.pageScan = pageScan;
   setBusy("pageScan", true);
   clearScanOutput();
   setMessage();
   try {
+    await forgetScanSnapshot();
     await clearStaleRun();
     if (!pageScanIsActive(pageScan.id)) return;
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
@@ -340,12 +547,15 @@ async function scanLoadedPage() {
     }
     pageScan.tabId = tab.id;
     pageScan.watchdogTimer = setTimeout(() => { cancelPageScan({ watchdog: true }); }, PAGE_SCAN_WATCHDOG_MS);
-    const response = await sendContentMessage(tab.id, { type: "collect_job_source_page" });
+    await ensureContentScript(tab.id, "3");
+    const response = await chrome.tabs.sendMessage(tab.id, { type: PAGE_SCAN_MESSAGE });
     if (!pageScanIsActive(pageScan.id)) return;
     if (!validPageScanResponse(response)) throw new Error("Page scan returned an invalid response.");
     if (!response.ok && response.state !== "partial" && response.state !== "cancelled") {
       throw new Error(payloadMessage(response, "Page scan failed."));
     }
+    state.records = response.records;
+    await saveScanSnapshot(tab, response.page_url, "page");
     renderPageScan(response);
   } catch (error) {
     if (pageScanIsActive(pageScan.id)) setMessage(error.message || "Page scan failed.");
@@ -366,7 +576,25 @@ function validSubmission(payload) {
   const statuses = new Set(["queued", "running", "complete", "failed"]);
   return isObject(payload) && typeof payload.run_id === "string" && payload.run_id.length > 0
     && statuses.has(payload.status)
+    && validRunProgress(payload)
     && (payload.status !== "failed" || payload.error === undefined || typeof payload.error === "string");
+}
+
+function validRunProgress(payload) {
+  const hasSubmitted = payload.submitted !== undefined;
+  const hasCompleted = payload.completed !== undefined;
+  if (!hasSubmitted && !hasCompleted) return true;
+  return hasSubmitted && hasCompleted
+    && Number.isInteger(payload.submitted) && payload.submitted > 0 && payload.submitted <= 30
+    && Number.isInteger(payload.completed) && payload.completed >= 0
+    && payload.completed <= payload.submitted;
+}
+
+function runStatusLabel(payload) {
+  const label = payload.status.charAt(0).toUpperCase() + payload.status.slice(1);
+  return payload.submitted !== undefined
+    ? `${label} ${payload.completed}/${payload.submitted}`
+    : label;
 }
 
 async function runDiscovery() {
@@ -390,7 +618,7 @@ async function runDiscovery() {
     state.pollRetries = 0;
     await chrome.storage.local.set({ runId: state.runId });
     $("runPanel").hidden = false;
-    $("runStatus").textContent = payload.status.charAt(0).toUpperCase() + payload.status.slice(1);
+    $("runStatus").textContent = runStatusLabel(payload);
   } catch (error) {
     state.runInFlight = false;
     $("runStatus").textContent = "Submission failed";
@@ -404,7 +632,8 @@ async function runDiscovery() {
 
 function validRunResponse(payload, runId) {
   const statuses = new Set(["queued", "running", "complete", "failed"]);
-  if (!isObject(payload) || payload.run_id !== runId || !statuses.has(payload.status)) return false;
+  if (!isObject(payload) || payload.run_id !== runId || !statuses.has(payload.status)
+    || !validRunProgress(payload)) return false;
   if (payload.status === "complete") {
     return isObject(payload.summary) && isObject(payload.summary.rates)
       && Number.isFinite(payload.summary.rates.job_list)
@@ -440,7 +669,7 @@ async function pollRun() {
     if (!validRunResponse(payload, runId)) throw new Error("Bridge returned an invalid run response.");
     state.pollRetries = 0;
     $("runPanel").hidden = false;
-    $("runStatus").textContent = payload.status.charAt(0).toUpperCase() + payload.status.slice(1);
+    $("runStatus").textContent = runStatusLabel(payload);
     if (payload.status === "complete") {
       state.runInFlight = false;
       renderCompletedRun(payload);
@@ -451,15 +680,20 @@ async function pollRun() {
       setMessage(payload.error || "Discovery failed.");
     } else {
       state.runInFlight = true;
-      setBridgeState("Running", "busy");
+      setBridgeState(payload.status === "queued" ? "Queued" : "Running", "busy");
       schedulePoll();
     }
   } catch (error) {
     if (state.runId !== runId) return;
-    if (error instanceof BridgeRequestError && (error.status === 401 || error.status === 404)) {
+    if (error instanceof BridgeRequestError && error.status === 404) {
+      await clearStaleRun();
+      clearRunOutput();
+      setBridgeState("Online", "online");
+      setMessage("Previous run is no longer available; scanned jobs are still ready.");
+    } else if (error instanceof BridgeRequestError && error.status === 401) {
       await clearStaleRun();
       setBridgeState("Offline", "error");
-      setMessage(error.status === 404 ? "Saved run is no longer available." : "Bridge token was rejected.");
+      setMessage("Bridge token was rejected.");
     } else if (isTransient(error) && state.pollRetries < MAX_POLL_RETRIES) {
       state.pollRetries += 1;
       setBridgeState("Offline", "error");
@@ -531,7 +765,7 @@ function renderScannedRecords() {
       const source = document.createElement("span");
       const observation = record.source_trace?.linkedin_posting?.observation_state;
       source.textContent = {
-        external_apply_observed: "External Apply observed; target unavailable",
+        external_apply_observed: "External Apply button found; LinkedIn exposed no target URL",
         linkedin_native_observed: "LinkedIn native apply",
         closed_observed: "Posting closed",
         detail_observed_but_apply_absent: "Apply control not observed",

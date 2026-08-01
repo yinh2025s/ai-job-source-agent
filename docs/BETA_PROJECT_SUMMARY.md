@@ -122,6 +122,13 @@ This proves the plugin workflow and current DOM contract, not broad External
 Apply URL coverage or an Exact-rate claim. Extension `0.4.1` promotes the same
 accepted behavior with release metadata only.
 
+Extension `0.6.2` keeps that evidence boundary while removing reviewer setup and
+opaque batch waits: it auto-pairs with the local bridge, restores a six-hour
+tab-scoped scan snapshot after popup closure, serializes whole runs, processes
+up to four companies within the active run, and displays monotonic progress such
+as `Running 7/25`. A real External Apply URL is rendered directly when the DOM
+exposes a safe target; a URL-less LinkedIn button remains an explicit observation.
+
 ### Current Development Measurement
 
 最新权威完整 Fresh100 测量使用 adapter `.283`，在 100 条 development cohort

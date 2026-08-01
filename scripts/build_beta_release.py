@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from scripts.scan_artifact_privacy import scan_artifact_root
 
 
-PRODUCT_VERSION = "0.1.0-beta.2"
+PRODUCT_VERSION = "0.1.0-beta.3"
 ROOT_FILES = frozenset(
     {
         ".gitignore",
@@ -60,6 +60,9 @@ DOC_FILES = frozenset(
         "docs/FRESH_100_V283_CURRENT_COLD_GATE_REPORT.md",
         "docs/FROZEN_100_FINAL_REPORT.md",
         "docs/LI_KAI_MESSAGE.md",
+        "docs/adr/0037-auto-pair-local-extension.md",
+        "docs/adr/0038-bound-extension-run-concurrency.md",
+        "docs/adr/README.md",
     }
 )
 FORBIDDEN_PARTS = frozenset(

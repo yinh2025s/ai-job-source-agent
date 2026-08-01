@@ -3,6 +3,8 @@ import tempfile
 import threading
 import time
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,8 +18,10 @@ from job_source_agent.extension_bridge import (
     COMPANY_DISCOVERY_EVIDENCE_FILENAME,
     MAX_RECORDS,
     ExtensionBridgeConfig,
+    ExtensionBridgeServer,
     ExtensionRunManager,
     has_valid_bearer,
+    is_chrome_extension_origin,
     is_allowed_origin,
     validate_loopback_host,
 )
@@ -82,6 +86,7 @@ class ExtensionBridgeTests(unittest.TestCase):
         )
 
         def blocking_execute(run_id, companies):
+            manager._update(run_id, status="running")
             started.set()
             release.wait(timeout=3)
             manager._replace(
@@ -109,6 +114,66 @@ class ExtensionBridgeTests(unittest.TestCase):
                 self._wait_for_run(manager, run_id)
         finally:
             release.set()
+            manager.close()
+
+    def test_manager_parallelizes_companies_and_reports_monotonic_progress(self):
+        manager = ExtensionRunManager(
+            ExtensionBridgeConfig(fetcher=FetcherConfig(offline=True), workers=2)
+        )
+        companies = company_inputs_from_records([
+            {
+                "company_name": "First Systems",
+                "linkedin_job_url": "https://www.linkedin.com/jobs/view/201",
+            },
+            {
+                "company_name": "Second Systems",
+                "linkedin_job_url": "https://www.linkedin.com/jobs/view/202",
+            },
+        ])
+        releases = {
+            "First Systems": threading.Event(),
+            "Second Systems": threading.Event(),
+        }
+        all_started = threading.Event()
+        started: set[str] = set()
+        started_lock = threading.Lock()
+        outcome: list = []
+
+        def discover(company):
+            with started_lock:
+                started.add(company.company_name)
+                if len(started) == 2:
+                    all_started.set()
+            releases[company.company_name].wait(timeout=3)
+            return company.company_name
+
+        run_id = "progress-run"
+        manager._runs[run_id] = {
+            "run_id": run_id,
+            "status": "running",
+            "submitted": 2,
+            "completed": 0,
+        }
+        worker = threading.Thread(
+            target=lambda: outcome.extend(manager._discover_companies(run_id, companies))
+        )
+        try:
+            with patch.object(manager, "_discover_company", side_effect=discover):
+                worker.start()
+                self.assertTrue(all_started.wait(timeout=1))
+                self.assertEqual(manager.get(run_id)["completed"], 0)
+                releases["First Systems"].set()
+                self._wait_for_completed(manager, run_id, 1)
+                self.assertEqual(manager.get(run_id)["completed"], 1)
+                releases["Second Systems"].set()
+                worker.join(timeout=3)
+            self.assertFalse(worker.is_alive())
+            self.assertEqual(manager.get(run_id)["completed"], 2)
+            self.assertEqual(outcome, ["First Systems", "Second Systems"])
+        finally:
+            for release in releases.values():
+                release.set()
+            worker.join(timeout=3)
             manager.close()
 
     def test_manager_background_exception_becomes_queryable_failed_run(self):
@@ -286,7 +351,18 @@ class ExtensionBridgeTests(unittest.TestCase):
 
     def test_bridge_auth_contract_allows_only_extension_origin_and_exact_token(self):
         self.assertTrue(is_allowed_origin(None))
-        self.assertTrue(is_allowed_origin("chrome-extension://abcdefghijklmnop"))
+        origin = "chrome-extension://abcdefghijklmnopabcdefghijklmnop"
+        self.assertTrue(is_chrome_extension_origin(origin))
+        self.assertTrue(is_allowed_origin(origin))
+        self.assertTrue(is_allowed_origin(origin, origin))
+        self.assertFalse(
+            is_allowed_origin(
+                "chrome-extension://bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+                origin,
+            )
+        )
+        self.assertFalse(is_allowed_origin("chrome-extension://abcdefghijklmnop"))
+        self.assertFalse(is_allowed_origin(f"{origin}/popup.html"))
         self.assertFalse(is_allowed_origin("https://attacker.example"))
         self.assertTrue(has_valid_bearer("Bearer test-token", "test-token"))
         self.assertFalse(has_valid_bearer("Bearer wrong-token", "test-token"))
@@ -295,6 +371,70 @@ class ExtensionBridgeTests(unittest.TestCase):
         self.assertEqual(validate_loopback_host("127.0.0.1"), "127.0.0.1")
         with self.assertRaisesRegex(ValueError, "loopback"):
             validate_loopback_host("0.0.0.0")
+
+    def test_script_never_prints_generated_or_explicit_token(self):
+        for args, secret in (
+            ([], "generated-secret-token-generated-secret"),
+            (["--token", "explicit-secret-token-explicit-secret"],
+             "explicit-secret-token-explicit-secret"),
+        ):
+            with self.subTest(args=args):
+                output = StringIO()
+                with (
+                    patch.object(extension_bridge_script, "ExtensionRunManager") as manager,
+                    patch.object(extension_bridge_script, "ExtensionBridgeServer") as server,
+                    patch.object(
+                        extension_bridge_script.secrets,
+                        "token_urlsafe",
+                        return_value="generated-secret-token-generated-secret",
+                    ) as generate,
+                    redirect_stdout(output),
+                ):
+                    extension_bridge_script.main([
+                        *args,
+                        "--offline",
+                        "--output-dir",
+                        "/tmp/extension-bridge-test-runs",
+                    ])
+
+                rendered = output.getvalue()
+                self.assertNotIn(secret, rendered)
+                self.assertNotIn("token:", rendered)
+                self.assertIn("bridge: http://127.0.0.1:8765", rendered)
+                expected_pairing = (
+                    "auto-pair: disabled (explicit token)"
+                    if args
+                    else "auto-pair: waiting for first extension claim"
+                )
+                self.assertIn(expected_pairing, rendered)
+                self.assertIn("runs: /tmp/extension-bridge-test-runs", rendered)
+                server.return_value.serve_forever.assert_called_once_with()
+                self.assertEqual(
+                    server.call_args.kwargs["pairing_enabled"],
+                    not args,
+                )
+                manager.return_value.close.assert_called_once_with()
+                if args:
+                    generate.assert_not_called()
+                else:
+                    generate.assert_called_once_with(24)
+
+    def test_auto_pairing_requires_urlsafe_high_entropy_token(self):
+        manager = ExtensionRunManager(
+            ExtensionBridgeConfig(fetcher=FetcherConfig(offline=True), workers=1)
+        )
+        try:
+            with self.assertRaisesRegex(ValueError, "Automatic pairing"):
+                ExtensionBridgeServer(("127.0.0.1", 0), manager, "short")
+            server = ExtensionBridgeServer(
+                ("127.0.0.1", 0),
+                manager,
+                "short",
+                pairing_enabled=False,
+            )
+            server.server_close()
+        finally:
+            manager.close()
 
     def test_manifest_permissions_are_scoped(self):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
@@ -315,6 +455,19 @@ class ExtensionBridgeTests(unittest.TestCase):
                 return run
             time.sleep(0.01)
         self.fail("Extension run did not complete before the test deadline.")
+
+    def _wait_for_completed(
+        self,
+        manager: ExtensionRunManager,
+        run_id: str,
+        expected: int,
+    ) -> None:
+        deadline = time.monotonic() + 1
+        while time.monotonic() < deadline:
+            if manager.get(run_id).get("completed", 0) >= expected:
+                return
+            time.sleep(0.01)
+        self.fail(f"Extension run did not report {expected} completed records.")
 
 
 if __name__ == "__main__":

@@ -1,5 +1,33 @@
 # Changelog
 
+## 2026-08-01 - `0.1.0-beta.3` reviewer-zero-config extension
+
+- Promoted the Chrome client to extension `0.6.2`. The normal reviewer path is
+  now `make extension-bridge` followed by opening the popup at any later time:
+  an unclaimed, first-Origin-wins loopback handshake supplies a random
+  process-local token without printing or manually copying it. The bridge still
+  pins the first extension Origin, bearer token and CORS boundary; explicit
+  tokens and custom ports remain an Advanced fallback.
+- Persisted a versioned, six-hour, tab- and LinkedIn-context-scoped scan snapshot.
+  Closing the popup no longer loses completed scans; stale, malformed, expired,
+  cross-tab, or different-`currentJobId` records fail closed instead of being
+  rendered in the wrong context.
+- Expanded passive External Apply extraction to safe `href`, `formaction`, and
+  narrowly named DOM data-target attributes. Every candidate still passes the
+  existing public-host and sensitive-query filter. A LinkedIn button with no
+  target remains a typed observation and is no longer described as though a
+  hidden URL had already been captured.
+- Serialized complete extension runs while processing up to four companies
+  inside the active run. The bridge now reports monotonic
+  `completed/submitted` counters and the popup renders progress such as
+  `Running 7/25`; provider, tenant, URL and S7 publication gates are unchanged.
+- Added a versioned content-script handshake so an already-open LinkedIn tab is
+  upgraded after an unpacked-extension reload. While a Verify run is active,
+  both scan controls are locked so a second scan cannot discard run tracking or
+  leave an enabled button beside a stale `Running` badge.
+- Added ADR-0037 and ADR-0038 plus focused pairing, snapshot recovery, passive
+  Apply-target, progress, concurrency, HTTP, privacy and release-package tests.
+
 ## 2026-08-01 - `0.1.0-beta.2` authenticated extension acceptance
 
 - Promoted the Chrome input client to extension `0.4.1`. **Scan selected** now

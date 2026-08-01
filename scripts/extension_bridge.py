@@ -7,6 +7,7 @@ from pathlib import Path
 
 from job_source_agent.composition import AgentConfig, FetcherConfig
 from job_source_agent.extension_bridge import (
+    PAIRING_WINDOW_SECONDS,
     ExtensionBridgeConfig,
     ExtensionBridgeServer,
     ExtensionRunManager,
@@ -19,7 +20,12 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--token", default=os.environ.get("JOB_SOURCE_BRIDGE_TOKEN"))
-    parser.add_argument("--workers", type=int, default=2)
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=4,
+        help="Maximum companies processed concurrently within one extension run.",
+    )
     parser.add_argument("--fetch-timeout", type=float, default=8)
     parser.add_argument("--fixtures-dir")
     parser.add_argument("--offline", action="store_true")
@@ -39,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> None:
     args = build_parser().parse_args(argv)
     host = validate_loopback_host(args.host)
+    auto_pair = args.token is None
     token = args.token or secrets.token_urlsafe(24)
     manager = ExtensionRunManager(
         ExtensionBridgeConfig(
@@ -59,9 +66,19 @@ def main(argv: list[str] | None = None) -> None:
             ),
         )
     )
-    server = ExtensionBridgeServer((host, args.port), manager, token)
+    server = ExtensionBridgeServer(
+        (host, args.port),
+        manager,
+        token,
+        pairing_enabled=auto_pair,
+    )
     print(f"bridge: http://{host}:{args.port}")
-    print(f"token: {token}")
+    if not auto_pair:
+        print("auto-pair: disabled (explicit token)")
+    elif PAIRING_WINDOW_SECONDS is None:
+        print("auto-pair: waiting for first extension claim")
+    else:
+        print(f"auto-pair: ready for {PAIRING_WINDOW_SECONDS:g} seconds")
     print(f"runs: {args.output_dir}")
     try:
         server.serve_forever()

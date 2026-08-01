@@ -1,6 +1,6 @@
 PYTHON ?= python3.12
 
-.PHONY: runtime test offline-gates beta-demo beta-package live-gate
+.PHONY: runtime test offline-gates beta-demo extension-bridge beta-package live-gate
 
 runtime:
 	$(PYTHON) scripts/check_runtime.py --release
@@ -21,6 +21,12 @@ beta-demo: runtime
 		--offline \
 		--output /tmp/ai-job-source-agent-beta-demo/results.json \
 		--trace-output /tmp/ai-job-source-agent-beta-demo/trace.json
+
+extension-bridge: runtime
+	$(PYTHON) -m scripts.extension_bridge \
+		--port 8765 \
+		--workers 4 \
+		--fetch-timeout 8
 
 beta-package: runtime
 	$(PYTHON) scripts/build_beta_release.py --output-dir dist

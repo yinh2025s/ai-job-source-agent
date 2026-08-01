@@ -38,13 +38,18 @@ not reported as a generalization benchmark.
 
 ## Authenticated Extension
 
-Extension `0.4.1` in `extension/` is the accepted logged-in LinkedIn input
-client. Start the token-authenticated loopback bridge as documented in
-`README.md`, load the directory as an unpacked Chrome extension, then use
+Extension `0.6.2` in `extension/` is the logged-in LinkedIn input client. Load
+the directory as an unpacked Chrome extension, run `make extension-bridge`, and
+open the popup to pair automatically. Then use
 **Scan selected**, **Scan page**, and **Verify source**. The 2026-08-01 manual
 gate covered 1/1 selected scan, 25/25 page scan, async submission, popup reopen
-recovery, and typed result rendering. It did not claim an External Apply URL
-when LinkedIn exposed only the button without a safe target.
+recovery, and typed result rendering. Scan records are also restored after a
+normal popup close when the same LinkedIn tab and posting context remain active.
+Multi-record verification reports visible `completed/submitted` progress and
+processes at most four companies concurrently. The final 25-record acceptance
+batch completed with 16 verified Job Lists and 9 verified openings; this is a
+workflow check, not a generalized Exact-rate claim. The extension did not claim
+an External Apply URL when LinkedIn exposed only the button without a safe target.
 
 ## Review Path
 
