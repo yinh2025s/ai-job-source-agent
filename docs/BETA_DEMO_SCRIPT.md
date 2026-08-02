@@ -127,4 +127,7 @@ Say:
 它证明同一产品 pipeline、adapter、identity gate 和输出 contract 可以确定性运行；它不证明实时网页覆盖率，真实覆盖由独立 live measurement 报告。
 
 **插件现在能用吗？**
-可以。`0.4.0` 已在真实登录态 LinkedIn 完成单岗位扫描、25/25 整页扫描、提交、运行态、弹窗重开恢复和结果渲染验收。当前 `0.6.2` 进一步自动连接本地 bridge、恢复已扫描记录，并把多岗位验证显示成 `Running 7/25` 这类真实进度；同一批最多四家公司并发。DOM 暴露安全 External Apply 目标时插件直接显示超链接；只有按钮而没有 URL 时会明确说明 LinkedIn 未暴露目标，不会猜链接。这证明工作流可用，不代表 External Apply URL 覆盖率或 Exact 成功率。
+可以。`0.7.0` 已在真实登录态 LinkedIn 完成自动连接、单岗位和 25 条页面状态、提交、运行态、弹窗重开恢复、跨重扫 verified detail 恢复、结果渲染和 CSV 导出验收。多岗位验证显示 `Running 7/25` 这类真实进度；同一批最多四家公司并发。点击任一岗位可在二级详情页查看 LinkedIn posting、External Apply、公司官网、Career page、Job List 和 Exact opening。DOM 暴露安全 External Apply 目标时插件直接显示超链接；只有按钮而没有 URL 时，批量扫描不会猜链接，用户可以在该岗位详情中明确选择 `Open Apply`，后台只捕获这次操作最终打开的 ATS URL。最终验收捕获了 Medtronic 的 Workday `R72412-1?source=LinkedIn`，但后端仍因 `RESULT_IDENTITY_MISMATCH` 拒绝 Exact。该 URL 仍需后端验真。这证明工作流可用，不代表 External Apply URL 覆盖率或 Exact 成功率。
+Reviewer 使用 `make reviewer-start` 即可完成本地预检与自动配对，不需要复制
+URL 或 Token；扫描和验证结果可以导出固定十列 CSV，缺失证据留空，且不会导出
+trace、登录态 HTML 或凭据。

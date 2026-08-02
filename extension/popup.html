@@ -16,55 +16,72 @@
     </header>
 
     <main id="popupRoot" aria-busy="false">
-      <section class="toolbar" aria-label="Job controls">
-        <button id="scanSelectedButton" class="primary" type="button">Scan selected</button>
-        <button id="scanPageButton" type="button">Scan page</button>
-        <button id="runButton" type="button" disabled>Verify source</button>
-      </section>
+      <div id="listView">
+        <section class="toolbar" aria-label="Job controls">
+          <button id="scanSelectedButton" class="primary" type="button">Scan selected</button>
+          <button id="scanPageButton" type="button">Scan page</button>
+          <button id="runButton" type="button" disabled>Verify source</button>
+        </section>
 
-      <section class="scan-summary" aria-live="polite">
-        <strong id="recordCount">0</strong>
-        <span>jobs ready</span>
-        <span id="applyCount" class="muted">0 direct Apply URLs</span>
-      </section>
+        <section class="scan-summary" aria-live="polite">
+          <strong id="recordCount">0</strong>
+          <span>jobs ready</span>
+          <span id="applyCount" class="muted">0 direct Apply URLs</span>
+          <button id="exportCsvButton" class="quiet export-button" type="button" disabled>Export CSV</button>
+        </section>
 
-      <section id="scanPanel" class="scan-panel" aria-live="polite" hidden>
-        <h2>Scanned jobs</h2>
-        <ol id="scanResults" class="results scan-results"></ol>
-      </section>
+        <section id="scanPanel" class="scan-panel" aria-live="polite" hidden>
+          <h2>Scanned jobs</h2>
+          <ol id="scanResults" class="results scan-results"></ol>
+        </section>
 
-      <section id="runPanel" class="run-panel" aria-live="polite" hidden>
-        <div class="run-heading">
-          <h2 id="runStatus">Queued</h2>
-          <button id="refreshButton" class="quiet" type="button" disabled>Refresh</button>
-        </div>
-        <div class="metrics">
-          <div>
-            <span>Job lists</span>
-            <strong id="jobListRate">--</strong>
+        <section id="runPanel" class="run-panel" aria-live="polite" hidden>
+          <div class="run-heading">
+            <h2 id="runStatus">Queued</h2>
+            <button id="refreshButton" class="quiet" type="button" disabled>Refresh</button>
           </div>
-          <div>
-            <span>Verified openings</span>
-            <strong id="openingRate">--</strong>
+          <div class="metrics">
+            <div>
+              <span>Job lists</span>
+              <strong id="jobListRate">--</strong>
+            </div>
+            <div>
+              <span>Verified openings</span>
+              <strong id="openingRate">--</strong>
+            </div>
           </div>
+          <ol id="results" class="results"></ol>
+        </section>
+
+        <p id="message" class="message" role="status" aria-live="polite"></p>
+
+        <details>
+          <summary>Advanced connection</summary>
+          <label>
+            Bridge URL
+            <input id="bridgeUrl" type="url" value="http://127.0.0.1:8765" spellcheck="false">
+          </label>
+          <label>
+            Token
+            <input id="bridgeToken" type="password" autocomplete="off" spellcheck="false">
+          </label>
+          <button id="saveButton" class="quiet" type="button">Save connection</button>
+        </details>
+      </div>
+
+      <section id="detailView" class="detail-view" aria-labelledby="detailTitle" hidden>
+        <div class="detail-nav">
+          <button id="detailBackButton" class="icon-button" type="button" aria-label="Back to jobs" title="Back to jobs">&#8592;</button>
+          <span class="eyebrow">Job details</span>
         </div>
-        <ol id="results" class="results"></ol>
+        <div class="detail-heading">
+          <h2 id="detailTitle" class="detail-title"></h2>
+          <p id="detailCompany" class="detail-company"></p>
+          <p id="detailLocation" class="detail-location"></p>
+        </div>
+        <div id="detailLinks" class="detail-links"></div>
+        <p id="detailStatus" class="detail-status" role="status"></p>
       </section>
-
-      <p id="message" class="message" role="status" aria-live="polite"></p>
-
-      <details>
-        <summary>Advanced connection</summary>
-        <label>
-          Bridge URL
-          <input id="bridgeUrl" type="url" value="http://127.0.0.1:8765" spellcheck="false">
-        </label>
-        <label>
-          Token
-          <input id="bridgeToken" type="password" autocomplete="off" spellcheck="false">
-        </label>
-        <button id="saveButton" class="quiet" type="button">Save connection</button>
-      </details>
     </main>
     <script src="popup.js"></script>
   </body>

@@ -6,10 +6,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 POPUP_SCRIPT = ROOT / "extension" / "popup.js"
+POPUP_HTML = ROOT / "extension" / "popup.html"
 HARNESS = ROOT / "tests" / "fixtures" / "extension" / "popup_harness.js"
 
 
 class ExtensionPopupTests(unittest.TestCase):
+    def test_popup_exposes_csv_export_command(self):
+        markup = POPUP_HTML.read_text(encoding="utf-8")
+        self.assertIn('id="exportCsvButton"', markup)
+        self.assertIn(">Export CSV</button>", markup)
+
     def test_popup_behaviors(self):
         scenarios = [
             "fresh_auto_pair",
@@ -38,12 +44,16 @@ class ExtensionPopupTests(unittest.TestCase):
             "restored_scan_visible",
             "stale_scan_not_restored",
             "external_without_target",
+            "external_capture_final_url",
             "stale_run_clear",
             "transient_polling_retry",
             "restored_running_visible",
             "malformed_response",
             "clickable_safe_links",
             "scanned_apply_fallback",
+            "verified_job_detail",
+            "verified_details_survive_rescan",
+            "csv_export",
             "button_recovery",
             "stale_content_upgrade",
         ]

@@ -1,6 +1,8 @@
 PYTHON ?= python3.12
+REVIEWER_HOST ?= 127.0.0.1
+REVIEWER_PORT ?= 8765
 
-.PHONY: runtime test offline-gates beta-demo extension-bridge beta-package live-gate
+.PHONY: runtime test offline-gates beta-demo extension-bridge reviewer-start reviewer-check beta-package live-gate
 
 runtime:
 	$(PYTHON) scripts/check_runtime.py --release
@@ -27,6 +29,17 @@ extension-bridge: runtime
 		--port 8765 \
 		--workers 4 \
 		--fetch-timeout 8
+
+reviewer-start:
+	$(PYTHON) scripts/reviewer_start.py \
+		--host $(REVIEWER_HOST) \
+		--port $(REVIEWER_PORT)
+
+reviewer-check:
+	$(PYTHON) scripts/reviewer_start.py \
+		--host $(REVIEWER_HOST) \
+		--port $(REVIEWER_PORT) \
+		--check-only
 
 beta-package: runtime
 	$(PYTHON) scripts/build_beta_release.py --output-dir dist

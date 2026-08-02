@@ -17,7 +17,19 @@ result instead of guessing a URL.
 
 ## Run It
 
-From the repository root:
+For the five-minute reviewer path, start with
+[`REVIEWER_START_HERE.md`](REVIEWER_START_HERE.md). The normal authenticated
+LinkedIn workflow starts with one command:
+
+```bash
+make reviewer-start
+```
+
+The fixed release identity, completed gates, privacy boundary, and remaining
+limits are summarized in
+[`docs/BETA4_RELEASE_REPORT.md`](docs/BETA4_RELEASE_REPORT.md).
+
+For the deterministic offline demonstration, run from the repository root:
 
 ```bash
 make beta-demo PYTHON=python3.12
@@ -48,7 +60,7 @@ The `extension/` directory contains the Chrome Manifest V3 client. Load
 repository root:
 
 ```bash
-make extension-bridge PYTHON=python3.12
+make reviewer-start
 ```
 
 Open the popup at any time while the bridge is running. The extension finds
@@ -61,8 +73,11 @@ connection**.
 On a logged-in LinkedIn Jobs page, **Scan selected** reads only the selected
 posting, **Scan page** visits at most 30 identity-bearing cards, and **Verify
 source** submits the observed records to the same backend pipeline. The plugin
-never treats an Apply button without a safe DOM-visible destination as a URL;
-it reports that state explicitly. See
+never treats an Apply button or LinkedIn posting as an External Apply URL. For a
+single URL-less external button, **Open Apply** explicitly arms a job-ID-bound
+capture and records only the final sanitized ATS destination opened by that
+action. **Export CSV** writes the current display contract without trace,
+credentials or authenticated page data. See
 [`docs/EXTENSION_ACCEPTANCE.md`](docs/EXTENSION_ACCEPTANCE.md) for the manual
 release gate and privacy boundary.
 
@@ -318,8 +333,22 @@ deterministic offline demo and are not replaced by fixtures. Extension `0.4.0`
 completed the scan/run logged-in gate on 2026-08-01; extension `0.5.1` adds
 automatic local pairing and restores a bounded, tab-scoped scan snapshot when
 the popup is reopened. Extension `0.6.2` adds bounded company-level execution
-and visible `completed/submitted` progress. It has its own focused acceptance
-checklist.
+and visible `completed/submitted` progress. Extension `0.7.0` makes every job
+row open a secondary detail view containing its LinkedIn, External Apply,
+company website, Career page, Job List and Exact opening evidence. When a
+visible LinkedIn External Apply button has no DOM target, the user can choose
+**Open Apply** for that one job; the background worker binds the resulting tab
+to the LinkedIn job ID and records the final sanitized ATS URL. Bulk scanning
+does not click Apply controls, and the captured URL still passes through the
+normal backend provider, tenant and S7 gates. The extension has its own focused
+acceptance checklist. Completed public result projections are also retained for
+six hours by LinkedIn job ID, so rescanning the same job does not erase its
+Website, Career, Job List, Exact, status, or error display. The final logged-in
+`0.7.0` acceptance on 2026-08-02 captured Medtronic's Workday `R72412-1` URL,
+restored an active Verify run after popup reopen, retained verified details
+after rescan, and exported a privacy-audited 25-row CSV. Medtronic remained
+fail closed at `RESULT_IDENTITY_MISMATCH`; this workflow gate does not revise
+Fresh100.
 
 ## Beta Boundary
 

@@ -440,7 +440,9 @@ class ExtensionBridgeTests(unittest.TestCase):
         manifest = json.loads((ROOT / "extension" / "manifest.json").read_text(encoding="utf-8"))
 
         self.assertEqual(manifest["manifest_version"], 3)
+        self.assertIn("tabs", manifest["permissions"])
         self.assertNotIn("<all_urls>", manifest["host_permissions"])
+        self.assertEqual(manifest["background"], {"service_worker": "background.js"})
         self.assertEqual(
             manifest["content_scripts"][0]["matches"],
             ["https://www.linkedin.com/jobs/*"],

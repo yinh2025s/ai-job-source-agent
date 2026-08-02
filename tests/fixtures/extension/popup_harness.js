@@ -11,8 +11,11 @@ class FakeElement {
     this.hidden = false;
     this.dataset = {};
     this.children = [];
+    this.scrollTop = 0;
     this.listeners = new Map();
     this.attributes = new Map();
+    this.clickCount = 0;
+    this.removed = false;
   }
 
   addEventListener(type, callback) {
@@ -20,9 +23,12 @@ class FakeElement {
   }
 
   click() {
+    this.clickCount += 1;
     const callback = this.listeners.get("click");
     if (callback && !this.disabled) callback();
   }
+
+  focus() {}
 
   setAttribute(name, value) {
     this.attributes.set(name, String(value));
@@ -38,6 +44,10 @@ class FakeElement {
 
   replaceChildren(...nodes) {
     this.children = nodes;
+  }
+
+  remove() {
+    this.removed = true;
   }
 }
 
@@ -61,13 +71,16 @@ function deferred() {
 
 function createHarness({
   fetchQueue = [], scanQueue = [], pageQueue = [], cancelQueue = [], statusQueue = [],
-  injectionQueue = [], runId = null, tab = null,
+  injectionQueue = [], prepareQueue = [], runtimeQueue = [], runId = null, tab = null,
   bridgeUrl = "http://127.0.0.1:8765", bridgeToken = "bridge-token", scanSnapshot,
+  verifiedDetails, externalApplyCaptures,
 } = {}) {
   const ids = [
-    "bridgeState", "popupRoot", "scanSelectedButton", "scanPageButton", "runButton", "refreshButton", "saveButton",
+    "bridgeState", "popupRoot", "scanSelectedButton", "scanPageButton", "runButton", "exportCsvButton", "refreshButton", "saveButton",
     "bridgeUrl", "bridgeToken", "message", "recordCount", "applyCount", "runPanel",
     "runStatus", "jobListRate", "openingRate", "results", "scanPanel", "scanResults",
+    "listView", "detailView", "detailBackButton", "detailTitle", "detailCompany", "detailLocation",
+    "detailLinks", "detailStatus",
   ];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement(id)]));
   elements.scanButton = elements.scanSelectedButton;
@@ -79,23 +92,46 @@ function createHarness({
   elements.applyCount.textContent = "0 direct Apply URLs";
   elements.runPanel.hidden = true;
   elements.scanPanel.hidden = true;
+  elements.detailView.hidden = true;
   const fetchCalls = [];
   const timers = new Map();
   let nextTimer = 1;
   const storage = { bridgeUrl, bridgeToken, runId };
   if (scanSnapshot !== undefined) storage.scanSnapshot = scanSnapshot;
+  if (verifiedDetails !== undefined) storage.verifiedDetails = verifiedDetails;
+  if (externalApplyCaptures !== undefined) storage.externalApplyCaptures = externalApplyCaptures;
   const storageCalls = { set: [], remove: [] };
   const executed = [];
   const sentMessages = [];
+  const runtimeMessages = [];
   const runtimeListeners = [];
+  const storageListeners = [];
+  const createdElements = [];
+  const objectUrls = new Map();
+  const revokedObjectUrls = new Set();
+  const documentBody = new FakeElement("body");
   const defaultTab = { id: 4, url: "https://www.linkedin.com/jobs/search/" };
 
+  class HarnessURL extends URL {}
+  HarnessURL.createObjectURL = (blob) => {
+    const value = `blob:test-${objectUrls.size + 1}`;
+    objectUrls.set(value, blob);
+    return value;
+  };
+  HarnessURL.revokeObjectURL = (value) => revokedObjectUrls.add(value);
+
   const sandbox = {
-    URL,
+    URL: HarnessURL,
+    Blob,
     AbortController,
     document: {
       getElementById: (id) => elements[id],
-      createElement: () => new FakeElement(),
+      createElement: () => {
+        const element = new FakeElement();
+        createdElements.push(element);
+        return element;
+      },
+      body: documentBody,
     },
     fetch: (url, options) => {
       fetchCalls.push({ url, options });
@@ -123,6 +159,9 @@ function createHarness({
             storageCalls.remove.push(key);
           },
         },
+        onChanged: {
+          addListener: (listener) => storageListeners.push(listener),
+        },
       },
       tabs: {
         query: async () => [tab || defaultTab],
@@ -130,6 +169,7 @@ function createHarness({
           sentMessages.push({ tabId, message });
           let queue;
           if (message.type === "job_source_agent_content_status") queue = statusQueue;
+          else if (message.type === "prepare_external_apply_v1") queue = prepareQueue;
           else if (["collect_job_source_records", "collect_job_source_records_v1"].includes(message.type)) {
             queue = scanQueue;
           } else if (["collect_job_source_page", "collect_job_source_page_v1"].includes(message.type)) {
@@ -138,7 +178,7 @@ function createHarness({
           const next = queue.length
             ? queue.shift()
             : (message.type === "job_source_agent_content_status"
-              ? { ok: true, content_script_version: "2", scan_versions: ["2", "3"] }
+              ? { ok: true, content_script_version: "3", scan_versions: ["2", "3"] }
               : undefined);
           if (next instanceof Error) throw next;
           return next?.promise || next;
@@ -152,6 +192,12 @@ function createHarness({
         },
       },
       runtime: {
+        sendMessage: async (message) => {
+          runtimeMessages.push(message);
+          const next = runtimeQueue.shift();
+          if (next instanceof Error) throw next;
+          return next?.promise || next;
+        },
         onMessage: {
           addListener: (listener) => runtimeListeners.push(listener),
         },
@@ -162,9 +208,17 @@ function createHarness({
   vm.runInNewContext(fs.readFileSync(process.argv[2], "utf8"), sandbox, { filename: process.argv[2] });
 
   return {
-    elements, fetchCalls, timers, storage, storageCalls, executed, sentMessages,
+    elements, fetchCalls, timers, storage, storageCalls, executed, sentMessages, runtimeMessages,
+    createdElements, objectUrls, revokedObjectUrls,
     emitProgress(message, sender = { tab: { id: 4 } }) {
       runtimeListeners.forEach((listener) => listener(message, sender));
+    },
+    emitStorageChange(key, newValue) {
+      const oldValue = storage[key];
+      storage[key] = newValue;
+      storageListeners.forEach((listener) => listener({
+        [key]: { oldValue, newValue },
+      }, "local"));
     },
     async settle(turns = 48) {
       for (let index = 0; index < turns; index += 1) await Promise.resolve();
@@ -449,7 +503,10 @@ async function pageSuccessAndProgress() {
   pendingPage.resolve(pageScan());
   await h.settle();
   assert.equal(h.elements.recordCount.textContent, "1");
-  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "External Apply");
+  assert.equal(
+    h.elements.scanResults.children[0].children[0].children[0].children[1].textContent,
+    "External Apply URL ready",
+  );
   assert.equal(h.elements.scanPageButton.textContent, "Scan page");
   assert.equal(h.elements.scanSelectedButton.disabled, false);
   assert.equal(h.elements.message.textContent, "");
@@ -609,7 +666,10 @@ async function selectedPartialKeepsBoundRecord() {
   await h.settle();
   assert.equal(h.elements.recordCount.textContent, "1");
   assert.equal(h.elements.runButton.disabled, false);
-  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "Detail panel not observed");
+  assert.equal(
+    h.elements.scanResults.children[0].children[0].children[0].children[1].textContent,
+    "Detail panel not observed",
+  );
   assert.equal(h.elements.message.textContent, "Selected job found, but its detail panel was not fully observed.");
 }
 
@@ -630,7 +690,10 @@ async function restoredSelectedScanRemainsVisible() {
   await reopened.settle();
   assert.equal(reopened.elements.recordCount.textContent, "1");
   assert.equal(reopened.elements.scanPanel.hidden, false);
-  assert.equal(reopened.elements.scanResults.children[0].children[0].textContent, "Acme · Engineer");
+  assert.equal(
+    reopened.elements.scanResults.children[0].children[0].children[0].children[0].textContent,
+    "Acme · Engineer",
+  );
   assert.equal(reopened.elements.runButton.disabled, false);
 }
 
@@ -680,10 +743,84 @@ async function externalApplyWithoutTargetIsExplicit() {
   h.elements.scanButton.click();
   await h.settle();
   assert.equal(
-    h.elements.scanResults.children[0].children[1].textContent,
-    "External Apply button found; LinkedIn exposed no target URL",
+    h.elements.scanResults.children[0].children[0].children[0].children[1].textContent,
+    "External Apply button found; open details to capture URL",
   );
   assert.equal(h.elements.applyCount.textContent, "0 direct Apply URLs");
+}
+
+async function externalApplyCaptureUsesFinalAtsUrl() {
+  const linkedinUrl = "https://www.linkedin.com/jobs/view/4439508231";
+  const workdayUrl = "https://medtronic.wd1.myworkdayjobs.com/zh-CN/MedtronicCareers/job/Mounds-View-Minnesota-United-States-of-America/Software-Automation-Test-Engineer-I_R72412-1?source=LinkedIn";
+  const h = createHarness({
+    fetchQueue: [health()],
+    tab: { id: 4, url: "https://www.linkedin.com/jobs/search/?currentJobId=4439508231" },
+    prepareQueue: [{ ok: true, status: "ready", linkedin_job_id: "4439508231" }],
+    runtimeQueue: [{ ok: true, status: "pending" }],
+    scanQueue: [{
+      ok: true,
+      scan_version: "2",
+      state: "ready",
+      page_url: "https://www.linkedin.com/jobs/search/?currentJobId=4439508231",
+      records: [{
+        company_name: "Medtronic",
+        job_title: "Software Automation Test Engineer I",
+        linkedin_job_url: linkedinUrl,
+        external_apply_url: linkedinUrl,
+        source_trace: { linkedin_posting: { observation_state: "external_apply_observed" } },
+      }],
+    }],
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  assert.equal(h.elements.applyCount.textContent, "0 direct Apply URLs");
+  h.elements.scanResults.children[0].children[0].click();
+  const initialRows = h.elements.detailLinks.children;
+  assert.equal(initialRows[0].children[0].textContent, "LinkedIn posting");
+  assert.equal(initialRows[0].children[1].href, linkedinUrl);
+  assert.equal(initialRows[1].children[1].children[0].textContent, "Button found; destination not captured");
+  assert.equal(initialRows[1].children[1].children[1].textContent, "Open Apply");
+
+  initialRows[1].children[1].children[1].click();
+  await h.settle();
+  assert.equal(JSON.stringify(h.sentMessages.at(-1)), JSON.stringify({
+    tabId: 4,
+    message: { type: "prepare_external_apply_v1", linkedin_job_id: "4439508231" },
+  }));
+  assert.equal(JSON.stringify(h.runtimeMessages.at(-1)), JSON.stringify({
+    type: "begin_external_apply_capture_v1",
+    source_tab_id: 4,
+    linkedin_job_id: "4439508231",
+  }));
+
+  h.emitStorageChange("externalApplyCaptures", {
+    schema_version: "1",
+    records: {
+      4439508231: {
+        linkedin_job_id: "4439508231",
+        external_apply_url: workdayUrl,
+        captured_at: Date.now(),
+        source_tab_id: 4,
+        target_tab_id: 9,
+      },
+    },
+  });
+  await h.settle();
+  assert.equal(h.elements.applyCount.textContent, "1 direct Apply URLs");
+  assert.equal(h.elements.detailLinks.children[0].children[1].href, linkedinUrl);
+  assert.equal(h.elements.detailLinks.children[1].children[1].href, workdayUrl);
+
+  const reopened = createHarness({
+    fetchQueue: [health()],
+    tab: { id: 4, url: "https://www.linkedin.com/jobs/search/?currentJobId=4439508231" },
+    scanSnapshot: h.storage.scanSnapshot,
+    externalApplyCaptures: h.storage.externalApplyCaptures,
+  });
+  await reopened.settle();
+  assert.equal(reopened.elements.applyCount.textContent, "1 direct Apply URLs");
+  reopened.elements.scanResults.children[0].children[0].click();
+  assert.equal(reopened.elements.detailLinks.children[1].children[1].href, workdayUrl);
 }
 
 async function staleRunClear() {
@@ -741,11 +878,18 @@ async function clickableSafeLinks() {
   await h.settle();
   const items = h.elements.results.children;
   assert.equal(items.length, 4);
-  assert.equal(items[0].children[1].textContent, "Exact opening");
-  assert.equal(items[0].children[1].href, "https://jobs.example/opening");
-  assert.equal(items[1].children[1].textContent, "Job list");
-  assert.equal(items[2].children[1].textContent, "unsafe_url");
-  assert.equal(items[3].children[1].textContent, "private_url");
+  assert.equal(items[0].children[0].children[0].children[1].textContent, "Exact opening verified");
+  assert.equal(items[1].children[0].children[0].children[1].textContent, "Official job list verified");
+  assert.equal(items[2].children[0].children[0].children[1].textContent, "unsafe_url");
+  assert.equal(items[3].children[0].children[0].children[1].textContent, "private_url");
+  items[0].children[0].click();
+  assert.equal(h.elements.detailLinks.children[5].children[1].href, "https://jobs.example/opening");
+  h.elements.detailBackButton.click();
+  items[2].children[0].click();
+  assert.equal(
+    h.elements.detailLinks.children[5].children[1].children[0].textContent,
+    "Not found",
+  );
 }
 
 async function scannedApplyRemainsAvailableWithoutVerifiedOpening() {
@@ -779,15 +923,304 @@ async function scannedApplyRemainsAvailableWithoutVerifiedOpening() {
   h.elements.scanButton.click();
   await h.settle();
   assert.equal(h.elements.scanPanel.hidden, false);
-  assert.equal(h.elements.scanResults.children[0].children[1].textContent, "External Apply");
+  assert.equal(
+    h.elements.scanResults.children[0].children[0].children[0].children[1].textContent,
+    "External Apply URL ready",
+  );
   h.elements.runButton.click();
   await h.settle();
-  assert.equal(h.elements.results.children[0].children[1].textContent, "Job list");
-  assert.equal(h.elements.results.children[0].children[2].textContent, "LinkedIn Apply");
   assert.equal(
-    h.elements.results.children[0].children[2].href,
+    h.elements.results.children[0].children[0].children[0].children[1].textContent,
+    "Official job list verified",
+  );
+  h.elements.scanResults.children[0].children[0].click();
+  assert.equal(
+    h.elements.detailLinks.children[1].children[1].href,
     "https://apply.careers.microsoft.com/careers/job/1970393556824773",
   );
+  assert.equal(
+    h.elements.detailLinks.children[4].children[1].href,
+    "https://microsoft.example/careers/",
+  );
+}
+
+async function verifiedJobDetailShowsAllSourceLinksAndReturnsToList() {
+  const record = {
+    company_name: "Aurora Data",
+    job_title: "AI Algorithm Engineer",
+    job_location: "San Francisco, CA",
+    linkedin_job_url: "https://www.linkedin.com/jobs/view/777",
+    external_apply_url: "https://apply.aurora.example/jobs/777",
+  };
+  const result = {
+    company_name: record.company_name,
+    linkedin_job_title: record.job_title,
+    linkedin_job_location: record.job_location,
+    linkedin_job_url: record.linkedin_job_url,
+    company_website_url: "https://aurora.example/",
+    career_page_url: "https://aurora.example/careers/",
+    job_list_page_url: "https://jobs.lever.co/aurora/",
+    open_position_url: "https://jobs.lever.co/aurora/777",
+    pipeline_status: "success",
+  };
+  const h = createHarness({
+    fetchQueue: [
+      health(),
+      response(202, { run_id: "detail-run", status: "queued" }),
+      complete("detail-run", [result]),
+    ],
+    scanQueue: [{
+      ok: true,
+      scan_version: "2",
+      state: "ready",
+      page_url: "https://www.linkedin.com/jobs/search/?currentJobId=777",
+      records: [record],
+    }],
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  h.elements.runButton.click();
+  await h.settle();
+  h.elements.scanResults.scrollTop = 42;
+  h.elements.scanResults.children[0].children[0].click();
+
+  assert.equal(h.elements.listView.hidden, true);
+  assert.equal(h.elements.detailView.hidden, false);
+  assert.equal(h.elements.detailTitle.textContent, record.job_title);
+  assert.equal(h.elements.detailCompany.textContent, record.company_name);
+  assert.equal(h.elements.detailLocation.textContent, record.job_location);
+  const links = h.elements.detailLinks.children;
+  assert.equal(links.length, 6);
+  assert.equal(links[0].children[0].textContent, "LinkedIn posting");
+  assert.equal(links[0].children[1].href, record.linkedin_job_url);
+  assert.equal(links[1].children[1].href, record.external_apply_url);
+  assert.equal(links[2].children[1].href, result.company_website_url);
+  assert.equal(links[3].children[1].href, result.career_page_url);
+  assert.equal(links[4].children[1].href, result.job_list_page_url);
+  assert.equal(links[5].children[1].href, result.open_position_url);
+  assert.equal(h.elements.detailStatus.textContent, "Verified exact opening");
+
+  h.elements.detailBackButton.click();
+  assert.equal(h.elements.listView.hidden, false);
+  assert.equal(h.elements.detailView.hidden, true);
+  assert.equal(h.elements.scanResults.scrollTop, 42);
+  assert.equal(h.storage.scanSnapshot.verified_results.length, 1);
+  assert.equal(
+    h.storage.scanSnapshot.verified_results[0].career_page_url,
+    result.career_page_url,
+  );
+  assert.equal(h.storage.scanSnapshot.verified_results[0].identity_assertion, undefined);
+
+  const reopened = createHarness({
+    fetchQueue: [health()],
+    scanSnapshot: h.storage.scanSnapshot,
+    tab: { id: 4, url: "https://www.linkedin.com/jobs/search/?currentJobId=777" },
+  });
+  await reopened.settle();
+  assert.equal(
+    reopened.elements.scanResults.children[0].children[0].children[0].children[1].textContent,
+    "Exact opening verified",
+  );
+  reopened.elements.scanResults.children[0].children[0].click();
+  assert.equal(
+    reopened.elements.detailLinks.children[3].children[1].href,
+    result.career_page_url,
+  );
+}
+
+async function verifiedDetailsSurviveRescan() {
+  const linkedinUrl = "https://www.linkedin.com/jobs/view/777";
+  const pageUrl = "https://www.linkedin.com/jobs/search/?currentJobId=777";
+  const record = {
+    company_name: "Aurora Data",
+    job_title: "AI Algorithm Engineer",
+    job_location: "San Francisco, CA",
+    linkedin_job_url: linkedinUrl,
+  };
+  const result = {
+    company_name: record.company_name,
+    linkedin_job_title: record.job_title,
+    linkedin_job_location: record.job_location,
+    linkedin_job_url: linkedinUrl,
+    company_website_url: "https://aurora.example/",
+    career_page_url: "https://aurora.example/careers/",
+    job_list_page_url: "https://jobs.lever.co/aurora/",
+    error_code: "OPENING_NOT_FOUND",
+    pipeline_status: "partial",
+  };
+  const scanResponse = () => ({
+    ok: true,
+    scan_version: "2",
+    state: "ready",
+    page_url: pageUrl,
+    records: [{ ...record }],
+  });
+  const h = createHarness({
+    fetchQueue: [
+      health(),
+      response(202, { run_id: "rescan-run", status: "queued" }),
+      complete("rescan-run", [result]),
+    ],
+    scanQueue: [scanResponse(), scanResponse()],
+    tab: { id: 4, url: pageUrl },
+  });
+  await h.settle();
+  h.elements.scanButton.click();
+  await h.settle();
+  h.elements.runButton.click();
+  await h.settle();
+  assert.equal(h.storage.verifiedDetails.schema_version, "1");
+  assert.equal(h.storage.verifiedDetails.records[777].result.job_list_page_url, result.job_list_page_url);
+
+  h.elements.scanButton.click();
+  await h.settle();
+  assert.equal(
+    h.elements.scanResults.children[0].children[0].children[0].children[1].textContent,
+    "Official job list verified",
+  );
+  assert.equal(h.storage.scanSnapshot.verified_results.length, 1);
+  h.elements.scanResults.children[0].children[0].click();
+  assert.equal(h.elements.detailLinks.children[2].children[1].href, result.company_website_url);
+  assert.equal(h.elements.detailLinks.children[3].children[1].href, result.career_page_url);
+  assert.equal(h.elements.detailLinks.children[4].children[1].href, result.job_list_page_url);
+  assert.equal(h.elements.detailStatus.textContent, "Verified job list; exact opening unavailable");
+
+  const reopened = createHarness({
+    fetchQueue: [health()],
+    scanSnapshot: h.storage.scanSnapshot,
+    verifiedDetails: h.storage.verifiedDetails,
+    tab: { id: 4, url: pageUrl },
+  });
+  await reopened.settle();
+  assert.equal(
+    reopened.elements.scanResults.children[0].children[0].children[0].children[1].textContent,
+    "Official job list verified",
+  );
+}
+
+async function exportedCsv(h) {
+  const link = h.createdElements.find((element) => element.download === "ai-job-source-results.csv");
+  assert(link, "Expected a CSV download link");
+  assert.equal(link.clickCount, 1);
+  assert.equal(link.removed, true);
+  assert.equal(h.revokedObjectUrls.has(link.href), true);
+  const blob = h.objectUrls.get(link.href);
+  assert(blob, "Expected exported CSV blob");
+  assert.equal(blob.type, "text/csv;charset=utf-8");
+  return blob.text();
+}
+
+async function csvExportIsSafeDeterministicAndRestorable() {
+  const records = [
+    {
+      company_name: 'Acme, "Labs"',
+      job_title: "Engineer\nPlatform",
+      linkedin_job_url: "https://www.linkedin.com/jobs/view/123?utm_source=secret",
+      external_apply_url: "https://jobs.acme.example/opening/123?source=LinkedIn",
+      source_trace: { cookie: "scan-cookie-secret", raw_html: "<secret>" },
+    },
+    {
+      company_name: "Unsafe Co",
+      job_title: "Risky Role",
+      linkedin_job_url: "https://www.linkedin.com/company/unsafe",
+      external_apply_url: "https://www.linkedin.com/safety/go?url=https://evil.example",
+    },
+    {
+      company_name: "=Pending Co",
+      job_title: "Pending Role",
+      linkedin_job_url: "https://www.linkedin.com/jobs/view/789",
+      bridgeToken: "record-token-secret",
+    },
+  ];
+  const results = [
+    {
+      company_name: records[0].company_name,
+      linkedin_job_title: records[0].job_title,
+      linkedin_job_url: records[0].linkedin_job_url,
+      company_website_url: "https://acme.example/",
+      career_page_url: "https://acme.example/careers/",
+      job_list_page_url: "https://jobs.acme.example/",
+      external_apply_url: "https://fallback.acme.example/jobs/123",
+      open_position_url: "https://jobs.acme.example/opening/123",
+      error_code: "",
+      pipeline_status: "success",
+      source_trace: { token: "result-trace-secret" },
+      arbitrary_secret: "backend-secret",
+    },
+    {
+      company_name: records[1].company_name,
+      linkedin_job_title: records[1].job_title,
+      linkedin_job_url: records[1].linkedin_job_url,
+      company_website_url: "https://unsafe.example/?access_token=secret",
+      career_page_url: "https://127.0.0.1/private",
+      job_list_page_url: "https://user:password@unsafe.example/jobs",
+      external_apply_url: "https://www.linkedin.com/jobs/view/456",
+      open_position_url: "javascript:alert(1)",
+      error_code: "WEBSITE_NOT_RESOLVED",
+      pipeline_status: "failed",
+    },
+  ];
+  const h = createHarness({
+    fetchQueue: [
+      health(),
+      response(202, { run_id: "csv-run", status: "queued" }),
+      complete("csv-run", results),
+    ],
+    scanQueue: [{
+      ok: true,
+      scan_version: "2",
+      state: "ready",
+      page_url: "https://www.linkedin.com/jobs/search/",
+      records,
+    }],
+  });
+  await h.settle();
+  assert.equal(h.elements.exportCsvButton.disabled, true);
+
+  h.elements.scanButton.click();
+  await h.settle();
+  assert.equal(h.elements.exportCsvButton.disabled, false);
+  h.elements.exportCsvButton.click();
+  const preVerifyCsv = await exportedCsv(h);
+  assert.match(preVerifyCsv, /external_apply_captured/);
+  assert.match(preVerifyCsv, /not_verified/);
+
+  h.createdElements.length = 0;
+  h.elements.runButton.click();
+  await h.settle(200);
+  assert.equal(h.fetchCalls.length, 3);
+  assert.equal(h.elements.runStatus.textContent, "Complete");
+  assert.equal(h.elements.exportCsvButton.disabled, false);
+  h.elements.exportCsvButton.click();
+  assert.equal(h.createdElements.find((element) => element.download)?.href, "blob:test-2");
+  const csv = await exportedCsv(h);
+  const expectedHeader = "company_name,linkedin_job_title,linkedin_job_url,company_website_url,career_page_url,job_list_page_url,external_apply_url,open_position_url,result_status,error_code";
+  assert.equal(csv.split("\r\n", 1)[0], expectedHeader);
+  assert.equal(csv.endsWith("\r\n"), true);
+  assert.match(csv, /"Acme, ""Labs"""/);
+  assert.match(csv, /"Engineer\nPlatform"/);
+  assert.match(csv, /https:\/\/www\.linkedin\.com\/jobs\/view\/123/);
+  assert.match(csv, /https:\/\/jobs\.acme\.example\/opening\/123\?source=LinkedIn/);
+  assert.match(csv, /,success,/);
+  assert.match(csv, /failed,WEBSITE_NOT_RESOLVED/);
+  assert.match(csv, /'=Pending Co,Pending Role,https:\/\/www\.linkedin\.com\/jobs\/view\/789,,,,,,not_verified,/);
+  for (const forbidden of [
+    "utm_source", "access_token", "scan-cookie-secret", "record-token-secret", "result-trace-secret",
+    "backend-secret", "127.0.0.1", "user:password", "javascript:", "linkedin.com/safety",
+  ]) assert.equal(csv.includes(forbidden), false, `CSV leaked ${forbidden}`);
+  assert.equal(h.elements.message.textContent, "Exported 3 jobs.");
+
+  const reopened = createHarness({
+    fetchQueue: [health()],
+    scanSnapshot: h.storage.scanSnapshot,
+  });
+  await reopened.settle();
+  assert.equal(reopened.elements.exportCsvButton.disabled, false);
+  reopened.elements.exportCsvButton.click();
+  const restoredCsv = await exportedCsv(reopened);
+  assert.match(restoredCsv, /,success,/);
+  assert.equal(restoredCsv.includes("result-trace-secret"), false);
 }
 
 async function buttonRecovery() {
@@ -810,7 +1243,7 @@ async function staleContentScriptIsUpgradedBeforeScanning() {
     fetchQueue: [health()],
     statusQueue: [
       { ok: true, content_script_version: "1", scan_versions: ["2", "3"] },
-      { ok: true, content_script_version: "2", scan_versions: ["2", "3"] },
+      { ok: true, content_script_version: "3", scan_versions: ["2", "3"] },
     ],
     pageQueue: [pageScan()],
   });
@@ -853,12 +1286,16 @@ const scenarios = {
   restored_scan_visible: restoredSelectedScanRemainsVisible,
   stale_scan_not_restored: staleSelectedScanIsNotRestored,
   external_without_target: externalApplyWithoutTargetIsExplicit,
+  external_capture_final_url: externalApplyCaptureUsesFinalAtsUrl,
   stale_run_clear: staleRunClear,
   transient_polling_retry: transientPollingRetry,
   restored_running_visible: restoredRunningRunIsVisible,
   malformed_response: malformedResponse,
   clickable_safe_links: clickableSafeLinks,
   scanned_apply_fallback: scannedApplyRemainsAvailableWithoutVerifiedOpening,
+  verified_job_detail: verifiedJobDetailShowsAllSourceLinksAndReturnsToList,
+  verified_details_survive_rescan: verifiedDetailsSurviveRescan,
+  csv_export: csvExportIsSafeDeterministicAndRestorable,
   button_recovery: buttonRecovery,
   stale_content_upgrade: staleContentScriptIsUpgradedBeforeScanning,
 };

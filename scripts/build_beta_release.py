@@ -20,7 +20,7 @@ if str(ROOT) not in sys.path:
 from scripts.scan_artifact_privacy import scan_artifact_root
 
 
-PRODUCT_VERSION = "0.1.0-beta.3"
+PRODUCT_VERSION = "0.1.0-beta.4"
 ROOT_FILES = frozenset(
     {
         ".gitignore",
@@ -30,6 +30,7 @@ ROOT_FILES = frozenset(
         "IMPLEMENTATION_PLAN.md",
         "Makefile",
         "README.md",
+        "REVIEWER_START_HERE.md",
         "SUBMISSION.md",
         "pyproject.toml",
     }
@@ -54,8 +55,10 @@ DOC_FILES = frozenset(
         "docs/ARCHITECTURE.md",
         "docs/BETA_DEMO_EVIDENCE.md",
         "docs/BETA_DEMO_SCRIPT.md",
+        "docs/BETA4_RELEASE_REPORT.md",
         "docs/BETA_PROJECT_SUMMARY.md",
         "docs/EXTENSION_ACCEPTANCE.md",
+        "docs/FINAL_DEMO_SCRIPT.md",
         "docs/FRESH_100_CURRENT_CLOSURE_MATRIX.md",
         "docs/FRESH_100_V283_CURRENT_COLD_GATE_REPORT.md",
         "docs/FROZEN_100_FINAL_REPORT.md",
@@ -63,6 +66,20 @@ DOC_FILES = frozenset(
         "docs/adr/0037-auto-pair-local-extension.md",
         "docs/adr/0038-bound-extension-run-concurrency.md",
         "docs/adr/README.md",
+    }
+)
+REQUIRED_PRODUCT_FILES = frozenset(
+    {
+        "extension/background.js",
+        "extension/content.js",
+        "extension/manifest.json",
+        "extension/popup.css",
+        "extension/popup.html",
+        "extension/popup.js",
+        "scripts/reviewer_start.py",
+        "tests/test_extension_background.py",
+        "tests/test_extension_popup.py",
+        "tests/test_reviewer_start.py",
     }
 )
 FORBIDDEN_PARTS = frozenset(
@@ -73,10 +90,21 @@ FORBIDDEN_PARTS = frozenset(
         "__pycache__",
         "artifacts",
         "cache",
+        "capture",
         "checkpoints",
+        "checkpoint",
         "completion",
+        "captures",
+        "cookie",
         "cookies",
+        "live",
+        "raw",
+        "secret",
+        "secrets",
+        "snapshot",
         "snapshots",
+        "token",
+        "tokens",
     }
 )
 
@@ -117,7 +145,7 @@ def build_beta_release(
     commit = _clean_git_commit(root)
     tracked = _tracked_files(root)
     selected = select_release_files(tracked)
-    missing = sorted((ROOT_FILES | DOC_FILES) - set(selected))
+    missing = sorted((ROOT_FILES | DOC_FILES | REQUIRED_PRODUCT_FILES) - set(selected))
     if missing:
         raise BetaReleaseError(f"required release files are not tracked: {missing}")
 

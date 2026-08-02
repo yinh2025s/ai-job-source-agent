@@ -1,5 +1,51 @@
 # Changelog
 
+## 2026-08-02 - `0.1.0-beta.4` job detail and External Apply capture
+
+- Promoted the Chrome client to extension `0.7.0`. Every scanned or verified job
+  is now a keyboard-accessible row that opens an in-popup detail view and returns
+  to the same list scroll position.
+- The detail view safely merges the LinkedIn source record with its matching
+  backend result and shows LinkedIn posting, External Apply, company website, Career
+  page, Job List and Exact opening URLs in one place. Missing or not-yet-verified
+  evidence stays explicitly unavailable instead of becoming a guessed link.
+- Added an explicit, single-job `Open Apply` flow for LinkedIn buttons that do
+  not expose an `href`. A Manifest V3 service worker binds the click to the
+  source tab and LinkedIn job ID, follows only the tab opened by that action,
+  and stores the final sanitized ATS URL. Page scanning itself remains passive.
+- Captured destinations survive popup closure and are rendered separately from
+  the LinkedIn posting. The capture rejects unrelated tabs, LinkedIn-owned or
+  lookalike hosts, private addresses, credentials, fragments and sensitive
+  query parameters while preserving ordinary attribution such as
+  `source=LinkedIn`.
+- Added a bounded verified-detail index keyed by LinkedIn job ID. A later
+  selected/page rescan now reuses the same public Website, Career, Job List,
+  opening, status and error projection for up to six hours instead of clearing
+  it; token, HTML, trace and arbitrary backend fields are never stored.
+- Kept the existing public-HTTPS rendering gate for every detail URL and added
+  focused tests for complete six-link results, final Workday capture, redirect
+  unwrapping, job identity binding, unsafe URL rejection, detail navigation and
+  list restoration. Provider, tenant and S7 behavior are unchanged.
+- Added a one-click CSV export with the fixed reviewer contract for LinkedIn
+  identity, website, Career, Job List, External Apply, Exact opening, backend
+  status and error code. Missing evidence remains blank; every URL is
+  re-sanitized, spreadsheet formulas are neutralized, and trace, HTML,
+  credentials and arbitrary backend fields are excluded.
+- Added `make reviewer-start` and `make reviewer-check`. The startup preflight
+  verifies CPython 3.12, required product files, loopback binding and port
+  availability, then starts the existing auto-pairing bridge without printing
+  or asking the reviewer to copy a token.
+- Added the one-page `REVIEWER_START_HERE.md` and a final 3-5 minute recording
+  script. The beta.4 release builder now requires these reviewer assets and the
+  extension/background/export/startup files, while rejecting runtime capture,
+  live, cookie, token, cache, checkpoint and snapshot paths.
+- Completed the logged-in `0.7.0` acceptance: Medtronic job `4447068921`
+  retained its final Workday `R72412-1?source=LinkedIn` Apply URL separately
+  from LinkedIn, Verify restored Running after popup reopen, a subsequent
+  rescan retained prior verified details, and the 25-row CSV passed the fixed
+  schema and sensitive-data audit. Medtronic remained fail closed at
+  `RESULT_IDENTITY_MISMATCH`; this acceptance does not revise Fresh100.
+
 ## 2026-08-01 - `0.1.0-beta.3` reviewer-zero-config extension
 
 - Promoted the Chrome client to extension `0.6.2`. The normal reviewer path is

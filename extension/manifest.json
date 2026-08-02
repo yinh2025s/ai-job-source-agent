@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "AI Job Source Agent",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "description": "Send visible LinkedIn jobs to the local AI Job Source Agent pipeline.",
-  "permissions": ["activeTab", "scripting", "storage"],
+  "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": [
     "https://www.linkedin.com/*",
     "http://127.0.0.1/*"
@@ -11,6 +11,9 @@
   "action": {
     "default_title": "AI Job Source Agent",
     "default_popup": "popup.html"
+  },
+  "background": {
+    "service_worker": "background.js"
   },
   "content_scripts": [
     {

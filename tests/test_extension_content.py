@@ -14,7 +14,7 @@ class ExtensionContentTests(unittest.TestCase):
         response = self._collect("installation_legacy_upgrade")
 
         self.assertTrue(response["ok"])
-        self.assertEqual(response["content_script_version"], "2")
+        self.assertEqual(response["content_script_version"], "3")
         self.assertEqual(response["scan_versions"], ["2", "3"])
         self.assertEqual(response["listener_count"], 1)
 
@@ -22,7 +22,7 @@ class ExtensionContentTests(unittest.TestCase):
         response = self._collect("installation_reinject")
 
         self.assertTrue(response["ok"])
-        self.assertEqual(response["content_script_version"], "2")
+        self.assertEqual(response["content_script_version"], "3")
         self.assertEqual(response["listener_count"], 1)
 
     def test_versioned_scan_messages_ignore_legacy_listener_contracts(self):
@@ -33,6 +33,33 @@ class ExtensionContentTests(unittest.TestCase):
         self.assertEqual(len(selected["records"]), 1)
         self.assertEqual(page["scan_version"], "3")
         self.assertEqual(page["candidate_count"], 1)
+
+    def test_external_apply_prepare_verifies_identity_without_clicking(self):
+        response = self._collect("prepare_external_apply")
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["status"], "ready")
+        self.assertEqual(response["linkedin_job_id"], "808")
+        self.assertEqual(response["external_control_click_count"], 0)
+
+    def test_external_apply_trigger_clicks_only_the_bound_external_control(self):
+        response = self._collect("trigger_external_apply")
+
+        self.assertTrue(response["ok"])
+        self.assertEqual(response["status"], "clicked")
+        self.assertEqual(response["linkedin_job_id"], "808")
+        self.assertEqual(response["external_control_click_count"], 1)
+
+    def test_external_apply_trigger_rejects_wrong_job_and_native_apply(self):
+        wrong_job = self._collect("trigger_external_wrong_job")
+        native = self._collect("trigger_external_rejects_native")
+
+        self.assertFalse(wrong_job["ok"])
+        self.assertEqual(wrong_job["error"], "linkedin_job_card_not_available")
+        self.assertEqual(wrong_job["external_control_click_count"], 0)
+        self.assertFalse(native["ok"])
+        self.assertEqual(native["error"], "external_apply_control_not_available")
+        self.assertEqual(native["external_control_click_count"], 0)
 
     def test_hidden_cards_are_ignored_without_viewport_filtering(self):
         response = self._collect("hidden_cards")

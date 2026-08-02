@@ -122,12 +122,35 @@ This proves the plugin workflow and current DOM contract, not broad External
 Apply URL coverage or an Exact-rate claim. Extension `0.4.1` promotes the same
 accepted behavior with release metadata only.
 
-Extension `0.6.2` keeps that evidence boundary while removing reviewer setup and
+Extension `0.7.0` keeps that evidence boundary while removing reviewer setup and
 opaque batch waits: it auto-pairs with the local bridge, restores a six-hour
 tab-scoped scan snapshot after popup closure, serializes whole runs, processes
 up to four companies within the active run, and displays monotonic progress such
 as `Running 7/25`. A real External Apply URL is rendered directly when the DOM
-exposes a safe target; a URL-less LinkedIn button remains an explicit observation.
+exposes a safe target; a URL-less LinkedIn button remains an explicit observation
+during page scan. From one job's secondary view, the user can explicitly choose
+`Open Apply`; a job-ID-bound MV3 background capture then records the final sanitized
+ATS destination opened by that button. It never treats the LinkedIn posting as the
+External Apply URL, and capture success does not bypass backend verification.
+Each job row now opens a secondary view that groups the source posting with its
+verified company website, Career page, Job List and Exact opening links without
+moving any discovery or identity logic into the browser client.
+The reviewer starts this path with `make reviewer-start`; a release preflight
+checks CPython 3.12, required files, loopback binding and the port before reusing
+the existing automatic-pairing bridge. The popup exports the current records as
+a fixed ten-column CSV after scan, verification or snapshot restore. URLs are
+re-sanitized, missing evidence remains blank, and browser credentials, HTML and
+trace internals are excluded.
+
+The final `0.7.0` logged-in gate on 2026-08-02 captured Medtronic's specific
+Workday `R72412-1?source=LinkedIn` destination while keeping the LinkedIn posting
+separate. Verify restored Running after popup reopen and completed a 25-record
+run with 16 verified Job Lists and 8 verified openings. Medtronic remained
+`RESULT_IDENTITY_MISMATCH`, showing that capture did not bypass S7. A generic
+job-ID-keyed, six-hour verified-detail index fixed the state loss observed on a
+later rescan. The exported 25-row CSV passed its exact-schema, public-HTTPS and
+sensitive-data audit. This is final workflow acceptance, not a new
+generalization measurement.
 
 ### Current Development Measurement
 
@@ -186,7 +209,9 @@ Blocked、3 Input Identity Invalid、0 System Gap，并通过同版本 100/100 r
    100/100。
 5. **External Apply 目标覆盖仍有限。** 插件工作流已经通过真实登录态验收，但
    LinkedIn 可能只暴露站外 Apply 按钮而不在 DOM 提供目标 URL；此时系统会明确
-   报告 target unavailable，并继续使用普通后端路径，不能宣称 External Apply 命中。
+   报告未捕获。用户可以对单条岗位显式打开并捕获最终 ATS URL，但关闭岗位、
+   native Apply、未打开新页或被安全门拒绝的跳转仍可能没有目标；捕获成功也不能
+   在 provider/tenant/S7 验真前宣称 Exact。
 6. **开放网页天然不稳定。** 限流、bot protection、页面改版和地区网络会影响
    latency 与 coverage；离线 demo 证明确定性 contract，不代表实时覆盖率。
 

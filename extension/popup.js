@@ -9,23 +9,58 @@ const PAIR_CLIENT = "ai-job-source-agent-extension";
 const PAIR_PROTOCOL_VERSION = "1";
 const MIN_PAIR_TOKEN_LENGTH = 32;
 const SCAN_SNAPSHOT_KEY = "scanSnapshot";
+const VERIFIED_DETAILS_KEY = "verifiedDetails";
+const EXTERNAL_APPLY_CAPTURES_KEY = "externalApplyCaptures";
 const SCAN_SNAPSHOT_VERSION = "1";
+const VERIFIED_DETAILS_VERSION = "1";
+const EXTERNAL_APPLY_CAPTURE_VERSION = "1";
 const SCAN_SNAPSHOT_TTL_MS = 6 * 60 * 60 * 1000;
 const MAX_STORED_RECORDS = 30;
-const CONTENT_SCRIPT_VERSION = "2";
+const CONTENT_SCRIPT_VERSION = "3";
 const CONTENT_STATUS_MESSAGE = "job_source_agent_content_status";
 const SELECTED_SCAN_MESSAGE = "collect_job_source_records_v1";
 const PAGE_SCAN_MESSAGE = "collect_job_source_page_v1";
 const CANCEL_PAGE_SCAN_MESSAGE = "cancel_job_source_page_v1";
+const CSV_EXPORT_FILENAME = "ai-job-source-results.csv";
+const CSV_EXPORT_FIELDS = [
+  "company_name",
+  "linkedin_job_title",
+  "linkedin_job_url",
+  "company_website_url",
+  "career_page_url",
+  "job_list_page_url",
+  "external_apply_url",
+  "open_position_url",
+  "result_status",
+  "error_code",
+];
+const VERIFIED_DETAIL_FIELDS = [
+  "company_name",
+  "company_website_url",
+  "career_root_url",
+  "linkedin_job_url",
+  "external_apply_url",
+  "linkedin_job_title",
+  "linkedin_job_location",
+  "career_page_url",
+  "job_list_page_url",
+  "open_position_url",
+  "error_code",
+  "pipeline_status",
+];
 
 const state = {
   records: [],
+  completedResults: [],
   runId: null,
   pollTimer: null,
   pollRetries: 0,
   connectionKey: null,
   runInFlight: false,
   pageScan: null,
+  detailSelection: null,
+  captureJobId: null,
+  listScrollTop: 0,
   nextPageScanId: 1,
   busy: { selectedScan: false, pageScan: false, run: false, poll: false, save: false },
 };
@@ -50,6 +85,7 @@ function syncBusyUi() {
   $("scanPageButton").textContent = pageScanActive ? "Cancel scan" : "Scan page";
   $("runButton").disabled = busy || state.records.length === 0 || state.runInFlight;
   $("runButton").textContent = state.runInFlight ? "Verifying..." : "Verify source";
+  $("exportCsvButton").disabled = state.records.length === 0;
   $("refreshButton").disabled = busy || !state.runId;
   $("saveButton").disabled = busy;
 }
@@ -169,15 +205,18 @@ async function pairBridge() {
   state.connectionKey = `${connection.url}\n${token}`;
 }
 
-function clearRunOutput() {
+function clearRunOutput({ preserveVerified = false } = {}) {
+  if (!preserveVerified) state.completedResults = [];
   $("runPanel").hidden = true;
   $("runStatus").textContent = "Queued";
   $("jobListRate").textContent = "--";
   $("openingRate").textContent = "--";
   $("results").replaceChildren();
+  if (state.records.length) renderScannedRecords();
 }
 
 function clearScanOutput() {
+  closeJobDetail({ restoreFocus: false });
   state.records = [];
   $("recordCount").textContent = "0";
   $("applyCount").textContent = "0 direct Apply URLs";
@@ -227,6 +266,44 @@ function linkedInJobId(value) {
   return pathMatch ? pathMatch[1] : null;
 }
 
+function validExternalApplyCaptureStore(store) {
+  if (!isObject(store) || store.schema_version !== EXTERNAL_APPLY_CAPTURE_VERSION
+    || !isObject(store.records) || Object.keys(store.records).length > MAX_STORED_RECORDS) return false;
+  return Object.entries(store.records).every(([jobId, capture]) => (
+    /^\d+$/.test(jobId)
+    && isObject(capture)
+    && capture.linkedin_job_id === jobId
+    && Boolean(safeExternalApplyUrl(capture.external_apply_url))
+    && Number.isFinite(capture.captured_at)
+  ));
+}
+
+function mergeCapturedExternalApply(store) {
+  if (!validExternalApplyCaptureStore(store) || state.records.length === 0) return false;
+  let changed = false;
+  for (const record of state.records) {
+    const jobId = linkedInJobId(record.linkedin_job_url);
+    const capturedUrl = jobId ? safeExternalApplyUrl(store.records[jobId]?.external_apply_url) : null;
+    if (capturedUrl && record.external_apply_url !== capturedUrl) {
+      record.external_apply_url = capturedUrl;
+      changed = true;
+    }
+  }
+  if (!changed) return false;
+  renderExternalApplyCount();
+  renderScannedRecords();
+  if (state.detailSelection) {
+    const sourceRecord = state.detailSelection.sourceRecord;
+    openJobDetail(sourceRecord, resultForSource(sourceRecord), { preserveScroll: true });
+  }
+  return true;
+}
+
+function renderExternalApplyCount() {
+  const count = state.records.filter((item) => safeExternalApplyUrl(item.external_apply_url)).length;
+  $("applyCount").textContent = `${count} direct Apply URLs`;
+}
+
 function pageScanContext(value) {
   const parsed = linkedInJobsUrl(value);
   if (!parsed) return null;
@@ -251,7 +328,11 @@ function validScanSnapshot(snapshot) {
     || !Number.isFinite(snapshot.saved_at)
     || !Array.isArray(snapshot.records) || snapshot.records.length === 0
     || snapshot.records.length > MAX_STORED_RECORDS
-    || !snapshot.records.every(isObject)) return false;
+    || !snapshot.records.every(isObject)
+    || (snapshot.verified_results !== undefined
+      && (!Array.isArray(snapshot.verified_results)
+        || snapshot.verified_results.length > snapshot.records.length
+        || !snapshot.verified_results.every(validVerifiedDetail)))) return false;
   const age = Date.now() - snapshot.saved_at;
   return age >= 0 && age <= SCAN_SNAPSHOT_TTL_MS;
 }
@@ -280,11 +361,118 @@ async function saveScanSnapshot(tab, pageUrl, mode) {
       page_url: pageUrl,
       saved_at: Date.now(),
       records: state.records,
+      verified_results: verifiedDetailsForRecords(state.records, state.completedResults),
     },
   });
 }
 
-async function restoreScanSnapshot(snapshot) {
+function validVerifiedDetail(result) {
+  if (!isObject(result) || !linkedInJobsUrl(result.linkedin_job_url)) return false;
+  const allowed = new Set(VERIFIED_DETAIL_FIELDS);
+  return Object.keys(result).every((key) => allowed.has(key))
+    && VERIFIED_DETAIL_FIELDS.every((key) => (
+      result[key] === undefined || result[key] === null
+      || (typeof result[key] === "string" && result[key].length <= 4096)
+    ));
+}
+
+function verifiedDetailProjection(result) {
+  const projected = {};
+  for (const field of VERIFIED_DETAIL_FIELDS) {
+    if (typeof result[field] === "string" && result[field]) projected[field] = result[field];
+  }
+  return projected;
+}
+
+function verifiedDetailEntriesFromStore(store, now = Date.now()) {
+  if (!isObject(store) || store.schema_version !== VERIFIED_DETAILS_VERSION
+    || !isObject(store.records)) return [];
+  return Object.entries(store.records)
+    .filter(([jobId, entry]) => {
+      if (!/^\d+$/.test(jobId) || !isObject(entry)
+        || entry.linkedin_job_id !== jobId || !Number.isFinite(entry.saved_at)
+        || !validVerifiedDetail(entry.result)) return false;
+      const age = now - entry.saved_at;
+      return age >= 0 && age <= SCAN_SNAPSHOT_TTL_MS
+        && linkedInJobId(entry.result.linkedin_job_url) === jobId;
+    })
+    .sort((left, right) => right[1].saved_at - left[1].saved_at)
+    .slice(0, MAX_STORED_RECORDS)
+    .map(([jobId, entry]) => ({
+      jobId,
+      savedAt: entry.saved_at,
+      result: verifiedDetailProjection(entry.result),
+    }));
+}
+
+function verifiedDetailsFromStore(store, now = Date.now()) {
+  return verifiedDetailEntriesFromStore(store, now).map((entry) => entry.result);
+}
+
+function verifiedDetailsForRecords(records, ...sources) {
+  const allowedJobIds = new Set(records.map((record) => linkedInJobId(record.linkedin_job_url)).filter(Boolean));
+  const selected = new Map();
+  for (const source of sources) {
+    for (const result of Array.isArray(source) ? source : []) {
+      if (!isObject(result)) continue;
+      const projected = verifiedDetailProjection(result);
+      if (!validVerifiedDetail(projected)) continue;
+      const jobId = linkedInJobId(projected.linkedin_job_url);
+      if (jobId && allowedJobIds.has(jobId) && !selected.has(jobId)) {
+        selected.set(jobId, projected);
+      }
+    }
+  }
+  return [...selected.values()];
+}
+
+async function hydrateVerifiedDetailsForCurrentRecords(store) {
+  const indexed = store === undefined
+    ? verifiedDetailsFromStore((await chrome.storage.local.get(VERIFIED_DETAILS_KEY))[VERIFIED_DETAILS_KEY])
+    : verifiedDetailsFromStore(store);
+  state.completedResults = verifiedDetailsForRecords(
+    state.records,
+    state.completedResults,
+    indexed,
+  );
+}
+
+async function persistVerifiedDetails(results) {
+  const saved = await chrome.storage.local.get([SCAN_SNAPSHOT_KEY, VERIFIED_DETAILS_KEY]);
+  const snapshot = saved[SCAN_SNAPSHOT_KEY];
+  if (!validScanSnapshot(snapshot)) return;
+  const verifiedResults = verifiedDetailsForRecords(snapshot.records, results);
+  const now = Date.now();
+  const merged = new Map(verifiedDetailEntriesFromStore(saved[VERIFIED_DETAILS_KEY], now)
+    .map((entry) => [entry.jobId, entry]));
+  for (const result of verifiedResults) {
+    const jobId = linkedInJobId(result.linkedin_job_url);
+    merged.set(jobId, { jobId, savedAt: now, result });
+  }
+  const indexRecords = {};
+  for (const entry of [...merged.values()]
+    .sort((left, right) => right.savedAt - left.savedAt)
+    .slice(0, MAX_STORED_RECORDS)) {
+    indexRecords[entry.jobId] = {
+      linkedin_job_id: entry.jobId,
+      saved_at: entry.savedAt,
+      result: verifiedDetailProjection(entry.result),
+    };
+  }
+  await chrome.storage.local.set({
+    [SCAN_SNAPSHOT_KEY]: {
+      ...snapshot,
+      saved_at: now,
+      verified_results: verifiedResults,
+    },
+    [VERIFIED_DETAILS_KEY]: {
+      schema_version: VERIFIED_DETAILS_VERSION,
+      records: indexRecords,
+    },
+  });
+}
+
+async function restoreScanSnapshot(snapshot, verifiedStore) {
   if (snapshot === undefined) return;
   if (!validScanSnapshot(snapshot)) {
     await forgetScanSnapshot();
@@ -296,8 +484,13 @@ async function restoreScanSnapshot(snapshot) {
     return;
   }
   state.records = snapshot.records;
+  state.completedResults = verifiedDetailsForRecords(
+    state.records,
+    snapshot.verified_results || [],
+    verifiedDetailsFromStore(verifiedStore),
+  );
   $("recordCount").textContent = String(state.records.length);
-  $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} direct Apply URLs`;
+  renderExternalApplyCount();
   renderScannedRecords();
   syncBusyUi();
 }
@@ -323,12 +516,16 @@ function validPageScanResponse(payload) {
 }
 
 async function loadSettings() {
-  const saved = await chrome.storage.local.get(["bridgeUrl", "bridgeToken", "runId", SCAN_SNAPSHOT_KEY]);
+  const saved = await chrome.storage.local.get([
+    "bridgeUrl", "bridgeToken", "runId", SCAN_SNAPSHOT_KEY, VERIFIED_DETAILS_KEY,
+    EXTERNAL_APPLY_CAPTURES_KEY,
+  ]);
   $("bridgeUrl").value = saved.bridgeUrl || DEFAULT_BRIDGE_URL;
   if (saved.bridgeToken) $("bridgeToken").value = saved.bridgeToken;
   state.runId = typeof saved.runId === "string" && saved.runId ? saved.runId : null;
   state.runInFlight = Boolean(state.runId);
-  await restoreScanSnapshot(saved[SCAN_SNAPSHOT_KEY]);
+  await restoreScanSnapshot(saved[SCAN_SNAPSHOT_KEY], saved[VERIFIED_DETAILS_KEY]);
+  mergeCapturedExternalApply(saved[EXTERNAL_APPLY_CAPTURES_KEY]);
   try {
     state.connectionKey = bridgeConnection().key;
   } catch {
@@ -454,9 +651,10 @@ async function scanSelected() {
     await ensureContentScript(tab.id, "2");
     const response = await requestSelectedScan(tab.id);
     state.records = response.records;
+    await hydrateVerifiedDetailsForCurrentRecords();
     await saveScanSnapshot(tab, response.page_url, "selected");
     $("recordCount").textContent = String(state.records.length);
-    $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} direct Apply URLs`;
+    renderExternalApplyCount();
     renderScannedRecords();
     if (response.state === "partial") {
       setMessage("Selected job found, but its detail panel was not fully observed.");
@@ -506,7 +704,7 @@ async function cancelPageScan({ watchdog = false } = {}) {
 function renderPageScan(response) {
   state.records = response.records;
   $("recordCount").textContent = String(state.records.length);
-  $("applyCount").textContent = `${state.records.filter((item) => item.external_apply_url).length} direct Apply URLs`;
+  renderExternalApplyCount();
   renderScannedRecords();
   if (response.state === "partial") {
     const missingDetails = Number.isInteger(response.detail_not_observed_count)
@@ -555,6 +753,7 @@ async function scanLoadedPage() {
       throw new Error(payloadMessage(response, "Page scan failed."));
     }
     state.records = response.records;
+    await hydrateVerifiedDetailsForCurrentRecords();
     await saveScanSnapshot(tab, response.page_url, "page");
     renderPageScan(response);
   } catch (error) {
@@ -672,7 +871,7 @@ async function pollRun() {
     $("runStatus").textContent = runStatusLabel(payload);
     if (payload.status === "complete") {
       state.runInFlight = false;
-      renderCompletedRun(payload);
+      await renderCompletedRun(payload);
       setBridgeState("Online", "online");
     } else if (payload.status === "failed") {
       state.runInFlight = false;
@@ -687,7 +886,7 @@ async function pollRun() {
     if (state.runId !== runId) return;
     if (error instanceof BridgeRequestError && error.status === 404) {
       await clearStaleRun();
-      clearRunOutput();
+      clearRunOutput({ preserveVerified: true });
       setBridgeState("Online", "online");
       setMessage("Previous run is no longer available; scanned jobs are still ready.");
     } else if (error instanceof BridgeRequestError && error.status === 401) {
@@ -733,16 +932,101 @@ function safeHttpsUrl(value) {
   }
 }
 
-function appendOutcome(item, label, url) {
-  const safeUrl = safeHttpsUrl(url);
-  if (!safeUrl) return false;
+function safeExternalApplyUrl(value) {
+  const safeUrl = safeHttpsUrl(value);
+  if (!safeUrl) return null;
+  try {
+    const parsed = new URL(safeUrl);
+    const host = parsed.hostname.toLowerCase();
+    if (parsed.hash || /(?:linkedin|licdn)/i.test(host)) return null;
+    const sensitiveKey = /(?:^|[_-])(?:token|session|auth|authorization|api[_-]?key|csrf|xsrf|secret|password|credential|signature|sig)(?:$|[_-])/i;
+    if (Array.from(parsed.searchParams.keys()).some((key) => sensitiveKey.test(key))) return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+function safeExportHttpsUrl(value) {
+  const safeUrl = safeHttpsUrl(value);
+  if (!safeUrl) return null;
+  try {
+    const parsed = new URL(safeUrl);
+    if (parsed.hash) return null;
+    const sensitiveKey = /(?:^|[_-])(?:token|session|auth|authorization|api[_-]?key|csrf|xsrf|secret|password|credential|signature|sig)(?:$|[_-])/i;
+    if (Array.from(parsed.searchParams.keys()).some((key) => sensitiveKey.test(key))) return null;
+    return parsed.href;
+  } catch {
+    return null;
+  }
+}
+
+function safeLinkedInPostingUrl(value) {
+  const jobId = linkedInJobId(value);
+  return jobId ? `https://www.linkedin.com/jobs/view/${jobId}` : null;
+}
+
+function exportResultStatus(result, row) {
+  if (["success", "partial", "failed", "unsupported"].includes(result?.pipeline_status)) {
+    return result.pipeline_status;
+  }
+  if (row.external_apply_url) return "external_apply_captured";
+  return result ? "verification_failed" : "not_verified";
+}
+
+function exportRow(sourceRecord) {
+  const result = resultForSource(sourceRecord);
+  const row = {
+    company_name: sourceRecord.company_name || result?.company_name || "",
+    linkedin_job_title: sourceRecord.linkedin_job_title || sourceRecord.job_title
+      || result?.linkedin_job_title || result?.job_title || "",
+    linkedin_job_url: safeLinkedInPostingUrl(sourceRecord.linkedin_job_url)
+      || safeLinkedInPostingUrl(result?.linkedin_job_url) || "",
+    company_website_url: safeExportHttpsUrl(result?.company_website_url)
+      || safeExportHttpsUrl(sourceRecord.company_website_url) || "",
+    career_page_url: safeExportHttpsUrl(result?.career_page_url || result?.career_root_url)
+      || safeExportHttpsUrl(sourceRecord.career_page_url || sourceRecord.career_root_url) || "",
+    job_list_page_url: safeExportHttpsUrl(result?.job_list_page_url)
+      || safeExportHttpsUrl(sourceRecord.job_list_page_url) || "",
+    external_apply_url: safeExternalApplyUrl(sourceRecord.external_apply_url)
+      || safeExternalApplyUrl(result?.external_apply_url) || "",
+    open_position_url: safeExportHttpsUrl(result?.open_position_url)
+      || safeExportHttpsUrl(sourceRecord.open_position_url) || "",
+    result_status: "",
+    error_code: typeof result?.error_code === "string" ? result.error_code
+      : (typeof sourceRecord.error_code === "string" ? sourceRecord.error_code : ""),
+  };
+  row.result_status = exportResultStatus(result, row);
+  return row;
+}
+
+function csvCell(value) {
+  const raw = String(value ?? "");
+  const text = /^[\t\r\n ]*[=+\-@]/.test(raw) ? `'${raw}` : raw;
+  return /[",\r\n]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function exportCsv() {
+  if (state.records.length === 0) return;
+  const lines = [
+    CSV_EXPORT_FIELDS.join(","),
+    ...state.records.map((sourceRecord) => {
+      const row = exportRow(sourceRecord);
+      return CSV_EXPORT_FIELDS.map((field) => csvCell(row[field])).join(",");
+    }),
+  ];
+  const objectUrl = URL.createObjectURL(new Blob([`\ufeff${lines.join("\r\n")}\r\n`], {
+    type: "text/csv;charset=utf-8",
+  }));
   const link = document.createElement("a");
-  link.href = safeUrl;
-  link.target = "_blank";
-  link.rel = "noopener noreferrer";
-  link.textContent = label;
-  item.append(link);
-  return true;
+  link.href = objectUrl;
+  link.download = CSV_EXPORT_FILENAME;
+  link.hidden = true;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  URL.revokeObjectURL(objectUrl);
+  setMessage(`Exported ${state.records.length} job${state.records.length === 1 ? "" : "s"}.`);
 }
 
 function resultTitle(record) {
@@ -754,27 +1038,63 @@ function resultTitle(record) {
   return `${company} · ${title}`;
 }
 
+function sourceObservation(record) {
+  const observation = record?.source_trace?.linkedin_posting?.observation_state;
+  return {
+    external_apply_observed: "External Apply button found; open details to capture URL",
+    linkedin_native_observed: "LinkedIn native apply",
+    closed_observed: "Posting closed",
+    detail_observed_but_apply_absent: "Apply control not observed",
+    detail_not_observed: "Detail panel not observed",
+  }[observation] || "LinkedIn job selected";
+}
+
+function resultForSource(record) {
+  return state.completedResults.find((result) => (
+    record.linkedin_job_url && record.linkedin_job_url === result.linkedin_job_url
+  )) || state.completedResults.find((result) => (
+    record.company_name === result.company_name
+    && record.job_title === (result.linkedin_job_title || result.job_title)
+  )) || null;
+}
+
+function resultSummary(result, sourceRecord) {
+  if (!result) return safeExternalApplyUrl(sourceRecord?.external_apply_url)
+    ? "External Apply URL ready" : sourceObservation(sourceRecord);
+  if (safeHttpsUrl(result.open_position_url)) return "Exact opening verified";
+  if (safeHttpsUrl(result.job_list_page_url)) return "Official job list verified";
+  if (safeHttpsUrl(result.career_page_url || result.career_root_url)) return "Career page verified";
+  return typeof result.error_code === "string" && result.error_code
+    ? result.error_code
+    : "No verified public job URL";
+}
+
+function makeJobRow(record, result = resultForSource(record)) {
+  const item = document.createElement("li");
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "job-row";
+  button.setAttribute("aria-label", `View details for ${resultTitle(record)}`);
+  const copy = document.createElement("span");
+  copy.className = "job-row-copy";
+  const title = document.createElement("strong");
+  title.textContent = resultTitle(record);
+  const summary = document.createElement("span");
+  summary.textContent = resultSummary(result, record);
+  copy.append(title, summary);
+  const chevron = document.createElement("span");
+  chevron.className = "job-row-chevron";
+  chevron.setAttribute("aria-hidden", "true");
+  chevron.textContent = "\u203a";
+  button.append(copy, chevron);
+  button.addEventListener("click", () => openJobDetail(record, resultForSource(record) || result));
+  item.append(button);
+  return item;
+}
+
 function renderScannedRecords() {
   $("scanPanel").hidden = state.records.length === 0;
-  $("scanResults").replaceChildren(...state.records.map((record) => {
-    const item = document.createElement("li");
-    const title = document.createElement("strong");
-    title.textContent = resultTitle(record);
-    item.append(title);
-    if (!appendOutcome(item, "External Apply", record.external_apply_url)) {
-      const source = document.createElement("span");
-      const observation = record.source_trace?.linkedin_posting?.observation_state;
-      source.textContent = {
-        external_apply_observed: "External Apply button found; LinkedIn exposed no target URL",
-        linkedin_native_observed: "LinkedIn native apply",
-        closed_observed: "Posting closed",
-        detail_observed_but_apply_absent: "Apply control not observed",
-        detail_not_observed: "Detail panel not observed",
-      }[observation] || "LinkedIn job selected";
-      item.append(source);
-    }
-    return item;
-  }));
+  $("scanResults").replaceChildren(...state.records.map((record) => makeJobRow(record)));
 }
 
 function sourceRecordFor(result) {
@@ -786,31 +1106,177 @@ function sourceRecordFor(result) {
   ));
 }
 
-function renderCompletedRun(payload) {
+async function renderCompletedRun(payload) {
   const { summary, results } = payload;
+  state.completedResults = results;
+  await persistVerifiedDetails(results);
   $("jobListRate").textContent = `${Math.round(summary.rates.job_list * 100)}%`;
   $("openingRate").textContent = `${Math.round(summary.rates.opening * 100)}%`;
+  renderScannedRecords();
   $("results").replaceChildren(...results.map((result) => {
-    const item = document.createElement("li");
-    const title = document.createElement("strong");
-    title.textContent = resultTitle(result);
-    item.append(title);
-    const hasExact = appendOutcome(item, "Exact opening", result.open_position_url);
-    let hasOutcome = hasExact;
-    if (!hasExact) {
-      hasOutcome = appendOutcome(item, "Job list", result.job_list_page_url) || hasOutcome;
-      const sourceRecord = sourceRecordFor(result);
-      hasOutcome = appendOutcome(item, "LinkedIn Apply", sourceRecord?.external_apply_url) || hasOutcome;
-    }
-    if (!hasOutcome) {
-      const reason = document.createElement("span");
-      reason.textContent = typeof result.error_code === "string" && result.error_code
-        ? result.error_code
-        : (typeof result.reason === "string" && result.reason ? result.reason : "No verified public job URL.");
-      item.append(reason);
-    }
-    return item;
+    const sourceRecord = sourceRecordFor(result) || result;
+    return makeJobRow(sourceRecord, result);
   }));
+  if (state.detailSelection) {
+    const sourceRecord = state.detailSelection.sourceRecord;
+    openJobDetail(sourceRecord, resultForSource(sourceRecord), { preserveScroll: true });
+  }
+}
+
+function externalApplyCaptureError(error) {
+  return {
+    invalid_linkedin_job_id: "This LinkedIn job has no stable job ID.",
+    not_linkedin_jobs_page: "Return to the LinkedIn Jobs tab and try again.",
+    linkedin_job_card_not_available: "This job card is no longer loaded on the LinkedIn page.",
+    linkedin_job_selection_failed: "LinkedIn could not select this job.",
+    linkedin_job_selection_timed_out: "LinkedIn did not finish loading this job detail.",
+    linkedin_job_identity_mismatch: "The visible LinkedIn job did not match this record.",
+    linkedin_job_detail_not_observed: "The LinkedIn job detail is not ready yet.",
+    external_apply_control_not_available: "No external Apply control is available for this job.",
+    page_scan_in_progress: "Finish or cancel the page scan before opening Apply.",
+  }[error] || "The external Apply destination could not be captured.";
+}
+
+async function beginExternalApplyCapture(sourceRecord) {
+  const jobId = linkedInJobId(sourceRecord?.linkedin_job_url);
+  if (!jobId || state.captureJobId) return;
+  state.captureJobId = jobId;
+  let captureStatusText = "Opening the company Apply page...";
+  openJobDetail(sourceRecord, resultForSource(sourceRecord), { preserveScroll: true });
+  $("detailStatus").textContent = captureStatusText;
+  try {
+    const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (!tab?.id || !linkedInJobsUrl(tab.url)) throw new Error("not_linkedin_jobs_page");
+    await ensureContentScript(tab.id, "2");
+    const prepared = await chrome.tabs.sendMessage(tab.id, {
+      type: "prepare_external_apply_v1",
+      linkedin_job_id: jobId,
+    });
+    if (!isObject(prepared) || prepared.ok !== true || prepared.status !== "ready"
+      || prepared.linkedin_job_id !== jobId) {
+      throw new Error(prepared?.error || "external_apply_prepare_failed");
+    }
+    const response = await chrome.runtime.sendMessage({
+      type: "begin_external_apply_capture_v1",
+      source_tab_id: tab.id,
+      linkedin_job_id: jobId,
+    });
+    if (!isObject(response) || response.ok !== true
+      || !["pending", "captured"].includes(response.status)) {
+      throw new Error(response?.error || "external_apply_capture_failed");
+    }
+    captureStatusText = response.status === "captured"
+      ? "External Apply URL captured"
+      : "Waiting for the company Apply page to finish loading...";
+  } catch (error) {
+    captureStatusText = externalApplyCaptureError(error?.message);
+  } finally {
+    state.captureJobId = null;
+    if (state.detailSelection?.sourceRecord === sourceRecord) {
+      openJobDetail(sourceRecord, resultForSource(sourceRecord), { preserveScroll: true });
+      $("detailStatus").textContent = captureStatusText;
+    }
+  }
+}
+
+function detailLinkRows(sourceRecord, result) {
+  const externalUrl = safeExternalApplyUrl(sourceRecord.external_apply_url)
+    || safeExternalApplyUrl(result?.external_apply_url);
+  const externalObserved = sourceRecord.source_trace?.linkedin_posting?.observation_state
+    === "external_apply_observed";
+  return [
+    { label: "LinkedIn posting", url: sourceRecord.linkedin_job_url || result?.linkedin_job_url, unavailable: "Unavailable" },
+    {
+      label: "External Apply",
+      url: externalUrl,
+      unavailable: externalObserved ? "Button found; destination not captured" : "Not observed",
+      action: !externalUrl && externalObserved ? {
+        label: state.captureJobId === linkedInJobId(sourceRecord.linkedin_job_url)
+          ? "Opening..." : "Open Apply",
+        disabled: Boolean(state.captureJobId),
+        run: () => beginExternalApplyCapture(sourceRecord),
+      } : null,
+    },
+    { label: "Company website", url: result?.company_website_url || sourceRecord.company_website_url, unavailable: result ? "Not found" : "Not verified yet" },
+    { label: "Career page", url: result?.career_page_url || result?.career_root_url, unavailable: result ? "Not found" : "Not verified yet" },
+    { label: "Job list", url: result?.job_list_page_url, unavailable: result ? "Not found" : "Not verified yet" },
+    { label: "Exact opening", url: result?.open_position_url, unavailable: result ? "Not found" : "Not verified yet" },
+  ];
+}
+
+function detailStatus(result) {
+  if (!result) return "Source verification not run";
+  if (safeHttpsUrl(result.open_position_url)) return "Verified exact opening";
+  if (safeHttpsUrl(result.job_list_page_url)) return "Verified job list; exact opening unavailable";
+  if (typeof result.error_code === "string" && result.error_code) {
+    return `Verification result: ${result.error_code}`;
+  }
+  return "Verification complete; no public source verified";
+}
+
+function renderDetailLink({ label, url, unavailable, action }) {
+  const row = document.createElement("div");
+  row.className = "detail-link-row";
+  const heading = document.createElement("span");
+  heading.className = "detail-link-label";
+  heading.textContent = label;
+  row.append(heading);
+  const safeUrl = safeHttpsUrl(url);
+  if (safeUrl) {
+    const link = document.createElement("a");
+    link.href = safeUrl;
+    link.target = "_blank";
+    link.rel = "noopener noreferrer";
+    link.textContent = safeUrl;
+    row.append(link);
+  } else {
+    const value = document.createElement("span");
+    value.className = "detail-link-value";
+    const unavailableLabel = document.createElement("span");
+    unavailableLabel.className = "detail-link-unavailable";
+    unavailableLabel.textContent = unavailable;
+    value.append(unavailableLabel);
+    if (action) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "quiet detail-link-action";
+      button.textContent = action.label;
+      button.disabled = action.disabled;
+      button.addEventListener("click", action.run);
+      value.append(button);
+    }
+    row.append(value);
+  }
+  return row;
+}
+
+function openJobDetail(sourceRecord, result = resultForSource(sourceRecord), { preserveScroll = false } = {}) {
+  if (!sourceRecord) return;
+  if (!preserveScroll) state.listScrollTop = $("scanResults").scrollTop || 0;
+  state.detailSelection = { sourceRecord };
+  $("detailTitle").textContent = sourceRecord.job_title
+    || result?.linkedin_job_title || result?.job_title || "Untitled role";
+  $("detailCompany").textContent = sourceRecord.company_name || result?.company_name || "Unknown company";
+  $("detailLocation").textContent = sourceRecord.job_location
+    || result?.linkedin_job_location || "Location unavailable";
+  $("detailLinks").replaceChildren(...detailLinkRows(sourceRecord, result).map(renderDetailLink));
+  $("detailStatus").textContent = detailStatus(result);
+  $("listView").hidden = true;
+  $("detailView").hidden = false;
+  $("detailBackButton").focus?.();
+}
+
+function closeJobDetail({ restoreFocus = true } = {}) {
+  if (!state.detailSelection && $("detailView").hidden) return;
+  const previous = state.detailSelection;
+  state.detailSelection = null;
+  $("detailView").hidden = true;
+  $("listView").hidden = false;
+  $("scanResults").scrollTop = state.listScrollTop;
+  if (restoreFocus && previous) {
+    const index = state.records.indexOf(previous.sourceRecord);
+    $("scanResults").children[index]?.children[0]?.focus?.();
+  }
 }
 
 async function saveConnection() {
@@ -835,9 +1301,15 @@ async function saveConnection() {
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (message?.type === "job_source_page_progress") handlePageScanProgress(message, sender);
 });
+chrome.storage.onChanged?.addListener?.((changes, areaName) => {
+  if (areaName !== "local" || !changes[EXTERNAL_APPLY_CAPTURES_KEY]) return;
+  mergeCapturedExternalApply(changes[EXTERNAL_APPLY_CAPTURES_KEY].newValue);
+});
 $("scanSelectedButton").addEventListener("click", scanSelected);
 $("scanPageButton").addEventListener("click", scanLoadedPage);
 $("runButton").addEventListener("click", runDiscovery);
+$("exportCsvButton").addEventListener("click", exportCsv);
 $("refreshButton").addEventListener("click", pollRun);
 $("saveButton").addEventListener("click", saveConnection);
+$("detailBackButton").addEventListener("click", () => closeJobDetail());
 loadSettings();

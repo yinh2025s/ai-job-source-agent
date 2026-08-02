@@ -1,5 +1,5 @@
 (() => {
-  const CONTENT_SCRIPT_VERSION = "2";
+  const CONTENT_SCRIPT_VERSION = "3";
   const INSTALLATION_KEY = "__jobSourceAgentContentScript";
   const previousInstallation = globalThis[INSTALLATION_KEY];
   try {
@@ -179,6 +179,24 @@
       if (externalUrl) return externalUrl;
     }
     return "";
+  };
+  const externalApplyClickControl = (root) => {
+    for (const selector of EXTERNAL_APPLY_SELECTORS) {
+      for (const control of visibleMatches(root, selector)) {
+        if (!isEnabled(control)) continue;
+        const label = `${text(control)} ${control.getAttribute("aria-label") || ""}`.toLowerCase();
+        const declaredExternal = control.getAttribute("data-control-name")
+          === "jobdetails_topcard_external_apply";
+        if (label.includes("apply") && (
+          safeExternalApplyTarget(control)
+          || declaredExternal
+          || /(?:company website|company site)/.test(label)
+        )) return control;
+      }
+    }
+    return visibleMatches(root, EXTERNAL_MODE_CONTROL_SELECTOR).find((control) => (
+      isExternalApplyControl(control)
+    )) || null;
   };
   const DETAIL_ROOT_SELECTORS = [
     ".jobs-search__job-details--container",
@@ -757,6 +775,74 @@
     }
   };
 
+  const prepareExternalApply = async (expectedId) => {
+    if (!/^\d+$/.test(String(expectedId || ""))) {
+      return { ok: false, status: "rejected", error: "invalid_linkedin_job_id" };
+    }
+    if (!isLinkedinJobsRoute()) {
+      return { ok: false, status: "rejected", error: "not_linkedin_jobs_page" };
+    }
+    if (activePageScan) {
+      return { ok: false, status: "busy", error: "page_scan_in_progress" };
+    }
+
+    let currentId = selectedJobId();
+    if (currentId !== expectedId) {
+      const candidate = pageCards()
+        .map(frozenCardMetadata)
+        .find((metadata) => metadata.job_id === expectedId);
+      if (!candidate?.card) {
+        return { ok: false, status: "rejected", error: "linkedin_job_card_not_available" };
+      }
+      try {
+        candidate.card.click();
+      } catch {
+        return { ok: false, status: "rejected", error: "linkedin_job_selection_failed" };
+      }
+      const selected = await waitForSelectedJob(expectedId, currentId);
+      if (!selected) {
+        return { ok: false, status: "rejected", error: "linkedin_job_selection_timed_out" };
+      }
+      currentId = selectedJobId();
+    }
+    if (currentId !== expectedId) {
+      return { ok: false, status: "rejected", error: "linkedin_job_identity_mismatch" };
+    }
+
+    const jobUrl = `https://www.linkedin.com/jobs/view/${expectedId}`;
+    const detail = await settleDetailFor(jobUrl, { cancelled: false }, SELECTED_DETAIL_POLLS);
+    const detailRoot = selectedDetailRoot();
+    if (!detail || detailRoot.jobUrl !== jobUrl) {
+      return { ok: false, status: "rejected", error: "linkedin_job_detail_not_observed" };
+    }
+    const control = externalApplyClickControl(detailRoot.root);
+    if (!control) {
+      return { ok: false, status: "rejected", error: "external_apply_control_not_available" };
+    }
+    return { ok: true, status: "ready", linkedin_job_id: expectedId };
+  };
+
+  const triggerExternalApply = async (expectedId) => {
+    const prepared = await prepareExternalApply(expectedId);
+    if (!prepared.ok) return prepared;
+    if (selectedJobId() !== expectedId) {
+      return { ok: false, status: "rejected", error: "linkedin_job_identity_mismatch" };
+    }
+    const detailRoot = selectedDetailRoot();
+    const control = detailRoot.jobUrl === `https://www.linkedin.com/jobs/view/${expectedId}`
+      ? externalApplyClickControl(detailRoot.root)
+      : null;
+    if (!control) {
+      return { ok: false, status: "rejected", error: "external_apply_control_not_available" };
+    }
+    try {
+      control.click();
+    } catch {
+      return { ok: false, status: "rejected", error: "external_apply_click_failed" };
+    }
+    return { ok: true, status: "clicked", linkedin_job_id: expectedId };
+  };
+
   const messageListener = (message, _sender, sendResponse) => {
     if (message?.type === "job_source_agent_content_status") {
       sendResponse({
@@ -765,6 +851,26 @@
         scan_versions: ["2", "3"]
       });
       return false;
+    }
+    if (message?.type === "prepare_external_apply_v1") {
+      prepareExternalApply(message.linkedin_job_id).then(sendResponse).catch((error) => {
+        sendResponse({
+          ok: false,
+          status: "error",
+          error: String(error?.message || error || "external_apply_prepare_failed")
+        });
+      });
+      return true;
+    }
+    if (message?.type === "trigger_external_apply_v1") {
+      triggerExternalApply(message.linkedin_job_id).then(sendResponse).catch((error) => {
+        sendResponse({
+          ok: false,
+          status: "error",
+          error: String(error?.message || error || "external_apply_click_failed")
+        });
+      });
+      return true;
     }
     if (["cancel_job_source_page", "cancel_job_source_page_v1"].includes(message?.type)) {
       const cancelled = Boolean(activePageScan && !activePageScan.cancelled);

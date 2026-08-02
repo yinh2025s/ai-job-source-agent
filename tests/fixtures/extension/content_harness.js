@@ -18,6 +18,7 @@ class FakeElement {
     this.matchesBySelector = new Map();
     this.onClick = null;
     this.onScroll = null;
+    this.clickCount = 0;
     if (parent) parent.children.push(this);
   }
 
@@ -54,6 +55,7 @@ class FakeElement {
   }
 
   click() {
+    this.clickCount += 1;
     if (this.onClick) this.onClick();
   }
 
@@ -263,6 +265,7 @@ function evidenceScenario(kind) {
     [location],
   );
 
+  let externalControl = null;
   if (kind === "native") {
     root.setMatches(NATIVE_APPLY_SELECTOR, [leaf({
       text: "Easy Apply",
@@ -274,7 +277,7 @@ function evidenceScenario(kind) {
       href: "https://careers.evidence.example/jobs/808",
     }, root)]);
   } else if (kind === "external_button") {
-    root.setMatches(EXTERNAL_MODE_CONTROL_SELECTOR, [leaf({
+    externalControl = leaf({
       text: "Apply",
       attrs: {
         "aria-label": "Apply to Principal Evidence Engineer on company website",
@@ -282,7 +285,8 @@ function evidenceScenario(kind) {
         role: "link",
       },
       tagName: "BUTTON",
-    }, root)]);
+    }, root);
+    root.setMatches(EXTERNAL_MODE_CONTROL_SELECTOR, [externalControl]);
   } else if (kind === "external_button_target") {
     root.setMatches(EXTERNAL_MODE_CONTROL_SELECTOR, [leaf({
       text: "Apply",
@@ -337,7 +341,11 @@ function evidenceScenario(kind) {
 
   document.setMatches(CARD_SELECTOR, []);
   setDetailRoots(document, { ".jobs-search__job-details--container": [root] });
-  return { document, href: "https://www.linkedin.com/jobs/view/evidence-engineer-808/?trk=test" };
+  return {
+    document,
+    href: "https://www.linkedin.com/jobs/view/evidence-engineer-808/?trk=test",
+    externalControl,
+  };
 }
 
 function selectedDetailScenario() {
@@ -699,6 +707,26 @@ const scenarios = {
     ...pageScanScenario({ ids: [841] }),
     messageType: "collect_job_source_page_v1",
   }),
+  prepare_external_apply: () => ({
+    ...evidenceScenario("external_button"),
+    messageType: "prepare_external_apply_v1",
+    messagePayload: { linkedin_job_id: "808" },
+  }),
+  trigger_external_apply: () => ({
+    ...evidenceScenario("external_button"),
+    messageType: "trigger_external_apply_v1",
+    messagePayload: { linkedin_job_id: "808" },
+  }),
+  trigger_external_wrong_job: () => ({
+    ...evidenceScenario("external_button"),
+    messageType: "trigger_external_apply_v1",
+    messagePayload: { linkedin_job_id: "999" },
+  }),
+  trigger_external_rejects_native: () => ({
+    ...evidenceScenario("native"),
+    messageType: "trigger_external_apply_v1",
+    messagePayload: { linkedin_job_id: "808" },
+  }),
 };
 
 const contentPath = process.argv[2];
@@ -755,7 +783,10 @@ for (let load = 0; load < (scenario.scriptLoads || 1); load += 1) {
 }
 scenario.bindLocation?.(sandbox.location);
 
-listener({ type: scenario.messageType || "collect_job_source_records" }, {}, (value) => {
+listener({
+  type: scenario.messageType || "collect_job_source_records",
+  ...(scenario.messagePayload || {}),
+}, {}, (value) => {
   response = value;
 });
 
@@ -767,6 +798,7 @@ async function finish() {
         progress_count: progressCount,
         cancel_response: cancelResponse,
         listener_count: listeners.size,
+        external_control_click_count: scenario.externalControl?.clickCount || 0,
       }));
       return;
     }

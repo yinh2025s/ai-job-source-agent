@@ -26,7 +26,7 @@
 ## Beta 交付冻结（2026-08-01）
 
 当前执行目标已经从“继续提高陌生样本召回”切换为
-`0.1.0-beta.3` reviewer handoff。下文保留的 diagnostic tranche、provider backlog
+`0.1.0-beta.4` reviewer handoff。下文保留的 diagnostic tranche、provider backlog
 和历史 Phase A-C 计划是研发记录，不再是本次交付的待办。
 
 本次冻结边界：
@@ -42,10 +42,16 @@
    cohort、sealed holdout、cache、checkpoint、snapshot、cookie 和登录态数据。
 6. 完成 README、离线门禁、隐私扫描、release commit/tag/push 和源码包后立即
    停止，不继续进入下一轮 failure-cluster 修复。
-7. Chrome extension `0.6.2` 作为输入客户端交付；插件只读取登录态页面
-   可见 DOM、提交 loopback bridge 并展示结果，provider/tenant/S7 规则仍全部留在
-   Python 后端。默认自动配对、恢复 tab-scoped scan snapshot，并显示 bounded
+7. Chrome extension `0.7.0` 作为输入客户端交付；批量扫描只读取登录态页面
+   可见 DOM。用户在单条详情中明确选择 `Open Apply` 时，插件才按 LinkedIn job ID
+   点击该条可见 External Apply，并由后台捕获它打开的最终 ATS URL。插件继续只向
+   loopback bridge 提交结构化 evidence 并展示结果，provider/tenant/S7 规则仍全部
+   留在 Python 后端。默认自动配对、恢复 tab-scoped scan snapshot，并显示 bounded
    company execution 的 `completed/submitted` 进度。
+8. Reviewer 正常路径冻结为 `make reviewer-start`，启动前检查 CPython 3.12、
+   必要文件、loopback 地址和端口，不要求手动填写 Bridge URL 或 Token。Popup
+   提供固定十列的 CSV export；缺失证据留空，所有 URL 在导出前再次安全清洗，
+   不导出 trace、HTML、cookie、token 或任意后端内部对象。
 
 七条 `.286` focused live 在全新 state roots 完成 7/7：3 个 S7 Exact、1 个
 verified no-match、1 个 external inventory failure 和 2 个 discovery failure；
@@ -56,9 +62,30 @@ replay record-integrity 未通过，已经写入 `docs/BETA_DEMO_EVIDENCE.md`，
 插件 `0.4.0` 于 2026-08-01 完成真实登录态 acceptance：selected scan 1/1、page
 scan 25/25、External/LinkedIn-native Apply 状态区分、异步提交即时 Running、popup
 重开恢复和 Complete 结果渲染均通过。当前 Medtronic 样本没有 DOM-visible 的安全
-External Apply URL，系统明确显示 target unavailable，后端诚实返回
+External Apply URL，旧客户端明确显示 target unavailable，后端诚实返回
 `CAREER_PAGE_NOT_FOUND`。`0.6.2` 在不改变 provider/S7 行为的前提下增加自动配对、
 扫描记录恢复、安全 Apply target 属性提取，以及单 run 四 company worker 与可见进度。
+`0.7.0` 将扫描记录与对应 backend result 按 LinkedIn job identity 合并到岗位二级详情页，
+集中显示 LinkedIn、External Apply、官网、Career、Job List 和 Exact opening；缺失证据仍
+保持 unavailable。对于 Medtronic 这类 URL-less Apply button，二级页提供显式单条
+`Open Apply`；MV3 service worker 只关联该 LinkedIn tab/job ID 所打开的标签，等待最终
+公开 HTTPS ATS URL 后持久化。该 URL 仍只是 S1 候选，必须进入原有 provider、tenant 和
+S7 contract，不能因按钮或捕获成功直接宣布 Exact。
+扫描、验证或 snapshot 恢复后的当前记录均可导出为
+`ai-job-source-results.csv`。`result_status` 使用真实 backend `pipeline_status`；
+尚未验证但已捕获 External Apply 的记录单独标为 `external_apply_captured`，不会
+伪装成 Exact。最终发布包必须通过单次离线门禁、JS syntax、architecture、
+privacy 和 clean-package reviewer preflight，再进行真实 Medtronic Chrome 验收。
+
+`0.7.0` 的 2026-08-02 登录态验收已经完成。Medtronic job `4447068921` 的
+URL-less Apply button 通过显式 `Open Apply` 捕获并在 popup 重开后保留最终 Workday
+`R72412-1?source=LinkedIn`，LinkedIn posting 仍为独立字段。25-record Verify 在 popup
+重开后恢复 Running，最终为 16 个 verified Job List、8 个 opening；Medtronic 因
+`RESULT_IDENTITY_MISMATCH` 保持 fail closed。验收中发现 selected rescan 会删除已有
+verified projection；现已用 LinkedIn job ID、6 小时 TTL、30 条上限的白名单索引通用
+修复，System One 的 Website/Career/Job List 在重新扫描后仍可见。25 行 CSV 的固定
+十列、92 个 public-HTTPS URL 与敏感数据扫描均通过。这些是产品可用性证据，不改写
+Fresh100；当前只剩 clean-package 校验、commit/tag/push。
 
 ## 当前架构进度（2026-07-29，`.286` typed route outcome accepted）
 

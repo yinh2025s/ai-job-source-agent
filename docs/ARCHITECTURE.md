@@ -271,7 +271,7 @@ navigation 和显式 same-site job portal 放在 speculative route family 之前
 
 ## Browser Extension Boundary
 
-`extension/` 是 S1 evidence adapter，不是第二套 pipeline。Content script 只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。Search SPA 的详情证据必须绑定当前 `currentJobId` 或 detail root 的明确 job identity，不能把竞争 card 或 stale root 的 company/title/apply 组合到当前职位。Content response 使用 scan contract v2 的 `ready/not_ready`，popup 只进行有界 readiness retry。
+`extension/` 是 S1 evidence adapter，不是第二套 pipeline。批量扫描只读取当前 LinkedIn Jobs DOM 中可见的 company/title/location/job URL、company URL、可选 External Apply URL，以及详情页明确可见的 apply/closed 状态。它不读取 cookie、不实现 ATS detection、不猜测 Apply redirect，也不验证官网岗位。只有 visible + enabled 的详情页 native Apply 控件能产生 `active + linkedin_native + authenticated_detail_dom`；隐藏、disabled 或缺失控件保持 unknown。Search SPA 的详情证据必须绑定当前 `currentJobId` 或 detail root 的明确 job identity，不能把竞争 card 或 stale root 的 company/title/apply 组合到当前职位。Content response 使用 scan contract v2 的 `ready/not_ready`，popup 只进行有界 readiness retry。
 
 `scripts/extension_bridge.py` 只绑定 loopback，使用 process-local bearer token 和 Chrome-extension Origin gate 接收最多 30 条记录，并通过后台 run manager 调用统一 `PipelineApplication`。ADR-0037 的默认 bootstrap 会持续等待首个合法 extension Origin 领取随机 token，随后把 CORS 与 extension 请求绑定到该 Origin；token 不打印、不进入 artifact，其他 Origin 不能重新 claim。普通网页 Origin 不能配对；需要更严格本地安装边界时仍可使用 explicit token。Popup 只探测无 path/query/fragment/credential 的 `http://127.0.0.1:8765`，严格验证 pairing/health response，并把 custom port/explicit token 留作 Advanced fallback。请求有超时、重复操作保护、有限 polling recovery 和 stale-run 清理；展示层只链接 public HTTPS 结果。Bridge 可以持久化 results/trace/summary，但不包含 resolver/provider 规则。S5 必须通过 provider registry 识别 External Apply board，S6 继续负责真实库存验证。
 
@@ -282,16 +282,52 @@ Popup 关闭会销毁其 JavaScript context，因此成功扫描后会把至多 
 被渲染。Snapshot 不包含 cookie、authenticated HTML 或 bridge token，不能成为新的 provider 或身份
 证据来源。
 
+完成的 backend result 另有一个最多 30 条、6 小时 TTL 的本地 verified-detail index，
+只使用 LinkedIn job ID 作为 key，并且只保存 `VERIFIED_DETAIL_FIELDS` 白名单投影。新一次
+selected/page scan 会按 job ID 回填同岗位的 Website、Career、Job List、Exact、status 和
+error，而不会因替换当前 scan snapshot 删除已完成验证。损坏、过期、没有稳定 job ID 或包含
+白名单外字段的 entry 被忽略；该 index 不保存 run trace、HTML、cookie、token，也不建立新的
+provider、tenant 或招聘关系证据。
+
+Popup 的岗位列表与完成结果列表都只作为导航入口。二级详情页先按 LinkedIn job URL、再按
+company/title fallback 将 S1 source record 与当前 run result 合并，展示 LinkedIn、External Apply、
+company website、Career page、Job List 和 Exact opening 六类字段。每个可点击值都再次经过
+public-HTTPS display gate；缺失字段显示 typed unavailable 状态。该 view 不做发现、provider
+识别或身份推断，也不把列表排名当作验证证据。
+
 Extension bridge 只允许一个完整 run 进入执行器；同一 run 内按 ADR-0038 使用至多四个
 company worker，每个 worker 构建隔离的 `PipelineApplication`，共享 evidence store 继续依赖
 进程锁和原子写。Run contract 区分 `queued/running/complete/failed`，并返回单调递增的
 `completed/submitted`，popup 据此显示真实批次进度。该并发只服务本地插件，不改变 live benchmark
 的串行规则，也不改变任何 provider、tenant 或 S7 gate。
 
-External Apply 目标仍是被动证据：可见且 enabled 的外链控件只有在 DOM 明确暴露 `href`、
-`formaction` 或受限 data target 属性，并通过 public URL、credential、private-host、LinkedIn redirect
-与 sensitive-query 清洗后，才会成为 popup 超链接。仅有 `button role=link` 和 company-website label
-时只报告控件存在，不编造目标 URL。
+Popup 的 CSV export 是一个只读 presentation projection，不是新的 evidence 或
+pipeline 输出。它只允许固定的十个 reviewer 字段，按现有 LinkedIn identity 将 S1 record
+与已验证结果合并；缺失 URL 留空。所有 URL 在写入前再次要求公开 HTTPS、无 credential、
+无 fragment、无 private host 和无 sensitive query，文本单元格还会阻止 spreadsheet formula
+执行。Trace、原始 HTML、browser storage、bridge token、cookie 和未列入 contract 的 backend
+字段不会进入 CSV。
+
+`make reviewer-start` 是发布包的 composition entry point。它只做 CPython 3.12、必要文件、
+loopback host 和端口 preflight，然后 `exec` 已有 `scripts.extension_bridge`；不会复制 pipeline、
+生成共享 token 或放宽 Origin gate。默认随机 credential 仍由 bridge process 生成并由第一个合法
+Chrome extension Origin 自动领取。`make reviewer-check` 执行同一 preflight 但不绑定端口。
+
+External Apply 的 scan evidence 仍是被动的：可见且 enabled 的外链控件只有在 DOM 明确暴露
+`href`、`formaction` 或受限 data target 属性，并通过 public URL、credential、private-host、
+LinkedIn redirect 与 sensitive-query 清洗后，才会成为 popup 超链接。仅有
+`button role=link` 和 company-website label 时，scan 只报告控件存在，不把 LinkedIn posting
+冒充成 External Apply URL。
+
+用户可以在单条二级详情中显式选择 `Open Apply`。Popup 先要求 content script 按稳定的
+LinkedIn job ID 选择并复核对应 detail，再由 MV3 service worker 写入一个 20 秒、单任务的 pending
+capture，触发该条可见 External Apply 控件，并只观察 source tab 本身或 `openerTabId` 与 source tab
+一致的新 tab。只有最终 complete navigation 的公开 HTTPS 外部 URL 才能保存；LinkedIn/licdn 或
+lookalike host、无点内部主机、private IP、credential、fragment 和敏感 query 均拒绝。普通
+`source=LinkedIn` attribution 保留。完成记录只含 job ID、最终 URL、时间和 source/target tab ID，
+最多 30 条；不保存导航历史、HTML、cookie 或 token。Popup 关闭不影响 service worker 捕获，重开后
+按 job ID 合并到 scan record。该 URL 仍只是 S1 External Apply 候选，必须经过后端 provider/tenant/S7
+验证，点击或捕获本身不能宣布 Exact。
 
 Extension scan v3 将即时 selected-detail 与当前批次 page scan 分开。Page scan 只消费
 具有 `data-occludable-job-id` 或受限 lazy-column identity 的 visible/enabled job-card；空的虚拟滚动
